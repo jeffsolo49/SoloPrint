@@ -1,0 +1,1993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SoloPrint — 3D Print Quote Request</title>
+<style>
+:root {
+  --bg: #121417;
+  --surface: #1b1f24;
+  --surface2: #242a31;
+  --border: rgba(255,255,255,0.18);
+  --border-hover: rgba(255,255,255,0.35);
+  --accent: #ffcd1e;
+  --accent2: #ffd84d;
+  --green: #00c853;
+  --amber: #ffab00;
+  --text: #f5f7fa;
+  --muted: #b7c0cc;
+  --red: #ff5252;
+  --mono: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --sans: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+.header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; height: 60px; position: sticky; top: 0; z-index: 100; }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.logo-icon svg { width: 18px; height: 18px; fill: none; stroke: white; stroke-width: 2; }
+.logo-text { font-family: var(--mono); font-size: 14px; font-weight: 700; letter-spacing: -0.5px; }
+.logo-text span { color: var(--accent); }
+.header-actions { display: flex; gap: 8px; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 4px; }
+.sync-dot.offline { background: var(--amber); }
+.build-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; overflow-x: auto; }
+.nav::-webkit-scrollbar { display: none; }
+.nav-tab { padding: 14px 20px; font-size: 13px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; transition: all 0.2s; border-top: none; border-left: none; border-right: none; background: none; }
+.nav-tab:hover { color: var(--text); }
+.nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.nav-badge { display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: white; border-radius: 10px; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; font-family: var(--mono); }
+
+.main { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+.main.owner-main { max-width: min(1440px, calc(100vw - 32px)); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.25rem; }
+.card-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 1.25rem; }
+
+.section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
+.section-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: rgba(255,107,53,0.15); }
+.section-icon svg { width: 20px; height: 20px; }
+.section-title { font-size: 20px; font-weight: 600; }
+.section-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+.field { margin-bottom: 1rem; }
+.field label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 6px; }
+.field label .req { color: var(--accent); margin-left: 2px; }
+input[type=text], input[type=email], input[type=number], input[type=password], select, textarea {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); font-family: var(--sans); font-size: 15px; padding: 12px 14px;
+  outline: none; transition: border-color 0.2s; -webkit-appearance: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input.invalid, select.invalid { border-color: var(--red) !important; }
+input::placeholder, textarea::placeholder { color: var(--muted); }
+select { cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888899' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+select option { background: #242a31; color: #f5f7fa; }
+textarea { resize: vertical; min-height: 70px; }
+.field-err { font-size: 12px; color: var(--red); margin-top: 5px; display: none; }
+.field-err.show { display: block; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+@media (max-width: 500px) { .row2 { grid-template-columns: 1fr; } .row3 { grid-template-columns: 1fr 1fr; } }
+
+.btn-primary { width: 100%; padding: 14px; background: var(--accent); color: white; border: none; border-radius: 10px; font-family: var(--sans); font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-secondary { width: 100%; padding: 11px; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 10px; font-family: var(--sans); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.btn-secondary:hover { border-color: var(--border-hover); background: var(--surface2); }
+.btn-sm { padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid var(--border); background: var(--surface2); color: var(--text); white-space: nowrap; }
+.btn-sm:hover { border-color: var(--border-hover); }
+.btn-sm.danger { color: var(--red); border-color: rgba(255,107,107,0.3); }
+.btn-sm.danger:hover { background: rgba(255,107,107,0.1); }
+
+.item-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 0.75rem; transition: border-color 0.2s; }
+.item-block:hover { border-color: var(--border-hover); }
+.item-block-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.item-num-badge { font-family: var(--mono); font-size: 11px; color: var(--accent); background: rgba(255,107,53,0.12); padding: 3px 10px; border-radius: 20px; font-weight: 700; }
+.fetching-badge { font-size: 11px; color: var(--muted); font-family: var(--mono); animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.next-link-row { display: flex; align-items: center; gap: 10px; border: 1px dashed rgba(255,107,53,0.3); border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem; transition: all 0.2s; background: rgba(255,107,53,0.03); }
+.next-link-row:focus-within { border-color: var(--accent); background: rgba(255,107,53,0.06); }
+.next-link-row input { background: transparent; border: none; padding: 0; flex: 1; font-size: 14px; color: var(--text); }
+.next-link-row input:focus { outline: none; }
+.plus-circle { width: 28px; height: 28px; background: rgba(255,107,53,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--accent); font-size: 20px; font-weight: 300; line-height: 1; flex-shrink: 0; }
+
+/* Filament pill selector */
+.filament-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.fil-pill { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.fil-pill:hover { border-color: var(--border-hover); color: var(--text); }
+.fil-pill.active-black { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.3); color: var(--text); }
+.fil-pill.active-white { background: rgba(240,240,245,0.12); border-color: rgba(240,240,245,0.4); color: #f0f0f5; }
+.fil-pill.active-special { background: rgba(255,107,53,0.12); border-color: var(--accent); color: var(--accent); }
+
+.status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; font-family: var(--mono); letter-spacing: 0.5px; }
+.status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.status.pending { background: rgba(255,202,58,0.12); color: var(--amber); }
+.status.pending::before { background: var(--amber); }
+.status.quoted { background: rgba(61,255,160,0.1); color: var(--green); }
+.status.quoted::before { background: var(--green); }
+.status.estimate { background: rgba(255,202,58,0.12); color: var(--amber); }
+.status.estimate::before { background: var(--amber); }
+.status.quote_sent { background: rgba(255,107,53,0.12); color: var(--accent); }
+.status.quote_sent::before { background: var(--accent); }
+.status.order_received { background: rgba(61,255,160,0.1); color: var(--green); }
+.status.order_received::before { background: var(--green); }
+.status.production { background: rgba(255,107,53,0.12); color: var(--accent); }
+.status.production::before { background: var(--accent); }
+.status.delivered { background: rgba(61,255,160,0.1); color: var(--green); }
+.status.delivered::before { background: var(--green); }
+.status.unpaid { background: rgba(255,107,107,0.12); color: #ff9999; }
+.status.unpaid::before { background: #ff9999; }
+.status.payment_requested { background: rgba(255,202,58,0.12); color: var(--amber); }
+.status.payment_requested::before { background: var(--amber); }
+.status.payment_recieved { background: rgba(61,255,160,0.1); color: var(--green); }
+.status.payment_recieved::before { background: var(--green); }
+.status.black { background: rgba(255,255,255,0.06); color: var(--muted); }
+.status.white { background: rgba(240,240,245,0.1); color: #ccc; }
+.status.special { background: rgba(255,107,53,0.12); color: var(--accent); }
+
+.job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; }
+.job-card.pending { border-left: 3px solid var(--amber); }
+.job-card.quoted { border-left: 3px solid var(--green); }
+.job-card.estimate { border-left: 3px solid var(--amber); }
+.job-card.quote_sent { border-left: 3px solid var(--accent); }
+.job-card.order_received { border-left: 3px solid var(--green); }
+.job-card.production { border-left: 3px solid var(--accent); }
+.job-card.delivered { border-left: 3px solid var(--green); }
+.job-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 0.75rem; }
+.job-title { font-size: 16px; font-weight: 600; }
+.job-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.job-link { font-size: 12px; color: var(--accent); text-decoration: none; }
+.job-link:hover { text-decoration: underline; }
+.job-divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+.sub-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.sub-item:last-child { border-bottom: none; }
+.sub-item-name { font-size: 14px; font-weight: 500; }
+.sub-item-meta { font-size: 12px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sub-item-price { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--accent); }
+.price-preview-box { background: rgba(255,107,53,0.06); border: 1px solid rgba(255,107,53,0.2); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+.price-big { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--accent); }
+.price-breakdown { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.9; font-family: var(--mono); white-space: pre; }
+.total-box { background: rgba(61,255,160,0.05); border: 1px solid rgba(61,255,160,0.15); border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
+.total-label { font-size: 13px; color: var(--muted); font-weight: 500; }
+.total-price { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--green); }
+
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+.stat-val { font-family: var(--mono); font-size: 24px; font-weight: 700; }
+.stat-val.orange { color: var(--accent); }
+.stat-val.green { color: var(--green); }
+
+.stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.8px; }
+
+.alert { border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-top: 10px; display: none; }
+.alert.error { background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.2); color: #ff9999; }
+.alert.success { background: rgba(61,255,160,0.08); border: 1px solid rgba(61,255,160,0.2); color: var(--green); }
+
+.empty-state { text-align: center; padding: 4rem 2rem; color: var(--muted); }
+.empty-state-icon { font-size: 40px; margin-bottom: 1rem; }
+.empty-state-text { font-size: 15px; }
+.empty-state-sub { font-size: 13px; margin-top: 6px; opacity: 0.7; }
+.login-wrap { max-width: 380px; margin: 4rem auto; }
+.owner-sheet-wrap { overflow-x: auto; margin-bottom: 1rem; }
+.owner-sheet { width: 100%; border-collapse: collapse; min-width: 700px; }
+.owner-sheet th, .owner-sheet td { padding: 10px; border-bottom: 1px solid var(--border); font-size: 12px; text-align: left; vertical-align: middle; }
+.owner-sheet th { color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.8px; }
+.phase-select { min-width: 160px; }
+.delivery-meta { background: rgba(255,107,53,0.06); border: 1px solid rgba(255,107,53,0.2); border-radius: 10px; padding: 12px 14px; margin-top: 0.75rem; }
+.owner-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 1.25rem; }
+.owner-page-header .section-header { margin-bottom: 0; }
+.owner-page-meta { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 8px; }
+.lib-grid { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(180px, 1.2fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) auto; gap: 10px; align-items: end; }
+.lib-grid .field { margin-bottom: 0; }
+.lib-table { width: auto; min-width: 0; border-collapse: collapse; margin-top: 0.75rem; table-layout: auto; }
+.lib-table th, .lib-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12px; vertical-align: middle; white-space: nowrap; width: 1%; }
+.lib-table th { color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.8px; text-align: left; }
+.lib-table th:nth-child(1), .lib-table td:nth-child(1) { min-width: 220px; }
+.lib-table th:nth-child(2), .lib-table td:nth-child(2) { width: 62px; max-width: 62px; }
+.lib-table th:nth-child(3), .lib-table td:nth-child(3) { min-width: 150px; }
+.lib-table th:nth-child(4), .lib-table td:nth-child(4) { min-width: 110px; }
+.lib-table th:nth-child(5), .lib-table td:nth-child(5) { width: 72px; min-width: 72px; text-align: center; }
+.lib-table input[type=text], .lib-table input[type=number], .lib-table select { min-width: 0; width: 100%; }
+.lib-table td input[type=text], .lib-table td input[type=number] { padding: 10px 12px; }
+.lib-table td input.lib-link-edit { min-width: 220px; }
+.lib-link-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-link-chip:hover {
+  border-color: var(--border-hover);
+  text-decoration: underline;
+}
+.lib-link-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+}
+.lib-link-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lib-link-cell .btn-sm { padding: 7px 10px; }
+.lib-import-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+.lib-import-row .field { margin-bottom: 0; flex: 1; min-width: 200px; }
+.analytics-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 1rem; }
+.analytics-toolbar .field { margin-bottom: 0; min-width: 280px; flex: 1 1 320px; }
+.analytics-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+.analytics-table th, .analytics-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; vertical-align: middle; }
+.analytics-table th { color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.8px; text-align: center; }
+.analytics-table td.num { text-align: center; font-family: var(--mono); }
+.analytics-table td a { color: var(--accent); text-decoration: none; }
+.analytics-table td a:hover { text-decoration: underline; }
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.save-indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.save-indicator.pending .save-indicator-dot { background: var(--amber); }
+@media (max-width: 1100px) {
+  .lib-grid { grid-template-columns: 1fr 1fr; }
+  .owner-page-header { flex-direction: column; }
+  .owner-page-meta { white-space: normal; padding-top: 0; }
+}
+@media (max-width: 700px) {
+  .main.owner-main { max-width: 100%; padding: 1.25rem 1rem; }
+}
+
+.loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 16px; color: var(--muted); }
+.spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app-root">
+  <div class="loading-screen"><div class="spinner"></div><div>Loading SoloPrint...</div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+const OWNER_PASSWORD  = 'bambu2024';
+const OWNER_EMAIL     = 'jeffsolo49@gmail.com';
+const EJS_PUBLIC_KEY  = '6zjslr9saD0JtwkKf';
+const EJS_SERVICE_ID  = 'service_43656kn';
+const EJS_TMPL_OWNER  = 'template_t964xq8';
+const EJS_TMPL_CLIENT = 'template_s3fd9ba';
+const MAX_ITEMS       = 10;
+const SUPA_URL        = 'https://xpssamjjyarajtwtrwqx.supabase.co';
+const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
+
+// Filament pricing
+const FIL_RATE = { black: 0.024, white: 0.024, special: 0.034 };
+const FIL_LABEL = { black: 'Black', white: 'White', special: 'Special Request' };
+const AUSTIN_TIMEZONE = 'America/Chicago';
+const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
+const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
+const OWNER_SESSION_MS = 60 * 60 * 1000;
+const ORDER_PHASES = [
+  { id: 'estimate', label: 'Estimate Phase' },
+  { id: 'quote_sent', label: 'Quote Sent' },
+  { id: 'order_received', label: 'Order Received' },
+  { id: 'production', label: 'In Production' },
+  { id: 'delivered', label: 'Delivered' }
+];
+const PAYMENT_PHASES = [
+  { id: 'unpaid', label: 'Unpaid' },
+  { id: 'payment_requested', label: 'Payment Requested' },
+  { id: 'payment_recieved', label: 'Payment Recieved' }
+];
+// ──────────────────────────────────────────────────────────────────────────
+
+let state = {
+  view: 'client', ownerUnlocked: false,
+  batches: [], clientTab: 'submit', ownerTab: 'dashboard',
+  draftItems: [blankItem()],
+  clientName: '', clientEmail: '',
+  modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '',
+  synced: false, loading: true
+};
+
+let libraryAutoSaveTimer = null;
+let librarySaveState = 'saved';
+
+function blankItem() {
+  return {
+    link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
+    knownMinutes: null, knownFromLibrary: false, knownPrompted: false
+  };
+}
+
+// ── SUPABASE ──────────────────────────────────────────────────────────────
+async function supaFetch(path, opts = {}) {
+  const res = await fetch(`${SUPA_URL}/rest/v1${path}`, {
+    ...opts,
+    headers: {
+      'apikey': SUPA_KEY,
+      'Authorization': `Bearer ${SUPA_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...(opts.headers || {})
+    }
+  });
+  if (!res.ok) throw new Error(`Supabase error ${res.status}`);
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function loadBatches() {
+  try {
+    const rows = await supaFetch('/jobs?order=created_at.asc');
+    state.batches = (rows || []).map(r => normalizeBatch(r.data));
+    state.synced = true;
+  } catch(e) {
+    console.error('Load error:', e);
+    state.synced = false;
+  }
+}
+
+async function upsertBatch(batch) {
+  try {
+    const normalized = normalizeBatch(batch);
+    await supaFetch('/jobs', {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({ id: normalized.id, data: normalized })
+    });
+  } catch(e) { console.error('Upsert error:', e); }
+}
+
+async function deleteBatchRemote(id) {
+  try { await supaFetch(`/jobs?id=eq.${id}`, { method: 'DELETE' }); } catch(e) { console.error(e); }
+}
+
+// ── EMAIL ─────────────────────────────────────────────────────────────────
+async function sendEmail(tid, params) {
+  try { await emailjs.send(EJS_SERVICE_ID, tid, params); } catch(e) { console.error('Email:', e); }
+}
+
+// ── PRICING ───────────────────────────────────────────────────────────────
+function calcPerPrint(mins, grams, filType) {
+  if (!mins || !grams) return null;
+  return 2 + mins * 0.024 + grams * (FIL_RATE[filType] || 0.024);
+}
+function calcTotal(mins, grams, filType, qty) {
+  const pp = calcPerPrint(mins, grams, filType);
+  return pp !== null ? pp * qty : null;
+}
+function fmtTime(m) {
+  const h = Math.floor(m / 60), mm = Math.round(m % 60);
+  return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
+}
+function fmtMinutesWithHours(m) {
+  if (!m && m !== 0) return '';
+  const mins = Number(m);
+  if (!Number.isFinite(mins)) return '';
+  return `${mins} min (${fmtTime(mins)})`;
+}
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function phaseLabel(phaseId) {
+  return (ORDER_PHASES.find(p => p.id === phaseId) || ORDER_PHASES[0]).label;
+}
+
+function phaseIndex(phaseId) {
+  return ORDER_PHASES.findIndex(p => p.id === phaseId);
+}
+
+function canAdvanceToPhase(currentPhase, nextPhase) {
+  const currentIdx = phaseIndex(currentPhase || 'estimate');
+  const nextIdx = phaseIndex(nextPhase || 'estimate');
+  if (currentIdx < 0 || nextIdx < 0) return false;
+  // Enforce sequential flow: stay on current phase or move exactly one step forward.
+  return nextIdx === currentIdx || nextIdx === currentIdx + 1;
+}
+
+function paymentLabel(paymentStatus) {
+  return (PAYMENT_PHASES.find(p => p.id === paymentStatus) || PAYMENT_PHASES[0]).label;
+}
+
+function paymentIndex(paymentStatus) {
+  return PAYMENT_PHASES.findIndex(p => p.id === (paymentStatus || 'unpaid'));
+}
+
+function canAdvancePayment(currentStatus, nextStatus) {
+  const currentIdx = paymentIndex(currentStatus);
+  const nextIdx = paymentIndex(nextStatus);
+  if (currentIdx < 0 || nextIdx < 0) return false;
+  // Enforce sequential flow: stay on current status or move exactly one step forward.
+  return nextIdx === currentIdx || nextIdx === currentIdx + 1;
+}
+
+function isBatchQuoteReady(batch) {
+  return !!(batch && Array.isArray(batch.items) && batch.items.length && batch.items.every(it => it.minutes && it.grams));
+}
+
+function normalizeBatch(batch) {
+  if (!batch) return batch;
+  const legacyStatus = batch.status;
+  let phase = batch.phase;
+  let paymentStatus = batch.paymentStatus;
+  if (!phase) {
+    phase = legacyStatus === 'quoted' ? 'quote_sent' : 'estimate';
+  }
+  if (!ORDER_PHASES.find(p => p.id === phase)) phase = 'estimate';
+  if (paymentStatus === 'partial' || paymentStatus === 'paid') paymentStatus = 'payment_recieved';
+  if (!PAYMENT_PHASES.find(p => p.id === paymentStatus)) paymentStatus = 'unpaid';
+  return {
+    ...batch,
+    phase,
+    paymentStatus,
+    deliveryNotes: batch.deliveryNotes || '',
+    deliveryTracking: batch.deliveryTracking || '',
+    deliveryDate: batch.deliveryDate || ''
+  };
+}
+
+function orderTitle(batch) {
+  if (!batch || !Array.isArray(batch.items) || !batch.items.length) return 'Untitled request';
+  return batch.items.map(it => it.name || 'Unnamed').join(', ');
+}
+
+function normalizeModelKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function modelKeyFromItem(item) {
+  const linkKey = normalizeModelKey(item.link);
+  if (linkKey && linkKey.includes('makerworld.com')) return `link:${linkKey}`;
+  const nameKey = normalizeModelKey(item.name);
+  return nameKey ? `name:${nameKey}` : '';
+}
+
+function loadModelLibrary() {
+  try {
+    const raw = localStorage.getItem(MODEL_LIBRARY_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    state.modelLibrary = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    state.modelLibrary = {};
+  }
+}
+
+function persistModelLibrary() {
+  try { localStorage.setItem(MODEL_LIBRARY_KEY, JSON.stringify(state.modelLibrary)); } catch (e) {}
+}
+
+function persistOwnerSession() {
+  try {
+    localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify({ unlockedAt: Date.now() }));
+  } catch (e) {}
+}
+
+function clearOwnerSession() {
+  try { localStorage.removeItem(OWNER_SESSION_KEY); } catch (e) {}
+}
+
+function hasValidOwnerSession() {
+  try {
+    const raw = localStorage.getItem(OWNER_SESSION_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const unlockedAt = parsed && Number(parsed.unlockedAt);
+    if (!Number.isFinite(unlockedAt)) return false;
+    const valid = (Date.now() - unlockedAt) < OWNER_SESSION_MS;
+    if (!valid) clearOwnerSession();
+    return valid;
+  } catch (e) {
+    clearOwnerSession();
+    return false;
+  }
+}
+
+function getKnownEstimate(item) {
+  if (!item) return null;
+  const linkKey = normalizeModelKey(item.link);
+  if (linkKey && linkKey.includes('makerworld.com')) {
+    const linkMatch = state.modelLibrary[`link:${linkKey}`];
+    if (linkMatch) return linkMatch;
+  }
+  const nameKey = normalizeModelKey(item.name);
+  if (nameKey) {
+    const nameMatch = state.modelLibrary[`name:${nameKey}`];
+    if (nameMatch) return nameMatch;
+  }
+  const key = modelKeyFromItem(item);
+  return key ? (state.modelLibrary[key] || null) : null;
+}
+
+function saveKnownEstimate(item) {
+  const key = modelKeyFromItem(item);
+  if (!key || !item.minutes || !item.grams) return;
+  state.modelLibrary[key] = {
+    name: item.name || '',
+    link: item.link || '',
+    minutes: item.minutes,
+    grams: item.grams,
+    filType: item.filType || 'black',
+    updatedAt: new Date().toISOString()
+  };
+  persistModelLibrary();
+}
+
+function sortedLibraryEntries() {
+  return Object.entries(state.modelLibrary || {})
+    .sort((a, b) => {
+      const aName = String(a[1]?.name || a[1]?.link || a[0] || '').toLowerCase();
+      const bName = String(b[1]?.name || b[1]?.link || b[0] || '').toLowerCase();
+      return aName.localeCompare(bName, 'en', { sensitivity: 'base' });
+    });
+}
+
+function isSoldPhase(phase) {
+  return ['order_received', 'production', 'delivered'].includes(phase || '');
+}
+
+function buildModelAnalyticsRows() {
+  const rowsByKey = {};
+
+  Object.entries(state.modelLibrary || {}).forEach(([key, entry]) => {
+    rowsByKey[key] = {
+      key,
+      modelName: entry?.name || '',
+      modelLink: entry?.link || '',
+      quoteRequests: 0,
+      quantityOrdered: 0,
+      moneySold: 0,
+      differentCustomers: new Set()
+    };
+  });
+
+  (state.batches || []).forEach(batch => {
+    (batch.items || []).forEach(item => {
+      const key = modelKeyFromItem(item) || `fallback:${normalizeModelKey(item.name || item.link || '')}`;
+      if (!rowsByKey[key]) {
+        rowsByKey[key] = {
+          key,
+          modelName: item.name || '',
+          modelLink: item.link || '',
+          quoteRequests: 0,
+          quantityOrdered: 0,
+          moneySold: 0,
+          differentCustomers: new Set()
+        };
+      }
+
+      const row = rowsByKey[key];
+      if (!row.modelName && item.name) row.modelName = item.name;
+      if (!row.modelLink && item.link) row.modelLink = item.link;
+
+      row.quoteRequests += 1;
+      if (batch.clientEmail) row.differentCustomers.add(String(batch.clientEmail).toLowerCase());
+
+      if (isSoldPhase(batch.phase)) {
+        row.quantityOrdered += Number(item.qty) || 0;
+        const total = calcTotal(item.minutes, item.grams, item.filType, item.qty);
+        if (total !== null) row.moneySold += total;
+      }
+    });
+  });
+
+  return Object.values(rowsByKey)
+    .map(row => ({ ...row, differentCustomers: row.differentCustomers.size }))
+    .sort((a, b) =>
+      String(a.modelName || a.modelLink || a.key).localeCompare(
+        String(b.modelName || b.modelLink || b.key),
+        'en',
+        { sensitivity: 'base' }
+      )
+    );
+}
+
+function filteredModelAnalyticsRows() {
+  const query = String(state.analyticsQuery || '').trim().toLowerCase();
+  const rows = buildModelAnalyticsRows();
+  if (!query) return rows;
+  return rows.filter(row =>
+    String(row.modelName || '').toLowerCase().includes(query) ||
+    String(row.modelLink || '').toLowerCase().includes(query)
+  );
+}
+
+function exportModelAnalyticsCSV() {
+  const rows = filteredModelAnalyticsRows();
+  const escCsv = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = ['Model Name', 'Model', 'Quote Requests', 'Orders', 'Money Sold', 'Customers'];
+  const csv = [
+    header.join(','),
+    ...rows.map(row => [
+      escCsv(row.modelName),
+      escCsv(row.modelLink),
+      row.quoteRequests,
+      row.quantityOrdered,
+      row.moneySold.toFixed(2),
+      row.differentCustomers
+    ].join(','))
+  ].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'soloprint-model-analytics.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function normLibHeader(h) {
+  return String(h || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseCSVLine(line) {
+  const out = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { out.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+function parseCSVText(text) {
+  let t = String(text || '');
+  if (t.charCodeAt(0) === 0xfeff) t = t.slice(1);
+  const lines = t.split(/\r?\n/).filter(l => l.length);
+  return lines.map(parseCSVLine);
+}
+
+function findLibColumnIndex(headers, patterns) {
+  const nh = headers.map(normLibHeader);
+  for (const pat of patterns) {
+    const p = normLibHeader(pat);
+    if (!p) continue;
+    for (let i = 0; i < nh.length; i++) {
+      if (nh[i] === p) return i;
+    }
+  }
+  for (const pat of patterns) {
+    const p = normLibHeader(pat);
+    if (!p || p.length < 2) continue;
+    for (let i = 0; i < nh.length; i++) {
+      if (nh[i].includes(p)) return i;
+    }
+  }
+  return -1;
+}
+
+function resolveFilamentFromImport(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return 'black';
+  if (s.includes('special') || s === 's') return 'special';
+  if (s.includes('white') || s === 'w') return 'white';
+  if (s.includes('black') || s === 'b') return 'black';
+  return 'black';
+}
+
+function importRowsIntoLibrary(rows) {
+  const errors = [];
+  if (!rows || rows.length < 2) {
+    return { imported: 0, skipped: 0, errors: ['Need a header row and at least one data row.'] };
+  }
+  const headers = rows[0].map(c => String(c || ''));
+  const li = findLibColumnIndex(headers, ['model link', 'makerworld link', 'url', 'link', 'makerworld']);
+  const ni = findLibColumnIndex(headers, ['model name', 'name', 'title']);
+  const mi = findLibColumnIndex(headers, ['minutes', 'min', 'print time (min)', 'print time', 'time (min)']);
+  const gi = findLibColumnIndex(headers, ['grams', 'gram', 'weight', 'filament g', 'filament (g)', 'est grams', 'est. grams', 'g']);
+  const fi = findLibColumnIndex(headers, ['filament type', 'fil type', 'material']);
+
+  if (li < 0 && ni < 0) {
+    return { imported: 0, skipped: 0, errors: ['Missing a Model Link or Model Name column.'] };
+  }
+  if (mi < 0 || gi < 0) {
+    return { imported: 0, skipped: 0, errors: ['Missing Minutes and/or Grams columns.'] };
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row.length) { skipped++; continue; }
+    const link = li >= 0 ? String(row[li] ?? '').trim() : '';
+    const name = ni >= 0 ? String(row[ni] ?? '').trim() : '';
+    const minutes = parseFloat(String(row[mi] ?? '').replace(/,/g, '').trim());
+    const grams = parseFloat(String(row[gi] ?? '').replace(/,/g, '').trim());
+    const filRaw = fi >= 0 ? row[fi] : '';
+    const filType = resolveFilamentFromImport(filRaw);
+
+    const key = modelKeyFromItem({ link, name });
+    if (!key) {
+      skipped++;
+      errors.push(`Row ${r + 1}: need a model link or model name.`);
+      continue;
+    }
+    if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(grams) || grams <= 0) {
+      skipped++;
+      errors.push(`Row ${r + 1}: invalid minutes or grams.`);
+      continue;
+    }
+
+    state.modelLibrary[key] = {
+      link,
+      name,
+      minutes,
+      grams,
+      filType,
+      updatedAt: new Date().toISOString()
+    };
+    imported++;
+  }
+  persistModelLibrary();
+  return { imported, skipped, errors };
+}
+
+function downloadLibraryTemplate() {
+  const csv = 'Model Link,Model Name,Minutes,Grams,Filament Type\n' +
+    'https://makerworld.com/en/models/123-example,,120,45.5,black\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'soloprint-model-library-template.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importModelLibrarySpreadsheet(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if (input) input.value = '';
+  if (!file) return;
+
+  const lower = file.name.toLowerCase();
+  const reader = new FileReader();
+  reader.onerror = () => alert('Could not read that file.');
+  reader.onload = (ev) => {
+    try {
+      let rows;
+      if (lower.endsWith('.csv')) {
+        rows = parseCSVText(ev.target.result);
+      } else if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        if (typeof XLSX === 'undefined') {
+          alert('Excel support did not load. Save as CSV or refresh the page.');
+          return;
+        }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+      } else {
+        alert('Please upload a .csv or .xlsx file.');
+        return;
+      }
+
+      const res = importRowsIntoLibrary(rows);
+      let msg = `Imported ${res.imported} row(s). Skipped ${res.skipped}.`;
+      if (res.errors.length) msg += '\n\n' + res.errors.slice(0, 12).join('\n');
+      alert(msg);
+      render();
+    } catch (err) {
+      alert('Import failed: ' + (err && err.message ? err.message : err));
+    }
+  };
+
+  if (lower.endsWith('.csv')) reader.readAsText(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+function maybeOfferKnownEstimate(i) {
+  const draft = state.draftItems[i];
+  if (!draft || draft.knownFromLibrary || draft.knownPrompted) return;
+  const known = getKnownEstimate(draft);
+  if (!known) return;
+  draft.knownPrompted = true;
+  const accepted = window.confirm('good news, we have looked up this model before so we already have a good estimate of what it will cost without waiting. If you submit this one we will skip the estimate request and jump ahead. Would you like to add it to your order? Nothing is final until payment is exchanged.');
+  if (!accepted) return;
+  draft.knownFromLibrary = true;
+  draft.knownMinutes = known.minutes;
+  draft.grams = known.grams;
+  if (!draft.name && known.name) draft.name = known.name;
+  if (!draft.filType && known.filType) draft.filType = known.filType;
+  render();
+  showAlert('submit-ok', `Known estimate found for "${draft.name || 'model'}". We'll prefill it from saved data, and only send a quote once every item in the request is ready.`, 'success');
+}
+
+function formatAustinTime(iso) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: AUSTIN_TIMEZONE,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(new Date(iso));
+}
+
+/** Last write time of this HTML document (browser). Updates whenever index.html is saved or the server sends a new Last-Modified. */
+function getBuildDate() {
+  const d = new Date(document.lastModified);
+  if (!Number.isFinite(d.getTime()) || d.getTime() === 0) return null;
+  return d;
+}
+
+/**
+ * Auto build id from file mtime (milliseconds). Changes on every save that updates the file timestamp.
+ * Same instant as the time shown — both come from document.lastModified.
+ */
+function formatBuildBadge() {
+  const d = getBuildDate();
+  if (!d) return '—';
+  const buildId = `b${d.getTime()}`;
+  const when = `${formatAustinTime(d.toISOString())} CT`;
+  return `${buildId} · ${when}`;
+}
+
+// ── URL PARSING ───────────────────────────────────────────────────────────
+function isNumericOnlySlug(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const seg = parts.find(p => /^\d/.test(p)) || parts[parts.length - 1];
+    return /^\d+$/.test(seg);
+  } catch(e) { return false; }
+}
+
+function nameFromUrl(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const slug = parts.find(p => /^\d+-[a-z]/i.test(p));
+    if (!slug) return null;
+    return slug
+      .replace(/^\d+-/, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim();
+  } catch(e) { return null; }
+}
+
+async function fetchNameFromServer(url) {
+  // Netlify function removed; without a backend proxy, cross-origin fetches can fail.
+  // Keep this async helper so existing flows still work and users can manually fill names.
+  return null;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+async function init() {
+  emailjs.init(EJS_PUBLIC_KEY);
+  loadModelLibrary();
+  state.ownerUnlocked = hasValidOwnerSession();
+  await loadBatches();
+  state.loading = false;
+  render();
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────
+function render() {
+  if (state.loading) return;
+  document.getElementById('app-root').innerHTML = `
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <div class="logo-text">SOLO<span>PRINT</span></div>
+      </div>
+      <div class="header-actions">
+        <div class="build-badge" title="Last change to this page: build id b… is the file timestamp (ms). Time is Austin (America/Chicago). Resave index.html to refresh.">
+          ${formatBuildBadge()}
+        </div>
+        <span title="${state.synced ? 'Synced' : 'Offline'}"><span class="sync-dot ${state.synced?'':'offline'}"></span></span>
+        ${state.view === 'client'
+          ? `<button class="btn-sm" onclick="switchToOwner()">Owner</button>`
+          : `<button class="btn-sm" onclick="state.view='client';render();">Client view</button>
+             <button class="btn-sm danger" onclick="logoutOwner()">Logout</button>`}
+      </div>
+    </div>
+    ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
+  `;
+  attachAll();
+}
+
+function renderClientApp() {
+  return `
+    <div class="nav">
+      <button class="nav-tab ${state.clientTab==='submit'?'active':''}" onclick="setTab('submit')">Request a Quote</button>
+      <button class="nav-tab ${state.clientTab==='jobs'?'active':''}" onclick="setTab('jobs')">My Requests${state.batches.length?`<span class="nav-badge">${state.batches.length}</span>`:''}</button>
+    </div>
+    <div class="main">
+      ${state.clientTab === 'submit' ? renderSubmitTab() : renderMyJobsTab()}
+    </div>`;
+}
+
+function renderOwnerNav() {
+  const libCount = sortedLibraryEntries().length;
+  const analyticsCount = buildModelAnalyticsRows().length;
+  return `
+    <div class="nav">
+      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
+      <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
+    </div>
+  `;
+}
+
+function renderSubmitTab() {
+  const items = state.draftItems;
+  return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+      <div>
+        <div class="section-title">New Quote Request</div>
+        <div class="section-sub">Paste your MakerWorld links — we'll get back to you with pricing</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Your info</div>
+      <div class="row2">
+        <div class="field">
+          <label>Your name <span class="req">*</span></label>
+          <input type="text" id="client-name" value="${esc(state.clientName)}" placeholder="Jane Smith"
+            oninput="state.clientName=this.value; clearErr(this,'err-name')" />
+          <div class="field-err" id="err-name">Please enter your name</div>
+        </div>
+        <div class="field">
+          <label>Your email <span class="req">*</span></label>
+          <input type="email" id="client-email" value="${esc(state.clientEmail)}" placeholder="you@email.com"
+            oninput="state.clientEmail=this.value; clearErr(this,'err-email')" />
+          <div class="field-err" id="err-email">Please enter a valid email</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Items to print (${items.length}/${MAX_ITEMS})</div>
+      ${items.map((item, i) => renderItemBlock(item, i)).join('')}
+      ${items.length < MAX_ITEMS ? `
+        <div class="next-link-row">
+          <div class="plus-circle">+</div>
+          <input type="text" id="next-link-input"
+            placeholder="Paste next MakerWorld link to add item ${items.length + 1}..."
+            onpaste="handleNextLinkPaste(event)"
+            oninput="handleNextLinkType(this.value)" />
+        </div>` : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
+    </div>
+
+    <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Submit Quote Request</button>
+    <div class="alert error" id="submit-err"></div>
+    <div class="alert success" id="submit-ok"></div>
+  `;
+}
+
+function renderFilamentPills(i, current) {
+  return `<div class="filament-pills">
+    ${['black','white','special'].map(f => `
+      <button class="fil-pill ${current===f?'active-'+f:''}"
+        onclick="updateDraft(${i},'filType','${f}'); rerenderPills(${i},'${f}')">
+        ${FIL_LABEL[f]}
+      </button>`).join('')}
+  </div>`;
+}
+
+function renderItemBlock(item, i) {
+  return `
+    <div class="item-block" id="iblock-${i}">
+      <div class="item-block-header">
+        <span class="item-num-badge">Item ${i + 1}</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${item.fetching ? `<span class="fetching-badge">Looking up...</span>` : ''}
+          ${state.draftItems.length > 1 ? `<button class="btn-sm danger" onclick="removeItem(${i})">Remove</button>` : ''}
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>MakerWorld link</label>
+        <input type="text" id="link-${i}" value="${esc(item.link)}"
+          placeholder="https://makerworld.com/en/models/..."
+          oninput="onLinkInput(${i}, this.value)" />
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Model name</label>
+        <input type="text" id="name-${i}" value="${esc(item.name)}"
+          placeholder="Auto-filled from link or type manually"
+          oninput="updateDraft(${i},'name',this.value)" />
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>Filament type</label>
+        <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
+      </div>
+      ${item.knownFromLibrary ? `<div class="price-preview-box" style="margin-bottom:10px;">
+        <div class="card-title" style="margin-bottom:6px;">Known Estimate</div>
+        <div style="font-size:12px;color:var(--muted);">Auto-filled from previous order: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. This request will skip estimate review.</div>
+      </div>` : ``}
+      <div class="row2">
+        <div class="field" style="margin-bottom:0;">
+          <label>Grams (est.)</label>
+          <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
+            min="0" step="0.1" oninput="updateDraft(${i},'grams',parseFloat(this.value)||null)" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Quantity</label>
+          <input type="number" id="qty-${i}" value="${item.qty}" min="1" max="999" step="1"
+            oninput="updateDraft(${i},'qty',parseInt(this.value)||1)" />
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px;margin-bottom:0;">
+        <label>Notes (optional)</label>
+        <textarea id="notes-${i}" placeholder="Color details, finish, special requests..."
+          oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
+      </div>
+    </div>`;
+}
+
+function renderMyJobsTab() {
+  if (!state.batches.length) return `
+    <div class="empty-state">
+      <div class="empty-state-icon">📋</div>
+      <div class="empty-state-text">No requests yet</div>
+      <div class="empty-state-sub">Submit a quote request and it'll appear here</div>
+    </div>`;
+  return [...state.batches].reverse().map(b => {
+    const phase = b.phase || 'estimate';
+    const allDone = b.items.every(it => it.minutes && it.grams);
+    const total = phase !== 'estimate' && allDone
+      ? b.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0)
+      : null;
+    return `<div class="job-card ${phase}">
+      <div class="job-header">
+        <div>
+          <div class="job-title">${esc(b.clientName)}'s Request</div>
+          <div class="job-meta">${b.items.length} item${b.items.length>1?'s':''} · ${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+        </div>
+        <span class="status ${phase}">${phaseLabel(phase)}</span>
+      </div>
+      <div class="job-divider"></div>
+      ${b.items.map(it => {
+        const ip = it.minutes ? calcTotal(it.minutes, it.grams, it.filType, it.qty) : null;
+        const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+        return `<div class="sub-item">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div class="sub-item-name">${esc(it.name)||'Unnamed'}${it.qty>1?` <span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
+              <div class="sub-item-meta">
+                <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+                ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : ''}
+                ${it.link ? `<a class="job-link" href="${esc(it.link)}" target="_blank">MakerWorld ↗</a>` : ''}
+              </div>
+              ${it.notes?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;">"${esc(it.notes)}"</div>`:''}
+            </div>
+            ${ip!==null
+              ? `<div style="text-align:right;flex-shrink:0;">
+                  <div class="sub-item-price">$${ip.toFixed(2)}</div>
+                  ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} each</div>`:''}
+                </div>`
+              : `<div style="font-size:12px;color:var(--muted);font-style:italic;">Pending</div>`}
+          </div>
+        </div>`;
+      }).join('')}
+      ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderOwnerApp() {
+  if (!state.ownerUnlocked) {
+    return `<div class="main"><div class="login-wrap">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div><div class="section-title">Owner Login</div><div class="section-sub">Access your dashboard</div></div>
+      </div>
+      <div class="card">
+        <div class="field"><label>Password</label>
+          <input type="password" id="owner-pw" placeholder="Enter your password" />
+        </div>
+        <div class="alert error" id="pw-err" style="margin-bottom:10px;"></div>
+        <button class="btn-primary" onclick="checkPw()">Login</button>
+      </div>
+    </div></div>`;
+  }
+
+  return `
+    ${renderOwnerNav()}
+    <div class="main owner-main">
+      ${state.ownerTab === 'library' ? renderOwnerLibraryPage() : state.ownerTab === 'analytics' ? renderOwnerAnalyticsPage() : renderOwnerDashboard()}
+    </div>`;
+}
+
+function renderOwnerDashboard() {
+  const estimate = state.batches.filter(b => (b.phase || 'estimate') === 'estimate');
+  const production = state.batches.filter(b => (b.phase || 'estimate') === 'production');
+  const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
+  const rev = delivered.reduce((s,b) => s + b.items.reduce((ss,it) => ss + (calcTotal(it.minutes,it.grams,it.filType,it.qty)||0), 0), 0);
+
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M4 13h6v7H4zM14 4h6v16h-6zM9 9h6v11H9z"/></svg>
+        </div>
+        <div><div class="section-title">Owner Dashboard</div><div class="section-sub">Track quotes, production, and delivered orders</div></div>
+      </div>
+      <div class="owner-page-meta">${state.batches.length} total request${state.batches.length === 1 ? '' : 's'}</div>
+    </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
+        <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
+        <div class="stat-card"><div class="stat-val green">${delivered.length}</div><div class="stat-label">Delivered</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Owner Sheet</div>
+        <div class="owner-sheet-wrap">
+          <table class="owner-sheet">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Email</th>
+                <th>Items</th>
+                <th>Created</th>
+                <th>Phase</th>
+                <th>Payment</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[...state.batches].reverse().map(b => `
+                <tr>
+                  <td>${esc(b.clientName)}</td>
+                  <td><a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a></td>
+                  <td>${b.items.length}</td>
+                  <td>${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+                  <td>
+                    <select class="phase-select" onchange="updateBatchPhase('${b.id}', this.value)">
+                      ${ORDER_PHASES.map((p, idx) => {
+                        const currentIdx = phaseIndex(b.phase || 'estimate');
+                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+                        return `<option value="${p.id}" ${(b.phase||'estimate')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+                      }).join('')}
+                    </select>
+                  </td>
+                  <td>
+                    <select class="phase-select" onchange="updatePaymentStatus('${b.id}', this.value)">
+                      ${PAYMENT_PHASES.map((p, idx) => {
+                        const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
+                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+                        return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+                      }).join('')}
+                    </select>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-title">Delivered Revenue</div>
+        <div class="price-big" style="font-size:28px;color:var(--green);">$${rev.toFixed(2)}</div>
+      </div>
+      ${!state.batches.length
+        ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
+        : [...state.batches].reverse().map(b => renderOwnerBatch(b)).join('')}
+  `;
+}
+
+function renderOwnerLibraryPage() {
+  const libEntries = sortedLibraryEntries();
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </div>
+        <div><div class="section-title">Saved Models</div><div class="section-sub">Manage reusable estimate data in one place</div></div>
+      </div>
+      <div class="save-indicator ${librarySaveState === 'pending' ? 'pending' : ''}">
+        <span class="save-indicator-dot"></span>
+        <span>${librarySaveState === 'pending' ? 'Saving changes...' : 'All changes saved automatically'}</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Add Model</div>
+      <div class="lib-grid">
+        <div class="field"><label>Model link</label><input type="text" id="lib-link" placeholder="https://makerworld.com/en/models/..." /></div>
+        <div class="field"><label>Model name</label><input type="text" id="lib-name" placeholder="Model name" /></div>
+        <div class="field"><label>Minutes</label><input type="number" id="lib-mins" min="0" step="1" placeholder="120" /></div>
+        <div class="field"><label>Filament (g)</label><input type="number" id="lib-grams" min="0" step="0.1" placeholder="85.4" /></div>
+        <button class="btn-sm" onclick="addLibraryEntry()">Add Model</button>
+      </div>
+      <div class="lib-import-row">
+        <input type="file" id="lib-import-file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importModelLibrarySpreadsheet(event)" />
+        <button type="button" class="btn-sm" onclick="document.getElementById('lib-import-file').click()">Import spreadsheet</button>
+        <button type="button" class="btn-sm" onclick="downloadLibraryTemplate()">Download CSV template</button>
+        <span style="font-size:12px;color:var(--muted);">Use .csv or .xlsx. Header row required. Columns: <strong>Model Link</strong> (or Name), <strong>Minutes</strong>, and <strong>Grams</strong>. Imports merge into your library automatically.</span>
+      </div>
+      <div class="alert error" id="lib-err"></div>
+      <div class="alert success" id="lib-ok"></div>
+      ${!libEntries.length ? `<div style="font-size:12px;color:var(--muted);margin-top:10px;">No saved models yet.</div>` : `
+        <div class="owner-sheet-wrap">
+          <table class="lib-table">
+            <thead><tr><th>Model Name</th><th>Model Link</th><th>Minutes (Hours)</th><th>Grams</th><th></th></tr></thead>
+            <tbody>
+              ${libEntries.map(([key, e], idx) => {
+                const rowId = `lib-row-${idx}`;
+                const encodedKey = encodeURIComponent(key);
+                const isEditingLink = state.libraryEditingKey === key;
+                return `<tr>
+                  <td><input type="text" id="${rowId}-name" value="${esc(e.name || '')}" placeholder="Name" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
+                  <td>
+                    <div class="lib-link-cell">
+                      ${isEditingLink
+                        ? `<input class="lib-link-edit" type="text" id="${rowId}-link" value="${esc(e.link || '')}" placeholder="https://makerworld.com/en/models/..." oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" />`
+                        : `<input type="hidden" id="${rowId}-link" value="${esc(e.link || '')}" />
+                           ${e.link ? `<a class="lib-link-chip" href="${esc(e.link)}" target="_blank" rel="noopener noreferrer" title="${esc(e.link)}">Model Link</a>` : `<span class="lib-link-empty">No Link</span>`}`
+                      }
+                      <button class="btn-sm" type="button" onclick="toggleLibraryLinkEdit('${encodedKey}')">${isEditingLink ? 'Done' : 'Edit'}</button>
+                    </div>
+                  </td>
+                  <td>
+                    <input type="number" id="${rowId}-mins" value="${e.minutes || ''}" min="0" step="1" placeholder="mins" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" />
+                    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${e.minutes ? fmtMinutesWithHours(e.minutes) : ''}</div>
+                  </td>
+                  <td><input type="number" id="${rowId}-grams" value="${e.grams || ''}" min="0" step="0.1" placeholder="grams" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
+                  <td><button class="btn-sm danger btn-icon" type="button" aria-label="Remove saved model" onclick="deleteLibraryEntry('${encodedKey}')">×</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderOwnerAnalyticsPage() {
+  const rows = filteredModelAnalyticsRows();
+  const totalQuotes = rows.reduce((sum, row) => sum + row.quoteRequests, 0);
+  const totalSoldQty = rows.reduce((sum, row) => sum + row.quantityOrdered, 0);
+  const totalSoldRevenue = rows.reduce((sum, row) => sum + row.moneySold, 0);
+
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M4 19h16M7 16V8M12 16V5M17 16v-3"/></svg>
+        </div>
+        <div><div class="section-title">Sales Data</div><div class="section-sub">Search quote demand and order performance by model</div></div>
+      </div>
+      <div class="owner-page-meta">${rows.length} model${rows.length === 1 ? '' : 's'} shown</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-val orange">${totalQuotes}</div><div class="stat-label">Quote Requests</div></div>
+      <div class="stat-card"><div class="stat-val">${totalSoldQty}</div><div class="stat-label">Units Ordered</div></div>
+      <div class="stat-card"><div class="stat-val green">$${totalSoldRevenue.toFixed(0)}</div><div class="stat-label">Money Sold</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Searchable Model Data</div>
+      <div class="analytics-toolbar">
+        <div class="field">
+          <label>Search models</label>
+          <input type="text" id="analytics-query" value="${esc(state.analyticsQuery)}" placeholder="Search by model name or link" oninput="updateAnalyticsQuery(this.value)" />
+        </div>
+        <button type="button" class="btn-sm" onclick="exportModelAnalyticsCSV()">Export CSV</button>
+      </div>
+      ${!rows.length ? `<div style="font-size:12px;color:var(--muted);">No models match that search yet.</div>` : `
+        <div class="owner-sheet-wrap">
+          <table class="analytics-table">
+            <thead>
+              <tr>
+                <th>Model Name</th>
+                <th>Model</th>
+                <th>Quote Requests</th>
+                <th>Orders</th>
+                <th>Money Sold</th>
+                <th>Customers</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td>${esc(row.modelName || 'Unnamed')}</td>
+                  <td>${row.modelLink ? `<a href="${esc(row.modelLink)}" target="_blank" rel="noopener noreferrer">Open</a>` : `<span style="color:var(--muted);">No link</span>`}</td>
+                  <td class="num">${row.quoteRequests}</td>
+                  <td class="num">${row.quantityOrdered}</td>
+                  <td class="num">$${row.moneySold.toFixed(2)}</td>
+                  <td class="num">${row.differentCustomers}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderOwnerBatch(b) {
+  const phase = b.phase || 'estimate';
+  const allDone = b.items.every(it => it.minutes && it.grams);
+  const total = allDone ? b.items.reduce((s,it) => s + (calcTotal(it.minutes,it.grams,it.filType,it.qty)||0), 0) : null;
+  return `<div class="job-card ${phase}">
+    <div class="job-header">
+      <div>
+        <div class="job-title">${esc(b.clientName)}</div>
+        <div class="job-meta">
+          <a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a>
+          · ${b.items.length} item${b.items.length>1?'s':''}
+          · ${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'})}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="status ${phase}">${phaseLabel(phase)}</span>
+        <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
+        <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
+      </div>
+    </div>
+    <div class="job-divider"></div>
+    ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
+    ${phase === 'estimate' ? `
+      <div class="alert error" id="batch-err-${b.id}"></div>
+      <div class="alert success" id="batch-ok-${b.id}"></div>
+      <button class="btn-primary" id="approve-btn-${b.id}" onclick="approveBatch('${b.id}')" style="margin-top:1rem;">
+        Save All &amp; Notify Client
+      </button>
+    ` : `
+      <div class="total-box">
+        <span class="total-label">Total quoted</span>
+        <span class="total-price">$${total!==null?total.toFixed(2):'—'}</span>
+      </div>
+      ${phase === 'delivered' ? `
+        <div class="delivery-meta">
+          <div class="card-title" style="margin-bottom:10px;">Delivered Order Details</div>
+          <div class="row2">
+            <div class="field" style="margin-bottom:0;">
+              <label>Delivery Date</label>
+              <input type="text" id="ddate-${b.id}" value="${esc(b.deliveryDate || '')}" placeholder="Apr 3, 2026" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label>Tracking / Pickup</label>
+              <input type="text" id="dtrack-${b.id}" value="${esc(b.deliveryTracking || '')}" placeholder="Tracking number or pickup note" />
+            </div>
+          </div>
+          <div class="field" style="margin-top:10px;margin-bottom:0;">
+            <label>Delivery Notes</label>
+            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery">${esc(b.deliveryNotes || '')}</textarea>
+          </div>
+          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save Delivery Details</button>
+        </div>
+      ` : ``}
+      <button class="btn-secondary" onclick="resetBatch('${b.id}')" style="margin-top:0.75rem;">Edit Quotes</button>
+    `}
+  </div>`;
+}
+
+function renderOwnerItem(batchId, it, i) {
+  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+  const tot = pp !== null ? pp * it.qty : null;
+  const known = getKnownEstimate(it);
+  const canUseKnown = known && (!it.minutes || !it.grams);
+  return `<div class="sub-item" style="padding:1rem 0;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">
+      <div>
+        <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
+        <div class="sub-item-meta">
+          <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+          <span style="font-size:12px;color:var(--muted);">$${(FIL_RATE[it.filType]||0.024).toFixed(3)}/g</span>
+          ${it.link?`<a class="job-link" href="${esc(it.link)}" target="_blank">MakerWorld ↗</a>`:''}
+        </div>
+        ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
+        ${canUseKnown ? `
+          <div class="price-preview-box" style="margin-top:10px;margin-bottom:0;">
+            <div class="card-title" style="margin-bottom:6px;">Saved Model Match</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Found saved estimate data for this model name: ${fmtMinutesWithHours(known.minutes)}, ${known.grams}g.</div>
+            <button class="btn-sm" type="button" onclick="applyKnownEstimateToOwnerItem('${batchId}', ${i})">Use Saved Model</button>
+          </div>
+        ` : ``}
+      </div>
+      ${tot!==null?`<div style="text-align:right;flex-shrink:0;">
+        <div class="sub-item-price">$${tot.toFixed(2)}</div>
+        ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} ea</div>`:''}
+      </div>`:''}
+    </div>
+    <div class="row2">
+      <div class="field" style="margin-bottom:0;">
+        <label>Print time (min, hours shown)</label>
+        <input type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
+          placeholder="From Bambu Studio" min="0" step="1" oninput="previewOwnerItem('${batchId}',${i})" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Filament (grams)</label>
+        <input type="number" id="ograms-${batchId}-${i}" value="${it.grams||''}"
+          placeholder="From Bambu Studio" min="0" step="0.1" oninput="previewOwnerItem('${batchId}',${i})" />
+      </div>
+    </div>
+    <div id="opreview-${batchId}-${i}" style="display:none;" class="price-preview-box">
+      <div class="price-big" id="opval-${batchId}-${i}"></div>
+      <div class="price-breakdown" id="opsub-${batchId}-${i}"></div>
+    </div>
+  </div>`;
+}
+
+// ── INTERACTIONS ──────────────────────────────────────────────────────────
+
+function setTab(tab) { state.clientTab = tab; render(); }
+function switchToOwner() { state.view = 'owner'; render(); }
+function setOwnerTab(tab) { state.ownerTab = tab; render(); }
+function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
+
+function checkPw() {
+  const pw = document.getElementById('owner-pw').value;
+  if (pw === OWNER_PASSWORD) {
+    state.ownerUnlocked = true;
+    state.ownerTab = 'dashboard';
+    persistOwnerSession();
+    render();
+  }
+  else showAlert('pw-err', 'Incorrect password.', 'error');
+}
+
+function logoutOwner() {
+  state.ownerUnlocked = false;
+  state.view = 'client';
+  clearOwnerSession();
+  render();
+}
+
+function updateDraft(i, field, value) {
+  if (!state.draftItems[i]) return;
+  state.draftItems[i][field] = value;
+  if (field === 'name' || field === 'link') maybeOfferKnownEstimate(i);
+}
+
+function rerenderPills(i, selected) {
+  const el = document.getElementById(`pills-${i}`);
+  if (el) el.innerHTML = renderFilamentPills(i, selected);
+}
+
+function clearErr(input, errId) {
+  input.classList.remove('invalid');
+  const el = document.getElementById(errId);
+  if (el) el.classList.remove('show');
+}
+
+function showFieldErr(inputId, errId) {
+  const input = document.getElementById(inputId);
+  const err   = document.getElementById(errId);
+  if (input) input.classList.add('invalid');
+  if (err)   err.classList.add('show');
+}
+
+// Link input — extract name from slug or trigger server fetch for numeric IDs
+async function onLinkInput(i, value) {
+  state.draftItems[i].link = value;
+  state.draftItems[i].knownFromLibrary = false;
+  state.draftItems[i].knownMinutes = null;
+  state.draftItems[i].knownPrompted = false;
+  if (!value.includes('makerworld.com')) return;
+
+  const slugName = nameFromUrl(value);
+  if (slugName) {
+    // Slug URL — fill immediately
+    state.draftItems[i].name = slugName;
+    const el = document.getElementById(`name-${i}`);
+    if (el) el.value = slugName;
+  } else if (isNumericOnlySlug(value) && value.length > 30) {
+    // Numeric-only URL — call Netlify function
+    state.draftItems[i].fetching = true;
+    rerenderFetchBadge(i, true);
+    try {
+      const name = await fetchNameFromServer(value);
+      if (name) {
+        state.draftItems[i].name = name;
+        const el = document.getElementById(`name-${i}`);
+        if (el) el.value = name;
+      }
+    } catch(e) { /* silently fail — user can type name */ }
+    state.draftItems[i].fetching = false;
+    rerenderFetchBadge(i, false);
+  }
+  maybeOfferKnownEstimate(i);
+}
+
+function rerenderFetchBadge(i, fetching) {
+  const header = document.querySelector(`#iblock-${i} .item-block-header`);
+  if (!header) return;
+  const existing = header.querySelector('.fetching-badge');
+  if (fetching && !existing) {
+    const span = document.createElement('span');
+    span.className = 'fetching-badge';
+    span.textContent = 'Looking up...';
+    header.querySelector('div') ? header.querySelector('div').prepend(span) : header.appendChild(span);
+  } else if (!fetching && existing) {
+    existing.remove();
+  }
+}
+
+function handleNextLinkPaste(event) {
+  event.preventDefault();
+  const pasted = (event.clipboardData || window.clipboardData).getData('text').trim();
+  if (pasted) promoteNextLink(pasted);
+}
+
+function handleNextLinkType(value) {
+  if (value.length > 20 && value.includes('makerworld.com')) promoteNextLink(value);
+}
+
+async function promoteNextLink(url) {
+  const item = blankItem();
+  item.link = url;
+  const slugName = nameFromUrl(url);
+  if (slugName) {
+    item.name = slugName;
+  } else if (isNumericOnlySlug(url)) {
+    item.fetching = true;
+  }
+  state.draftItems.push(item);
+  render();
+  const insertedIdx = state.draftItems.length - 1;
+  maybeOfferKnownEstimate(insertedIdx);
+  setTimeout(() => {
+    const blocks = document.querySelectorAll('.item-block');
+    if (blocks.length) blocks[blocks.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+  // Fetch name async if numeric
+  if (isNumericOnlySlug(url)) {
+    const idx = state.draftItems.length - 1;
+    try {
+      const name = await fetchNameFromServer(url);
+      if (name && state.draftItems[idx]) {
+        state.draftItems[idx].name = name;
+        state.draftItems[idx].fetching = false;
+        const el = document.getElementById(`name-${idx}`);
+        if (el) el.value = name;
+        rerenderFetchBadge(idx, false);
+      }
+    } catch(e) {
+      if (state.draftItems[idx]) state.draftItems[idx].fetching = false;
+      rerenderFetchBadge(idx, false);
+    }
+  }
+}
+
+function removeItem(i) {
+  if (!confirm('Remove this item from your quote request?')) return;
+  state.draftItems.splice(i, 1);
+  render();
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────────────────
+async function submitBatch() {
+  const clientName  = state.clientName.trim();
+  const clientEmail = state.clientEmail.trim();
+  let valid = true;
+
+  // Required field validation
+  if (!clientName) {
+    showFieldErr('client-name', 'err-name');
+    valid = false;
+  }
+  if (!clientEmail || !clientEmail.includes('@') || !clientEmail.includes('.')) {
+    showFieldErr('client-email', 'err-email');
+    valid = false;
+  }
+  if (!valid) {
+    document.getElementById('client-name')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const items = state.draftItems.filter(it => it.name || it.link);
+  if (!items.length) { showAlert('submit-err', 'Please add at least one item.', 'error'); return; }
+  const unnamed = items.findIndex(it => !it.name);
+  if (unnamed >= 0) { showAlert('submit-err', `Item ${unnamed + 1} needs a model name.`, 'error'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const batch = {
+    id: Date.now().toString(), clientName, clientEmail,
+    items: items.map(it => ({
+      ...it,
+      minutes: it.knownFromLibrary ? it.knownMinutes : null,
+      fetching: false
+    })),
+    status: 'pending',
+    phase: 'estimate',
+    paymentStatus: 'unpaid',
+    deliveryNotes: '',
+    deliveryTracking: '',
+    deliveryDate: '',
+    createdAt: new Date().toISOString()
+  };
+  const quoteReady = isBatchQuoteReady(batch);
+  if (quoteReady) {
+    batch.status = 'quoted';
+    batch.phase = 'quote_sent';
+    batch.paymentStatus = 'payment_requested';
+  }
+  state.batches.push(batch);
+  await upsertBatch(batch);
+
+  const itemsList = items.map((it, idx) =>
+    `${idx + 1}) Model: ${it.name}\n` +
+    `   Quantity: ${it.qty}\n` +
+    `   Filament: ${FIL_LABEL[it.filType]||it.filType}\n` +
+    `   Est. grams: ${it.grams ? `${it.grams}g` : 'Not provided'}\n` +
+    `   Link: ${it.link || 'Not provided'}\n` +
+    `   Notes: ${it.notes || 'None'}`
+  ).join('\n\n');
+
+  await sendEmail(EJS_TMPL_OWNER, {
+    to_email: OWNER_EMAIL, client_name: clientName, client_email: clientEmail,
+    model_name: `New request (${items.length} item${items.length>1?'s':''})`,
+    model_link: itemsList,
+    filament_type: 'Phase: Estimate Phase',
+    grams: '',
+    notes: `Customer: ${clientName}\nEmail: ${clientEmail}\nSubmitted: ${new Date(batch.createdAt).toLocaleString()}\n\n${itemsList}`
+  });
+
+  const customerOrders = state.batches.filter(b => (b.clientEmail || '').toLowerCase() === clientEmail.toLowerCase());
+  const otherOrders = customerOrders.filter(b => b.id !== batch.id);
+  const otherOrdersSummary = otherOrders.length
+    ? otherOrders.map((b, idx) => `${idx + 1}) ${orderTitle(b)} — ${phaseLabel(b.phase || 'estimate')}`).join('\n')
+    : 'No other active orders at this time.';
+  const currentPhaseText = phaseLabel(batch.phase || 'estimate');
+  const customerSummary = [
+    `Order submitted for: ${clientName}`,
+    `Email: ${clientEmail}`,
+    `Current phase: ${currentPhaseText}`,
+    '',
+    'Items submitted:',
+    itemsList,
+    '',
+    'Other orders and phases:',
+    otherOrdersSummary
+  ].join('\n');
+
+  if (quoteReady) {
+    const total = batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
+    const breakdown = batch.items.map(it => {
+      const pp = calcPerPrint(it.minutes, it.grams, it.filType);
+      return `${it.name} × ${it.qty}: $${(pp * it.qty).toFixed(2)} (${fmtTime(it.minutes)}, ${it.grams}g, ${FIL_LABEL[it.filType] || it.filType}${it.qty > 1 ? `, $${pp.toFixed(2)} each` : ''})`;
+    }).join('\n');
+    await sendEmail(EJS_TMPL_CLIENT, {
+      to_email: clientEmail,
+      client_name: clientName,
+      client_email: clientEmail,
+      model_name: `Quote Sent (${items.length} item${items.length>1?'s':''})`,
+      price: total.toFixed(2),
+      print_time: `${customerSummary}\n\nAuto-quoted breakdown:\n${breakdown}`,
+      grams: '',
+      filament_type: `Current phase: ${currentPhaseText}`
+    });
+  } else {
+    await sendEmail(EJS_TMPL_CLIENT, {
+      to_email: clientEmail,
+      client_name: clientName,
+      client_email: clientEmail,
+      model_name: `Order Received (${items.length} item${items.length>1?'s':''})`,
+      price: 'Pending estimate',
+      print_time: customerSummary,
+      grams: '',
+      filament_type: `Current phase: ${currentPhaseText}`
+    });
+  }
+
+  showAlert('submit-ok', quoteReady
+    ? `Submitted ${items.length} item${items.length>1?'s':''}! Known model estimate found, quote sent to ${clientEmail}.`
+    : `Submitted ${items.length} item${items.length>1?'s':''}! We'll email ${clientEmail} when your quote is ready.`,
+  'success');
+  btn.disabled = false; btn.textContent = 'Submit Quote Request';
+  state.draftItems = [blankItem()];
+  state.clientTab = 'jobs';
+  setTimeout(() => render(), 1200);
+}
+
+// ── OWNER ACTIONS ─────────────────────────────────────────────────────────
+function previewOwnerItem(batchId, i) {
+  const batch = state.batches.find(b => b.id === batchId);
+  if (!batch) return;
+  const it    = batch.items[i];
+  const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
+  const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
+  const pEl   = document.getElementById(`opreview-${batchId}-${i}`);
+  if (!pEl) return;
+  if (!mins || !grams) { pEl.style.display = 'none'; return; }
+  const pp  = calcPerPrint(mins, grams, it.filType);
+  const tot = pp * it.qty;
+  const fr  = FIL_RATE[it.filType] || 0.024;
+  document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
+  document.getElementById(`opsub-${batchId}-${i}`).textContent =
+    `$2.00 flat × ${it.qty} = $${(2*it.qty).toFixed(2)}\n` +
+    `${fmtMinutesWithHours(mins)} × $0.024 × ${it.qty} = $${(mins*0.024*it.qty).toFixed(2)}\n` +
+    `${grams}g × $${fr} × ${it.qty} = $${(grams*fr*it.qty).toFixed(2)}` +
+    (it.qty > 1 ? `\n$${pp.toFixed(2)} per print × ${it.qty}` : '');
+  pEl.style.display = 'block';
+}
+
+function applyKnownEstimateToOwnerItem(batchId, i) {
+  const batch = state.batches.find(b => b.id === batchId);
+  if (!batch || !batch.items || !batch.items[i]) return;
+  const item = batch.items[i];
+  const known = getKnownEstimate(item);
+  if (!known) return;
+
+  item.minutes = known.minutes;
+  item.grams = known.grams;
+
+  const minsInput = document.getElementById(`mins-${batchId}-${i}`);
+  const gramsInput = document.getElementById(`ograms-${batchId}-${i}`);
+  if (minsInput) minsInput.value = known.minutes;
+  if (gramsInput) gramsInput.value = known.grams;
+
+  previewOwnerItem(batchId, i);
+  render();
+}
+
+async function updateBatchPhase(batchId, phase) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const currentPhase = b.phase || 'estimate';
+  if (!canAdvanceToPhase(currentPhase, phase)) {
+    alert(`Phase must move in order. Next step after "${phaseLabel(currentPhase)}" is "${phaseLabel(ORDER_PHASES[phaseIndex(currentPhase) + 1]?.id || currentPhase)}".`);
+    render();
+    return;
+  }
+  b.phase = phase;
+  b.status = phase === 'estimate' ? 'pending' : 'quoted';
+  await upsertBatch(b);
+  render();
+}
+
+async function updatePaymentStatus(batchId, paymentStatus) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const currentStatus = b.paymentStatus || 'unpaid';
+  if (!canAdvancePayment(currentStatus, paymentStatus)) {
+    alert(`Payment status must move in order. Next step after "${paymentLabel(currentStatus)}" is "${paymentLabel(PAYMENT_PHASES[paymentIndex(currentStatus) + 1]?.id || currentStatus)}".`);
+    render();
+    return;
+  }
+  b.paymentStatus = paymentStatus;
+  await upsertBatch(b);
+  render();
+}
+
+function addLibraryEntry() {
+  const link = (document.getElementById('lib-link') || { value: '' }).value.trim();
+  const name = (document.getElementById('lib-name') || { value: '' }).value.trim();
+  const minutes = parseFloat((document.getElementById('lib-mins') || { value: '' }).value);
+  const grams = parseFloat((document.getElementById('lib-grams') || { value: '' }).value);
+
+  const key = modelKeyFromItem({ link, name });
+  if (!key) { showAlert('lib-err', 'Please enter a model link or model name.', 'error'); return; }
+  if (!minutes || !grams) { showAlert('lib-err', 'Please enter valid minutes and grams.', 'error'); return; }
+
+  state.modelLibrary[key] = {
+    link,
+    name,
+    minutes,
+    grams,
+    filType: (state.modelLibrary[key] && state.modelLibrary[key].filType) || 'black',
+    updatedAt: new Date().toISOString()
+  };
+  persistModelLibrary();
+  showAlert('lib-ok', `Saved library entry (${fmtMinutesWithHours(minutes)}, ${grams}g).`, 'success');
+  render();
+}
+
+function setLibrarySaveState(next) {
+  librarySaveState = next;
+  const text = document.querySelector('.save-indicator span:last-child');
+  const wrap = document.querySelector('.save-indicator');
+  if (wrap) wrap.classList.toggle('pending', next === 'pending');
+  if (text) text.textContent = next === 'pending' ? 'Saving changes...' : 'All changes saved automatically';
+}
+
+function toggleLibraryLinkEdit(encodedKey) {
+  const key = decodeURIComponent(encodedKey);
+  state.libraryEditingKey = state.libraryEditingKey === key ? '' : key;
+  render();
+}
+
+function updateLibraryEntry(encodedKey, rowId, shouldRender = true) {
+  const oldKey = decodeURIComponent(encodedKey);
+  const link = (document.getElementById(`${rowId}-link`) || { value: '' }).value.trim();
+  const name = (document.getElementById(`${rowId}-name`) || { value: '' }).value.trim();
+  const minutes = parseFloat((document.getElementById(`${rowId}-mins`) || { value: '' }).value);
+  const grams = parseFloat((document.getElementById(`${rowId}-grams`) || { value: '' }).value);
+  const existing = state.modelLibrary[oldKey] || {};
+
+  const hasAnyValue = !!(link || name || Number.isFinite(minutes) || Number.isFinite(grams));
+  if (!hasAnyValue) return;
+
+  const newKey = modelKeyFromItem({ link, name });
+  if (!newKey || !Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(grams) || grams <= 0) return;
+
+  if (newKey !== oldKey) delete state.modelLibrary[oldKey];
+  state.modelLibrary[newKey] = {
+    link,
+    name,
+    minutes,
+    grams,
+    filType: existing.filType || 'black',
+    updatedAt: new Date().toISOString()
+  };
+  if (state.libraryEditingKey === oldKey || state.libraryEditingKey === newKey) state.libraryEditingKey = newKey;
+  persistModelLibrary();
+  setLibrarySaveState('saved');
+  if (shouldRender) render();
+}
+
+function queueLibraryRowSave(encodedKey, rowId) {
+  setLibrarySaveState('pending');
+  if (libraryAutoSaveTimer) clearTimeout(libraryAutoSaveTimer);
+  libraryAutoSaveTimer = setTimeout(() => {
+    libraryAutoSaveTimer = null;
+    updateLibraryEntry(encodedKey, rowId, true);
+  }, 350);
+}
+
+function deleteLibraryEntry(encodedKey) {
+  const key = decodeURIComponent(encodedKey);
+  delete state.modelLibrary[key];
+  if (state.libraryEditingKey === key) state.libraryEditingKey = '';
+  persistModelLibrary();
+  setLibrarySaveState('saved');
+  render();
+}
+
+async function saveDeliveryInfo(batchId) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  b.deliveryDate = (document.getElementById(`ddate-${batchId}`) || { value: '' }).value.trim();
+  b.deliveryTracking = (document.getElementById(`dtrack-${batchId}`) || { value: '' }).value.trim();
+  b.deliveryNotes = (document.getElementById(`dnotes-${batchId}`) || { value: '' }).value.trim();
+  await upsertBatch(b);
+  render();
+}
+
+async function approveBatch(batchId) {
+  const batch = state.batches.find(b => b.id === batchId);
+  if (!batch) return;
+  let allValid = true;
+  batch.items.forEach((it, i) => {
+    const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
+    const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
+    if (!mins || !grams) allValid = false;
+    it.minutes = mins  || null;
+    it.grams   = grams || it.grams;
+    if (mins && grams) saveKnownEstimate(it);
+  });
+  if (!allValid) { showAlert(`batch-err-${batchId}`, 'Please fill in print time and grams for every item.', 'error'); return; }
+
+  const btn = document.getElementById(`approve-btn-${batchId}`);
+  btn.disabled = true; btn.textContent = 'Saving & notifying...';
+  batch.status = 'quoted';
+  batch.phase = 'quote_sent';
+  batch.paymentStatus = 'payment_requested';
+  await upsertBatch(batch);
+
+  const total     = batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
+  const breakdown = batch.items.map(it => {
+    const pp = calcPerPrint(it.minutes, it.grams, it.filType);
+    return `${it.name} × ${it.qty}: $${(pp*it.qty).toFixed(2)} (${fmtTime(it.minutes)}, ${it.grams}g, ${FIL_LABEL[it.filType]||it.filType}${it.qty>1?`, $${pp.toFixed(2)} each`:''})`;
+  }).join('\n');
+
+  await sendEmail(EJS_TMPL_CLIENT, {
+    to_email: batch.clientEmail, client_name: batch.clientName, client_email: batch.clientEmail,
+    model_name: `${batch.items.length} item${batch.items.length>1?'s':''}`,
+    price: total.toFixed(2), print_time: breakdown, grams: '', filament_type: ''
+  });
+
+  showAlert(`batch-ok-${batchId}`, `Quote saved! Email sent to ${batch.clientEmail}.`, 'success');
+  setTimeout(() => render(), 1800);
+}
+
+async function resetBatch(batchId) {
+  const b = state.batches.find(b => b.id === batchId);
+  if (!b) return;
+  b.status = 'pending';
+  b.phase = 'estimate';
+  b.items.forEach(it => it.minutes = null);
+  await upsertBatch(b);
+  render();
+}
+
+async function deleteBatch(batchId) {
+  if (!confirm('Are you sure you want to delete this order? This cannot be undone.')) return;
+  state.batches = state.batches.filter(b => b.id !== batchId);
+  await deleteBatchRemote(batchId);
+  render();
+}
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg; el.className = `alert ${type}`; el.style.display = 'block';
+}
+
+function attachAll() {
+  const pw = document.getElementById('owner-pw');
+  if (pw) pw.addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+
+  const addLibraryFields = ['lib-link', 'lib-name', 'lib-mins', 'lib-grams'];
+  addLibraryFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addLibraryEntry();
+      }
+    });
+  });
+}
+
+init();
+</script>
+</body>
+</html>
