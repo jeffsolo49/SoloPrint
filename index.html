@@ -314,6 +314,7 @@ const FIL_RATE = { black: 0.024, white: 0.024, special: 0.034 };
 const FIL_LABEL = { black: 'Black', white: 'White', special: 'Special Request' };
 const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
+const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
 const ORDER_PHASES = [
@@ -334,7 +335,7 @@ let state = {
   view: 'client', ownerUnlocked: false,
   batches: [], clientTab: 'submit', ownerTab: 'dashboard',
   draftItems: [blankItem()],
-  clientName: '', clientEmail: '',
+  clientName: '', clientEmail: '', historyEmail: '',
   modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '',
   synced: false, loading: true
 };
@@ -366,9 +367,13 @@ async function supaFetch(path, opts = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-async function loadBatches() {
+async function loadBatches(filterEmail = '') {
   try {
-    const rows = await supaFetch('/jobs?order=created_at.asc');
+    const email = String(filterEmail || '').trim().toLowerCase();
+    const query = email
+      ? `/jobs?data->>clientEmail=eq.${encodeURIComponent(email)}&order=created_at.asc`
+      : '/jobs?order=created_at.asc';
+    const rows = await supaFetch(query);
     state.batches = (rows || []).map(r => normalizeBatch(r.data));
     state.synced = true;
   } catch(e) {
@@ -505,6 +510,20 @@ function loadModelLibrary() {
 
 function persistModelLibrary() {
   try { localStorage.setItem(MODEL_LIBRARY_KEY, JSON.stringify(state.modelLibrary)); } catch (e) {}
+}
+
+function loadClientHistoryEmail() {
+  try {
+    state.historyEmail = localStorage.getItem(CLIENT_HISTORY_EMAIL_KEY) || '';
+  } catch (e) {
+    state.historyEmail = '';
+  }
+}
+
+function persistClientHistoryEmail() {
+  try {
+    localStorage.setItem(CLIENT_HISTORY_EMAIL_KEY, state.historyEmail || '');
+  } catch (e) {}
 }
 
 function persistOwnerSession() {
@@ -918,8 +937,9 @@ async function fetchNameFromServer(url) {
 async function init() {
   emailjs.init(EJS_PUBLIC_KEY);
   loadModelLibrary();
+  loadClientHistoryEmail();
   state.ownerUnlocked = hasValidOwnerSession();
-  await loadBatches();
+  if (state.ownerUnlocked) await loadBatches();
   state.loading = false;
   render();
 }
@@ -952,10 +972,11 @@ function render() {
 }
 
 function renderClientApp() {
+  const hasHistoryEmail = !!String(state.historyEmail || '').trim();
   return `
     <div class="nav">
       <button class="nav-tab ${state.clientTab==='submit'?'active':''}" onclick="setTab('submit')">Request a Quote</button>
-      <button class="nav-tab ${state.clientTab==='jobs'?'active':''}" onclick="setTab('jobs')">My Requests${state.batches.length?`<span class="nav-badge">${state.batches.length}</span>`:''}</button>
+      <button class="nav-tab ${state.clientTab==='jobs'?'active':''}" onclick="setTab('jobs')">My Requests${hasHistoryEmail && state.batches.length?`<span class="nav-badge">${state.batches.length}</span>`:''}</button>
     </div>
     <div class="main">
       ${state.clientTab === 'submit' ? renderSubmitTab() : renderMyJobsTab()}
@@ -1085,53 +1106,114 @@ function renderItemBlock(item, i) {
 }
 
 function renderMyJobsTab() {
+  const historyEmail = String(state.historyEmail || '').trim();
+  if (!historyEmail) return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
+      </div>
+      <div>
+        <div class="section-title">My Requests</div>
+        <div class="section-sub">Enter your email to view your personal request history</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your email</label>
+        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
+      </div>
+      <button class="btn-primary" onclick="lookupMyRequests()">View My Requests</button>
+      <div class="alert error" id="history-err"></div>
+    </div>`;
+
   if (!state.batches.length) return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
+      </div>
+      <div>
+        <div class="section-title">My Requests</div>
+        <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your email</label>
+        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="lookupMyRequests()">Refresh</button>
+        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Use a different email</button>
+      </div>
+    </div>
     <div class="empty-state">
       <div class="empty-state-icon">📋</div>
-      <div class="empty-state-text">No requests yet</div>
-      <div class="empty-state-sub">Submit a quote request and it'll appear here</div>
+      <div class="empty-state-text">No requests found</div>
+      <div class="empty-state-sub">We couldn't find request history for ${esc(historyEmail)}</div>
     </div>`;
-  return [...state.batches].reverse().map(b => {
-    const phase = b.phase || 'estimate';
-    const allDone = b.items.every(it => it.minutes && it.grams);
-    const total = phase !== 'estimate' && allDone
-      ? b.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0)
-      : null;
-    return `<div class="job-card ${phase}">
-      <div class="job-header">
-        <div>
-          <div class="job-title">${esc(b.clientName)}'s Request</div>
-          <div class="job-meta">${b.items.length} item${b.items.length>1?'s':''} · ${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
-        </div>
-        <span class="status ${phase}">${phaseLabel(phase)}</span>
+
+  return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
-      <div class="job-divider"></div>
-      ${b.items.map(it => {
-        const ip = it.minutes ? calcTotal(it.minutes, it.grams, it.filType, it.qty) : null;
-        const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
-        return `<div class="sub-item">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-            <div>
-              <div class="sub-item-name">${esc(it.name)||'Unnamed'}${it.qty>1?` <span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
-              <div class="sub-item-meta">
-                <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
-                ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : ''}
-                ${it.link ? `<a class="job-link" href="${esc(it.link)}" target="_blank">MakerWorld ↗</a>` : ''}
-              </div>
-              ${it.notes?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;">"${esc(it.notes)}"</div>`:''}
-            </div>
-            ${ip!==null
-              ? `<div style="text-align:right;flex-shrink:0;">
-                  <div class="sub-item-price">$${ip.toFixed(2)}</div>
-                  ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} each</div>`:''}
-                </div>`
-              : `<div style="font-size:12px;color:var(--muted);font-style:italic;">Pending</div>`}
+      <div>
+        <div class="section-title">My Requests</div>
+        <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your email</label>
+        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="lookupMyRequests()">Refresh</button>
+        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Use a different email</button>
+      </div>
+      <div class="alert error" id="history-err"></div>
+    </div>
+    ${[...state.batches].reverse().map(b => {
+      const phase = b.phase || 'estimate';
+      const allDone = b.items.every(it => it.minutes && it.grams);
+      const total = phase !== 'estimate' && allDone
+        ? b.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0)
+        : null;
+      return `<div class="job-card ${phase}">
+        <div class="job-header">
+          <div>
+            <div class="job-title">${esc(b.clientName)}'s Request</div>
+            <div class="job-meta">${b.items.length} item${b.items.length>1?'s':''} · ${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
           </div>
-        </div>`;
-      }).join('')}
-      ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
-    </div>`;
-  }).join('');
+          <span class="status ${phase}">${phaseLabel(phase)}</span>
+        </div>
+        <div class="job-divider"></div>
+        ${b.items.map(it => {
+          const ip = it.minutes ? calcTotal(it.minutes, it.grams, it.filType, it.qty) : null;
+          const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+          return `<div class="sub-item">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div>
+                <div class="sub-item-name">${esc(it.name)||'Unnamed'}${it.qty>1?` <span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
+                <div class="sub-item-meta">
+                  <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+                  ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : ''}
+                  ${it.link ? `<a class="job-link" href="${esc(it.link)}" target="_blank">MakerWorld ↗</a>` : ''}
+                </div>
+                ${it.notes?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;">"${esc(it.notes)}"</div>`:''}
+              </div>
+              ${ip!==null
+                ? `<div style="text-align:right;flex-shrink:0;">
+                    <div class="sub-item-price">$${ip.toFixed(2)}</div>
+                    ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} each</div>`:''}
+                  </div>`
+                : `<div style="font-size:12px;color:var(--muted);font-style:italic;">Pending</div>`}
+            </div>
+          </div>`;
+        }).join('')}
+        ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
+      </div>`;
+    }).join('')}`;
 }
 
 function renderOwnerApp() {
@@ -1475,9 +1557,32 @@ function renderOwnerItem(batchId, it, i) {
 // ── INTERACTIONS ──────────────────────────────────────────────────────────
 
 function setTab(tab) { state.clientTab = tab; render(); }
-function switchToOwner() { state.view = 'owner'; render(); }
+async function switchToOwner() {
+  state.view = 'owner';
+  if (state.ownerUnlocked) await loadBatches();
+  render();
+}
 function setOwnerTab(tab) { state.ownerTab = tab; render(); }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
+
+async function lookupMyRequests() {
+  const email = String((document.getElementById('history-email') || { value: state.historyEmail }).value || '').trim().toLowerCase();
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    showAlert('history-err', 'Please enter a valid email to view your request history.', 'error');
+    return;
+  }
+  state.historyEmail = email;
+  persistClientHistoryEmail();
+  await loadBatches(email);
+  render();
+}
+
+function clearMyRequestsLookup() {
+  state.historyEmail = '';
+  state.batches = [];
+  persistClientHistoryEmail();
+  render();
+}
 
 function checkPw() {
   const pw = document.getElementById('owner-pw').value;
@@ -1485,7 +1590,7 @@ function checkPw() {
     state.ownerUnlocked = true;
     state.ownerTab = 'dashboard';
     persistOwnerSession();
-    render();
+    loadBatches().then(() => render());
   }
   else showAlert('pw-err', 'Incorrect password.', 'error');
 }
@@ -1494,6 +1599,8 @@ function logoutOwner() {
   state.ownerUnlocked = false;
   state.view = 'client';
   clearOwnerSession();
+  state.batches = [];
+  if (state.historyEmail) loadBatches(state.historyEmail).then(() => render());
   render();
 }
 
