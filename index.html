@@ -988,7 +988,7 @@ function render() {
   if (state.loading) return;
   document.getElementById('app-root').innerHTML = `
     <div class="header">
-      <div class="logo">
+      <div class="logo" onclick="goHome()" style="cursor:pointer;">
         <div class="logo-icon">
           <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
         </div>
@@ -1105,10 +1105,18 @@ function renderItemBlock(item, i) {
         </div>
       </div>
       <div class="field" style="margin-bottom:8px;">
-        <label>Model link or design reference</label>
+        <label>Requests</label>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px;">
+          Tell us what you are looking for. Are you trying to create an original idea like a holder for a brush you have, or saw something cool and want to make something like it. Share your idea or inspiration.
+        </div>
         <input type="text" id="link-${i}" value="${esc(item.link)}"
-          placeholder="https://makerworld.com/... or original design"
+          placeholder="Paste a link or type original design"
           oninput="onLinkInput(${i}, this.value)" />
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Description</label>
+        <textarea id="notes-${i}" placeholder="Describe what you want to make, the idea you have, or the inspiration you found"
+          oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
       </div>
       <div class="field" style="margin-bottom:8px;">
         <label>Model name</label>
@@ -1135,11 +1143,6 @@ function renderItemBlock(item, i) {
           <input type="number" id="qty-${i}" value="${item.qty}" min="1" max="999" step="1"
             oninput="updateDraft(${i},'qty',parseInt(this.value)||1)" />
         </div>
-      </div>
-      <div class="field" style="margin-top:10px;margin-bottom:0;">
-        <label>Notes (optional)</label>
-        <textarea id="notes-${i}" placeholder="Color details, finish, special requests..."
-          oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
       </div>
     </div>`;
 }
@@ -1652,6 +1655,11 @@ function renderOwnerItem(batchId, it, i) {
 // ── INTERACTIONS ──────────────────────────────────────────────────────────
 
 function setTab(tab) { state.clientTab = tab; render(); }
+function goHome() {
+  state.view = 'client';
+  state.clientTab = 'submit';
+  render();
+}
 async function switchToOwner() {
   state.view = 'owner';
   if (state.ownerUnlocked) await loadBatches();
