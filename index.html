@@ -284,8 +284,78 @@ textarea { resize: vertical; min-height: 70px; }
   background: var(--green);
 }
 .save-indicator.pending .save-indicator-dot { background: var(--amber); }
+.calc-shell {
+  display: grid;
+  grid-template-columns: minmax(340px, 1.6fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.calc-form-card, .calc-summary-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+}
+.calc-summary-card {
+  position: sticky;
+  top: 90px;
+}
+.calc-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.calc-stat {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+}
+.calc-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+}
+.calc-stat-value {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+}
+.calc-stat-value.accent { color: var(--accent); }
+.calc-stat-value.green { color: var(--green); }
+.calc-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.calc-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.calc-match {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(61,255,160,0.18);
+  background: rgba(61,255,160,0.06);
+}
+.calc-match strong {
+  color: var(--green);
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
 @media (max-width: 1100px) {
   .lib-grid { grid-template-columns: 1fr 1fr; }
+  .calc-shell { grid-template-columns: 1fr; }
+  .calc-summary-card { position: static; }
   .owner-page-header { flex-direction: column; }
   .owner-page-meta { white-space: normal; padding-top: 0; }
 }
@@ -293,6 +363,7 @@ textarea { resize: vertical; min-height: 70px; }
   .main.owner-main { max-width: 100%; padding: 1.25rem 1rem; }
   .owner-order-summary-grid,
   .owner-batch-controls { grid-template-columns: 1fr; }
+  .calc-stat-grid { grid-template-columns: 1fr; }
 }
 
 .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 16px; color: var(--muted); }
@@ -345,12 +416,24 @@ const PAYMENT_PHASES = [
 ];
 // ──────────────────────────────────────────────────────────────────────────
 
+function blankOwnerCalculator() {
+  return {
+    link: '',
+    name: '',
+    minutes: '',
+    grams: '',
+    qty: 1,
+    filType: 'black',
+    lastResult: null
+  };
+}
+
 let state = {
   view: 'client', ownerUnlocked: false,
   batches: [], clientTab: 'submit', ownerTab: 'dashboard',
   draftItems: [blankItem()],
   clientName: '', clientEmail: '', historyEmail: '',
-  modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '',
+  modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
   synced: false, loading: true
 };
 
@@ -617,6 +700,31 @@ function saveKnownEstimate(item) {
     updatedAt: new Date().toISOString()
   };
   persistModelLibrary();
+}
+
+function saveModelLibraryEntry(entry) {
+  const link = String(entry?.link || '').trim();
+  const name = String(entry?.name || '').trim();
+  const minutes = parseFloat(entry?.minutes);
+  const grams = parseFloat(entry?.grams);
+  const filType = entry?.filType || 'black';
+
+  const key = modelKeyFromItem({ link, name });
+  if (!key) return { ok: false, error: 'Please enter a model link or model name.' };
+  if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(grams) || grams <= 0) {
+    return { ok: false, error: 'Please enter valid minutes and grams.' };
+  }
+
+  state.modelLibrary[key] = {
+    link,
+    name,
+    minutes,
+    grams,
+    filType,
+    updatedAt: new Date().toISOString()
+  };
+  persistModelLibrary();
+  return { ok: true, key, entry: state.modelLibrary[key] };
 }
 
 function sortedLibraryEntries() {
@@ -1028,6 +1136,7 @@ function renderOwnerNav() {
   return `
     <div class="nav">
       <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
+      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
       <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
     </div>
@@ -1280,7 +1389,13 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <div class="main owner-main">
-      ${state.ownerTab === 'library' ? renderOwnerLibraryPage() : state.ownerTab === 'analytics' ? renderOwnerAnalyticsPage() : renderOwnerDashboard()}
+      ${state.ownerTab === 'library'
+        ? renderOwnerLibraryPage()
+        : state.ownerTab === 'analytics'
+          ? renderOwnerAnalyticsPage()
+          : state.ownerTab === 'calculator'
+            ? renderOwnerCalculatorPage()
+            : renderOwnerDashboard()}
     </div>`;
 }
 
@@ -1425,6 +1540,107 @@ function renderOwnerLibraryPage() {
           </table>
         </div>
       `}
+    </div>
+  `;
+}
+
+function renderOwnerCalculatorPage() {
+  const calc = state.ownerCalculator || blankOwnerCalculator();
+  const minutes = parseFloat(calc.minutes);
+  const grams = parseFloat(calc.grams);
+  const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
+  const hasNumbers = Number.isFinite(minutes) && minutes > 0 && Number.isFinite(grams) && grams > 0;
+  const perPrint = hasNumbers ? calcPerPrint(minutes, grams, calc.filType) : null;
+  const total = perPrint !== null ? perPrint * qty : null;
+  const saved = calc.lastResult;
+  const modelMatch = getKnownEstimate({ link: calc.link, name: calc.name });
+  const canSave = !!modelKeyFromItem({ link: calc.link, name: calc.name }) && hasNumbers;
+
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><path d="M5 3h14v18H5z"/><path d="M8 7h8M8 11h3M8 15h8"/></svg>
+        </div>
+        <div><div class="section-title">Owner Calculator</div><div class="section-sub">Price a model instantly, then save it into your reusable model data</div></div>
+      </div>
+      <div class="owner-page-meta">${sortedLibraryEntries().length} saved model${sortedLibraryEntries().length === 1 ? '' : 's'}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Calculate And Save</div>
+      <div class="calc-shell">
+        <div class="calc-form-card">
+          <div class="lib-grid">
+            <div class="field"><label>Model link</label><input type="text" id="owner-calc-link" value="${esc(calc.link)}" placeholder="https://makerworld.com/en/models/..." oninput="updateOwnerCalculatorField('link', this.value)" /></div>
+            <div class="field"><label>Model name</label><input type="text" id="owner-calc-name" value="${esc(calc.name)}" placeholder="Model name" oninput="updateOwnerCalculatorField('name', this.value)" /></div>
+            <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" step="1" placeholder="120" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
+            <div class="field"><label>Filament (g)</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
+            <div class="field">
+              <label>Filament type</label>
+              <select id="owner-calc-fil" onchange="updateOwnerCalculatorField('filType', this.value)">
+                ${Object.entries(FIL_LABEL).map(([value, label]) => `<option value="${value}" ${calc.filType === value ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Quantity</label><input type="number" id="owner-calc-qty" value="${qty}" min="1" step="1" oninput="updateOwnerCalculatorField('qty', this.value)" /></div>
+          </div>
+          ${modelMatch ? `
+            <div class="calc-match">
+              <strong>Saved model found</strong>
+              <div style="font-size:12px;color:var(--muted);">This model already exists in your library with ${fmtMinutesWithHours(modelMatch.minutes)}, ${modelMatch.grams}g, ${FIL_LABEL[modelMatch.filType] || modelMatch.filType}. Saving here will update it with the values in this calculator.</div>
+            </div>
+          ` : ``}
+          <div class="calc-actions">
+            <button class="btn-sm" type="button" onclick="calculateAndSaveOwnerModel()" ${canSave ? '' : 'disabled'}>Calculate &amp; Save Model</button>
+            <button class="btn-sm" type="button" onclick="resetOwnerCalculator()">Clear</button>
+          </div>
+          <div class="alert error" id="owner-calc-err"></div>
+          <div class="alert success" id="owner-calc-ok"></div>
+          <div class="calc-hint">${canSave ? 'Press Enter in any calculator field to save this model.' : 'Add a model name or link, plus minutes and grams, to enable saving.'}</div>
+        </div>
+        <div class="calc-summary-card">
+          <div class="card-title">Live Quote Preview</div>
+          ${hasNumbers ? `
+            <div class="price-big">$${total.toFixed(2)}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${FIL_LABEL[calc.filType] || calc.filType} filament.</div>
+            <div class="calc-stat-grid">
+              <div class="calc-stat">
+                <div class="calc-stat-label">Per Print</div>
+                <div class="calc-stat-value accent">$${perPrint.toFixed(2)}</div>
+              </div>
+              <div class="calc-stat">
+                <div class="calc-stat-label">Quantity</div>
+                <div class="calc-stat-value">${qty}</div>
+              </div>
+              <div class="calc-stat">
+                <div class="calc-stat-label">Print Time</div>
+                <div class="calc-stat-value">${fmtTime(minutes)}</div>
+              </div>
+              <div class="calc-stat">
+                <div class="calc-stat-label">Filament</div>
+                <div class="calc-stat-value green">${grams.toFixed(1)}g</div>
+              </div>
+            </div>
+            <div class="price-preview-box" style="margin-top:16px;">
+              <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
+              <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
+${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
+${grams}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
+$${perPrint.toFixed(2)} per print × ${qty}</div>
+            </div>
+          ` : `
+            <div style="font-size:12px;color:var(--muted);line-height:1.8;">Fill in minutes and grams to see the quote update live here. This summary uses the same pricing math as the customer quote flow.</div>
+          `}
+          ${saved ? `
+            <div class="total-box">
+              <span class="total-label">Last saved model</span>
+              <span class="total-price">$${saved.total.toFixed(2)}</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:10px;">
+              Saved ${esc(saved.name || 'Unnamed model')} with ${fmtMinutesWithHours(saved.minutes)}, ${saved.grams}g, ${FIL_LABEL[saved.filType] || saved.filType}, qty ${saved.qty}.
+            </div>
+          ` : ``}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -1667,6 +1883,15 @@ async function switchToOwner() {
 }
 function setOwnerTab(tab) { state.ownerTab = tab; render(); }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
+function updateOwnerCalculatorField(field, value) {
+  if (!state.ownerCalculator) state.ownerCalculator = blankOwnerCalculator();
+  state.ownerCalculator[field] = value;
+  const err = document.getElementById('owner-calc-err');
+  const ok = document.getElementById('owner-calc-ok');
+  if (err) err.style.display = 'none';
+  if (ok) ok.style.display = 'none';
+  if (state.ownerTab === 'calculator') render();
+}
 
 async function lookupMyRequests() {
   const email = String((document.getElementById('history-email') || { value: state.historyEmail }).value || '').trim().toLowerCase();
@@ -2047,20 +2272,46 @@ function addLibraryEntry() {
   const minutes = parseFloat((document.getElementById('lib-mins') || { value: '' }).value);
   const grams = parseFloat((document.getElementById('lib-grams') || { value: '' }).value);
 
-  const key = modelKeyFromItem({ link, name });
-  if (!key) { showAlert('lib-err', 'Please enter a model link or model name.', 'error'); return; }
-  if (!minutes || !grams) { showAlert('lib-err', 'Please enter valid minutes and grams.', 'error'); return; }
+  const res = saveModelLibraryEntry({ link, name, minutes, grams, filType: 'black' });
+  if (!res.ok) { showAlert('lib-err', res.error, 'error'); return; }
 
-  state.modelLibrary[key] = {
+  showAlert('lib-ok', `Saved library entry (${fmtMinutesWithHours(minutes)}, ${grams}g).`, 'success');
+  render();
+}
+
+function calculateAndSaveOwnerModel() {
+  const calc = state.ownerCalculator || blankOwnerCalculator();
+  const link = String(calc.link || '').trim();
+  const name = String(calc.name || '').trim();
+  const minutes = parseFloat(calc.minutes);
+  const grams = parseFloat(calc.grams);
+  const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
+  const filType = calc.filType || 'black';
+
+  const res = saveModelLibraryEntry({ link, name, minutes, grams, filType });
+  if (!res.ok) {
+    showAlert('owner-calc-err', res.error, 'error');
+    return;
+  }
+
+  const perPrint = calcPerPrint(minutes, grams, filType) || 0;
+  state.ownerCalculator.lastResult = {
     link,
     name,
     minutes,
     grams,
-    filType: (state.modelLibrary[key] && state.modelLibrary[key].filType) || 'black',
-    updatedAt: new Date().toISOString()
+    qty,
+    filType,
+    perPrint,
+    total: perPrint * qty
   };
-  persistModelLibrary();
-  showAlert('lib-ok', `Saved library entry (${fmtMinutesWithHours(minutes)}, ${grams}g).`, 'success');
+
+  showAlert('owner-calc-ok', `Calculated and saved ${name || 'model'} to Saved Models for future quotes.`, 'success');
+  render();
+}
+
+function resetOwnerCalculator() {
+  state.ownerCalculator = blankOwnerCalculator();
   render();
 }
 
@@ -2207,6 +2458,18 @@ function attachAll() {
       if (e.key === 'Enter') {
         e.preventDefault();
         addLibraryEntry();
+      }
+    });
+  });
+
+  const ownerCalcFields = ['owner-calc-link', 'owner-calc-name', 'owner-calc-mins', 'owner-calc-grams', 'owner-calc-qty'];
+  ownerCalcFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        calculateAndSaveOwnerModel();
       }
     });
   });
