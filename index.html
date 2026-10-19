@@ -1240,10 +1240,15 @@ function renderCustomerPricePreview(item) {
   }
   const perPrint = calcPerPrint(minutes, grams, item.filType);
   const total = perPrint * qty;
+  const filamentRate = FIL_RATE[item.filType] || 0.024;
   return `<div class="price-preview-box" style="margin-top:12px;">
     <div class="card-title" style="margin-bottom:6px;">Live Estimate</div>
     <div class="price-big">$${total.toFixed(2)}</div>
     <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${grams.toFixed(1)}g · quantity ${qty}</div>
+    <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
+${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
+${grams.toFixed(1)}g × $${filamentRate.toFixed(3)} × ${qty} = $${(grams * filamentRate * qty).toFixed(2)}
+$${perPrint.toFixed(2)} per print × ${qty}</div>
   </div>`;
 }
 
