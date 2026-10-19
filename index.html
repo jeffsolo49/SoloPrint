@@ -420,6 +420,7 @@ function blankOwnerCalculator() {
   return {
     link: '',
     name: '',
+    hours: '',
     minutes: '',
     grams: '',
     qty: 1,
@@ -443,6 +444,7 @@ let librarySaveState = 'saved';
 function blankItem() {
   return {
     link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
+    printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false
   };
 }
@@ -523,9 +525,20 @@ function hoursFromMinutes(minutes) {
   if (!Number.isFinite(value) || value <= 0) return '';
   return String(Math.round((value / 60) * 100) / 100);
 }
+function minuteRemainder(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return String(Math.round(value % 60));
+}
 function minutesFromHours(hours) {
   const value = Number(hours);
   return Number.isFinite(value) && value > 0 ? Math.round(value * 60) : null;
+}
+function totalPrintMinutes(hours, minutes) {
+  const hourValue = Number(hours) || 0;
+  const minuteValue = Number(minutes) || 0;
+  const total = Math.round(hourValue * 60 + minuteValue);
+  return total > 0 ? total : null;
 }
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1252,10 +1265,21 @@ function renderItemBlock(item, i) {
       </div>` : ``}
       <div class="row3">
         <div class="field" style="margin-bottom:0;">
-          <label>Print time (hours, est.)</label>
-          <input type="number" id="hours-${i}" value="${hoursFromMinutes(item.minutes || item.knownMinutes)}" placeholder="1.5"
-            min="0" step="0.1" oninput="updateDraftHours(${i}, this.value)" />
+          <label>Hours (est.)</label>
+          <input type="number" id="hours-${i}" value="${item.printHours || hoursFromMinutes(item.knownMinutes)}" placeholder="1"
+            min="0" step="1" oninput="updateDraftPrintTime(${i}, 'hours', this.value)" />
         </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Minutes (est.)</label>
+          <input type="number" id="minutes-${i}" value="${item.printMinutes || minuteRemainder(item.knownMinutes)}" placeholder="30"
+            min="0" max="59" step="1" oninput="updateDraftPrintTime(${i}, 'minutes', this.value)" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Print Time (min.)</label>
+          <input type="number" id="print-time-${i}" value="${item.knownFromLibrary ? item.knownMinutes : (totalPrintMinutes(item.printHours, item.printMinutes) || '')}" placeholder="Auto" readonly />
+        </div>
+      </div>
+      <div class="row2" style="margin-top:12px;">
         <div class="field" style="margin-bottom:0;">
           <label>Grams (est.)</label>
           <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
@@ -1560,7 +1584,7 @@ function renderOwnerLibraryPage() {
 
 function renderOwnerCalculatorPage() {
   const calc = state.ownerCalculator || blankOwnerCalculator();
-  const minutes = parseFloat(calc.minutes);
+  const minutes = totalPrintMinutes(calc.hours, calc.minutes);
   const grams = parseFloat(calc.grams);
   const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
   const hasNumbers = Number.isFinite(minutes) && minutes > 0 && Number.isFinite(grams) && grams > 0;
@@ -1587,8 +1611,9 @@ function renderOwnerCalculatorPage() {
           <div class="lib-grid">
             <div class="field"><label>Model link</label><input type="text" id="owner-calc-link" value="${esc(calc.link)}" placeholder="https://makerworld.com/en/models/..." oninput="updateOwnerCalculatorField('link', this.value)" /></div>
             <div class="field"><label>Model name</label><input type="text" id="owner-calc-name" value="${esc(calc.name)}" placeholder="Model name" oninput="updateOwnerCalculatorField('name', this.value)" /></div>
-            <div class="field"><label>Hours</label><input type="number" id="owner-calc-hours" value="${hoursFromMinutes(calc.minutes)}" min="0" step="0.1" placeholder="2" oninput="updateOwnerCalculatorHours(this.value)" /></div>
-            <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" step="1" placeholder="120" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
+            <div class="field"><label>Hours</label><input type="number" id="owner-calc-hours" value="${esc(calc.hours)}" min="0" step="1" placeholder="2" oninput="updateOwnerCalculatorField('hours', this.value)" /></div>
+            <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" max="59" step="1" placeholder="30" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
+            <div class="field"><label>Print Time (min.)</label><input type="number" id="owner-calc-print-time" value="${minutes || ''}" placeholder="Auto" readonly /></div>
             <div class="field"><label>Filament (g)</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
             <div class="field">
               <label>Filament type</label>
@@ -1866,15 +1891,22 @@ function renderOwnerItem(batchId, it, i) {
     </div>
     <div class="row3">
       <div class="field" style="margin-bottom:0;">
-        <label>Print time (hours)</label>
+        <label>Hours</label>
         <input type="number" id="hours-${batchId}-${i}" value="${hoursFromMinutes(it.minutes)}"
-          placeholder="2" min="0" step="0.1" oninput="updateOwnerItemHours('${batchId}',${i},this.value)" />
+          placeholder="2" min="0" step="1" oninput="updateOwnerItemPrintTime('${batchId}',${i})" />
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>Print time (minutes)</label>
-        <input type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
-          placeholder="From Bambu Studio" min="0" step="1" oninput="previewOwnerItem('${batchId}',${i})" />
+        <label>Minutes</label>
+        <input type="number" id="minutes-${batchId}-${i}" value="${minuteRemainder(it.minutes)}"
+          placeholder="30" min="0" max="59" step="1" oninput="updateOwnerItemPrintTime('${batchId}',${i})" />
       </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Print Time (min.)</label>
+        <input type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
+          placeholder="Auto" readonly />
+      </div>
+    </div>
+    <div class="row2" style="margin-top:12px;">
       <div class="field" style="margin-bottom:0;">
         <label>Filament (grams)</label>
         <input type="number" id="ograms-${batchId}-${i}" value="${it.grams||''}"
@@ -1906,10 +1938,9 @@ function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
   if (!state.ownerCalculator) state.ownerCalculator = blankOwnerCalculator();
   state.ownerCalculator[field] = value;
-  if (field === 'minutes') {
-    const hoursInput = document.getElementById('owner-calc-hours');
-    if (hoursInput) hoursInput.value = hoursFromMinutes(value);
-  }
+  const printMinutes = totalPrintMinutes(state.ownerCalculator.hours, state.ownerCalculator.minutes);
+  const printTimeInput = document.getElementById('owner-calc-print-time');
+  if (printTimeInput) printTimeInput.value = printMinutes || '';
   const err = document.getElementById('owner-calc-err');
   const ok = document.getElementById('owner-calc-ok');
   if (err) err.style.display = 'none';
@@ -1917,28 +1948,26 @@ function updateOwnerCalculatorField(field, value) {
   const saveButton = document.getElementById('owner-calc-save');
   if (saveButton) {
     const hasModel = !!modelKeyFromItem({ link: state.ownerCalculator.link, name: state.ownerCalculator.name });
-    const hasTime = Number(state.ownerCalculator.minutes) > 0;
+    const hasTime = !!printMinutes;
     const hasGrams = Number(state.ownerCalculator.grams) > 0;
     saveButton.disabled = !(hasModel && hasTime && hasGrams);
   }
 }
 
-function updateOwnerCalculatorHours(value) {
-  const minutes = minutesFromHours(value);
-  updateOwnerCalculatorField('minutes', minutes || '');
-  const minutesInput = document.getElementById('owner-calc-mins');
-  if (minutesInput) minutesInput.value = minutes || '';
-}
-
-function updateDraftHours(i, value) {
+function updateDraftPrintTime(i, field, value) {
   if (!state.draftItems[i]) return;
-  state.draftItems[i].minutes = minutesFromHours(value);
+  state.draftItems[i][field === 'hours' ? 'printHours' : 'printMinutes'] = value;
+  const printTimeInput = document.getElementById(`print-time-${i}`);
+  const total = totalPrintMinutes(state.draftItems[i].printHours, state.draftItems[i].printMinutes);
+  if (printTimeInput) printTimeInput.value = total || '';
 }
 
-function updateOwnerItemHours(batchId, i, value) {
-  const minutes = minutesFromHours(value);
+function updateOwnerItemPrintTime(batchId, i) {
+  const hours = (document.getElementById(`hours-${batchId}-${i}`) || { value: '' }).value;
+  const minutes = (document.getElementById(`minutes-${batchId}-${i}`) || { value: '' }).value;
+  const total = totalPrintMinutes(hours, minutes);
   const minutesInput = document.getElementById(`mins-${batchId}-${i}`);
-  if (minutesInput) minutesInput.value = minutes || '';
+  if (minutesInput) minutesInput.value = total || '';
   previewOwnerItem(batchId, i);
 }
 
@@ -2148,7 +2177,7 @@ async function submitBatch() {
     id: Date.now().toString(), clientName, clientEmail,
     items: items.map(it => ({
       ...it,
-      minutes: it.knownFromLibrary ? it.knownMinutes : (Number(it.minutes) || null),
+      minutes: it.knownFromLibrary ? it.knownMinutes : totalPrintMinutes(it.printHours, it.printMinutes),
       fetching: false
     })),
     status: 'pending',
@@ -2252,8 +2281,6 @@ function previewOwnerItem(batchId, i) {
   const it    = batch.items[i];
   const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
   const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
-  const hoursInput = document.getElementById(`hours-${batchId}-${i}`);
-  if (hoursInput) hoursInput.value = hoursFromMinutes(mins);
   const pEl   = document.getElementById(`opreview-${batchId}-${i}`);
   if (!pEl) return;
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
@@ -2281,9 +2308,11 @@ function applyKnownEstimateToOwnerItem(batchId, i) {
 
   const minsInput = document.getElementById(`mins-${batchId}-${i}`);
   const hoursInput = document.getElementById(`hours-${batchId}-${i}`);
+  const minutesInput = document.getElementById(`minutes-${batchId}-${i}`);
   const gramsInput = document.getElementById(`ograms-${batchId}-${i}`);
   if (minsInput) minsInput.value = known.minutes;
   if (hoursInput) hoursInput.value = hoursFromMinutes(known.minutes);
+  if (minutesInput) minutesInput.value = minuteRemainder(known.minutes);
   if (gramsInput) gramsInput.value = known.grams;
 
   previewOwnerItem(batchId, i);
@@ -2336,7 +2365,7 @@ function calculateAndSaveOwnerModel() {
   const calc = state.ownerCalculator || blankOwnerCalculator();
   const link = String(calc.link || '').trim();
   const name = String(calc.name || '').trim();
-  const minutes = parseFloat(calc.minutes);
+  const minutes = totalPrintMinutes(calc.hours, calc.minutes);
   const grams = parseFloat(calc.grams);
   const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
   const filType = calc.filType || 'black';
