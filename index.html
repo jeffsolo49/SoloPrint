@@ -73,6 +73,12 @@ input[type=text], input[type=email], input[type=number], input[type=password], s
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input.invalid, select.invalid { border-color: var(--red) !important; }
+.print-time-output {
+  border: 2px solid var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(255, 205, 30, 0.12);
+  color: var(--accent);
+  font-weight: 700;
+}
 input::placeholder, textarea::placeholder { color: var(--muted); }
 select { cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888899' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
 select option { background: #242a31; color: #f5f7fa; }
@@ -1276,7 +1282,7 @@ function renderItemBlock(item, i) {
         </div>
         <div class="field" style="margin-bottom:0;">
           <label>Print Time (min.)</label>
-          <input type="number" id="print-time-${i}" value="${item.knownFromLibrary ? item.knownMinutes : (totalPrintMinutes(item.printHours, item.printMinutes) || '')}" placeholder="Auto" readonly />
+          <input class="print-time-output" type="number" id="print-time-${i}" value="${item.knownFromLibrary ? item.knownMinutes : (totalPrintMinutes(item.printHours, item.printMinutes) || '')}" placeholder="Auto" readonly />
         </div>
       </div>
       <div class="row2" style="margin-top:12px;">
@@ -1613,7 +1619,7 @@ function renderOwnerCalculatorPage() {
             <div class="field"><label>Model name</label><input type="text" id="owner-calc-name" value="${esc(calc.name)}" placeholder="Model name" oninput="updateOwnerCalculatorField('name', this.value)" /></div>
             <div class="field"><label>Hours</label><input type="number" id="owner-calc-hours" value="${esc(calc.hours)}" min="0" step="1" placeholder="2" oninput="updateOwnerCalculatorField('hours', this.value)" /></div>
             <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" max="59" step="1" placeholder="30" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
-            <div class="field"><label>Print Time (min.)</label><input type="number" id="owner-calc-print-time" value="${minutes || ''}" placeholder="Auto" readonly /></div>
+            <div class="field"><label>Print Time (min.)</label><input class="print-time-output" type="number" id="owner-calc-print-time" value="${minutes || ''}" placeholder="Auto" readonly /></div>
             <div class="field"><label>Filament (g)</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
             <div class="field">
               <label>Filament type</label>
@@ -1902,7 +1908,7 @@ function renderOwnerItem(batchId, it, i) {
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>Print Time (min.)</label>
-        <input type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
+        <input class="print-time-output" type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
           placeholder="Auto" readonly />
       </div>
     </div>
