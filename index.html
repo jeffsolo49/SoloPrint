@@ -1231,6 +1231,22 @@ function renderFilamentPills(i, current) {
   </div>`;
 }
 
+function renderCustomerPricePreview(item) {
+  const minutes = item.knownFromLibrary ? item.knownMinutes : totalPrintMinutes(item.printHours, item.printMinutes);
+  const grams = Number(item.grams);
+  const qty = Math.max(1, Number(item.qty) || 1);
+  if (!minutes || !grams) {
+    return `<div class="calc-hint">Enter print time and filament weight to see a live estimate.</div>`;
+  }
+  const perPrint = calcPerPrint(minutes, grams, item.filType);
+  const total = perPrint * qty;
+  return `<div class="price-preview-box" style="margin-top:12px;">
+    <div class="card-title" style="margin-bottom:6px;">Live Estimate</div>
+    <div class="price-big">$${total.toFixed(2)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${grams.toFixed(1)}g · quantity ${qty}</div>
+  </div>`;
+}
+
 function renderItemBlock(item, i) {
   return `
     <div class="item-block" id="iblock-${i}">
@@ -1297,6 +1313,7 @@ function renderItemBlock(item, i) {
             oninput="updateDraft(${i},'qty',parseInt(this.value)||1)" />
         </div>
       </div>
+      <div id="customer-price-preview-${i}">${renderCustomerPricePreview(item)}</div>
     </div>`;
 }
 
@@ -1588,6 +1605,33 @@ function renderOwnerLibraryPage() {
   `;
 }
 
+function renderOwnerCalculatorLivePreview(calc) {
+  const minutes = totalPrintMinutes(calc.hours, calc.minutes);
+  const grams = parseFloat(calc.grams);
+  const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
+  if (!minutes || !grams) {
+    return `<div style="font-size:12px;color:var(--muted);line-height:1.8;">Fill in print time and filament weight to see the quote update live here.</div>`;
+  }
+  const perPrint = calcPerPrint(minutes, grams, calc.filType);
+  const total = perPrint * qty;
+  return `
+    <div class="price-big">$${total.toFixed(2)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${FIL_LABEL[calc.filType] || calc.filType} filament.</div>
+    <div class="calc-stat-grid">
+      <div class="calc-stat"><div class="calc-stat-label">Per Print</div><div class="calc-stat-value accent">$${perPrint.toFixed(2)}</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Quantity</div><div class="calc-stat-value">${qty}</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Print Time</div><div class="calc-stat-value">${fmtTime(minutes)}</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Filament</div><div class="calc-stat-value green">${grams.toFixed(1)}g</div></div>
+    </div>
+    <div class="price-preview-box" style="margin-top:16px;">
+      <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
+      <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
+${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
+${grams}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
+$${perPrint.toFixed(2)} per print × ${qty}</div>
+    </div>`;
+}
+
 function renderOwnerCalculatorPage() {
   const calc = state.ownerCalculator || blankOwnerCalculator();
   const minutes = totalPrintMinutes(calc.hours, calc.minutes);
@@ -1645,6 +1689,7 @@ function renderOwnerCalculatorPage() {
         </div>
         <div class="calc-summary-card">
           <div class="card-title">Live Quote Preview</div>
+          <div id="owner-calc-live-preview">
           ${hasNumbers ? `
             <div class="price-big">$${total.toFixed(2)}</div>
             <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${FIL_LABEL[calc.filType] || calc.filType} filament.</div>
@@ -1676,6 +1721,7 @@ $${perPrint.toFixed(2)} per print × ${qty}</div>
           ` : `
             <div style="font-size:12px;color:var(--muted);line-height:1.8;">Fill in minutes and grams to see the quote update live here. This summary uses the same pricing math as the customer quote flow.</div>
           `}
+          </div>
           ${saved ? `
             <div class="total-box">
               <span class="total-label">Last saved model</span>
@@ -1947,6 +1993,8 @@ function updateOwnerCalculatorField(field, value) {
   const printMinutes = totalPrintMinutes(state.ownerCalculator.hours, state.ownerCalculator.minutes);
   const printTimeInput = document.getElementById('owner-calc-print-time');
   if (printTimeInput) printTimeInput.value = printMinutes || '';
+  const livePreview = document.getElementById('owner-calc-live-preview');
+  if (livePreview) livePreview.innerHTML = renderOwnerCalculatorLivePreview(state.ownerCalculator);
   const err = document.getElementById('owner-calc-err');
   const ok = document.getElementById('owner-calc-ok');
   if (err) err.style.display = 'none';
@@ -1966,6 +2014,13 @@ function updateDraftPrintTime(i, field, value) {
   const printTimeInput = document.getElementById(`print-time-${i}`);
   const total = totalPrintMinutes(state.draftItems[i].printHours, state.draftItems[i].printMinutes);
   if (printTimeInput) printTimeInput.value = total || '';
+  updateCustomerPricePreview(i);
+}
+
+function updateCustomerPricePreview(i) {
+  const preview = document.getElementById(`customer-price-preview-${i}`);
+  const item = state.draftItems[i];
+  if (preview && item) preview.innerHTML = renderCustomerPricePreview(item);
 }
 
 function updateOwnerItemPrintTime(batchId, i) {
@@ -2020,6 +2075,7 @@ function updateDraft(i, field, value) {
   if (!state.draftItems[i]) return;
   state.draftItems[i][field] = value;
   if (field === 'name' || field === 'link') maybeOfferKnownEstimate(i);
+  if (field === 'grams' || field === 'qty' || field === 'filType') updateCustomerPricePreview(i);
 }
 
 function rerenderPills(i, selected) {
