@@ -518,6 +518,15 @@ function fmtMinutesWithHours(m) {
   if (!Number.isFinite(mins)) return '';
   return `${mins} min (${fmtTime(mins)})`;
 }
+function hoursFromMinutes(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return String(Math.round((value / 60) * 100) / 100);
+}
+function minutesFromHours(hours) {
+  const value = Number(hours);
+  return Number.isFinite(value) && value > 0 ? Math.round(value * 60) : null;
+}
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -1241,7 +1250,12 @@ function renderItemBlock(item, i) {
         <div class="card-title" style="margin-bottom:6px;">Known Estimate</div>
         <div style="font-size:12px;color:var(--muted);">Auto-filled from previous order: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. This request will skip estimate review.</div>
       </div>` : ``}
-      <div class="row2">
+      <div class="row3">
+        <div class="field" style="margin-bottom:0;">
+          <label>Print time (hours, est.)</label>
+          <input type="number" id="hours-${i}" value="${hoursFromMinutes(item.minutes || item.knownMinutes)}" placeholder="1.5"
+            min="0" step="0.1" oninput="updateDraftHours(${i}, this.value)" />
+        </div>
         <div class="field" style="margin-bottom:0;">
           <label>Grams (est.)</label>
           <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
@@ -1573,6 +1587,7 @@ function renderOwnerCalculatorPage() {
           <div class="lib-grid">
             <div class="field"><label>Model link</label><input type="text" id="owner-calc-link" value="${esc(calc.link)}" placeholder="https://makerworld.com/en/models/..." oninput="updateOwnerCalculatorField('link', this.value)" /></div>
             <div class="field"><label>Model name</label><input type="text" id="owner-calc-name" value="${esc(calc.name)}" placeholder="Model name" oninput="updateOwnerCalculatorField('name', this.value)" /></div>
+            <div class="field"><label>Hours</label><input type="number" id="owner-calc-hours" value="${hoursFromMinutes(calc.minutes)}" min="0" step="0.1" placeholder="2" oninput="updateOwnerCalculatorHours(this.value)" /></div>
             <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" step="1" placeholder="120" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
             <div class="field"><label>Filament (g)</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
             <div class="field">
@@ -1590,7 +1605,7 @@ function renderOwnerCalculatorPage() {
             </div>
           ` : ``}
           <div class="calc-actions">
-            <button class="btn-sm" type="button" onclick="calculateAndSaveOwnerModel()" ${canSave ? '' : 'disabled'}>Calculate &amp; Save Model</button>
+            <button class="btn-sm" id="owner-calc-save" type="button" onclick="calculateAndSaveOwnerModel()" ${canSave ? '' : 'disabled'}>Calculate &amp; Save Model</button>
             <button class="btn-sm" type="button" onclick="resetOwnerCalculator()">Clear</button>
           </div>
           <div class="alert error" id="owner-calc-err"></div>
@@ -1849,9 +1864,14 @@ function renderOwnerItem(batchId, it, i) {
         ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} ea</div>`:''}
       </div>`:''}
     </div>
-    <div class="row2">
+    <div class="row3">
       <div class="field" style="margin-bottom:0;">
-        <label>Print time (min, hours shown)</label>
+        <label>Print time (hours)</label>
+        <input type="number" id="hours-${batchId}-${i}" value="${hoursFromMinutes(it.minutes)}"
+          placeholder="2" min="0" step="0.1" oninput="updateOwnerItemHours('${batchId}',${i},this.value)" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Print time (minutes)</label>
         <input type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
           placeholder="From Bambu Studio" min="0" step="1" oninput="previewOwnerItem('${batchId}',${i})" />
       </div>
@@ -1886,10 +1906,40 @@ function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
   if (!state.ownerCalculator) state.ownerCalculator = blankOwnerCalculator();
   state.ownerCalculator[field] = value;
+  if (field === 'minutes') {
+    const hoursInput = document.getElementById('owner-calc-hours');
+    if (hoursInput) hoursInput.value = hoursFromMinutes(value);
+  }
   const err = document.getElementById('owner-calc-err');
   const ok = document.getElementById('owner-calc-ok');
   if (err) err.style.display = 'none';
   if (ok) ok.style.display = 'none';
+  const saveButton = document.getElementById('owner-calc-save');
+  if (saveButton) {
+    const hasModel = !!modelKeyFromItem({ link: state.ownerCalculator.link, name: state.ownerCalculator.name });
+    const hasTime = Number(state.ownerCalculator.minutes) > 0;
+    const hasGrams = Number(state.ownerCalculator.grams) > 0;
+    saveButton.disabled = !(hasModel && hasTime && hasGrams);
+  }
+}
+
+function updateOwnerCalculatorHours(value) {
+  const minutes = minutesFromHours(value);
+  updateOwnerCalculatorField('minutes', minutes || '');
+  const minutesInput = document.getElementById('owner-calc-mins');
+  if (minutesInput) minutesInput.value = minutes || '';
+}
+
+function updateDraftHours(i, value) {
+  if (!state.draftItems[i]) return;
+  state.draftItems[i].minutes = minutesFromHours(value);
+}
+
+function updateOwnerItemHours(batchId, i, value) {
+  const minutes = minutesFromHours(value);
+  const minutesInput = document.getElementById(`mins-${batchId}-${i}`);
+  if (minutesInput) minutesInput.value = minutes || '';
+  previewOwnerItem(batchId, i);
 }
 
 async function lookupMyRequests() {
@@ -2098,7 +2148,7 @@ async function submitBatch() {
     id: Date.now().toString(), clientName, clientEmail,
     items: items.map(it => ({
       ...it,
-      minutes: it.knownFromLibrary ? it.knownMinutes : null,
+      minutes: it.knownFromLibrary ? it.knownMinutes : (Number(it.minutes) || null),
       fetching: false
     })),
     status: 'pending',
@@ -2202,6 +2252,8 @@ function previewOwnerItem(batchId, i) {
   const it    = batch.items[i];
   const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
   const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
+  const hoursInput = document.getElementById(`hours-${batchId}-${i}`);
+  if (hoursInput) hoursInput.value = hoursFromMinutes(mins);
   const pEl   = document.getElementById(`opreview-${batchId}-${i}`);
   if (!pEl) return;
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
@@ -2228,8 +2280,10 @@ function applyKnownEstimateToOwnerItem(batchId, i) {
   item.grams = known.grams;
 
   const minsInput = document.getElementById(`mins-${batchId}-${i}`);
+  const hoursInput = document.getElementById(`hours-${batchId}-${i}`);
   const gramsInput = document.getElementById(`ograms-${batchId}-${i}`);
   if (minsInput) minsInput.value = known.minutes;
+  if (hoursInput) hoursInput.value = hoursFromMinutes(known.minutes);
   if (gramsInput) gramsInput.value = known.grams;
 
   previewOwnerItem(batchId, i);
@@ -2461,7 +2515,7 @@ function attachAll() {
     });
   });
 
-  const ownerCalcFields = ['owner-calc-link', 'owner-calc-name', 'owner-calc-mins', 'owner-calc-grams', 'owner-calc-qty'];
+  const ownerCalcFields = ['owner-calc-link', 'owner-calc-name', 'owner-calc-hours', 'owner-calc-mins', 'owner-calc-grams', 'owner-calc-qty'];
   ownerCalcFields.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
