@@ -180,6 +180,9 @@ textarea { resize: vertical; min-height: 70px; }
 .model-preview img, .model-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--surface2); flex-shrink: 0; }
 .model-thumb { width: 56px; height: 56px; float: left; margin-right: 12px; }
 .model-preview-title { font-size: 13px; font-weight: 600; }
+.lookup-hint { margin-top: 10px; padding: 10px 12px; border: 1px dashed rgba(255,107,53,0.35); border-radius: 10px; background: rgba(255,107,53,0.05); font-size: 12px; color: var(--muted); line-height: 1.6; }
+.lookup-hint strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.lookup-hint a { color: var(--accent); }
 .model-preview-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .model-preview.loading img { animation: pulse 1.2s infinite; }
 .notif-wrap { position: relative; }
@@ -2535,7 +2538,29 @@ function safeImageUrl(url) {
   return /^https:\/\//i.test(String(url || '')) ? url : '';
 }
 
+// Printables blocks our lookups, so point the customer to where Printables lists the numbers.
+function printablesFilesUrl(link) {
+  const m = String(link || '').trim().match(/^https?:\/\/(?:www\.)?printables\.com\/(?:[a-z]{2}\/)?model\/(\d+[A-Za-z0-9-]*)/i);
+  return m ? `https://www.printables.com/model/${m[1]}/files` : '';
+}
+
+function renderPrintablesHint(item) {
+  const filesUrl = printablesFilesUrl(item.link);
+  if (!filesUrl) return '';
+  return `<div class="lookup-hint">
+    <strong>Print time and filament are listed on Printables</strong>
+    We can't fill these in automatically for Printables links, but you can usually find them yourself:
+    open the model's <a href="${esc(filesUrl)}" target="_blank" rel="noopener noreferrer">Files tab on Printables ↗</a>,
+    find a print file (G-code), and copy its print time and weight (g) into Hours, Minutes and Grams below.
+    If the model has no print file, leave them blank and we'll estimate it for you.
+  </div>`;
+}
+
 function renderModelPreview(item) {
+  return renderModelPreviewCard(item) + renderPrintablesHint(item);
+}
+
+function renderModelPreviewCard(item) {
   if (item.previewLoading) {
     return `<div class="model-preview loading"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /><div class="model-preview-sub">Loading preview...</div></div>`;
   }
