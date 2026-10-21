@@ -41,6 +41,20 @@ check('owner notice lists customer photo links', () => {
   assert(emailsFor('INSERT', at({}), null)[0].body.includes('Photo 1: https://img.test/a.png'), 'photo link missing');
 });
 
+check('confirmation email includes the estimated ready date', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'order_received', estimatedReady: '2026-10-28' }), at({ phase: 'quote_sent' }))[0].body;
+  assert(body.includes('Estimated ready: Wednesday, October 28'), body);
+});
+check('quote email links straight to the order', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
+  assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);
+});
+check('quote reminders: one per valid customer, with the order link', () => {
+  const { reminderEmails } = load();
+  const out = reminderEmails([at({ phase: 'quote_sent' }), at({ clientEmail: 'not-an-email' })]);
+  assert(out.length === 1 && out[0].subject.includes('quote is waiting') && out[0].body.includes('#order-1729') && out[0].body.includes('$9.28'), JSON.stringify(out));
+});
+
 console.log('\nModel lookups:');
 check('MakerWorld: uses the linked profile, else the default; seconds to minutes', () => {
   const design = { title: 'Dragon', defaultInstanceId: 2, instances: [

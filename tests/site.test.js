@@ -29,6 +29,10 @@ function fixtures() {
       g3: { id: 'g3', published: false, sort_order: 2, data: { title: 'Hidden prototype', photos: [] } }
     },
     library: { 'name:planter': { name: 'Planter', minutes: 200, grams: 110, filType: 'black' } },
+    settings: { about: { text: 'I am a veteran spouse who prints on the side.', replyTime: 'I usually reply within a day.' },
+      links: { messenger: 'https://m.me/soloprint' },
+      colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
+      printHoursPerDay: 8, reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
     log: []
   };
 }
@@ -60,6 +64,11 @@ async function mockBackend(page, db) {
       if (method === 'POST') { const row = JSON.parse(req.postData()); db.gallery[row.id] = row; return route.fulfill({ status: 201, body: '' }); }
       if (method === 'DELETE') { delete db.gallery[decodeURIComponent(url.split('id=eq.')[1])]; return route.fulfill({ status: 204, body: '' }); }
     }
+    if (rest.startsWith('/site_settings')) {
+      if (method === 'GET') return route.fulfill({ json: [{ data: db.settings }] });
+      if (!owner) return route.fulfill({ status: 401, json: {} });
+      if (method === 'POST') { db.settings = JSON.parse(req.postData()).data; return route.fulfill({ status: 201, body: '' }); }
+    }
     if (rest.startsWith('/model_library')) {
       if (method === 'GET') return route.fulfill({ json: Object.entries(db.library).map(([key, data]) => ({ key, data })) });
       if (!owner) return route.fulfill({ status: 401, json: {} });
@@ -79,13 +88,14 @@ async function mockBackend(page, db) {
 }
 
 let browser;
-async function open(db, { width = 1100, height = 900 } = {}) {
+async function open(db, { width = 1100, height = 900, suffix = '', init } = {}) {
   const page = await browser.newPage({ viewport: { width, height } });
   page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   page.on('dialog', d => d.accept());
   await mockBackend(page, db);
-  await page.goto(SITE);
+  if (init) await page.addInitScript(init);
+  await page.goto(SITE + suffix);
   await page.waitForFunction(() => !state.loading);
   await page.waitForTimeout(250);
   return page;
@@ -94,7 +104,7 @@ async function open(db, { width = 1100, height = 900 } = {}) {
 const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab}'; await loadBatches(); await loadGallery(); render(); })()`;
 const STATES = {
   'home': '0',
-  'home with an item': "(() => { updateDraft(0, 'name', 'Desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
+  'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
   'design page': "(async () => { await loadGallery(); openWork('g1'); })()",
   'my requests': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.clientTab = 'jobs'; render(); })()",
@@ -103,7 +113,8 @@ const STATES = {
   'owner calculator': asOwner('calculator'),
   'owner gallery': asOwner('gallery'),
   'owner saved models': asOwner('library'),
-  'owner sales data': asOwner('analytics')
+  'owner sales data': asOwner('analytics'),
+  'owner site settings': asOwner('settings')
 };
 
 (async () => {
@@ -176,13 +187,16 @@ const STATES = {
     const page = await open(db);
     await page.fill('#client-name', 'Sam');
     await page.fill('#client-email', 'sam@example.com');
-    await page.fill('#link-0', 'Phone stand');
-    await page.fill('#name-0', 'Phone stand');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'A stand for my phone on the desk');
+    await page.click('.swatch-pill:has-text("Red")');
     await page.click('#submit-btn');
     await page.waitForTimeout(400);
     const job = Object.values(db.jobs).find(j => j.clientName === 'Sam');
     assert(job, 'request was not saved');
     assert(job.phase === 'estimate', `new request phase is ${job.phase}`);
+    assert(job.items[0].name === 'Custom: A stand for my phone on', `custom idea name: ${job.items[0].name}`);
+    assert(job.items[0].color === 'Red' && job.items[0].filType === 'color', `color: ${job.items[0].color}/${job.items[0].filType}`);
     assert(/received your request/.test(await page.textContent('#submit-ok')), 'missing confirmation message');
     await page.close();
   });
@@ -197,14 +211,45 @@ const STATES = {
   });
   await check('MakerWorld link fills time and grams; saved model match fills estimate', async () => {
     const page = await open(fixtures());
+    await page.click('text=I have a link');
     await page.fill('#link-0', 'https://makerworld.com/en/models/123');
-    await page.waitForFunction(() => document.getElementById('grams-0').value !== '', null, { timeout: 5000 });
+    await page.waitForFunction(() => (document.getElementById('grams-0') || {}).value, null, { timeout: 5000 });
     assert(await page.inputValue('#hours-0') === '2' && await page.inputValue('#minutes-0') === '30', 'hours/minutes not filled from lookup');
-    await page.evaluate(() => { state.draftItems = [blankItem()]; render(); });
-    await page.fill('#link-0', 'Planter');
+    await page.evaluate(() => { state.draftItems = [{ ...blankItem(), mode: 'link' }]; render(); });
     await page.fill('#name-0', 'Planter');
     await page.waitForTimeout(200);
     assert(await page.evaluate(() => state.draftItems[0].knownMinutes) === 200, 'saved model from the database was not offered');
+    await page.close();
+  });
+
+  await check('home page shows about, how it works, reviews and Message me', async () => {
+    const page = await open(fixtures());
+    const text = await page.textContent('main');
+    assert(text.includes('veteran spouse') && text.includes('How it works') && text.includes('Came out perfect'), 'a home section is missing');
+    assert(await page.locator('a.btn-contact[href="https://m.me/soloprint"]').count() === 1, 'Message me button missing');
+    await page.close();
+  });
+  await check('half-filled request survives a reload, and is cleared after sending', async () => {
+    const page = await open(fixtures());
+    await page.fill('#client-name', 'Dana');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'A name sign');
+    await page.waitForTimeout(600);
+    await page.reload();
+    await page.waitForFunction(() => !state.loading);
+    assert(await page.inputValue('#client-name') === 'Dana' && await page.inputValue('#notes-0') === 'A name sign', 'draft was not restored');
+    await page.fill('#client-email', 'dana@example.com');
+    await page.click('#submit-btn');
+    await page.waitForTimeout(500);
+    assert(!(await page.evaluate(() => localStorage.getItem('soloprint_request_draft_v1'))), 'draft not cleared after sending');
+    await page.close();
+  });
+  await check('email links open the order, and never load other customers on the owner\'s device', async () => {
+    const db = fixtures();
+    const page = await open(db, { suffix: '?requests=jane%40example.com#order-2', init: () => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 })) });
+    assert(await page.evaluate(() => state.clientTab === 'jobs' && state.historyEmail === 'jane@example.com'), 'did not open My Requests for the linked email');
+    assert(!db.log.includes('GET /jobs owner'), 'customer view loaded every order');
+    assert(await page.locator('#order-2').count() === 1, 'linked order not shown');
     await page.close();
   });
 
@@ -233,6 +278,28 @@ const STATES = {
     await page.waitForTimeout(200);
     assert(urls[0] && urls[0].includes('or=(data->>phase.is.null,data->>phase.neq.delivered,created_at.gte.'), `recent query was ${urls[0]}`);
     assert(urls.some(u => u.endsWith('/jobs?order=created_at.asc')), 'Load all did not fetch full history');
+    await page.close();
+  });
+  await check('confirming an order sets a ready date from the queue', async () => {
+    const db = fixtures();
+    db.jobs['q1'] = { id: 'q1', clientName: 'A', clientEmail: 'a@example.com', createdAt: ago(3000), phase: 'production', phaseHistory: { order_received: ago(2000) }, items: [{ name: 'X', qty: 1, minutes: 300, grams: 10 }] };
+    db.jobs['1'].items[0].minutes = 100;   // 2 x 100 min
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.evaluate(() => updateBatchPhase('1', 'order_received'));
+    const expected = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 2); return localDateString(d); });
+    assert(db.jobs['1'].estimatedReady === expected, `ready date ${db.jobs['1'].estimatedReady}, expected ${expected} (500 min at 8 h/day)`);
+    await page.close();
+  });
+  await check('site settings save', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('settings'));
+    await page.waitForTimeout(200);
+    await page.fill('#set-reply', 'Replies within two days');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.about.replyTime === 'Replies within two days', `saved reply time: ${db.settings.about && db.settings.about.replyTime}`);
     await page.close();
   });
   await check('saved model edits sync to the database', async () => {

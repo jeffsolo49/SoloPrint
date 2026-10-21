@@ -4,7 +4,7 @@
 
 const SECRET = 'PASTE-YOUR-SECRET-HERE';   // must match the secret in supabase/email-trigger.sql
 const OWNER_EMAIL = 'jeffsolo49@gmail.com';
-const SITE_URL = '';                       // optional: your site's address, e.g. https://soloprint.example.com
+const SITE_URL = 'https://soloprint.vercel.app';  // your site's address, used for links in emails
 const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Public Supabase address and key (the same ones in index.html), used by the weekly backup.
 const SUPA_URL = 'https://xpssamjjyarajtwtrwqx.supabase.co';
@@ -197,16 +197,65 @@ function testLookup() {
   });
 }
 
-// ── WEEKLY BACKUP ─────────────────────────────────────────────────────────
-// Saves every order, gallery item and saved model to a JSON file in Google Drive ("SoloPrint backups"),
-// keeping the newest 12. Run setupWeeklyBackup once; it makes a backup now and every Monday at about 3am.
-function setupWeeklyBackup() {
+// ── SCHEDULED JOBS ────────────────────────────────────────────────────────
+// Run setupSchedules once (running it again is safe). It schedules:
+//  - backupToDrive: every Monday around 3am, saves orders, gallery items and saved models to a JSON file in
+//    Google Drive ("SoloPrint backups"), keeping the newest 12. A first backup is made right away.
+//  - sendQuoteReminders: every day around 10am, emails customers whose quote has waited 3+ days.
+function setupSchedules() {
   ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'backupToDrive')
+    .filter(t => ['backupToDrive', 'sendQuoteReminders'].includes(t.getHandlerFunction()))
     .forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('backupToDrive').timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
+  ScriptApp.newTrigger('sendQuoteReminders').timeBased().everyDays(1).atHour(10).create();
   backupToDrive();
-  Logger.log('Weekly backup scheduled for Mondays around 3am, and a first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+  Logger.log('Scheduled: weekly backup (Mondays ~3am) and daily quote reminders (~10am). A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+}
+
+// Older name, kept so instructions that mention it still work.
+function setupWeeklyBackup() {
+  setupSchedules();
+}
+
+// One friendly reminder per quote that's waited 3+ days without a "Looks good".
+function sendQuoteReminders() {
+  const res = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/rpc/due_quote_reminders', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
+    payload: JSON.stringify({ p_secret: SECRET, p_days: 3 }),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Quote reminders failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
+  const due = JSON.parse(res.getContentText() || '[]');
+  reminderEmails(due).forEach(m => MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: OWNER_EMAIL }));
+  Logger.log('Quote reminders sent: ' + due.length);
+}
+
+// Pure function so it can be tested outside Apps Script.
+function reminderEmails(records) {
+  return (records || []).filter(rec => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(rec.clientEmail || ''))).map(rec => ({
+    to: String(rec.clientEmail),
+    subject: 'Still interested? Your SoloPrint quote is waiting',
+    body: [
+      `Hi ${String(rec.clientName || '').trim() || 'there'},`,
+      '',
+      `Just checking in: your quote for ${orderTitle(rec)} is still ready${orderTotal(rec) ? ` ($${money(orderTotal(rec))})` : ''}.`,
+      '',
+      `If it looks good, tap "Looks good" here: ${orderLink(rec)}`,
+      'Want something changed, or have a question? Just reply to this email.',
+      '',
+      "No pressure: nothing is charged until we've both confirmed the order.",
+      '',
+      'Thanks,',
+      'SoloPrint'
+    ].join('\n')
+  }));
+}
+
+// Link that opens the customer's requests with this order in view.
+function orderLink(rec) {
+  return SITE_URL + '/?requests=' + encodeURIComponent(String(rec.clientEmail || '')) + (rec.id ? '#order-' + encodeURIComponent(String(rec.id)) : '');
 }
 
 function backupToDrive() {
@@ -246,7 +295,7 @@ function emailsFor(type, rec, old) {
   const title = orderTitle(rec);
   const footer = [
     '',
-    SITE_URL ? `Track your order any time: ${SITE_URL} (open "My Requests" and enter this email address).` : 'You can track your order on the SoloPrint site under "My Requests".',
+    `Track your order any time: ${orderLink(rec)}`,
     'Questions? Just reply to this email.',
     '',
     'Thanks,',
@@ -322,7 +371,7 @@ function quoteLines(rec) {
     '',
     `Total: $${money(orderTotal(rec))}`,
     '',
-    'If it looks good, open "My Requests" on the SoloPrint site and tap "Looks good", or just reply to this email.',
+    `If it looks good, tap "Looks good" here: ${orderLink(rec)} (or just reply to this email).`,
     "Nothing is charged yet. We'll confirm we can make your order before asking for payment."
   ];
 }
@@ -385,4 +434,4 @@ function formatDate(iso) {
   return isNaN(d) ? '' : d.toLocaleString('en-US', { timeZone: 'America/Chicago' });
 }
 
-if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview };
+if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview, reminderEmails, orderLink };

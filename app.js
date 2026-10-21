@@ -1024,15 +1024,18 @@ async function init() {
   loadModelLibrary();
   loadClientHistoryEmail();
   restoreDraft();
+  const linkedOrder = handleRequestsLink();
   state.ownerUnlocked = hasValidOwnerSession();
   handleAuthRedirect();
   await Promise.all([
     loadSettings(),
     loadRemoteLibrary(),
-    state.ownerUnlocked ? loadBatches() : state.historyEmail ? loadBatches(state.historyEmail) : null
+    // The customer view only ever loads the looked-up customer's orders, even on the owner's device.
+    state.ownerUnlocked && state.view === 'owner' ? loadBatches() : state.historyEmail ? loadBatches(state.historyEmail) : null
   ]);
   state.loading = false;
   render();
+  if (linkedOrder) document.getElementById(`order-${linkedOrder}`)?.scrollIntoView({ block: 'start' });
   loadGallery().then(() => {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
     if (state.view === 'client' && !typing) render();
@@ -3038,6 +3041,21 @@ function clearMyRequestsLookup() {
 // ── EMAIL LINKS (magic link / password reset) ─────────────────────────────
 // Supabase sends the owner back to this page with the session in the URL fragment
 // (#access_token=...&type=magiclink|recovery). Finish the login and, for resets, ask for a new password.
+// Links in emails (?requests=email#order-id) open that customer's requests with the order in view.
+function handleRequestsLink() {
+  const params = new URLSearchParams(location.search);
+  const email = String(params.get('requests') || '').trim().toLowerCase();
+  if (!email || !email.includes('@') || email.length > 200) return '';
+  const order = (String(location.hash).match(/^#order-([A-Za-z0-9_-]{1,64})$/) || [])[1] || '';
+  params.delete('requests');
+  history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : ''));
+  state.historyEmail = email;
+  persistClientHistoryEmail();
+  state.view = 'client';
+  state.clientTab = 'jobs';
+  return order;
+}
+
 function handleAuthRedirect() {
   const params = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
   if (!params.has('access_token') && !params.has('error') && !params.has('error_description')) return;
@@ -3392,7 +3410,7 @@ function queueDraftSave() {
 }
 function saveDraft() {
   const items = state.draftItems.map(it => ({ ...it, fetching: false, previewLoading: false }));
-  const empty = !state.clientName && !state.clientEmail && items.every(it => !it.name && !it.link && !it.notes && !it.mode);
+  const empty = items.every(it => !it.name && !it.link && !it.notes && !it.mode);
   try {
     if (empty) localStorage.removeItem(DRAFT_KEY);
     else localStorage.setItem(DRAFT_KEY, JSON.stringify({ clientName: state.clientName, clientEmail: state.clientEmail, items, savedAt: Date.now() }));
@@ -3731,6 +3749,7 @@ async function approveBatch(batchId) {
   batch.phase = 'quote_sent';
   batch.paymentStatus = 'payment_requested';
   batch.customerApprovedAt = '';
+  batch.reminderSentAt = '';
   stampPhase(batch, 'quote_sent');
   await upsertBatch(batch);
 
@@ -3744,6 +3763,7 @@ async function resetBatch(batchId) {
   b.status = 'pending';
   b.phase = 'estimate';
   b.customerApprovedAt = '';
+  b.reminderSentAt = '';
   b.phaseHistory = { estimate: (b.phaseHistory || {}).estimate || b.createdAt };
   b.items.forEach(it => it.minutes = null);
   await upsertBatch(b);

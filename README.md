@@ -13,6 +13,9 @@ Live at https://soloprint.vercel.app/
   `supabase/gallery.sql` (gallery and photo storage).
 - **Emails and MakerWorld lookups:** a Google Apps Script, `email/Code.gs`, called by the trigger in
   `supabase/email-trigger.sql`. Setup steps are in `email/README.md`.
+- **Site Settings** (owner tab): about text and photo, Messenger/Etsy links, filament colors, printing
+  hours per day and reviews, stored by `supabase/site-settings.sql`.
+- **Scheduled jobs** (Apps Script `setupSchedules`): weekly Drive backup and daily quote reminders.
 - **Link previews:** `og-image.png` is the picture shown when the site's link is texted or shared.
 
 ## Automatic checks
