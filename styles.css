@@ -43,7 +43,10 @@ main:focus { outline: none; }
 .thumb-btn { padding: 0; border: none; background: none; cursor: pointer; border-radius: 8px; line-height: 0; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
-body { background: var(--bg-gradient) fixed; }
+/* The gradient sits on its own fixed layer: iPhone Safari doesn't support fixed backgrounds and
+   repaints the whole page while scrolling, which can leave parts of the page blank. */
+body { background: transparent; }
+body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 100vh; height: 100lvh; z-index: -1; background: var(--bg-gradient); pointer-events: none; }
 
 .header { background: var(--surface); border-bottom: 4px solid var(--bezel); padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; height: 60px; position: sticky; top: 0; z-index: 100; }
 .logo { display: flex; align-items: center; gap: 10px; }
