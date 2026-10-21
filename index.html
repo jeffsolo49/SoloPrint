@@ -147,6 +147,26 @@ textarea { resize: vertical; min-height: 70px; }
 .status.white { background: rgba(240,240,245,0.1); color: #ccc; }
 .status.special { background: rgba(255,107,53,0.12); color: var(--accent); }
 
+.tracker { display: grid; grid-template-columns: repeat(5, 1fr); margin: 4px 0 18px; }
+.tracker-step { position: relative; text-align: center; padding: 0 4px; }
+.tracker-step::before { content: ''; position: absolute; top: 13px; left: -50%; width: 100%; height: 3px; background: var(--border); z-index: 0; }
+.tracker-step:first-child::before { display: none; }
+.tracker-step.done::before, .tracker-step.current::before { background: var(--accent); }
+.tracker-dot { position: relative; z-index: 1; width: 28px; height: 28px; margin: 0 auto 8px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface2); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; font-family: var(--mono); }
+.tracker-step.done .tracker-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tracker-step.current .tracker-dot { background: linear-gradient(rgba(255,107,53,0.15), rgba(255,107,53,0.15)), var(--surface); border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px rgba(255,107,53,0.15); animation: pulse 1.6s infinite; }
+.tracker-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.tracker-step.done .tracker-label, .tracker-step.current .tracker-label { color: var(--text); }
+.tracker-time { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 2px; min-height: 12px; }
+.tracker-status { background: rgba(255,107,53,0.06); border: 1px solid rgba(255,107,53,0.2); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
+.tracker-status strong { color: var(--accent); }
+@media (max-width: 560px) {
+  .tracker { grid-template-columns: 1fr; gap: 0; }
+  .tracker-step { display: grid; grid-template-columns: 28px 1fr; column-gap: 12px; text-align: left; padding: 0 0 14px; }
+  .tracker-step::before { top: -14px; left: 12px; width: 3px; height: 28px; }
+  .tracker-dot { margin: 0; grid-row: span 2; }
+  .tracker-time { min-height: 0; }
+}
 .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; }
 .job-card.pending { border-left: 3px solid var(--amber); }
 .job-card.quoted { border-left: 3px solid var(--green); }
@@ -558,6 +578,39 @@ function phaseIndex(phaseId) {
   return ORDER_PHASES.findIndex(p => p.id === phaseId);
 }
 
+// Customer-facing wording for the order tracker on "My Requests".
+const TRACKER_STEPS = {
+  estimate:       { label: 'Request Received', detail: "We're reviewing your models and estimating print time and filament." },
+  quote_sent:     { label: 'Quote Ready',      detail: 'Your quote is ready. Check your email to review it and confirm your order.' },
+  order_received: { label: 'Order Confirmed',  detail: "Your order is confirmed and queued for the printer." },
+  production:     { label: 'Printing',         detail: 'Your parts are on the printer right now.' },
+  delivered:      { label: 'Delivered',        detail: 'Your order is complete. Enjoy!' }
+};
+
+function stampPhase(batch, phase) {
+  batch.phaseHistory = { ...(batch.phaseHistory || {}) };
+  if (!batch.phaseHistory[phase]) batch.phaseHistory[phase] = new Date().toISOString();
+}
+
+function renderOrderTracker(batch) {
+  const phase = batch.phase || 'estimate';
+  const currentIdx = Math.max(0, phaseIndex(phase));
+  const history = batch.phaseHistory || {};
+  const shortTime = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const steps = ORDER_PHASES.map((p, idx) => {
+    const cls = idx < currentIdx || phase === 'delivered' ? 'done' : idx === currentIdx ? 'current' : '';
+    const at = history[p.id] || (p.id === 'estimate' ? batch.createdAt : null);
+    return `<div class="tracker-step ${cls}">
+      <div class="tracker-dot">${cls === 'done' ? '✓' : idx + 1}</div>
+      <div class="tracker-label">${TRACKER_STEPS[p.id].label}</div>
+      <div class="tracker-time">${cls && at ? shortTime(at) : ''}</div>
+    </div>`;
+  }).join('');
+  const deliveryInfo = [batch.deliveryDate && `Delivery: ${esc(batch.deliveryDate)}`, batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`].filter(Boolean).join(' · ');
+  return `<div class="tracker">${steps}</div>
+    <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>`;
+}
+
 function canAdvanceToPhase(currentPhase, nextPhase) {
   const currentIdx = phaseIndex(currentPhase || 'estimate');
   const nextIdx = phaseIndex(nextPhase || 'estimate');
@@ -603,7 +656,8 @@ function normalizeBatch(batch) {
     paymentStatus,
     deliveryNotes: batch.deliveryNotes || '',
     deliveryTracking: batch.deliveryTracking || '',
-    deliveryDate: batch.deliveryDate || ''
+    deliveryDate: batch.deliveryDate || '',
+    phaseHistory: batch.phaseHistory || {}
   };
 }
 
@@ -1405,6 +1459,7 @@ function renderMyJobsTab() {
           <span class="status ${phase}">${phaseLabel(phase)}</span>
         </div>
         <div class="job-divider"></div>
+        ${renderOrderTracker(b)}
         ${b.items.map(it => {
           const ip = it.minutes ? calcTotal(it.minutes, it.grams, it.filType, it.qty) : null;
           const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
@@ -2015,6 +2070,14 @@ async function lookupMyRequests() {
   render();
 }
 
+// Keep the order tracker current while a customer is watching "My Requests".
+setInterval(async () => {
+  if (state.view !== 'client' || state.clientTab !== 'jobs' || !state.historyEmail) return;
+  if (document.hidden || document.activeElement?.id === 'history-email') return;
+  await loadBatches(state.historyEmail);
+  if (state.view === 'client' && state.clientTab === 'jobs') render();
+}, 60 * 1000);
+
 function clearMyRequestsLookup() {
   state.historyEmail = '';
   state.batches = [];
@@ -2221,11 +2284,13 @@ async function submitBatch() {
     deliveryDate: '',
     createdAt: new Date().toISOString()
   };
+  batch.phaseHistory = { estimate: batch.createdAt };
   const quoteReady = isBatchQuoteReady(batch);
   if (quoteReady) {
     batch.status = 'quoted';
     batch.phase = 'quote_sent';
     batch.paymentStatus = 'payment_requested';
+    stampPhase(batch, 'quote_sent');
   }
   state.historyEmail = clientEmail.toLowerCase();
   persistClientHistoryEmail();
@@ -2363,6 +2428,7 @@ async function updateBatchPhase(batchId, phase) {
   }
   b.phase = phase;
   b.status = phase === 'estimate' ? 'pending' : 'quoted';
+  stampPhase(b, phase);
   await upsertBatch(b);
   render();
 }
@@ -2520,6 +2586,7 @@ async function approveBatch(batchId) {
   batch.status = 'quoted';
   batch.phase = 'quote_sent';
   batch.paymentStatus = 'payment_requested';
+  stampPhase(batch, 'quote_sent');
   await upsertBatch(batch);
 
   const total     = batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
@@ -2543,6 +2610,7 @@ async function resetBatch(batchId) {
   if (!b) return;
   b.status = 'pending';
   b.phase = 'estimate';
+  b.phaseHistory = { estimate: (b.phaseHistory || {}).estimate || b.createdAt };
   b.items.forEach(it => it.minutes = null);
   await upsertBatch(b);
   render();
