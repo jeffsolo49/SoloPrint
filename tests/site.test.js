@@ -105,6 +105,7 @@ const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession 
 const STATES = {
   'home': '0',
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
+  'home with a multi-color print': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); })()",
   'home with a special order color': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A vase'); pickColor(0, ''); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
   'design page': "(async () => { await loadGallery(); openWork('g1'); })()",
@@ -338,6 +339,55 @@ const STATES = {
     await page.waitForTimeout(400);
     const job = Object.values(db.jobs).find(j => j.items[0] && j.items[0].notes === 'Another case');
     assert(job && job.items[0].useLeftover === true && job.items[0].leftoverFrom === 'r1', `saved ${JSON.stringify(job && job.items[0])}`);
+    await page.close();
+  });
+  await check('multi-color print can mix stocked colors with a leftover roll', async () => {
+    const db = withRolls(fixtures());
+    const page = await open(db);
+    await page.fill('#client-name', 'Lee');
+    await page.fill('#client-email', 'lee@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'Two-tone case');
+    await page.click('.swatch-pill:has-text("Black")');
+    await page.click('text=+ Add another color');
+    await page.click('#extra-leftover-0');
+    await page.waitForSelector('[aria-label="Other colors in this print"] button:has-text("Red TPU")');
+    const chips = await page.$$eval('[aria-label="Other colors in this print"] button', bs => bs.map(b => b.textContent.replace(/\s+/g, ' ').trim()));
+    assert(chips.length === 3 && /^Red$/.test(chips[0]) && /^Red TPU/.test(chips[1]) && /^Silk Gold/.test(chips[2]), `chips ${JSON.stringify(chips)}`);
+    await page.click('[aria-label="Other colors in this print"] button:has-text("Red TPU")');
+    await page.click('[aria-label="Other colors in this print"] button >> text=/^\\s*Red\\s*$/');
+    await page.evaluate(() => updateDraft(0, 'grams', 1800));   // 600 g per color: more than the 500 g left
+    await page.click('#submit-btn');
+    await page.waitForTimeout(200);
+    assert(/500 g left/.test(await page.textContent('#submit-err')), 'over-limit share should be stopped');
+    await page.evaluate(() => updateDraft(0, 'grams', 300));
+    const rate = await page.evaluate(() => itemRate(state.draftItems[0]));
+    assert(Math.abs(rate - 0.016) < 1e-9, `rate ${rate} (Black and Red at 0.024, roll at 0)`);
+    await page.click('#submit-btn');
+    await page.waitForTimeout(400);
+    const job = Object.values(db.jobs).find(j => j.items[0] && j.items[0].notes === 'Two-tone case');
+    const it = job && job.items[0];
+    assert(it && it.color === 'Black' && it.extraColors.map(p => p.name).join(',') === 'Red,Red TPU'
+      && it.extraColors[1].filType === 'leftover' && it.extraColors[1].leftoverFrom === 'r1', `saved ${JSON.stringify(it)}`);
+    await page.close();
+  });
+  await check('colors are kept in A-Z order for customers and the owner', async () => {
+    const db = fixtures();
+    db.settings.colors = [{ id: 'w', name: 'White', hex: '#f4f4f4' }, { id: 'b', name: 'Black', hex: '#1e1e24' }, { id: 'r', name: 'red', hex: '#d22b2b' }];
+    const page = await open(db);
+    await page.click('text=I have an idea');
+    const pills = await page.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
+    assert(pills.join(',') === 'Black,red,White', `customer order ${pills}`);
+    await page.evaluate(asOwner('settings'));
+    await page.click('text=Add a color');
+    const last = page.locator('input[aria-label="Color name"]').nth(3);
+    await last.fill('Aqua');
+    await last.dispatchEvent('change');
+    const names = await page.$$eval('input[aria-label="Color name"]', is => is.map(i => i.value));
+    assert(names.join(',') === 'Aqua,Black,red,White', `owner order ${names}`);
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.colors.map(c => c.name).join(',') === 'Aqua,Black,red,White', `saved ${db.settings.colors.map(c => c.name)}`);
     await page.close();
   });
   await check('owner sees whether a leftover roll covers the order', async () => {

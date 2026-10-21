@@ -45,7 +45,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const BACKUP_FOLDER = 'SoloPrint backups';
 const BACKUPS_TO_KEEP = 12;
 
-const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0 };
+const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0, leftover: 0 };
 const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order' };
 
 function doPost(e) {
@@ -417,6 +417,8 @@ function itemLines(rec, withPrices) {
       : isSpecialOrderItem(it) ? `   Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from your leftover roll, no material charge)' : ' (full 1 kg roll; the rest is yours for 2 months, and the material is free in another order)'}`
       : `   Filament: ${FIL_LABEL[it.filType] || 'Black'}`;
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
+    const extras = extraColors(it);
+    if (extras.length) lines.push(`   Also: ${extras.map(p => p.name + (p.filType === 'leftover' ? ' (leftover roll)' : '')).join(', ')}`);
     if (withPrices && it.minutes && it.grams) {
       const each = perPrint(it);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);
@@ -437,8 +439,18 @@ function deliveryLines(rec) {
 }
 
 function perPrint(it) {
-  const rate = isSpecialOrderItem(it) ? 0 : (FIL_RATE[it.filType] || 0.024);
-  return 2 + Number(it.minutes) * 0.024 + Number(it.grams) * rate;
+  return 2 + Number(it.minutes) * 0.024 + Number(it.grams) * itemRate(it);
+}
+
+function extraColors(it) {
+  return (Array.isArray(it.extraColors) ? it.extraColors : []).filter(p => p && p.name);
+}
+
+// Multi-color prints split the grams evenly between their colors; rolls (new or leftover) have no per-gram charge.
+function itemRate(it) {
+  const main = isSpecialOrderItem(it) ? 0 : (FIL_RATE[it.filType] ?? 0.024);
+  const rates = [main].concat(extraColors(it).map(p => FIL_RATE[p.filType] ?? 0.024));
+  return rates.reduce((s, r) => s + r, 0) / rates.length;
 }
 
 function orderTotal(rec) {
@@ -454,11 +466,11 @@ function isSpecialOrderItem(it) {
 // The 1 kg roll for special orders (a color or material not carried), charged instead of per gram.
 // The owner can change it per order; 0 when every special item uses the customer's leftover roll.
 function specialOrderCost(rec) {
-  const items = (rec.items || []).filter(isSpecialOrderItem);
+  const items = (rec.items || []).filter(it => isSpecialOrderItem(it) || extraColors(it).some(p => p.filType === 'leftover'));
   if (!items.length) return 0;
   const cost = rec.specialOrderCost;
   if (cost !== null && cost !== undefined && cost !== '' && Number(cost) >= 0) return Number(cost);
-  return items.some(it => !it.useLeftover) ? 20 : 0;
+  return items.some(it => isSpecialOrderItem(it) && !it.useLeftover) ? 20 : 0;
 }
 
 function orderTitle(rec) {
