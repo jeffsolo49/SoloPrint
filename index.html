@@ -1632,7 +1632,7 @@ function renderOwnerCalculatorLivePreview(calc) {
       <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
       <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
 ${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
-${grams}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
+${grams.toFixed(1)}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
 $${perPrint.toFixed(2)} per print × ${qty}</div>
     </div>`;
 }
@@ -1643,8 +1643,6 @@ function renderOwnerCalculatorPage() {
   const grams = parseFloat(calc.grams);
   const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
   const hasNumbers = Number.isFinite(minutes) && minutes > 0 && Number.isFinite(grams) && grams > 0;
-  const perPrint = hasNumbers ? calcPerPrint(minutes, grams, calc.filType) : null;
-  const total = perPrint !== null ? perPrint * qty : null;
   const saved = calc.lastResult;
   const modelMatch = getKnownEstimate({ link: calc.link, name: calc.name });
   const canSave = !!modelKeyFromItem({ link: calc.link, name: calc.name }) && hasNumbers;
@@ -1694,39 +1692,7 @@ function renderOwnerCalculatorPage() {
         </div>
         <div class="calc-summary-card">
           <div class="card-title">Live Quote Preview</div>
-          <div id="owner-calc-live-preview">
-          ${hasNumbers ? `
-            <div class="price-big">$${total.toFixed(2)}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${FIL_LABEL[calc.filType] || calc.filType} filament.</div>
-            <div class="calc-stat-grid">
-              <div class="calc-stat">
-                <div class="calc-stat-label">Per Print</div>
-                <div class="calc-stat-value accent">$${perPrint.toFixed(2)}</div>
-              </div>
-              <div class="calc-stat">
-                <div class="calc-stat-label">Quantity</div>
-                <div class="calc-stat-value">${qty}</div>
-              </div>
-              <div class="calc-stat">
-                <div class="calc-stat-label">Print Time</div>
-                <div class="calc-stat-value">${fmtTime(minutes)}</div>
-              </div>
-              <div class="calc-stat">
-                <div class="calc-stat-label">Filament</div>
-                <div class="calc-stat-value green">${grams.toFixed(1)}g</div>
-              </div>
-            </div>
-            <div class="price-preview-box" style="margin-top:16px;">
-              <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
-              <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
-${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
-${grams}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
-$${perPrint.toFixed(2)} per print × ${qty}</div>
-            </div>
-          ` : `
-            <div style="font-size:12px;color:var(--muted);line-height:1.8;">Fill in minutes and grams to see the quote update live here. This summary uses the same pricing math as the customer quote flow.</div>
-          `}
-          </div>
+          <div id="owner-calc-live-preview">${renderOwnerCalculatorLivePreview(calc)}</div>
           ${saved ? `
             <div class="total-box">
               <span class="total-label">Last saved model</span>
