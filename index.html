@@ -1020,8 +1020,79 @@ function loadModelLibrary() {
   }
 }
 
+// Saved Models live in Supabase (model_library table, supabase/library-and-backups.sql) so every device
+// and every customer's browser sees them. localStorage is a cache and a fallback if Supabase is unreachable.
+const LIBRARY_MIGRATED_KEY = 'soloprint_model_library_uploaded_v1';
+let libraryRemote = null;      // key -> JSON of each entry as last seen in Supabase; null until loaded
+let librarySyncTimer = null;
+
 function persistModelLibrary() {
   try { localStorage.setItem(MODEL_LIBRARY_KEY, JSON.stringify(state.modelLibrary)); } catch (e) {}
+  if (state.ownerUnlocked && libraryRemote) {
+    clearTimeout(librarySyncTimer);
+    librarySyncTimer = setTimeout(syncModelLibrary, 600);
+  }
+}
+
+function cleanLibraryEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const minutes = cleanNumber(e.minutes), grams = cleanNumber(e.grams);
+  if (!minutes || !grams) return null;
+  return { link: cleanText(e.link, 500), name: cleanText(e.name, 200), minutes, grams, filType: cleanFilType(e.filType), updatedAt: cleanIso(e.updatedAt) };
+}
+
+async function loadRemoteLibrary() {
+  let rows;
+  try {
+    rows = await supaFetch('/model_library?select=key,data');
+  } catch (e) {
+    return; // table not set up yet or offline: keep the local copy
+  }
+  const remote = {};
+  (rows || []).forEach(r => {
+    const entry = cleanLibraryEntry(r && r.data);
+    if (entry && typeof r.key === 'string' && r.key.length <= 600) remote[r.key] = entry;
+  });
+  libraryRemote = Object.fromEntries(Object.entries(remote).map(([k, v]) => [k, JSON.stringify(v)]));
+  let migrated = false;
+  try { migrated = localStorage.getItem(LIBRARY_MIGRATED_KEY) === '1'; } catch (e) {}
+  if (state.ownerUnlocked && !migrated) {
+    // First time on this device: upload anything only saved in this browser, keeping the newer copy of each.
+    Object.entries(state.modelLibrary || {}).forEach(([k, v]) => {
+      const local = cleanLibraryEntry(v);
+      if (local && (!remote[k] || (local.updatedAt || '') > (remote[k].updatedAt || ''))) remote[k] = local;
+    });
+    state.modelLibrary = remote;
+    persistModelLibrary();
+    await syncModelLibrary();
+    try { localStorage.setItem(LIBRARY_MIGRATED_KEY, '1'); } catch (e) {}
+  } else {
+    state.modelLibrary = remote;
+    try { localStorage.setItem(MODEL_LIBRARY_KEY, JSON.stringify(remote)); } catch (e) {}
+  }
+}
+
+// Push the owner's changes: upsert entries that differ from Supabase, delete ones that were removed.
+async function syncModelLibrary() {
+  if (!state.ownerUnlocked || !libraryRemote) return;
+  const upserts = [];
+  Object.entries(state.modelLibrary || {}).forEach(([key, v]) => {
+    const entry = cleanLibraryEntry(v);
+    if (entry && libraryRemote[key] !== JSON.stringify(entry)) upserts.push({ key, data: entry });
+  });
+  const deletes = Object.keys(libraryRemote).filter(k => !state.modelLibrary[k]);
+  try {
+    if (upserts.length) {
+      await supaFetch('/model_library', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(upserts) });
+      upserts.forEach(u => { libraryRemote[u.key] = JSON.stringify(u.data); });
+    }
+    for (const key of deletes) {
+      await supaFetch(`/model_library?key=eq.${encodeURIComponent(key)}`, { method: 'DELETE' });
+      delete libraryRemote[key];
+    }
+  } catch (e) {
+    console.error('Saved model sync error:', e);
+  }
 }
 
 function loadClientHistoryEmail() {
@@ -1483,8 +1554,10 @@ async function init() {
   loadClientHistoryEmail();
   state.ownerUnlocked = hasValidOwnerSession();
   handleAuthRedirect();
-  if (state.ownerUnlocked) await loadBatches();
-  else if (state.historyEmail) await loadBatches(state.historyEmail);
+  await Promise.all([
+    loadRemoteLibrary(),
+    state.ownerUnlocked ? loadBatches() : state.historyEmail ? loadBatches(state.historyEmail) : null
+  ]);
   state.loading = false;
   render();
   loadGallery().then(() => {
@@ -3187,7 +3260,7 @@ async function checkPw() {
     state.authNotice = '';
     state.ownerUnlocked = true;
     state.ownerTab = 'dashboard';
-    await loadBatches();
+    await Promise.all([loadBatches(), loadRemoteLibrary()]);
     render();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Login'; }
