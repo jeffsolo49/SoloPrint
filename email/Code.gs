@@ -369,8 +369,6 @@ function emailsFor(type, rec, old) {
     } else if (rec.phase === 'order_received') {
       const total = orderTotal(rec);
       const lines = [`Good news: your order for ${title} is confirmed and queued for the printer.`];
-      const ready = formatYmd(rec.estimatedReady);
-      if (ready) lines.push(`Estimated ready: ${ready}`);
       if (total && rec.paymentStatus !== 'payment_recieved') {
         lines.push('', `Total: $${money(total)}`, `Pay with Venmo: ${venmoUrl(rec, total)}`, '(The link fills in the amount and your order number.)');
       }
@@ -403,7 +401,9 @@ function quoteLines(rec) {
     '',
     itemLines(rec, true).join('\n\n'),
     '',
+    ...(specialOrderCost(rec) ? [`Special order color: $${money(specialOrderCost(rec))}`] : []),
     `Total: $${money(orderTotal(rec))}`,
+    'All prints are PLA unless noted or requested.',
     '',
     `If it looks good, tap "Looks good" here: ${orderLink(rec)} (or just reply to this email).`,
     "Nothing is charged yet. We'll confirm we can make your order before asking for payment."
@@ -413,7 +413,10 @@ function quoteLines(rec) {
 function itemLines(rec, withPrices) {
   return (rec.items || []).map((it, i) => {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
-    const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${it.color ? 'Color' : 'Filament'}: ${it.color ? it.color + (it.filType === 'special' ? ' (special)' : '') : (FIL_LABEL[it.filType] || 'Black')}`];
+    const material = it.color ? `   Color: ${it.color}${it.filType === 'special' ? ' (special)' : ''}`
+      : it.filType === 'special' && it.specialColor ? `   Special order color: ${it.specialColor} (leftover material is yours for 2 months: use it in another order and the material is free)`
+      : `   Filament: ${FIL_LABEL[it.filType] || 'Black'}`;
+    const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
     if (withPrices && it.minutes && it.grams) {
       const each = perPrint(it);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);
@@ -440,7 +443,15 @@ function perPrint(it) {
 function orderTotal(rec) {
   const items = rec.items || [];
   if (!items.length || !items.every(it => it.minutes && it.grams)) return 0;
-  return items.reduce((s, it) => s + perPrint(it) * Math.max(1, parseInt(it.qty, 10) || 1), 0);
+  return items.reduce((s, it) => s + perPrint(it) * Math.max(1, parseInt(it.qty, 10) || 1), 0) + specialOrderCost(rec);
+}
+
+// Spool cost for special order colors (a special item with a typed color name); the owner can change it per order.
+function specialOrderCost(rec) {
+  const special = (rec.items || []).some(it => it.filType === 'special' && !it.colorId && String(it.specialColor || '').trim());
+  if (!special) return 0;
+  const cost = rec.specialOrderCost;
+  return cost !== null && cost !== undefined && cost !== '' && Number(cost) >= 0 ? Number(cost) : 20;
 }
 
 function orderTitle(rec) {
@@ -451,12 +462,6 @@ function orderTitle(rec) {
 function venmoUrl(rec, total) {
   const note = `SoloPrint order ${rec.id}: ${orderTitle(rec)}`.slice(0, 140);
   return `https://venmo.com/${encodeURIComponent(VENMO_USERNAME)}?txn=pay&amount=${money(total)}&note=${encodeURIComponent(note)}`;
-}
-
-function formatYmd(ymd) {
-  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return '';
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 function money(n) {
