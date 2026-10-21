@@ -561,3 +561,6 @@ textarea { resize: vertical; min-height: 70px; }
 @media (max-width: 640px) { .home-gallery.compact { grid-template-columns: repeat(2, 1fr); } }
 .special-order { margin-top: 10px; padding: 12px 14px; border: 2px dashed var(--border-hover); border-radius: 12px; background: var(--surface2); }
 .special-order-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text); }
+.special-order-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 0 0 8px; cursor: pointer; }
+.special-order-check input { width: auto; margin-top: 2px; }
+.status.special_order { background: rgba(var(--accent-rgb),0.12); color: var(--text); }

@@ -45,8 +45,8 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const BACKUP_FOLDER = 'SoloPrint backups';
 const BACKUPS_TO_KEEP = 12;
 
-const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034 };
-const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request' };
+const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0 };
+const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order' };
 
 function doPost(e) {
   let body;
@@ -401,7 +401,7 @@ function quoteLines(rec) {
     '',
     itemLines(rec, true).join('\n\n'),
     '',
-    ...(specialOrderCost(rec) ? [`Special order color: $${money(specialOrderCost(rec))}`] : []),
+    ...(specialOrderCost(rec) ? [`Special order roll (1 kg): $${money(specialOrderCost(rec))}`] : []),
     `Total: $${money(orderTotal(rec))}`,
     'All prints are PLA unless noted or requested.',
     '',
@@ -414,7 +414,7 @@ function itemLines(rec, withPrices) {
   return (rec.items || []).map((it, i) => {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
     const material = it.color ? `   Color: ${it.color}${it.filType === 'special' ? ' (special)' : ''}`
-      : it.filType === 'special' && it.specialColor ? `   Special order color: ${it.specialColor} (leftover material is yours for 2 months: use it in another order and the material is free)`
+      : isSpecialOrderItem(it) ? `   Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from your leftover roll, no material charge)' : ' (full 1 kg roll; the rest is yours for 2 months, and the material is free in another order)'}`
       : `   Filament: ${FIL_LABEL[it.filType] || 'Black'}`;
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
     if (withPrices && it.minutes && it.grams) {
@@ -437,7 +437,8 @@ function deliveryLines(rec) {
 }
 
 function perPrint(it) {
-  return 2 + Number(it.minutes) * 0.024 + Number(it.grams) * (FIL_RATE[it.filType] || 0.024);
+  const rate = isSpecialOrderItem(it) ? 0 : (FIL_RATE[it.filType] || 0.024);
+  return 2 + Number(it.minutes) * 0.024 + Number(it.grams) * rate;
 }
 
 function orderTotal(rec) {
@@ -446,12 +447,18 @@ function orderTotal(rec) {
   return items.reduce((s, it) => s + perPrint(it) * Math.max(1, parseInt(it.qty, 10) || 1), 0) + specialOrderCost(rec);
 }
 
-// Spool cost for special order colors (a special item with a typed color name); the owner can change it per order.
+function isSpecialOrderItem(it) {
+  return it.filType === 'special_order' || (it.filType === 'special' && !it.colorId && !!it.specialColor);
+}
+
+// The 1 kg roll for special orders (a color or material not carried), charged instead of per gram.
+// The owner can change it per order; 0 when every special item uses the customer's leftover roll.
 function specialOrderCost(rec) {
-  const special = (rec.items || []).some(it => it.filType === 'special' && !it.colorId && String(it.specialColor || '').trim());
-  if (!special) return 0;
+  const items = (rec.items || []).filter(isSpecialOrderItem);
+  if (!items.length) return 0;
   const cost = rec.specialOrderCost;
-  return cost !== null && cost !== undefined && cost !== '' && Number(cost) >= 0 ? Number(cost) : 20;
+  if (cost !== null && cost !== undefined && cost !== '' && Number(cost) >= 0) return Number(cost);
+  return items.some(it => !it.useLeftover) ? 20 : 0;
 }
 
 function orderTitle(rec) {

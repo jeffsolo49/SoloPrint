@@ -9,8 +9,9 @@ const SUPA_URL        = 'https://xpssamjjyarajtwtrwqx.supabase.co';
 const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
 
 // Filament pricing
-const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034 };
-const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request' };
+// Special orders pay for a whole roll instead of per gram, so their material rate is 0.
+const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0 };
+const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order (own roll)' };
 const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
 const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
@@ -73,7 +74,7 @@ function blankItem() {
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
-    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', showTime: false
+    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, showTime: false
   };
 }
 
@@ -166,13 +167,13 @@ async function deleteBatchRemote(id) {
 // Color name when the customer picked one of the owner's colors, otherwise Black / White / Special Request.
 function filamentLabel(it) {
   if (it && it.color) return it.filType === 'special' ? `${it.color} (special)` : it.color;
-  if (it && it.filType === 'special' && it.specialColor) return `Special order: ${it.specialColor}`;
+  if (it && it.filType === 'special_order') return `Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from their leftover roll)' : ''}`;
   return FIL_LABEL[it && it.filType] || 'Black';
 }
 
 function calcPerPrint(mins, grams, filType) {
   if (!mins || !grams) return null;
-  return 2 + mins * 0.024 + grams * (FIL_RATE[filType] || 0.024);
+  return 2 + mins * 0.024 + grams * (FIL_RATE[filType] ?? 0.024);
 }
 function calcTotal(mins, grams, filType, qty) {
   const pp = calcPerPrint(mins, grams, filType);
@@ -238,10 +239,12 @@ function itemsSubtotal(batch) {
   return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
 }
 
-// Cost of ordering a spool for special order colors; defaults to the typical amount until the owner sets it.
+// Cost of the 1 kg roll for special orders; defaults to the typical amount (or 0 when every special
+// item uses the customer's leftover roll) until the owner sets it.
 function specialOrderCost(batch) {
-  if (!batch.items.some(usesSpecialSpool)) return 0;
-  return Number.isFinite(batch.specialOrderCost) ? batch.specialOrderCost : SPECIAL_ORDER_TYPICAL;
+  if (!batch.items.some(isSpecialOrder)) return 0;
+  if (Number.isFinite(batch.specialOrderCost)) return batch.specialOrderCost;
+  return batch.items.some(usesSpecialSpool) ? SPECIAL_ORDER_TYPICAL : 0;
 }
 
 function orderSum(batch) {
@@ -400,7 +403,8 @@ function cleanItem(it) {
     link: cleanText(it.link, 500),
     name: cleanText(it.name, 200),
     notes: cleanText(it.notes),
-    filType: cleanFilType(it.filType),
+    // Special orders saved by the first version used 'special' with a typed color and no stocked color.
+    filType: it.filType === 'special' && !it.colorId && it.specialColor ? 'special_order' : cleanFilType(it.filType),
     qty: Math.max(1, Math.min(999, parseInt(it.qty, 10) || 1)),
     minutes: cleanNumber(it.minutes),
     grams: cleanNumber(it.grams),
@@ -414,7 +418,8 @@ function cleanItem(it) {
     mode: ['link', 'idea', 'gallery'].includes(it.mode) ? it.mode : '',
     color: cleanText(it.color, 40),
     colorId: /^[a-z0-9-]{1,40}$/.test(String(it.colorId)) ? it.colorId : '',
-    specialColor: cleanText(it.specialColor, 60)
+    specialColor: cleanText(it.specialColor, 60),
+    useLeftover: it.useLeftover === true
   };
 }
 
@@ -1238,25 +1243,29 @@ function renderSubmitTab() {
   `;
 }
 
-// Special color orders: the owner buys a spool in a color they don't stock, for this order.
+// Special orders: a color or material the owner doesn't carry (e.g. Red TPU). The owner buys a full
+// 1 kg roll for the order; the customer pays for the roll instead of per gram.
 const SPECIAL_ORDER_TYPICAL = 20;
-const SPECIAL_ORDER_POLICY = `A special color order usually adds about $${SPECIAL_ORDER_TYPICAL}, which covers ordering a spool of that color for your print (the exact amount is in your quote). For 2 months, the leftover material is yours: place another order with it and you won't pay for material. After 2 months, I keep any leftover.`;
+const SPECIAL_ORDER_POLICY = `Special orders are for a color or material I don't carry, like Red TPU. Filament only comes in full 1 kg rolls, so I order a whole roll for your print. The roll (usually about $${SPECIAL_ORDER_TYPICAL}; the exact amount is in your quote) replaces the material charge. The rest of the roll is yours for 2 months: place another order with it and the material is free. After 2 months, I keep any leftover.`;
 function isSpecialOrder(item) {
-  return item.filType === 'special' && !item.colorId;
+  return item.filType === 'special_order';
 }
-// Orders from before special order colors existed have no color name, so they get no spool cost.
+// Items printed from the customer's leftover roll don't buy a new one.
 function usesSpecialSpool(item) {
-  return isSpecialOrder(item) && !!String(item.specialColor || '').trim();
+  return isSpecialOrder(item) && !item.useLeftover;
 }
 
 function renderSpecialOrderBox(item, i) {
   if (!isSpecialOrder(item)) return '';
   return `<div class="special-order">
     <div class="field" style="margin-bottom:8px;">
-      <label for="special-color-${i}">Which color would you like?</label>
-      <input type="text" id="special-color-${i}" value="${esc(item.specialColor || '')}" placeholder="e.g. Glow-in-the-dark green, translucent blue"
+      <label for="special-color-${i}">Which color and material would you like?</label>
+      <input type="text" id="special-color-${i}" value="${esc(item.specialColor || '')}" placeholder="e.g. Red TPU, translucent blue PLA"
         oninput="updateDraft(${i}, 'specialColor', this.value)" />
     </div>
+    <label class="special-order-check"><input type="checkbox" id="special-leftover-${i}" ${item.useLeftover ? 'checked' : ''}
+      onchange="updateDraft(${i}, 'useLeftover', this.checked); updateCustomerPricePreview(${i})" />
+      Use my leftover roll from a special order in the last 2 months (no roll or material charge)</label>
     <p class="special-order-note">${esc(SPECIAL_ORDER_POLICY)}</p>
   </div>`;
 }
@@ -1264,7 +1273,7 @@ function renderSpecialOrderBox(item, i) {
 // With owner colors set up, every item has one picked: the matching Black/White, else the first color.
 function ensureItemColor(item) {
   const colors = state.settings.colors;
-  if (!colors.length || item.colorId || item.filType === 'special') return;
+  if (!colors.length || item.colorId || isSpecialOrder(item)) return;
   const c = colors.find(x => x.name.toLowerCase() === (FIL_LABEL[item.filType] || '').toLowerCase() && !x.special) || colors.find(x => !x.special) || colors[0];
   item.colorId = c.id;
   item.color = c.name;
@@ -1281,15 +1290,15 @@ function renderFilamentPills(i, current) {
         <button type="button" class="fil-pill swatch-pill ${item.colorId === c.id ? 'active-color' : ''}" aria-pressed="${item.colorId === c.id}" onclick="pickColor(${i}, '${esc(c.id)}')">
           <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}
         </button>`).join('')}
-      <button type="button" class="fil-pill ${isSpecialOrder(item) ? 'active-special' : ''}" aria-pressed="${isSpecialOrder(item)}" onclick="pickColor(${i}, '')">Special order color</button>
+      <button type="button" class="fil-pill ${isSpecialOrder(item) ? 'active-special' : ''}" aria-pressed="${isSpecialOrder(item)}" onclick="pickColor(${i}, '')">Special order (color or material I don't carry)</button>
     </div>
     ${renderSpecialOrderBox(item, i)}`;
   }
   return `<div class="filament-pills" role="group" aria-label="Filament">
-    ${['black','white','special'].map(f => `
-      <button type="button" class="fil-pill ${current===f?'active-'+f:''}" aria-pressed="${current===f}"
+    ${['black','white','special_order'].map(f => `
+      <button type="button" class="fil-pill ${current===f?(f === 'special_order' ? 'active-special' : 'active-'+f):''}" aria-pressed="${current===f}"
         onclick="updateDraft(${i},'filType','${f}'); rerenderPills(${i},'${f}'); updateCustomerPricePreview(${i})">
-        ${f === 'special' ? 'Special order color' : FIL_LABEL[f]}
+        ${f === 'special_order' ? "Special order (color or material I don't carry)" : FIL_LABEL[f]}
       </button>`).join('')}
   </div>
   ${renderSpecialOrderBox(item, i)}`;
@@ -1301,7 +1310,7 @@ function pickColor(i, colorId) {
   const c = state.settings.colors.find(x => x.id === colorId);
   item.colorId = c ? c.id : '';
   item.color = c ? c.name : '';
-  item.filType = c ? (c.special ? 'special' : 'color') : 'special';
+  item.filType = c ? (c.special ? 'special' : 'color') : 'special_order';
   rerenderPills(i, item.filType);
   updateCustomerPricePreview(i);
   queueDraftSave();
@@ -1313,11 +1322,11 @@ function renderCustomerPricePreview(item) {
   const grams = Number(item.grams);
   const qty = Math.max(1, Number(item.qty) || 1);
   if (!minutes || !grams) {
-    return `<div class="calc-hint">No need to know the price yet: I'll work it out when I review your request.${isSpecialOrder(item) ? ` A special order color usually adds about $${SPECIAL_ORDER_TYPICAL}.` : ''}</div>`;
+    return `<div class="calc-hint">No need to know the price yet: I'll work it out when I review your request.${usesSpecialSpool(item) ? ` A special order roll usually adds about $${SPECIAL_ORDER_TYPICAL}.` : ''}</div>`;
   }
   const perPrint = calcPerPrint(minutes, grams, item.filType);
   const total = perPrint * qty;
-  const filamentRate = FIL_RATE[item.filType] || 0.024;
+  const filamentRate = FIL_RATE[item.filType] ?? 0.024;
   return `<div class="price-preview-box" style="margin-top:12px;">
     <div class="card-title" style="margin-bottom:6px;">Automated Estimate</div>
     <div class="price-big">$${total.toFixed(2)}</div>
@@ -1326,7 +1335,8 @@ function renderCustomerPricePreview(item) {
 ${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
 ${grams.toFixed(1)}g × $${filamentRate.toFixed(3)} × ${qty} = $${(grams * filamentRate * qty).toFixed(2)}
 $${perPrint.toFixed(2)} per print × ${qty}</div>
-    ${isSpecialOrder(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${SPECIAL_ORDER_TYPICAL} for the special order color (confirmed in your quote)</div>` : ''}
+    ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${SPECIAL_ORDER_TYPICAL} for the 1 kg special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
+    ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll (I'll confirm it's within 2 months).</div>` : ''}
     <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
   </div>`;
 }
@@ -1595,7 +1605,7 @@ function renderMyJobsTab() {
             </div>
           </div>`;
         }).join('')}
-        ${total!==null && specialOrderCost(b) ? `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="sub-item-name">Special order color</div><div class="sub-item-price">$${specialOrderCost(b).toFixed(2)}</div></div></div>` : ''}
+        ${total!==null && specialOrderCost(b) ? `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="sub-item-name">Special order roll (1 kg)</div><div class="sub-item-price">$${specialOrderCost(b).toFixed(2)}</div></div></div>` : ''}
         ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
       </div>`;
     }).join('')}`;
@@ -1814,7 +1824,7 @@ function renderOwnerCalculatorLivePreview(calc) {
       <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
       <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
 ${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
-${grams.toFixed(1)}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
+${grams.toFixed(1)}g × $${(FIL_RATE[calc.filType] ?? 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] ?? 0.024) * qty).toFixed(2)}
 $${perPrint.toFixed(2)} per print × ${qty}</div>
     </div>`;
 }
@@ -1956,7 +1966,7 @@ function renderOwnerBatch(b) {
   const phase = b.phase || 'estimate';
   const allDone = b.items.every(it => it.minutes && it.grams);
   const total = allDone ? orderSum(b) : null;
-  const hasSpecial = b.items.some(usesSpecialSpool);
+  const hasSpecial = b.items.some(isSpecialOrder);
   const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   return `<div class="job-card ${phase}" id="order-${b.id}">
     <div class="job-header">
@@ -2035,9 +2045,9 @@ function renderOwnerBatch(b) {
     ${phase === 'estimate' ? `
       ${hasSpecial ? `
         <div class="field special-order">
-          <label for="special-cost-${b.id}">Special order color cost ($)</label>
+          <label for="special-cost-${b.id}">Special order roll cost ($)</label>
           <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${specialOrderCost(b).toFixed(2)}" />
-          <div class="field-help">Added to the quote for ordering the spool. Usually about $${SPECIAL_ORDER_TYPICAL}.</div>
+          <div class="field-help">The full 1 kg roll, charged instead of material. Usually about $${SPECIAL_ORDER_TYPICAL}. Use 0 when they're printing from their own leftover roll (within 2 months).</div>
         </div>` : ''}
       <div class="alert error" id="batch-err-${b.id}"></div>
       <div class="alert success" id="batch-ok-${b.id}"></div>
@@ -2046,7 +2056,7 @@ function renderOwnerBatch(b) {
       </button>
     ` : `
       <div class="total-box">
-        <span class="total-label">Total quoted${hasSpecial ? ` (includes $${specialOrderCost(b).toFixed(2)} special order color)` : ''}</span>
+        <span class="total-label">Total quoted${specialOrderCost(b) ? ` (includes $${specialOrderCost(b).toFixed(2)} special order roll)` : ''}</span>
         <span class="total-price">$${total!==null?total.toFixed(2):'—'}</span>
       </div>
       ${phase === 'delivered' ? `
@@ -2085,7 +2095,7 @@ function renderOwnerItem(batchId, it, i) {
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
-          <span style="font-size:12px;color:var(--muted);">$${(FIL_RATE[it.filType]||0.024).toFixed(3)}/g</span>
+          <span style="font-size:12px;color:var(--muted);">$${(FIL_RATE[it.filType] ?? 0.024).toFixed(3)}/g</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
@@ -2401,7 +2411,7 @@ function renderOwnerSettingsPage() {
     </div>
     <div class="card">
       <h3 class="card-title">Filament colors</h3>
-      <div class="field-help">Type a color name and the color picker fills in to match; tap the swatch to adjust it. The colors customers can pick. "Special" colors (silk, glow, specialty filament) use the special rate. With no colors listed, customers see Black, White and Special Request.</div>
+      <div class="field-help">Type a color name and the color picker fills in to match; tap the swatch to adjust it. The colors customers can pick. Tick "Special" for special colors and materials you carry (like Red or White TPU); they use the special rate. Anything you don't carry, customers request as a special order. With no colors listed, customers see Black, White and Special Request.</div>
       ${d.colors.map((c, n) => `
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
           <input type="color" id="color-hex-${n}" value="${esc(c.hex)}" aria-label="Color for ${esc(c.name || 'new color')}" oninput="state.settingsDraft.colors[${n}].hex = this.value; state.settingsDraft.colors[${n}].hexManual = true" style="width:46px;height:40px;padding:2px;" />
@@ -2729,7 +2739,7 @@ function renderOwnerGalleryPage() {
       <div class="gallery-form-grid">
         <div class="field"><label>Filament</label>
           <select id="gallery-fil" onchange="updateGalleryForm('filType', this.value)">
-            ${Object.entries(FIL_LABEL).map(([v, label]) => `<option value="${v}" ${f.filType === v ? 'selected' : ''}>${label}</option>`).join('')}
+            ${Object.entries(FIL_LABEL).filter(([v]) => v !== 'special_order').map(([v, label]) => `<option value="${v}" ${f.filType === v ? 'selected' : ''}>${label}</option>`).join('')}
           </select>
         </div>
         <div class="field"><label>Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
@@ -3557,7 +3567,7 @@ async function submitBatch() {
   if (!items.length) { showAlert('submit-err', 'Please tell me about at least one thing you want printed.', 'error'); return; }
   const noColor = state.draftItems.findIndex(it => items.includes(it) && isSpecialOrder(it) && !String(it.specialColor || '').trim());
   if (noColor >= 0) {
-    showAlert('submit-err', 'Please type the special order color you would like.', 'error');
+    showAlert('submit-err', 'Please type the special order color and material you would like.', 'error');
     document.getElementById(`special-color-${noColor}`)?.focus();
     return;
   }
@@ -3617,7 +3627,7 @@ function previewOwnerItem(batchId, i) {
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
   const pp  = calcPerPrint(mins, grams, it.filType);
   const tot = pp * it.qty;
-  const fr  = FIL_RATE[it.filType] || 0.024;
+  const fr  = FIL_RATE[it.filType] ?? 0.024;
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
   document.getElementById(`opsub-${batchId}-${i}`).textContent =
     `$2.00 flat × ${it.qty} = $${(2*it.qty).toFixed(2)}\n` +
