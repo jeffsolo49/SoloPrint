@@ -464,6 +464,8 @@ const OWNER_SESSION_MS = 60 * 60 * 1000;
 const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
 const PREVIEW_API = 'https://api.microlink.io/?url=';
+// The SoloPrint Google Apps Script (email/Code.gs) also looks up print time and grams for MakerWorld and Printables links.
+const LOOKUP_API = 'https://script.google.com/macros/s/AKfycbxiOXN2535JUBDF_-Jvr7wF-X2rE5U34_BrC66Y8vEG5pFpokhBFImoHHQQZtJc3wGWIA/exec';
 const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
 const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
 const NOTIF_PREFS_KEY = 'soloprint_notif_prefs_v1';
@@ -511,7 +513,7 @@ function blankItem() {
     link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
-    previewImage: '', previewLoading: false
+    previewImage: '', previewLoading: false, estimateSource: '', estimateNote: ''
   };
 }
 
@@ -784,7 +786,8 @@ function cleanItem(it) {
     printMinutes: cleanText(it.printMinutes, 10),
     knownMinutes: cleanNumber(it.knownMinutes),
     knownFromLibrary: it.knownFromLibrary === true,
-    previewImage: safeImageUrl(it.previewImage)
+    previewImage: safeImageUrl(it.previewImage),
+    estimateSource: cleanText(it.estimateSource, 200)
   };
 }
 
@@ -1537,7 +1540,7 @@ function renderItemBlock(item, i) {
         <div class="field" style="margin-bottom:0;">
           <label>Grams (est.)</label>
           <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
-            min="0" step="0.1" oninput="updateDraft(${i},'grams',parseFloat(this.value)||null)" />
+            min="0" step="0.1" oninput="clearEstimateSource(${i}); updateDraft(${i},'grams',parseFloat(this.value)||null)" />
         </div>
         <div class="field" style="margin-bottom:0;">
           <label>Quantity</label>
@@ -2132,6 +2135,7 @@ function renderOwnerItem(batchId, it, i) {
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
+        ${it.estimateSource ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">Time and grams auto-filled from ${esc(it.estimateSource)}</div>` : ''}
         ${canUseKnown ? `
           <div class="price-preview-box" style="margin-top:10px;margin-bottom:0;">
             <div class="card-title" style="margin-bottom:6px;">Saved Model Match</div>
@@ -2219,8 +2223,15 @@ function updateOwnerCalculatorField(field, value) {
   }
 }
 
+function clearEstimateSource(i) {
+  if (!state.draftItems[i] || !state.draftItems[i].estimateSource) return;
+  state.draftItems[i].estimateSource = '';
+  rerenderModelPreview(i);
+}
+
 function updateDraftPrintTime(i, field, value) {
   if (!state.draftItems[i]) return;
+  clearEstimateSource(i);
   state.draftItems[i][field === 'hours' ? 'printHours' : 'printMinutes'] = value;
   const printTimeInput = document.getElementById(`print-time-${i}`);
   const total = totalPrintMinutes(state.draftItems[i].printHours, state.draftItems[i].printMinutes);
@@ -2529,10 +2540,13 @@ function renderModelPreview(item) {
     return `<div class="model-preview loading"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /><div class="model-preview-sub">Loading preview...</div></div>`;
   }
   const img = safeImageUrl(item.previewImage);
-  if (!img) return '';
+  const note = item.estimateSource
+    ? `Print time and filament filled in from ${esc(item.estimateSource)}. This is an automated estimate; edit it if you know better.`
+    : esc(item.estimateNote || '');
+  if (!img && !note) return '';
   return `<div class="model-preview">
-    <img src="${esc(img)}" alt="${esc(item.name || 'Model preview')}" loading="lazy" onerror="this.closest('.model-preview').remove()" />
-    <div><div class="model-preview-title">${esc(item.name || 'Model preview')}</div><div class="model-preview-sub">Preview from the model link</div></div>
+    ${img ? `<img src="${esc(img)}" alt="${esc(item.name || 'Model preview')}" loading="lazy" onerror="this.remove()" />` : ''}
+    <div><div class="model-preview-title">${esc(item.name || 'Model preview')}</div><div class="model-preview-sub">${note || 'Preview from the model link'}</div></div>
   </div>`;
 }
 
@@ -2546,6 +2560,37 @@ function rerenderModelPreview(i) {
   if (el && state.draftItems[i]) el.innerHTML = renderModelPreview(state.draftItems[i]);
 }
 
+async function lookupModelEstimate(url) {
+  if (!/(makerworld\.com|printables\.com)/i.test(url)) return null;
+  const res = await fetch(`${LOOKUP_API}?action=lookup&url=${encodeURIComponent(url)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// Fill print time and grams from a looked-up profile, unless the customer typed them or a saved estimate applies.
+function applyLookedUpEstimate(i, item, found) {
+  if (!found) return;
+  const minutes = cleanNumber(found.minutes);
+  const grams = cleanNumber(found.grams);
+  if (!found.ok || !minutes || !grams) {
+    if (found.source) item.estimateNote = 'We couldn\'t find a print time for this link, so please enter your best guess or leave it blank.';
+    return;
+  }
+  if (item.knownFromLibrary || item.printHours || item.printMinutes || item.grams) return;
+  item.printHours = String(Math.floor(minutes / 60));
+  item.printMinutes = String(Math.round(minutes % 60));
+  item.grams = grams;
+  const profile = cleanText(found.profile, 80);
+  const plates = parseInt(found.plates, 10) || 1;
+  item.estimateSource = `${found.source === 'Printables' ? 'Printables' : 'MakerWorld'}${profile ? ` profile "${profile}"` : ''}${plates > 1 ? ` (${plates} plates)` : ''}`;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set(`hours-${i}`, item.printHours);
+  set(`minutes-${i}`, item.printMinutes);
+  set(`print-time-${i}`, minutes);
+  set(`grams-${i}`, grams);
+  updateCustomerPricePreview(i);
+}
+
 function queueModelPreview(i, url) {
   clearTimeout(previewTimers[i]);
   previewTimers[i] = setTimeout(async () => {
@@ -2553,18 +2598,19 @@ function queueModelPreview(i, url) {
     if (!item || item.link !== url) return;
     item.previewLoading = true;
     rerenderModelPreview(i);
-    try {
-      const preview = await fetchModelPreview(url);
-      if (state.draftItems[i] !== item || item.link !== url) return;
-      item.previewImage = preview.image;
-      if (!item.name && preview.title) {
-        item.name = preview.title;
-        const el = document.getElementById(`name-${i}`);
-        if (el) el.value = item.name;
-      }
-    } catch (e) {
-      item.previewImage = '';
+    const [preview, found] = await Promise.all([
+      fetchModelPreview(url).catch(() => null),
+      lookupModelEstimate(url).catch(() => null)
+    ]);
+    if (state.draftItems[i] !== item || item.link !== url) return;
+    item.previewImage = (preview && preview.image) || safeImageUrl(found && found.image);
+    const title = (preview && preview.title) || cleanText(found && found.name, 200);
+    if (!item.name && title) {
+      item.name = title;
+      const el = document.getElementById(`name-${i}`);
+      if (el) el.value = item.name;
     }
+    applyLookedUpEstimate(i, item, found);
     item.previewLoading = false;
     rerenderModelPreview(i);
   }, 600);
@@ -2577,6 +2623,12 @@ async function onLinkInput(i, value) {
   state.draftItems[i].knownMinutes = null;
   state.draftItems[i].knownPrompted = false;
   state.draftItems[i].previewImage = '';
+  state.draftItems[i].estimateNote = '';
+  if (state.draftItems[i].estimateSource) {
+    Object.assign(state.draftItems[i], { printHours: '', printMinutes: '', grams: null, estimateSource: '' });
+    ['hours', 'minutes', 'print-time', 'grams'].forEach(f => { const el = document.getElementById(`${f}-${i}`); if (el) el.value = ''; });
+    updateCustomerPricePreview(i);
+  }
   if (isSupportedModelLink(value) && isWebUrl(value)) queueModelPreview(i, value);
   else rerenderModelPreview(i);
   if (isOriginalDesignText(value)) {

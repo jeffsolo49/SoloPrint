@@ -23,6 +23,170 @@ function reply(text) {
   return ContentService.createTextOutput(text);
 }
 
+// ── MODEL LOOKUPS ─────────────────────────────────────────────────────────
+// The site calls this (GET ?action=lookup&url=...) when a customer pastes a MakerWorld or Printables
+// link, to pre-fill print time and filament weight. Browsers can't read those sites directly.
+// Results are best-effort automated estimates; the customer can edit them and the owner reviews every order.
+
+function doGet(e) {
+  const params = (e && e.parameter) || {};
+  if (params.action !== 'lookup') return reply('ok');
+  let result;
+  try {
+    result = lookupModel(String(params.url || ''));
+  } catch (err) {
+    result = { ok: false, error: String(err && err.message || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function lookupModel(url) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'lookup:' + Utilities.base64EncodeWebSafe(url).slice(0, 200);
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+  let result;
+  const mw = url.match(/^https:\/\/(?:www\.)?makerworld\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?models\/(\d+)/i);
+  const pr = url.match(/^https:\/\/(?:www\.)?printables\.com\/(?:[a-z]{2}\/)?model\/(\d+)/i);
+  if (mw) {
+    const profile = (url.match(/profileId-(\d+)/i) || [])[1] || '';
+    result = parseMakerWorldDesign(fetchMakerWorldDesign(mw[1]), profile);
+  } else if (pr) {
+    result = parsePrintablesModel(fetchPrintablesModel(pr[1]));
+  } else {
+    result = { ok: false, error: 'Only MakerWorld and Printables links are supported.' };
+  }
+  if (result.ok) cache.put(cacheKey, JSON.stringify(result), 6 * 60 * 60);
+  return result;
+}
+
+function fetchMakerWorldDesign(designId) {
+  const props = PropertiesService.getScriptProperties();
+  const token = props.getProperty('MW_TOKEN');
+  const headers = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
+  const url = 'https://api.bambulab.com/v1/design-service/design/' + designId;
+  let res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+  if ((res.getResponseCode() === 401 || res.getResponseCode() === 403) && token) {
+    headers.Authorization = 'Bearer ' + token;
+    res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+  }
+  if (res.getResponseCode() !== 200) throw new Error('MakerWorld returned ' + res.getResponseCode());
+  return JSON.parse(res.getContentText());
+}
+
+// Pure function so it can be tested outside Apps Script.
+function parseMakerWorldDesign(design, profileId) {
+  const instances = Array.isArray(design && design.instances) ? design.instances : [];
+  const inst = instances.find(i => profileId && (String(i.id) === profileId || String(i.profileId) === profileId))
+    || instances.find(i => i.isDefault) || instances[0];
+  if (!inst) return { ok: false, error: 'No print profiles found.' };
+  const plates = Array.isArray(inst.plates) ? inst.plates : [];
+  const seconds = firstNumber(inst, ['prediction', 'printTime', 'costTime'])
+    || sumOf(plates, p => firstNumber(p, ['prediction', 'printTime', 'costTime']));
+  const grams = firstNumber(inst, ['weight', 'filamentWeight'])
+    || sumOf(plates, p => firstNumber(p, ['weight', 'filamentWeight'])
+      || sumOf(p.filaments || [], f => firstNumber(f, ['usedG', 'weight'])));
+  const minutes = seconds ? Math.round(seconds / 60) : 0;
+  return {
+    ok: !!(minutes && grams),
+    source: 'MakerWorld',
+    name: String(design.title || ''),
+    image: String(design.coverUrl || design.cover || ''),
+    profile: String(inst.title || ''),
+    plates: plates.length,
+    minutes: minutes || null,
+    grams: grams ? Math.round(grams * 10) / 10 : null,
+    error: minutes && grams ? '' : 'This model has no print time or weight listed.'
+  };
+}
+
+function fetchPrintablesModel(modelId) {
+  const query = 'query ModelFiles($id: ID!) { model: print(id: $id) { id name gcodes { id name printDuration weight excludeFromTotalSum } } }';
+  const res = UrlFetchApp.fetch('https://api.printables.com/graphql/', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    payload: JSON.stringify({ operationName: 'ModelFiles', query, variables: { id: modelId } }),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Printables returned ' + res.getResponseCode());
+  return JSON.parse(res.getContentText());
+}
+
+// Pure function so it can be tested outside Apps Script. printDuration is in hours.
+function parsePrintablesModel(json) {
+  const model = json && json.data && json.data.model;
+  if (!model) return { ok: false, error: 'Model not found on Printables.' };
+  const gcode = (model.gcodes || []).find(g => g.printDuration && g.weight);
+  const image = '';
+  if (!gcode) return { ok: false, source: 'Printables', name: String(model.name || ''), image, error: 'This model has no print file with time and weight.' };
+  return {
+    ok: true,
+    source: 'Printables',
+    name: String(model.name || ''),
+    image,
+    profile: String(gcode.name || ''),
+    plates: 1,
+    minutes: Math.round(Number(gcode.printDuration) * 60),
+    grams: Math.round(Number(gcode.weight) * 10) / 10,
+    error: ''
+  };
+}
+
+function firstNumber(obj, keys) {
+  for (const k of keys) {
+    const n = Number(obj && obj[k]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+function sumOf(list, fn) {
+  return (Array.isArray(list) ? list : []).reduce((s, x) => s + (fn(x) || 0), 0);
+}
+
+// Optional: only needed if MakerWorld refuses lookups without a login.
+// 1. Project Settings -> Script properties: add MW_EMAIL and MW_PASSWORD for a MakerWorld account.
+// 2. Run connectMakerWorld. If it says a code was emailed, add MW_CODE with that code and run it again.
+function connectMakerWorld() {
+  const props = PropertiesService.getScriptProperties();
+  const account = props.getProperty('MW_EMAIL');
+  const code = props.getProperty('MW_CODE');
+  const body = code ? { account, code } : { account, password: props.getProperty('MW_PASSWORD') };
+  const res = UrlFetchApp.fetch('https://api.bambulab.com/v1/user-service/user/login', {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true
+  });
+  const json = JSON.parse(res.getContentText() || '{}');
+  if (json.accessToken) {
+    props.setProperty('MW_TOKEN', json.accessToken);
+    props.deleteProperty('MW_CODE');
+    props.deleteProperty('MW_PASSWORD');
+    Logger.log('Connected. The login lasts about 3 months; run this again (with MW_PASSWORD) when lookups stop working.');
+  } else if (json.loginType === 'verifyCode') {
+    Logger.log('MakerWorld emailed a verification code to ' + account + '. Add it as the MW_CODE script property and run connectMakerWorld again.');
+  } else {
+    Logger.log('Login failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
+  }
+}
+
+// Run from the editor to check lookups; paste the log into your chat with Claude if something looks wrong.
+function testLookup() {
+  ['https://makerworld.com/en/models/1', 'https://www.printables.com/model/3161-3dbenchy'].forEach(url => {
+    try {
+      Logger.log(url + '\n' + JSON.stringify(lookupModel(url)));
+      const mw = url.match(/models\/(\d+)/);
+      if (mw) {
+        const design = fetchMakerWorldDesign(mw[1]);
+        const inst = (design.instances || [])[0] || {};
+        Logger.log('MakerWorld fields: design=' + Object.keys(design).join(',') + ' | instance=' + Object.keys(inst).join(',')
+          + ' | plate=' + Object.keys((inst.plates || [])[0] || {}).join(','));
+      }
+    } catch (err) {
+      Logger.log(url + '\nERROR ' + err);
+    }
+  });
+}
+
 // Run this once from the Apps Script editor to approve Gmail access and send yourself a test email.
 function sendTestEmail() {
   MailApp.sendEmail({ to: OWNER_EMAIL, subject: 'SoloPrint email test', body: 'Order emails are set up and working.', name: 'SoloPrint' });
@@ -166,4 +330,4 @@ function formatDate(iso) {
   return isNaN(d) ? '' : d.toLocaleString('en-US', { timeZone: 'America/Chicago' });
 }
 
-if (typeof module !== 'undefined') module.exports = { emailsFor };
+if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePrintablesModel };

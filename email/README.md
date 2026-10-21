@@ -48,3 +48,26 @@ Do this after running `supabase/security.sql`.
 
 Edit `Code.gs` in the Apps Script editor, save, then **Deploy → Manage deployments → ✏️ Edit →
 Version: New version → Deploy**. The Web app URL stays the same, so Supabase needs no changes.
+
+## Print time and grams from model links
+
+The same script also looks up MakerWorld and Printables links, so the request form can pre-fill
+print time and filament weight. The customer can edit the numbers, they're labeled as automated
+estimates, and you see where they came from on each order. Thingiverse has no such data.
+
+After pasting the new `Code.gs` (put your secret back on line 5), deploy a new version, then:
+
+1. Pick `testLookup` in the function menu and click **Run**. Google asks for one more permission
+   ("connect to an external service"); allow it the same way as before.
+2. Open **Execution log**. Each test link should show `"ok":true` with `minutes` and `grams`.
+   If something says `false` or `ERROR`, paste the log into your chat with Claude.
+
+### Optional: MakerWorld login
+
+Only needed if `testLookup` shows MakerWorld returning 401 or 403. Use a separate free MakerWorld
+account rather than the one your printers use.
+
+1. Apps Script → **Project Settings** (gear) → **Script properties** → add `MW_EMAIL` and `MW_PASSWORD`.
+2. Run `connectMakerWorld`. If the log says a code was emailed, add it as `MW_CODE` and run it again.
+3. The log says "Connected" when it worked; your password is then removed from the script properties.
+   The login lasts about 3 months. When lookups stop working, add `MW_PASSWORD` again and rerun.
