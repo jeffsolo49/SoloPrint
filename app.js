@@ -10,7 +10,7 @@ const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 // Filament pricing
 // Special orders pay for a whole roll instead of per gram, so their material rate is 0.
-const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0 };
+const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0, leftover: 0 };
 const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order (own roll)' };
 const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
@@ -74,7 +74,7 @@ function blankItem() {
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
-    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, leftoverFrom: '', showTime: false
+    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, leftoverFrom: '', extraColors: [], showTime: false
   };
 }
 
@@ -166,14 +166,34 @@ async function deleteBatchRemote(id) {
 // ── PRICING ───────────────────────────────────────────────────────────────
 // Color name when the customer picked one of the owner's colors, otherwise Black / White / Special Request.
 function filamentLabel(it) {
-  if (it && it.color) return it.filType === 'special' ? `${it.color} (special)` : it.color;
-  if (it && it.filType === 'special_order') return `Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from their leftover roll)' : ''}`;
-  return FIL_LABEL[it && it.filType] || 'Black';
+  const extras = (it && Array.isArray(it.extraColors) ? it.extraColors : [])
+    .map(p => ` + ${p.name}${p.filType === 'leftover' ? ' (leftover roll)' : p.filType === 'special' ? ' (special)' : ''}`).join('');
+  if (it && it.color) return (it.filType === 'special' ? `${it.color} (special)` : it.color) + extras;
+  if (it && it.filType === 'special_order') return `Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from their leftover roll)' : ''}${extras}`;
+  return (FIL_LABEL[it && it.filType] || 'Black') + extras;
 }
 
+// Pass an item to price all of its colors, or a filament type for a single-color price.
 function calcPerPrint(mins, grams, filType) {
   if (!mins || !grams) return null;
-  return 2 + mins * 0.024 + grams * (FIL_RATE[filType] ?? 0.024);
+  const rate = filType && typeof filType === 'object' ? itemRate(filType) : (FIL_RATE[filType] ?? 0.024);
+  return 2 + mins * 0.024 + grams * rate;
+}
+
+// Every color in a print: the main one plus any extra colors. Leftover-roll colors are filType 'leftover'.
+function itemParts(it) {
+  const main = it.filType === 'special_order'
+    ? { name: it.specialColor || '', filType: it.useLeftover ? 'leftover' : 'special_order', leftoverFrom: it.useLeftover ? it.leftoverFrom : '' }
+    : { name: it.color || FIL_LABEL[it.filType] || 'Black', filType: it.filType, colorId: it.colorId };
+  return [main, ...(Array.isArray(it.extraColors) ? it.extraColors : [])];
+}
+// Multi-color prints split the grams evenly between their colors for pricing.
+function itemRate(it) {
+  const parts = itemParts(it);
+  return parts.reduce((s, p) => s + (FIL_RATE[p.filType] ?? 0.024), 0) / parts.length;
+}
+function byName(a, b) {
+  return String(a.name || '').localeCompare(String(b.name || ''), 'en', { sensitivity: 'base', numeric: true });
 }
 function calcTotal(mins, grams, filType, qty) {
   const pp = calcPerPrint(mins, grams, filType);
@@ -236,13 +256,13 @@ function stampPhase(batch, phase) {
 }
 
 function itemsSubtotal(batch) {
-  return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
+  return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it, it.qty) || 0), 0);
 }
 
 // Cost of the 1 kg roll for special orders; defaults to the typical amount (or 0 when every special
 // item uses the customer's leftover roll) until the owner sets it.
 function specialOrderCost(batch) {
-  if (!batch.items.some(isSpecialOrder)) return 0;
+  if (!batch.items.some(usesRolls)) return 0;
   if (Number.isFinite(batch.specialOrderCost)) return batch.specialOrderCost;
   return batch.items.some(usesSpecialSpool) ? SPECIAL_ORDER_TYPICAL : 0;
 }
@@ -420,7 +440,13 @@ function cleanItem(it) {
     colorId: /^[a-z0-9-]{1,40}$/.test(String(it.colorId)) ? it.colorId : '',
     specialColor: cleanText(it.specialColor, 60),
     useLeftover: it.useLeftover === true,
-    leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : ''
+    leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
+    extraColors: (Array.isArray(it.extraColors) ? it.extraColors : []).slice(0, 8).map(p => ({
+      name: cleanText(p && p.name, 60).trim(),
+      filType: ['black', 'white', 'color', 'special', 'leftover'].includes(p && p.filType) ? p.filType : 'color',
+      colorId: /^[a-z0-9-]{1,40}$/.test(String(p && p.colorId)) ? p.colorId : '',
+      leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(p && p.leftoverFrom)) ? p.leftoverFrom : ''
+    })).filter(p => p.name)
   };
 }
 
@@ -741,7 +767,7 @@ function buildModelAnalyticsRows() {
 
       if (isSoldPhase(batch.phase)) {
         row.quantityOrdered += Number(item.qty) || 0;
-        const total = calcTotal(item.minutes, item.grams, item.filType, item.qty);
+        const total = calcTotal(item.minutes, item.grams, item, item.qty);
         if (total !== null) row.moneySold += total;
       }
     });
@@ -1274,44 +1300,46 @@ function leftoverRolls(batches, excludeId = '') {
       if (!key) return;
       let roll = rolls.find(r => r.orderId === b.id && r.key === key);
       if (!roll) rolls.push(roll = { orderId: b.id, key, color: it.specialColor, email: colorKey(b.clientEmail), boughtAt, expiresAt: rollExpiry(boughtAt), used: 0 });
-      roll.used += itemGrams(it);
+      roll.used += partGrams(it);
     });
   });
   batches.forEach(b => {
     if (b.id === excludeId) return;
-    b.items.forEach(it => {
-      const roll = it.useLeftover && findRoll(rolls, b.clientEmail, it);
-      if (roll) roll.used += itemGrams(it);
-    });
+    b.items.forEach(it => rollParts(it).forEach(p => {
+      const roll = findRoll(rolls, b.clientEmail, p);
+      if (roll) roll.used += partGrams(it);
+    }));
   });
   rolls.forEach(r => { r.left = Math.max(0, ROLL_GRAMS - r.used); });
   return rolls;
 }
-function findRoll(rolls, email, it) {
-  return rolls.find(r => r.orderId === it.leftoverFrom && r.key === colorKey(it.specialColor) && r.email === colorKey(email));
+function findRoll(rolls, email, part) {
+  return rolls.find(r => r.orderId === part.leftoverFrom && r.key === colorKey(part.name) && r.email === colorKey(email));
 }
+function rollParts(it) { return itemParts(it).filter(p => p.filType === 'leftover'); }
+function usesRolls(it) { return isSpecialOrder(it) || rollParts(it).length > 0; }
+function partGrams(it) { return itemGrams(it) / itemParts(it).length; }
 
-// Problems with an order's leftover-roll items, for the owner to see before quoting.
+// Problems with an order's leftover-roll colors, for the owner to see before quoting: one list per item.
 function leftoverChecks(b) {
   const rolls = leftoverRolls(state.batches, b.id);
   const uses = {};
-  b.items.forEach(it => {
-    const roll = isSpecialOrder(it) && it.useLeftover && findRoll(rolls, b.clientEmail, it);
-    if (roll) uses[roll.orderId + roll.key] = (uses[roll.orderId + roll.key] || 0) + itemGrams(it);
-  });
-  return b.items.map(it => {
-    if (!isSpecialOrder(it) || !it.useLeftover) return null;
-    const roll = findRoll(rolls, b.clientEmail, it);
-    if (!roll) return { ok: false, text: `No ${it.specialColor || 'matching'} roll found for this customer${it.leftoverFrom ? ` from order ${it.leftoverFrom}` : ''}. Charge a new roll.` };
+  b.items.forEach(it => rollParts(it).forEach(p => {
+    const roll = findRoll(rolls, b.clientEmail, p);
+    if (roll) uses[roll.orderId + roll.key] = (uses[roll.orderId + roll.key] || 0) + partGrams(it);
+  }));
+  return b.items.map(it => rollParts(it).map(p => {
+    const roll = findRoll(rolls, b.clientEmail, p);
+    if (!roll) return { ok: false, text: `No ${p.name || 'matching'} roll found for this customer${p.leftoverFrom ? ` from order ${p.leftoverFrom}` : ''}. Charge a new roll.` };
     if (new Date(b.createdAt) > new Date(roll.expiresAt)) return { ok: false, text: `Their ${roll.color} roll expired ${fmtShortDate(roll.expiresAt)}. Charge a new roll.` };
     const need = uses[roll.orderId + roll.key];
     if (need > roll.left) return { ok: false, text: `Needs ${need.toFixed(0)} g but their ${roll.color} roll has ${roll.left.toFixed(0)} g left. Charge a new roll.` };
     return { ok: true, text: `From their ${roll.color} roll (order ${roll.orderId}): ${roll.left.toFixed(0)} g left before this order, ${(roll.left - need).toFixed(0)} g after. Good until ${fmtShortDate(roll.expiresAt)}.` };
-  });
+  }));
 }
 
 // Customer side: look up their rolls by the email on the form.
-async function findLeftoverRolls(i) {
+async function findLeftoverRolls(i, forExtras = false) {
   const email = colorKey(state.clientEmail);
   const msg = document.getElementById(`leftover-msg-${i}`);
   if (!email.includes('@')) { if (msg) msg.textContent = 'Enter your email at the top first, so I can find your roll.'; return; }
@@ -1320,9 +1348,9 @@ async function findLeftoverRolls(i) {
     const rows = await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || [];
     const now = new Date();
     state.leftoverRolls = leftoverRolls(rows.map(normalizeBatch).filter(Boolean))
-      .filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now);
+      .filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now).sort((a, b) => byName({ name: a.color }, { name: b.color }));
     state.leftoverRollsFor = email;
-    state.draftItems[i].showRolls = true;
+    if (forExtras) state.draftItems[i].showExtras = true; else state.draftItems[i].showRolls = true;
   } catch (e) {
     if (msg) msg.textContent = "Couldn't look up your rolls right now. Please try again.";
     return;
@@ -1342,21 +1370,21 @@ function useLeftoverRoll(i, n) {
   queueDraftSave();
 }
 
-function draftRoll(item) {
-  return item.useLeftover && state.leftoverRollsFor === colorKey(state.clientEmail)
-    ? (state.leftoverRolls || []).find(r => r.orderId === item.leftoverFrom && r.key === colorKey(item.specialColor)) : null;
+function draftRoll(part) {
+  return part && part.filType === 'leftover' && state.leftoverRollsFor === colorKey(state.clientEmail)
+    ? (state.leftoverRolls || []).find(r => r.orderId === part.leftoverFrom && r.key === colorKey(part.name)) : null;
 }
 
 function renderLeftoverPicker(item, i) {
   if (item.useLeftover) {
-    const roll = draftRoll(item);
+    const roll = draftRoll(itemParts(item)[0]);
     return `<div class="special-order-check">Printing from your ${esc(item.specialColor)} roll${roll ? ` (about ${roll.left.toFixed(0)} g left, until ${fmtShortDate(roll.expiresAt)})` : ''}. No roll or material charge.
       <button type="button" class="btn-sm" onclick="useLeftoverRoll(${i}, -1)">Order a new roll instead</button></div>`;
   }
   if (item.showRolls && state.leftoverRollsFor === colorKey(state.clientEmail)) {
     const rolls = state.leftoverRolls || [];
     return `<div class="special-order-check" role="group" aria-label="Your leftover rolls">
-      ${rolls.length ? rolls.map((r, n) => `<button type="button" class="btn-sm" onclick="useLeftoverRoll(${i}, ${n})">${esc(r.color)}: about ${r.left.toFixed(0)} g left, until ${fmtShortDate(r.expiresAt)}</button>`).join('')
+      ${rolls.length ? rolls.map((r, n) => item.extraColors.some(p => p.filType === 'leftover' && p.leftoverFrom === r.orderId && colorKey(p.name) === r.key) ? '' : `<button type="button" class="btn-sm" onclick="useLeftoverRoll(${i}, ${n})">${esc(r.color)}: about ${r.left.toFixed(0)} g left, until ${fmtShortDate(r.expiresAt)}</button>`).join('')
         : `<span>No leftover rolls found for this email. A roll can be used for 2 months after I order it, for the same color and material, up to ${ROLL_GRAMS} g in all.</span>`}
     </div>`;
   }
@@ -1391,6 +1419,9 @@ function renderFilamentPills(i, current) {
   const item = state.draftItems[i] || {};
   const colors = state.settings.colors;
   ensureItemColor(item);
+  // An extra color that is now the main color isn't an extra any more.
+  const main = itemParts(item)[0];
+  item.extraColors = (item.extraColors || []).filter(p => !sameColorPart(p, main));
   if (colors.length) {
     return `<div class="filament-pills" role="group" aria-label="Color">
       ${colors.map(c => `
@@ -1399,7 +1430,8 @@ function renderFilamentPills(i, current) {
         </button>`).join('')}
       <button type="button" class="fil-pill ${isSpecialOrder(item) ? 'active-special' : ''}" aria-pressed="${isSpecialOrder(item)}" onclick="pickColor(${i}, '')">Special order (color or material I don't carry)</button>
     </div>
-    ${renderSpecialOrderBox(item, i)}`;
+    ${renderSpecialOrderBox(item, i)}
+    ${renderExtraColors(item, i)}`;
   }
   return `<div class="filament-pills" role="group" aria-label="Filament">
     ${['black','white','special_order'].map(f => `
@@ -1408,7 +1440,61 @@ function renderFilamentPills(i, current) {
         ${f === 'special_order' ? "Special order (color or material I don't carry)" : FIL_LABEL[f]}
       </button>`).join('')}
   </div>
-  ${renderSpecialOrderBox(item, i)}`;
+  ${renderSpecialOrderBox(item, i)}
+  ${renderExtraColors(item, i)}`;
+}
+
+// Colors a customer can add to a multi-color print: stocked colors, plus their leftover rolls.
+function stockedColors() {
+  const colors = state.settings.colors;
+  return colors.length
+    ? colors.map(c => ({ name: c.name, colorId: c.id, filType: c.special ? 'special' : 'color', hex: c.hex }))
+    : [{ name: 'Black', colorId: '', filType: 'black', hex: '#1e1e24' }, { name: 'White', colorId: '', filType: 'white', hex: '#f4f4f4' }];
+}
+function sameColorPart(a, b) {
+  return a.filType === 'leftover' ? b.filType === 'leftover' && a.leftoverFrom === b.leftoverFrom && colorKey(a.name) === colorKey(b.name)
+    : b.filType !== 'leftover' && colorKey(a.name) === colorKey(b.name);
+}
+function extraColorChoices(item) {
+  const main = itemParts(item)[0];
+  const rolls = state.leftoverRollsFor === colorKey(state.clientEmail) ? (state.leftoverRolls || []) : [];
+  return [...stockedColors(), ...rolls.map(r => ({ name: r.color, filType: 'leftover', leftoverFrom: r.orderId, roll: r }))]
+    .filter(c => !sameColorPart(c, main)).sort(byName);
+}
+
+function renderExtraColors(item, i) {
+  const extras = item.extraColors || [];
+  if (!item.showExtras && !extras.length) {
+    return `<button type="button" class="btn-sm extra-colors-open" onclick="state.draftItems[${i}].showExtras = true; rerenderPills(${i}, state.draftItems[${i}].filType)">+ Add another color (multi-color print)</button>`;
+  }
+  const rollsLooked = state.leftoverRollsFor === colorKey(state.clientEmail);
+  return `<div class="extra-colors">
+    <div class="field-help" style="margin-top:0;">Other colors in this print (optional). You can mix colors I carry with your leftover roll.</div>
+    <div class="filament-pills" role="group" aria-label="Other colors in this print">
+      ${extraColorChoices(item).map((c, n) => {
+        const on = extras.some(p => sameColorPart(p, c));
+        return `<button type="button" class="fil-pill swatch-pill ${on ? 'active-color' : ''}" aria-pressed="${on}" onclick="toggleExtraColor(${i}, ${n})">
+          ${c.hex ? `<span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>` : ''}${esc(c.name)}${c.roll ? ` <span class="swatch-note">your roll, ${c.roll.left.toFixed(0)} g left</span>` : c.filType === 'special' ? ' <span class="swatch-note">special</span>' : ''}
+        </button>`;
+      }).join('')}
+    </div>
+    ${rollsLooked ? '' : `<button type="button" class="btn-sm" id="extra-leftover-${i}" onclick="findLeftoverRolls(${i}, true)">Add my leftover roll</button>
+      <span id="leftover-msg-${i}" role="status"></span>`}
+    ${extras.length ? `<div class="field-help">For the estimate, the filament is split evenly between the colors. I'll confirm the price in your quote.</div>` : ''}
+  </div>`;
+}
+
+function toggleExtraColor(i, n) {
+  const item = state.draftItems[i];
+  const c = item && extraColorChoices(item)[n];
+  if (!c) return;
+  const at = item.extraColors.findIndex(p => sameColorPart(p, c));
+  if (at >= 0) item.extraColors.splice(at, 1);
+  else item.extraColors.push({ name: c.name, filType: c.filType, colorId: c.colorId || '', leftoverFrom: c.leftoverFrom || '' });
+  item.extraColors.sort(byName);
+  rerenderPills(i, item.filType);
+  updateCustomerPricePreview(i);
+  queueDraftSave();
 }
 
 function pickColor(i, colorId) {
@@ -1431,9 +1517,9 @@ function renderCustomerPricePreview(item) {
   if (!minutes || !grams) {
     return `<div class="calc-hint">No need to know the price yet: I'll work it out when I review your request.${usesSpecialSpool(item) ? ` A special order roll usually adds about $${SPECIAL_ORDER_TYPICAL}.` : ''}</div>`;
   }
-  const perPrint = calcPerPrint(minutes, grams, item.filType);
+  const perPrint = calcPerPrint(minutes, grams, item);
   const total = perPrint * qty;
-  const filamentRate = FIL_RATE[item.filType] ?? 0.024;
+  const filamentRate = itemRate(item);
   return `<div class="price-preview-box" style="margin-top:12px;">
     <div class="card-title" style="margin-bottom:6px;">Automated Estimate</div>
     <div class="price-big">$${total.toFixed(2)}</div>
@@ -1688,8 +1774,8 @@ function renderMyJobsTab() {
         <div class="job-divider"></div>
         ${renderOrderTracker(b)}
         ${b.items.map(it => {
-          const ip = it.minutes ? calcTotal(it.minutes, it.grams, it.filType, it.qty) : null;
-          const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+          const ip = it.minutes ? calcTotal(it.minutes, it.grams, it, it.qty) : null;
+          const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it) : null;
           return `<div class="sub-item">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
@@ -2073,9 +2159,9 @@ function renderOwnerBatch(b) {
   const phase = b.phase || 'estimate';
   const allDone = b.items.every(it => it.minutes && it.grams);
   const total = allDone ? orderSum(b) : null;
-  const hasSpecial = b.items.some(isSpecialOrder);
-  const checks = hasSpecial ? leftoverChecks(b) : [];
-  const rollProblem = checks.some(c => c && !c.ok);
+  const hasSpecial = b.items.some(usesRolls);
+  const checks = b.items.some(it => rollParts(it).length) ? leftoverChecks(b) : [];
+  const rollProblem = checks.some(list => list.some(c => !c.ok));
   const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   return `<div class="job-card ${phase}" id="order-${b.id}">
     <div class="job-header">
@@ -2142,7 +2228,7 @@ function renderOwnerBatch(b) {
             <div class="owner-order-summary-label">Item ${i + 1}</div>
             <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
             <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
-            ${checks[i] ? `<div class="owner-order-summary-value roll-check ${checks[i].ok ? 'ok' : 'bad'}">${checks[i].ok ? '' : '⚠ '}${esc(checks[i].text)}</div>` : ''}
+            ${(checks[i] || []).map(c => `<div class="owner-order-summary-value roll-check ${c.ok ? 'ok' : 'bad'}">${c.ok ? '' : '⚠ '}${esc(c.text)}</div>`).join('')}
             <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
             <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
             <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
@@ -2195,7 +2281,7 @@ function renderOwnerBatch(b) {
 }
 
 function renderOwnerItem(batchId, it, i) {
-  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it) : null;
   const tot = pp !== null ? pp * it.qty : null;
   const known = getKnownEstimate(it);
   const canUseKnown = known && (!it.minutes || !it.grams);
@@ -2205,7 +2291,7 @@ function renderOwnerItem(batchId, it, i) {
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
-          <span style="font-size:12px;color:var(--muted);">$${(FIL_RATE[it.filType] ?? 0.024).toFixed(3)}/g</span>
+          <span style="font-size:12px;color:var(--muted);">$${itemRate(it).toFixed(3)}/g</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
@@ -2378,7 +2464,7 @@ function cleanSettings(raw) {
       name: cleanText(c && c.name, 40).trim(),
       hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) ? c.hex : '#888888',
       special: !!(c && c.special)
-    })).filter(c => c.id && c.name),
+    })).filter(c => c.id && c.name).sort(byName),
     reviews: (Array.isArray(d.reviews) ? d.reviews : []).slice(0, 40).map(r => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(r && r.id)) ? r.id : '',
       name: cleanText(r && r.name, 60).trim(),
@@ -2462,6 +2548,17 @@ function cssColorHex(text) {
   return first === ctx.fillStyle && /^#[0-9a-f]{6}$/.test(first) ? first : '';
 }
 
+// Keeps the owner's color list in A–Z order once a name is finished (blank new rows stay at the end).
+function sortSettingsColors() {
+  const colors = state.settingsDraft && state.settingsDraft.colors;
+  if (!colors) return;
+  const named = colors.filter(c => String(c.name || '').trim()).sort(byName);
+  const order = [...named, ...colors.filter(c => !String(c.name || '').trim())];
+  if (order.every((c, n) => c === colors[n])) return;
+  state.settingsDraft.colors = order;
+  render();
+}
+
 function onColorNameInput(n, value) {
   const c = state.settingsDraft.colors[n];
   if (!c) return;
@@ -2525,7 +2622,7 @@ function renderOwnerSettingsPage() {
       ${d.colors.map((c, n) => `
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
           <input type="color" id="color-hex-${n}" value="${esc(c.hex)}" aria-label="Color for ${esc(c.name || 'new color')}" oninput="state.settingsDraft.colors[${n}].hex = this.value; state.settingsDraft.colors[${n}].hexManual = true" style="width:46px;height:40px;padding:2px;" />
-          <input type="text" value="${esc(c.name)}" aria-label="Color name" placeholder="e.g. Red" oninput="onColorNameInput(${n}, this.value)" style="flex:1;min-width:140px;" />
+          <input type="text" value="${esc(c.name)}" aria-label="Color name" placeholder="e.g. Red" oninput="onColorNameInput(${n}, this.value)" onchange="sortSettingsColors()" style="flex:1;min-width:140px;" />
           <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${c.special ? 'checked' : ''} onchange="state.settingsDraft.colors[${n}].special = this.checked" style="width:auto;" /> Special</label>
           <button class="btn-sm danger" type="button" onclick="state.settingsDraft.colors.splice(${n}, 1); render();" aria-label="Remove ${esc(c.name || 'color')}">Remove</button>
         </div>`).join('')}
@@ -2564,6 +2661,7 @@ async function saveSettingsDraft() {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   const d = state.settingsDraft;
   d.colors.forEach(c => { c.name = String(c.name || '').trim(); });
+  d.colors.sort(byName);
   try {
     await saveSettings(d);
     state.settingsDraft = null;
@@ -3676,10 +3774,10 @@ async function submitBatch() {
   const items = state.draftItems.filter(it => String(it.name || it.link || it.notes || '').trim());
   if (!items.length) { showAlert('submit-err', 'Please tell me about at least one thing you want printed.', 'error'); return; }
   const rollUse = {};
-  items.filter(it => isSpecialOrder(it) && it.useLeftover).forEach(it => {
-    const roll = draftRoll(it);
-    if (roll) rollUse[roll.orderId + roll.key] = { roll, grams: ((rollUse[roll.orderId + roll.key] || {}).grams || 0) + itemGrams(it) };
-  });
+  items.forEach(it => rollParts(it).forEach(p => {
+    const roll = draftRoll(p);
+    if (roll) rollUse[roll.orderId + roll.key] = { roll, grams: ((rollUse[roll.orderId + roll.key] || {}).grams || 0) + partGrams(it) };
+  }));
   const over = Object.values(rollUse).find(u => u.grams > u.roll.left);
   if (over) {
     showAlert('submit-err', `Your ${over.roll.color} roll has about ${over.roll.left.toFixed(0)} g left, but this request needs about ${over.grams.toFixed(0)} g. Choose "Order a new roll instead" for some items.`, 'error');
@@ -3745,9 +3843,9 @@ function previewOwnerItem(batchId, i) {
   const pEl   = document.getElementById(`opreview-${batchId}-${i}`);
   if (!pEl) return;
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
-  const pp  = calcPerPrint(mins, grams, it.filType);
+  const pp  = calcPerPrint(mins, grams, it);
   const tot = pp * it.qty;
-  const fr  = FIL_RATE[it.filType] ?? 0.024;
+  const fr  = itemRate(it);
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
   document.getElementById(`opsub-${batchId}-${i}`).textContent =
     `$2.00 flat × ${it.qty} = $${(2*it.qty).toFixed(2)}\n` +

@@ -56,6 +56,13 @@ check('special order: 1 kg roll replaces the material charge', () => {
   const stocked = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ ...special, filType: 'special', colorId: 'red', color: 'Red', specialColor: '' }] }), at({}))[0];
   assert(stocked.subject === 'Your SoloPrint quote: $3.78', `a stocked special color is not a special order: ${stocked.subject}`);
 });
+check('multi-color print with a leftover roll', () => {
+  const it = { name: 'Case', qty: 1, filType: 'color', color: 'Black', minutes: 60, grams: 30,
+    extraColors: [{ name: 'Red TPU', filType: 'leftover', leftoverFrom: 'r1' }] };
+  const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [it] }), at({}));
+  assert(mail.subject === 'Your SoloPrint quote: $3.80', mail.subject);   // 2 + 1.44 + 15 g x 0.024, no roll charge
+  assert(mail.body.includes('Also: Red TPU (leftover roll)'), mail.body);
+});
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);
