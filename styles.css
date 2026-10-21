@@ -573,3 +573,15 @@ textarea { resize: vertical; min-height: 70px; }
 .extra-colors { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
 .extra-colors .btn-sm { margin: 6px 6px 0 0; }
 .extra-colors-open { margin-top: 8px; }
+.email-card-head { margin-bottom: 12px; }
+.email-card-title { font-size: 16px; font-weight: 700; margin: 0; }
+.email-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.email-card-grid textarea { font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+@media (max-width: 800px) { .email-card-grid { grid-template-columns: 1fr; } }
+.email-preview { border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); padding: 12px 14px; }
+.email-preview-subject { font-weight: 700; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.email-preview-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--sans); font-size: 13px; line-height: 1.55; color: var(--text); }
+.email-placeholders { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 16px; margin: 0; font-size: 13px; }
+.email-placeholders div { display: flex; gap: 8px; align-items: baseline; }
+.email-placeholders dt code { font-family: var(--mono); color: var(--accent); font-weight: 700; }
+.email-placeholders dd { margin: 0; color: var(--muted); }
