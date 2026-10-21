@@ -2,7 +2,12 @@
 // Supabase calls this script whenever an order is created or changes (see supabase/email-trigger.sql).
 // Setup steps are in email/README.md.
 
-const SECRET = 'PASTE-YOUR-SECRET-HERE';   // must match the secret in supabase/email-trigger.sql
+// The secret is NOT stored in this file (the repo is public). Save it once in Apps Script:
+// Project Settings (gear) -> Script properties -> Add script property: SECRET = your secret.
+// It must match the secret in supabase/email-trigger.sql. New versions of this file can then be pasted as-is.
+function getSecret() {
+  return String(PropertiesService.getScriptProperties().getProperty('SECRET') || '').trim();
+}
 const OWNER_EMAIL = 'jeffsolo49@gmail.com';
 const SITE_URL = 'https://soloprint.vercel.app';  // your site's address, used for links in emails
 const VENMO_USERNAME = 'Jeffrey-Sol-3';
@@ -18,7 +23,8 @@ const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Sp
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return reply('bad request'); }
-  if (!SECRET || SECRET.indexOf('PASTE') === 0 || body.secret !== SECRET) return reply('forbidden');
+  const secret = getSecret();
+  if (secret.length < 20 || body.secret !== secret) return reply('forbidden');
   const emails = emailsFor(body.type, body.record || {}, body.old_record || null);
   emails.forEach(m => MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: OWNER_EMAIL }));
   return reply('sent ' + emails.length);
@@ -223,7 +229,7 @@ function sendQuoteReminders() {
     method: 'post',
     contentType: 'application/json',
     headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
-    payload: JSON.stringify({ p_secret: SECRET, p_days: 3 }),
+    payload: JSON.stringify({ p_secret: getSecret(), p_days: 3 }),
     muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) throw new Error('Quote reminders failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
@@ -263,7 +269,7 @@ function backupToDrive() {
     method: 'post',
     contentType: 'application/json',
     headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
-    payload: JSON.stringify({ p_secret: SECRET }),
+    payload: JSON.stringify({ p_secret: getSecret() }),
     muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) {

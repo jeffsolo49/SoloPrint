@@ -24,7 +24,9 @@ Do this after running `supabase/security.sql`.
    It stops anyone else from triggering emails through your script. Don't commit it to the repo.
 2. **Create the script.** Go to <https://script.google.com>, signed in as jeffsolo49@gmail.com, and
    click **New project**. Name it "SoloPrint emails", delete the sample code, and paste in all of `Code.gs`.
-   At the top, set `SECRET` to your secret and `SITE_URL` to your site's address. Click **Save**.
+   Click **Save**. Then open **Project Settings** (gear icon) → **Script properties** → **Add script property**,
+   name it `SECRET` and paste your secret as the value, and save. The secret is kept there, not in the
+   code (this repository is public), so future versions of `Code.gs` can be pasted without editing.
 3. **Allow Gmail access.** In the toolbar, pick `sendTestEmail` from the function menu and click **Run**.
    Google asks for permission. Because this is your own script, it shows "Google hasn't verified this app";
    click **Advanced**, then **Go to SoloPrint emails**, then **Allow**. You should get a test email.
@@ -44,6 +46,10 @@ Do this after running `supabase/security.sql`.
   shows what Supabase got back from the script.
 - Check Gmail's **Sent** folder: emails go out from your account, so they show up there.
 
+## Updating the script later
+
+Paste the new `Code.gs` over the old one as-is: the secret lives in Script properties, not in the code.
+
 ## Changing the emails later
 
 Edit `Code.gs` in the Apps Script editor, save, then **Deploy → Manage deployments → ✏️ Edit →
@@ -57,7 +63,7 @@ can edit the numbers, they're labeled as automated estimates, and you see where 
 each order. A profile often covers a full plate, which can be several pieces. Printables blocks
 requests from Google's servers and Thingiverse has no such data, so those links are filled in by hand.
 
-After pasting the new `Code.gs` (put your secret back on line 5), deploy a new version, then:
+After pasting the new `Code.gs` (no edits needed; the secret is in Script properties), deploy a new version, then:
 
 1. Pick `testLookup` in the function menu and click **Run**. Google asks for one more permission
    ("connect to an external service"); allow it the same way as before.

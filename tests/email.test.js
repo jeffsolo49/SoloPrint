@@ -6,7 +6,9 @@ const { check, assert, finish } = require('./harness');
 
 const CODE = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Code.gs'), 'utf8');
 function load(stubs = {}) {
-  const ctx = { module: {}, console, Logger: { log() {} }, ContentService: {}, CacheService: {}, PropertiesService: {}, ScriptApp: {}, MailApp: {}, ...stubs };
+  const props = { SECRET: '0123456789abcdef0123456789abcdef' };
+  const ctx = { module: {}, console, Logger: { log() {} }, ContentService: { createTextOutput: t => ({ text: t }) }, CacheService: {},
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null }) }, ScriptApp: {}, MailApp: {}, ...stubs };
   vm.createContext(ctx);
   vm.runInContext(CODE, ctx);
   return ctx;
@@ -53,6 +55,17 @@ check('quote reminders: one per valid customer, with the order link', () => {
   const { reminderEmails } = load();
   const out = reminderEmails([at({ phase: 'quote_sent' }), at({ clientEmail: 'not-an-email' })]);
   assert(out.length === 1 && out[0].subject.includes('quote is waiting') && out[0].body.includes('#order-1729') && out[0].body.includes('$9.28'), JSON.stringify(out));
+});
+
+check('webhook accepts the saved secret and refuses anything else', () => {
+  const sent = [];
+  const ctx = load({ MailApp: { sendEmail: m => sent.push(m.subject) } });
+  const post = secret => ctx.doPost({ postData: { contents: JSON.stringify({ secret, type: 'INSERT', record: at({}) }) } }).text;
+  assert(post('wrong') === 'forbidden' && sent.length === 0, 'wrong secret was accepted');
+  assert(post('0123456789abcdef0123456789abcdef') === 'sent 2' && sent.length === 2, 'right secret was refused');
+});
+check('no secret is written in Code.gs', () => {
+  assert(!/[0-9a-f]{40}/i.test(CODE) && !/const SECRET\s*=/.test(CODE), 'Code.gs contains a secret');
 });
 
 console.log('\nModel lookups:');
