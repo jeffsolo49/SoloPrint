@@ -1110,10 +1110,65 @@ function renderOwnerNav() {
   `;
 }
 
+// ── HOME PAGE: about, how it works, reviews, contact ─────────────────────
+function renderContactButtons() {
+  const { messenger, etsy } = state.settings.links;
+  if (!messenger && !etsy) return '';
+  return `<div class="contact-buttons">
+    ${messenger ? `<a class="btn-contact" href="${esc(messenger)}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2C6.4 2 2 6.1 2 11.4c0 2.9 1.4 5.5 3.7 7.2V22l3.4-1.9c.9.3 1.9.4 2.9.4 5.6 0 10-4.1 10-9.4S17.6 2 12 2zm1 12.6-2.6-2.7-5 2.7 5.5-5.8 2.6 2.7 4.9-2.7-5.4 5.8z"/></svg>Message me</a>` : ''}
+    ${etsy ? `<a class="btn-contact etsy" href="${esc(etsy)}" target="_blank" rel="noopener noreferrer">Visit my Etsy shop</a>` : ''}
+  </div>`;
+}
+
+function renderAboutCard() {
+  const a = state.settings.about;
+  return `<div class="card about-card">
+    ${a.photo ? `<img class="about-photo" src="${esc(a.photo)}" alt="Photo of the SoloPrint owner" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
+    <div>
+      <h2 class="section-title" style="font-size:20px;margin-bottom:8px;">Hi, welcome to SoloPrint</h2>
+      <p class="about-text">${esc(a.text)}</p>
+      ${a.replyTime ? `<p class="about-reply">${esc(a.replyTime)}</p>` : ''}
+      ${renderContactButtons()}
+    </div>
+  </div>`;
+}
+
+function renderHowItWorks() {
+  const steps = [
+    ['Tell me what you want', 'Paste a model link, describe an idea, or pick something I have made before.'],
+    ['I review it and send a quote', "I'll check the print time and material, then email you a price."],
+    ['You approve', 'Tap "Looks good" if you want to go ahead. Nothing is charged before this.'],
+    ['I print it, you pay', 'I confirm the order, print it, and you pay by Venmo. Follow every step under My Requests.']
+  ];
+  return `<div class="card">
+    <h3 class="card-title">How it works</h3>
+    <ol class="how-steps">${steps.map(([t, d], n) => `
+      <li><span class="how-num" aria-hidden="true">${n + 1}</span><span><strong>${esc(t)}</strong><span class="how-desc">${esc(d)}</span></span></li>`).join('')}
+    </ol>
+  </div>`;
+}
+
+function renderReviews(reviews, title = 'What customers say') {
+  if (!reviews.length) return '';
+  return `<div class="card">
+    <h3 class="card-title">${esc(title)}</h3>
+    <div class="reviews">${reviews.map(r => {
+      const design = r.designId && state.gallery.find(g => g.id === r.designId && g.published);
+      return `<figure class="review">
+        <blockquote>“${esc(r.text)}”</blockquote>
+        <figcaption>${esc(r.name || 'A customer')}${design ? ` · <button class="btn-link" type="button" onclick="openWork('${esc(design.id)}')">${esc(design.title)}</button>` : ''}</figcaption>
+      </figure>`;
+    }).join('')}</div>
+  </div>`;
+}
+
 function renderSubmitTab() {
   const items = state.draftItems;
   return `
+    ${renderAboutCard()}
     ${renderRecentWork()}
+    ${renderHowItWorks()}
+    ${renderReviews(state.settings.reviews)}
     <div class="section-header">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -1151,6 +1206,7 @@ function renderSubmitTab() {
     </div>
 
     <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Send My Request</button>
+    ${state.settings.links.messenger ? `<div class="field-help" style="text-align:center;margin-top:8px;">Questions first? <a class="btn-link" href="${esc(state.settings.links.messenger)}" target="_blank" rel="noopener noreferrer">Message me</a></div>` : ''}
     <div class="field-help" style="text-align:center;margin-top:8px;">Free to ask. I'll review it and email you a quote${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
     <div class="alert error" id="submit-err"></div>
     <div class="alert success" id="submit-ok"></div>
@@ -2355,8 +2411,8 @@ function renderRecentWork() {
       <h2 class="section-title" style="font-size:20px;">My Work</h2>
       <button class="btn-link" type="button" onclick="setTab('gallery')">See all ${esc(GALLERY_NAME)} →</button>
     </div>
-    <div class="home-gallery">${shown.map((t, i) => `
-      <button class="work-tile ${i === 0 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}${t.n ? `, photo ${t.n + 1}` : ''}">
+    <div class="home-gallery ${shown.length < 5 ? 'compact' : ''}" style="${shown.length < 5 ? `--cols:${shown.length}` : ''}">${shown.map((t, i) => `
+      <button class="work-tile ${i === 0 && shown.length >= 5 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}${t.n ? `, photo ${t.n + 1}` : ''}">
         ${thumbImg(t.photo, '', 'tile')}
         ${t.first ? `<span>${esc(t.g.title)}</span>` : ''}
       </button>`).join('')}</div>
@@ -2383,7 +2439,8 @@ function renderWorkDetail(g) {
         </div>
         <div class="field-help" style="margin-top:10px;">Price is per item. We'll review your request and confirm before asking for payment.</div>` : `
         <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
-    </div>`;
+    </div>
+    ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
 }
 
 function showWorkPhoto(id, n) {

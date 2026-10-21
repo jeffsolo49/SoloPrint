@@ -534,3 +534,28 @@ textarea { resize: vertical; min-height: 70px; }
 .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 16px; color: var(--muted); }
 .spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Home page: about, how it works, reviews, contact */
+.about-card { display: flex; gap: 20px; align-items: flex-start; }
+.about-photo { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 4px solid var(--bezel); flex-shrink: 0; }
+.about-text { font-size: 15px; line-height: 1.7; }
+.about-reply { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--green); }
+@media (max-width: 560px) { .about-card { flex-direction: column; align-items: center; text-align: center; } .contact-buttons { justify-content: center; } }
+.contact-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.btn-contact { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; background: #0866ff; color: #fff; font-weight: 700; font-size: 14px; text-decoration: none; }
+.btn-contact svg { width: 18px; height: 18px; }
+.btn-contact.etsy { background: #b84a12; }
+.btn-contact:hover { filter: brightness(0.92); }
+.how-steps { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.how-steps li { display: flex; flex-direction: column; gap: 10px; }
+.how-num { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), #8d5cf6); color: #fff; font-family: var(--pixel); font-size: 16px; }
+.how-steps strong { display: block; font-size: 14px; }
+.how-desc { display: block; font-size: 12px; color: var(--muted); line-height: 1.55; margin-top: 4px; }
+@media (max-width: 760px) { .how-steps { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 420px) { .how-steps { grid-template-columns: 1fr; } .how-steps li { flex-direction: row; } .how-num { flex-shrink: 0; } }
+.reviews { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.review { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--surface2); border-left: 4px solid var(--accent); }
+.review blockquote { margin: 0; font-size: 14px; line-height: 1.6; }
+.review figcaption { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.home-gallery.compact { grid-template-columns: repeat(var(--cols, 4), 1fr); }
+@media (max-width: 640px) { .home-gallery.compact { grid-template-columns: repeat(2, 1fr); } }
