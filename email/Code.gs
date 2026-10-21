@@ -63,15 +63,22 @@ function lookupModel(url) {
 function fetchMakerWorldDesign(designId) {
   const props = PropertiesService.getScriptProperties();
   const token = props.getProperty('MW_TOKEN');
-  const headers = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
-  const url = 'https://api.bambulab.com/v1/design-service/design/' + designId;
-  let res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
-  if ((res.getResponseCode() === 401 || res.getResponseCode() === 403) && token) {
-    headers.Authorization = 'Bearer ' + token;
-    res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+  const urls = [
+    'https://api.bambulab.com/v1/design-service/design/' + designId,
+    'https://makerworld.com/api/v1/design-service/design/' + designId
+  ];
+  const errors = [];
+  for (const url of urls) {
+    const headers = { 'User-Agent': BROWSER_UA, 'Accept': 'application/json', 'Referer': 'https://makerworld.com/' };
+    let res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+    if ((res.getResponseCode() === 401 || res.getResponseCode() === 403) && token) {
+      headers.Authorization = 'Bearer ' + token;
+      res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+    }
+    if (res.getResponseCode() === 200) return JSON.parse(res.getContentText());
+    errors.push(describeFailure(url, res));
   }
-  if (res.getResponseCode() !== 200) throw new Error('MakerWorld returned ' + res.getResponseCode());
-  return JSON.parse(res.getContentText());
+  throw new Error('MakerWorld lookup failed: ' + errors.join(' || '));
 }
 
 // Pure function so it can be tested outside Apps Script.
@@ -105,11 +112,17 @@ function fetchPrintablesModel(modelId) {
   const res = UrlFetchApp.fetch('https://api.printables.com/graphql/', {
     method: 'post',
     contentType: 'application/json',
-    headers: { 'User-Agent': 'Mozilla/5.0' },
+    headers: {
+      'User-Agent': BROWSER_UA,
+      'Accept': 'application/graphql-response+json, application/json',
+      'Accept-Language': 'en',
+      'Origin': 'https://www.printables.com',
+      'Referer': 'https://www.printables.com/model/' + modelId
+    },
     payload: JSON.stringify({ operationName: 'ModelFiles', query, variables: { id: modelId } }),
     muteHttpExceptions: true
   });
-  if (res.getResponseCode() !== 200) throw new Error('Printables returned ' + res.getResponseCode());
+  if (res.getResponseCode() !== 200) throw new Error('Printables lookup failed: ' + describeFailure('api.printables.com', res));
   return JSON.parse(res.getContentText());
 }
 
@@ -131,6 +144,14 @@ function parsePrintablesModel(json) {
     grams: Math.round(Number(gcode.weight) * 10) / 10,
     error: ''
   };
+}
+
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+function describeFailure(url, res) {
+  const text = res.getContentText().replace(/\s+/g, ' ').slice(0, 200);
+  const blocked = /cloudflare|cf-ray|just a moment|attention required/i.test(text) ? ' [looks like a bot check]' : '';
+  return url + ' -> ' + res.getResponseCode() + blocked + ': ' + text;
 }
 
 function firstNumber(obj, keys) {
@@ -171,16 +192,17 @@ function connectMakerWorld() {
 
 // Run from the editor to check lookups; paste the log into your chat with Claude if something looks wrong.
 function testLookup() {
-  ['https://makerworld.com/en/models/1', 'https://www.printables.com/model/3161-3dbenchy'].forEach(url => {
+  ['https://makerworld.com/en/models/922568', 'https://www.printables.com/model/3161-3dbenchy'].forEach(url => {
     try {
-      Logger.log(url + '\n' + JSON.stringify(lookupModel(url)));
-      const mw = url.match(/models\/(\d+)/);
+      const mw = url.match(/makerworld\.com\/.*models\/(\d+)/);
       if (mw) {
         const design = fetchMakerWorldDesign(mw[1]);
         const inst = (design.instances || [])[0] || {};
         Logger.log('MakerWorld fields: design=' + Object.keys(design).join(',') + ' | instance=' + Object.keys(inst).join(',')
           + ' | plate=' + Object.keys((inst.plates || [])[0] || {}).join(','));
+        Logger.log('MakerWorld first profile: ' + JSON.stringify(inst).slice(0, 1500));
       }
+      Logger.log(url + '\n' + JSON.stringify(lookupModel(url)));
     } catch (err) {
       Logger.log(url + '\nERROR ' + err);
     }
