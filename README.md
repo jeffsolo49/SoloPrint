@@ -15,6 +15,8 @@ Live at https://soloprint.vercel.app/
   `supabase/email-trigger.sql`. Setup steps are in `email/README.md`.
 - **Site Settings** (owner tab): about text and photo, Messenger/Etsy links, filament colors (type a name and the
   color picker fills in) and reviews, stored by `supabase/site-settings.sql`.
+- **Emails** (owner tab): read and edit every automated email. Defaults are in `email-templates.js`,
+  which `email/Code.gs` carries an exact copy of (a test checks); your edits are saved in site settings.
 - **Scheduled jobs** (Apps Script `setupSchedules`): weekly Drive backup and daily quote reminders.
 - **Link previews:** `og-image.png` is the picture shown when the site's link is texted or shared.
 

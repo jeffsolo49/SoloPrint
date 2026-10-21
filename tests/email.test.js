@@ -63,6 +63,22 @@ check('multi-color print with a leftover roll', () => {
   assert(mail.subject === 'Your SoloPrint quote: $3.80', mail.subject);   // 2 + 1.44 + 15 g x 0.024, no roll charge
   assert(mail.body.includes('Also: Red TPU (leftover roll)'), mail.body);
 });
+check('owner-edited email text is used, blanks fall back to the default', () => {
+  const custom = { quote: { subject: 'Quote for {title}: ${total}', body: '' }, footer: { body: 'Cheers,\nJeff' } };
+  const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), custom);
+  assert(mail.subject === 'Quote for Benchy: $9.28', mail.subject);
+  assert(mail.body.startsWith('Hi Jane,') && mail.body.includes('Total: $9.28') && mail.body.endsWith('Cheers,\nJeff'), mail.body);
+  const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_recieved' }), at({ phase: 'quote_sent' }))[0].body;
+  assert(!paid.includes('venmo') && !paid.includes('Total:'), `paid orders should drop the payment lines: ${paid}`);
+  const note = emailsFor('INSERT', at({ items: [{ name: 'X', notes: 'Price {total} please' }] }), null)[0].body;
+  assert(note.includes('Price {total} please'), 'customer text should not be treated as fill-ins');
+});
+check('Code.gs carries an exact copy of email-templates.js', () => {
+  const shared = fs.readFileSync(path.resolve(__dirname, '..', 'email-templates.js'), 'utf8');
+  const start = CODE.indexOf('\n', CODE.indexOf('// ── SHARED EMAIL TEMPLATES')) + 1;
+  const end = CODE.indexOf('// ── END SHARED EMAIL TEMPLATES');
+  assert(start > 0 && end > start && CODE.slice(start, end) === shared, 'copy the whole of email-templates.js into Code.gs between the markers');
+});
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);

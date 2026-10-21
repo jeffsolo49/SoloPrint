@@ -52,7 +52,9 @@ Paste the new `Code.gs` over the old one as-is: the secret lives in Script prope
 
 ## Changing the emails later
 
-Edit `Code.gs` in the Apps Script editor, save, then **Deploy → Manage deployments → ✏️ Edit →
+To change the wording, use the **Emails** tab in owner mode on the site: no script changes needed.
+
+To change the script itself, edit `Code.gs` in the Apps Script editor, save, then **Deploy → Manage deployments → ✏️ Edit →
 Version: New version → Deploy**. The Web app URL stays the same, so Supabase needs no changes.
 
 ## Print time and grams from model links

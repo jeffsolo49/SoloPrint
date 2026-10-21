@@ -1160,6 +1160,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Site Settings</button>
+      <button class="nav-tab ${state.ownerTab==='emails'?'active':''}" onclick="setOwnerTab('emails')">Emails</button>
       <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
@@ -1834,10 +1835,12 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${state.ownerTab === 'settings'
         ? renderOwnerSettingsPage()
+        : state.ownerTab === 'emails'
+        ? renderOwnerEmailsPage()
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'library'
@@ -2372,6 +2375,7 @@ function setOwnerTab(tab) {
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
   if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery()]).then(render); }
+  if (tab === 'emails') { state.emailsDraft = null; loadSettings().then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
@@ -2443,7 +2447,24 @@ async function lookupMyRequests() {
 // from the Site Settings tab. Everything has a default so the site works before it's filled in.
 const DEFAULT_ABOUT = "I'm a veteran spouse who does 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life, and design work is free for veterans: I only charge for material and print time.";
 function blankSettings() {
-  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [] };
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {} };
+}
+
+// Only the parts the owner changed are kept, so improvements to the default text still reach them.
+function cleanEmails(raw) {
+  const out = {};
+  const src = raw && typeof raw === 'object' ? raw : {};
+  Object.keys(EMAIL_TEMPLATES).forEach(key => {
+    const own = src[key] && typeof src[key] === 'object' ? src[key] : {};
+    const def = EMAIL_TEMPLATES[key];
+    const subject = cleanText(own.subject, 200).replace(/\s*\n\s*/g, ' ');
+    const body = cleanText(own.body, 5000).replace(/\r\n?/g, '\n');
+    const entry = {};
+    if (def.subject && subject.trim() && subject !== def.subject) entry.subject = subject;
+    if (body.trim() && body !== def.body) entry.body = body;
+    if (Object.keys(entry).length) out[key] = entry;
+  });
+  return out;
 }
 
 function safeLink(url, hosts) {
@@ -2470,7 +2491,8 @@ function cleanSettings(raw) {
       name: cleanText(r && r.name, 60).trim(),
       text: cleanText(r && r.text, 600).trim(),
       designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : ''
-    })).filter(r => r.id && r.text)
+    })).filter(r => r.id && r.text),
+    emails: cleanEmails(d.emails)
   };
 }
 
@@ -2573,6 +2595,116 @@ function onColorNameInput(n, value) {
 
 function settingsId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// ── EMAILS ────────────────────────────────────────────────────────────────
+// Owner tab to read and edit every automated email. Text is saved in site settings (`emails`), and the
+// Google script (email/Code.gs) reads it when it sends. Defaults live in email-templates.js.
+const EMAIL_SAMPLE = {
+  name: 'Jane', customerName: 'Jane', customerEmail: 'jane@example.com', title: 'Benchy, Phone stand',
+  submitted: 'Oct 21, 2026, 2:15 PM',
+  items: '1) Benchy x 2\n   Color: Red\n\n2) Phone stand\n   Color: Black\n   Notes: Make it sturdy',
+  itemsWithPrices: '1) Benchy x 2\n   Color: Red\n   Price: $9.28 ($4.64 each)\n\n2) Phone stand\n   Color: Black\n   Price: $6.40\n   Notes: Make it sturdy',
+  estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
+  venmoLink: `https://venmo.com/${VENMO_USERNAME}?txn=pay&amount=15.68`,
+  orderLink: 'https://soloprint.vercel.app/?requests=jane%40example.com#order-1729',
+  delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup'
+};
+
+function emailPreview(key) {
+  const vars = { ...EMAIL_SAMPLE };
+  vars.footer = renderEmailText(emailTemplate('footer', state.emailsDraft).body, vars);
+  const t = emailTemplate(key, state.emailsDraft);
+  return { subject: renderEmailText(t.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, vars) };
+}
+
+function renderEmailPreview(key) {
+  const p = emailPreview(key);
+  return `${EMAIL_TEMPLATES[key].subject ? `<div class="email-preview-subject">${esc(p.subject)}</div>` : ''}<pre class="email-preview-body">${esc(p.body)}</pre>`;
+}
+
+function renderOwnerEmailsPage() {
+  if (!state.emailsDraft) state.emailsDraft = JSON.parse(JSON.stringify(state.settings.emails || {}));
+  const changed = Object.keys(cleanEmails(state.emailsDraft)).length;
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div>
+        <div><h2 class="section-title">Emails</h2><div class="section-sub">Every automated email, and when it's sent. Edit any of them; the preview uses a sample order.</div></div>
+      </div>
+    </div>
+    ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load your saved emails. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+    <div class="card">
+      <h3 class="card-title">Fill-ins</h3>
+      <p class="field-help" style="margin-top:0;">Type these in curly brackets and they're filled in for each order. A line whose fill-in has nothing to show (like a Venmo link once they've paid) is left out.</p>
+      <dl class="email-placeholders">
+        ${Object.entries(EMAIL_PLACEHOLDERS).map(([k, d]) => `<div><dt><code>{${k}}</code></dt><dd>${esc(d)}</dd></div>`).join('')}
+      </dl>
+    </div>
+    ${Object.entries(EMAIL_TEMPLATES).map(([key, def]) => {
+      const t = emailTemplate(key, state.emailsDraft);
+      const own = cleanEmails({ [key]: state.emailsDraft[key] })[key];
+      return `<div class="card email-card" id="email-${key}">
+        <div class="email-card-head">
+          <h3 class="email-card-title">${esc(def.label)}${own ? ' <span class="swatch-note">edited</span>' : ''}</h3>
+          <div class="field-help" style="margin-top:2px;">To: ${esc(def.to)} · ${esc(def.when)}</div>
+        </div>
+        <div class="email-card-grid">
+          <div>
+            ${def.subject ? `<div class="field">
+              <label for="email-subject-${key}">Subject</label>
+              <input type="text" id="email-subject-${key}" value="${esc(t.subject)}" maxlength="200" oninput="updateEmailDraft('${key}', 'subject', this.value)" />
+            </div>` : ''}
+            <div class="field" style="margin-bottom:8px;">
+              <label for="email-body-${key}">Email text</label>
+              <textarea id="email-body-${key}" rows="12" maxlength="5000" oninput="updateEmailDraft('${key}', 'body', this.value)">${esc(t.body)}</textarea>
+            </div>
+            ${own ? `<button type="button" class="btn-sm" onclick="resetEmail('${key}')">Reset to default</button>` : ''}
+          </div>
+          <div>
+            <div class="owner-order-summary-label" style="margin-bottom:6px;">Preview</div>
+            <div class="email-preview" id="email-preview-${key}" aria-live="polite">${renderEmailPreview(key)}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+    <div class="alert error" id="emails-err"></div>
+    <div class="alert success" id="emails-ok"></div>
+    <div class="settings-save-row">
+      <button class="btn-primary" id="emails-save" onclick="saveEmailsDraft()">Save emails</button>
+      ${changed ? `<div class="field-help">${changed} email${changed === 1 ? '' : 's'} changed from the default.</div>` : ''}
+    </div>`;
+}
+
+function updateEmailDraft(key, field, value) {
+  state.emailsDraft[key] = { ...(state.emailsDraft[key] || {}), [field]: value };
+  const preview = document.getElementById(`email-preview-${key}`);
+  if (preview) preview.innerHTML = renderEmailPreview(key);
+  // The sign-off appears in most customer emails, so refresh those previews too.
+  if (key === 'footer') Object.keys(EMAIL_TEMPLATES).forEach(k => {
+    const el = document.getElementById(`email-preview-${k}`);
+    if (el) el.innerHTML = renderEmailPreview(k);
+  });
+}
+
+function resetEmail(key) {
+  delete state.emailsDraft[key];
+  render();
+}
+
+async function saveEmailsDraft() {
+  const btn = document.getElementById('emails-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await saveSettings({ ...state.settings, emails: state.emailsDraft });
+    state.emailsDraft = null;
+    state.settingsDraft = null;
+    render();
+    showAlert('emails-ok', 'Emails saved. They are used from the next email sent.', 'success');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save emails'; }
+    showAlert('emails-err', "Couldn't save. If you were logged out, log in again.", 'error');
+  }
 }
 
 // Owner tab. Edits happen on a copy (state.settingsDraft) until "Save settings".

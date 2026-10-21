@@ -116,7 +116,8 @@ const STATES = {
   'owner gallery': asOwner('gallery'),
   'owner saved models': asOwner('library'),
   'owner sales data': asOwner('analytics'),
-  'owner site settings': asOwner('settings')
+  'owner site settings': asOwner('settings'),
+  'owner emails': asOwner('emails')
 };
 
 (async () => {
@@ -139,7 +140,7 @@ const STATES = {
 
   console.log('\nNo sideways scrolling:');
   for (const width of [320, 390, 900]) {
-    for (const view of ['home', 'my requests', 'owner dashboard', 'owner gallery']) {
+    for (const view of ['home', 'my requests', 'owner dashboard', 'owner gallery', 'owner emails']) {
       await check(`${view} at ${width}px`, async () => {
         const page = await open(fixtures(), { width, height: 800 });
         await page.evaluate(STATES[view]);
@@ -466,6 +467,28 @@ const STATES = {
     await page.click('#settings-save');
     await page.waitForTimeout(300);
     assert(db.settings.about.replyTime === 'Replies within two days', `saved reply time: ${db.settings.about && db.settings.about.replyTime}`);
+    await page.close();
+  });
+  await check('emails page: edit, preview, save and reset', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('emails'));
+    const cards = await page.$$eval('.email-card', els => els.length);
+    assert(cards === 11, `${cards} email cards`);
+    assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
+    await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
+    assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
+    await page.fill('#email-body-footer', 'Thanks!\nJeff');
+    assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'sign-off change should show in other previews');
+    await page.click('#emails-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.emails.quote.subject === 'Quote for {title}: ${total}' && !db.settings.emails.quote.body, `saved ${JSON.stringify(db.settings.emails)}`);
+    assert(db.settings.emails.footer.body === 'Thanks!\nJeff', 'footer not saved');
+    assert(db.settings.about.text.includes('veteran spouse'), 'other settings should be kept');
+    await page.click('#email-quote button:has-text("Reset to default")');
+    await page.click('#emails-save');
+    await page.waitForTimeout(300);
+    assert(!db.settings.emails.quote && db.settings.emails.footer, `after reset ${JSON.stringify(db.settings.emails)}`);
     await page.close();
   });
   await check('saved model edits sync to the database', async () => {
