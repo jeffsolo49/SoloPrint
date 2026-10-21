@@ -302,6 +302,61 @@ const STATES = {
     assert(urls.some(u => u.endsWith('/jobs?order=created_at.asc')), 'Load all did not fetch full history');
     await page.close();
   });
+  const withRolls = db => {
+    const day = 1440;
+    db.jobs['r1'] = { id: 'r1', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(12 * day), phase: 'delivered', phaseHistory: { order_received: ago(10 * day) },
+      items: [{ name: 'Phone case', qty: 1, filType: 'special_order', specialColor: 'Red TPU', minutes: 90, grams: 300 }] };
+    db.jobs['r2'] = { id: 'r2', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(5 * day), phase: 'delivered', phaseHistory: { order_received: ago(5 * day) },
+      items: [{ name: 'Case 2', qty: 2, filType: 'special_order', specialColor: 'Red TPU', useLeftover: true, leftoverFrom: 'r1', minutes: 90, grams: 100 }] };
+    db.jobs['r3'] = { id: 'r3', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(80 * day), phase: 'delivered', phaseHistory: { order_received: ago(70 * day) },
+      items: [{ name: 'Old', qty: 1, filType: 'special_order', specialColor: 'Blue PLA', minutes: 30, grams: 50 }] };
+    db.jobs['r4'] = { id: 'r4', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(day), phase: 'quote_sent', phaseHistory: {},
+      items: [{ name: 'Not bought yet', qty: 1, filType: 'special_order', specialColor: 'Green PETG', minutes: 30, grams: 50 }] };
+    return db;
+  };
+  await check('leftover roll: same color only, 1000 g in all, within 2 months', async () => {
+    const db = withRolls(fixtures());
+    const page = await open(db);
+    await page.fill('#client-name', 'Lee');
+    await page.fill('#client-email', 'lee@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'Another case');
+    await page.click('button:has-text("Special order")');
+    await page.click('#special-leftover-0');
+    await page.waitForSelector('[aria-label="Your leftover rolls"]');
+    const offered = await page.$$eval('[aria-label="Your leftover rolls"] button', bs => bs.map(b => b.textContent.trim()));
+    assert(offered.length === 1 && /^Red TPU: about 500 g left/.test(offered[0]), `offered ${JSON.stringify(offered)} (1000 - 300 - 2x100; Blue expired, Green not bought)`);
+    await page.click('[aria-label="Your leftover rolls"] button');
+    assert(await page.inputValue('#special-color-0') === 'Red TPU', 'color should be the roll color');
+    assert(await page.getAttribute('#special-color-0', 'readonly') !== null, 'roll color should be locked');
+    await page.evaluate(() => updateDraft(0, 'grams', 600));
+    await page.click('#submit-btn');
+    await page.waitForTimeout(200);
+    assert(/500 g left/.test(await page.textContent('#submit-err')), 'over-limit request should be stopped');
+    await page.evaluate(() => updateDraft(0, 'grams', 400));
+    await page.click('#submit-btn');
+    await page.waitForTimeout(400);
+    const job = Object.values(db.jobs).find(j => j.items[0] && j.items[0].notes === 'Another case');
+    assert(job && job.items[0].useLeftover === true && job.items[0].leftoverFrom === 'r1', `saved ${JSON.stringify(job && job.items[0])}`);
+    await page.close();
+  });
+  await check('owner sees whether a leftover roll covers the order', async () => {
+    const db = withRolls(fixtures());
+    const item = { name: 'More', qty: 1, filType: 'special_order', specialColor: 'Red TPU', useLeftover: true, leftoverFrom: 'r1', grams: 450 };
+    db.jobs['ok1'] = { id: 'ok1', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(60), phase: 'estimate', items: [item] };
+    db.jobs['bad1'] = { id: 'bad1', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(50), phase: 'estimate', items: [{ ...item, grams: 600 }] };
+    db.jobs['bad2'] = { id: 'bad2', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(40), phase: 'estimate', items: [{ ...item, specialColor: 'Blue PLA', leftoverFrom: 'r3', grams: 10 }] };
+    db.jobs['bad3'] = { id: 'bad3', clientName: 'Sam', clientEmail: 'sam@example.com', createdAt: ago(30), phase: 'estimate', items: [{ ...item, grams: 10 }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    const text = id => page.textContent(`#order-${id} .roll-check`);
+    // ok1 and bad1 both draw on r1 (500 g left after r2); each is checked against the other's use too.
+    assert(/Needs 600 g but their Red TPU roll has 50 g left/.test(await text('bad1')), await text('bad1'));
+    assert(/No Blue PLA roll|expired/.test(await text('bad2')), await text('bad2'));
+    assert(/No Red TPU roll found/.test(await text('bad3')), await text('bad3'));
+    assert(await page.inputValue('#special-cost-bad1') === '20.00', 'a roll problem should pre-fill a new roll charge');
+    await page.close();
+  });
   await check('owner sets the special order color cost and it is added to the quote', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate',
