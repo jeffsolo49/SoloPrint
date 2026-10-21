@@ -639,7 +639,7 @@ function phaseIndex(phaseId) {
 
 // Customer-facing wording for the order tracker on "My Requests".
 const TRACKER_STEPS = {
-  estimate:       { label: 'Request Received', detail: "We're reviewing your models and estimating print time and filament." },
+  estimate:       { label: 'Request Received', detail: "We've received your request and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs." },
   quote_sent:     { label: 'Quote Ready',      detail: "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead." },
   order_received: { label: 'Order Confirmed',  detail: "Your order is confirmed and queued for the printer." },
   production:     { label: 'Printing',         detail: 'Your parts are on the printer right now.' },
@@ -1262,7 +1262,7 @@ function maybeOfferKnownEstimate(i) {
   const known = getKnownEstimate(draft);
   if (!known) return;
   draft.knownPrompted = true;
-  const accepted = window.confirm('good news, we have looked up this model before so we already have a good estimate of what it will cost without waiting. If you submit this one we will skip the estimate request and jump ahead. Would you like to add it to your order? Nothing is final until payment is exchanged.');
+  const accepted = window.confirm('Good news: we have printed this model before, so we can fill in an automated estimate of its print time and filament. This is not a final price; we will review your request and confirm your quote. Use the saved estimate?');
   if (!accepted) return;
   draft.knownFromLibrary = true;
   draft.knownMinutes = known.minutes;
@@ -1270,7 +1270,7 @@ function maybeOfferKnownEstimate(i) {
   if (!draft.name && known.name) draft.name = known.name;
   if (!draft.filType && known.filType) draft.filType = known.filType;
   render();
-  showAlert('submit-ok', `Known estimate found for "${draft.name || 'model'}". We'll prefill it from saved data, and only send a quote once every item in the request is ready.`, 'success');
+  showAlert('submit-ok', `Saved estimate filled in for "${draft.name || 'model'}". It's an automated estimate; we'll confirm your quote after reviewing your request.`, 'success');
 }
 
 function formatAustinTime(iso) {
@@ -1467,13 +1467,14 @@ function renderCustomerPricePreview(item) {
   const total = perPrint * qty;
   const filamentRate = FIL_RATE[item.filType] || 0.024;
   return `<div class="price-preview-box" style="margin-top:12px;">
-    <div class="card-title" style="margin-bottom:6px;">Live Estimate</div>
+    <div class="card-title" style="margin-bottom:6px;">Automated Estimate</div>
     <div class="price-big">$${total.toFixed(2)}</div>
     <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${grams.toFixed(1)}g · quantity ${qty}</div>
     <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
 ${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
 ${grams.toFixed(1)}g × $${filamentRate.toFixed(3)} × ${qty} = $${(grams * filamentRate * qty).toFixed(2)}
 $${perPrint.toFixed(2)} per print × ${qty}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
   </div>`;
 }
 
@@ -1513,8 +1514,8 @@ function renderItemBlock(item, i) {
         <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
       </div>
       ${item.knownFromLibrary ? `<div class="price-preview-box" style="margin-bottom:10px;">
-        <div class="card-title" style="margin-bottom:6px;">Known Estimate</div>
-        <div style="font-size:12px;color:var(--muted);">Auto-filled from previous order: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. This request will skip estimate review.</div>
+        <div class="card-title" style="margin-bottom:6px;">Saved Estimate</div>
+        <div style="font-size:12px;color:var(--muted);">Filled in from a previous print: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. We'll still review your request before sending a quote.</div>
       </div>` : ``}
       <div class="row3">
         <div class="field" style="margin-bottom:0;">
@@ -1650,6 +1651,7 @@ function renderMyJobsTab() {
                 ? `<div style="text-align:right;flex-shrink:0;">
                     <div class="sub-item-price">$${ip.toFixed(2)}</div>
                     ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} each</div>`:''}
+                    ${phase === 'estimate' ? `<div style="font-size:11px;color:var(--muted);">Automated estimate</div>` : ''}
                   </div>`
                 : `<div style="font-size:12px;color:var(--muted);font-style:italic;">Pending</div>`}
             </div>
@@ -2727,13 +2729,6 @@ async function submitBatch() {
     createdAt: new Date().toISOString()
   };
   batch.phaseHistory = { estimate: batch.createdAt };
-  const quoteReady = isBatchQuoteReady(batch);
-  if (quoteReady) {
-    batch.status = 'quoted';
-    batch.phase = 'quote_sent';
-    batch.paymentStatus = 'payment_requested';
-    stampPhase(batch, 'quote_sent');
-  }
   state.historyEmail = clientEmail.toLowerCase();
   persistClientHistoryEmail();
   if (!(await submitBatchRemote(batch))) {
@@ -2743,10 +2738,7 @@ async function submitBatch() {
   }
   state.batches.push(normalizeBatch(batch));
 
-  showAlert('submit-ok', quoteReady
-    ? `Submitted ${items.length} item${items.length>1?'s':''}! Known model estimate found, quote sent to ${clientEmail}.`
-    : `Submitted ${items.length} item${items.length>1?'s':''}! We'll email ${clientEmail} when your quote is ready.`,
-  'success');
+  showAlert('submit-ok', `Thanks! We've received your request for ${items.length} item${items.length>1?'s':''} and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs. We'll email ${clientEmail} with your confirmed quote.`, 'success');
   btn.disabled = false; btn.textContent = 'Submit Quote Request';
   state.draftItems = [blankItem()];
   state.clientTab = 'jobs';

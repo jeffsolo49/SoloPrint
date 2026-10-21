@@ -48,23 +48,23 @@ function emailsFor(type, rec, old) {
   const toOwner = (subject, lines) => emails.push({ to: OWNER_EMAIL, subject, body: lines.join('\n') });
 
   if (type === 'INSERT') {
+    const estimate = orderTotal(rec);
     toOwner(`New SoloPrint request from ${rec.clientName || 'a customer'}`, [
       `Customer: ${rec.clientName || ''}`,
       `Email: ${rec.clientEmail || ''}`,
       `Submitted: ${formatDate(rec.createdAt)}`,
-      rec.phase === 'quote_sent' ? 'Every item matched your saved models, so the customer was sent a quote automatically.' : 'Needs an estimate.',
+      estimate ? `Automated estimate: $${money(estimate)} (review and send the quote from your dashboard)` : 'Needs an estimate.',
       '',
       itemLines(rec, false).join('\n\n')
     ]);
-    if (rec.phase === 'quote_sent') {
-      toCustomer(`Your SoloPrint quote: $${money(orderTotal(rec))}`, quoteLines(rec));
-    } else {
-      toCustomer('We got your SoloPrint request', [
-        `Thanks for your request for ${title}. We're reviewing it now and will email you a quote once we've estimated print time and filament.`,
-        '',
-        itemLines(rec, false).join('\n\n')
-      ]);
-    }
+    toCustomer('We received your SoloPrint request', [
+      `Thanks for your request for ${title}. We've received your submission and will respond promptly after reviewing it.`,
+      '',
+      itemLines(rec, false).join('\n\n'),
+      ''
+    ].concat(estimate ? [`Automated estimate: $${money(estimate)}`] : [], [
+      'Any prices shown on the site are automated estimates, not exact costs. We\'ll email your confirmed quote once we\'ve reviewed your request.'
+    ]));
     return emails;
   }
 
