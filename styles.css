@@ -50,7 +50,7 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 
 .header { background: var(--surface); border-bottom: 4px solid var(--bezel); padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; height: 60px; position: sticky; top: 0; z-index: 100; }
 .logo { display: flex; align-items: center; gap: 10px; }
-.logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.logo-icon { flex-shrink: 0; width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 .logo-icon svg { width: 18px; height: 18px; fill: none; stroke: var(--on-accent); stroke-width: 2; }
 .logo-text { font-family: var(--pixel); font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
 .logo-text span { color: var(--accent); }
@@ -149,7 +149,7 @@ textarea { resize: vertical; min-height: 70px; }
 .mode-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .mode-option { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 16px; border-radius: 16px; border: 3px solid var(--bezel); background: var(--surface); color: var(--text); cursor: pointer; font-family: var(--sans); transition: transform 0.15s, box-shadow 0.15s; }
 .mode-option:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(55,20,110,0.18); }
-.mode-icon { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), #8d5cf6); color: #fff; }
+.mode-icon { flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), #8d5cf6); color: #fff; }
 .mode-icon svg { width: 22px; height: 22px; }
 .mode-title { display: block; font-weight: 700; font-size: 15px; }
 .mode-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
