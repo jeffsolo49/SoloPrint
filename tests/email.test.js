@@ -8,7 +8,7 @@ const CODE = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Code.gs'), 
 function load(stubs = {}) {
   const props = { SECRET: '0123456789abcdef0123456789abcdef' };
   const ctx = { module: {}, console, Logger: { log() {} }, ContentService: { createTextOutput: t => ({ text: t }) }, CacheService: {},
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null }) }, ScriptApp: {}, MailApp: {}, ...stubs };
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, getProperties: () => ({ ...props }) }) }, ScriptApp: {}, MailApp: {}, ...stubs };
   vm.createContext(ctx);
   vm.runInContext(CODE, ctx);
   return ctx;
@@ -64,8 +64,8 @@ check('webhook accepts the saved secret and refuses anything else', () => {
   assert(post('wrong') === 'forbidden' && sent.length === 0, 'wrong secret was accepted');
   assert(post('0123456789abcdef0123456789abcdef') === 'sent 2' && sent.length === 2, 'right secret was refused');
 });
-check('secret saved with quotes or a semicolon still works', () => {
-  const ctx = load({ PropertiesService: { getScriptProperties: () => ({ getProperty: () => " '0123456789abcdef0123456789abcdef'; " }) } });
+check('secret saved as lowercase "secret", with quotes or a semicolon, still works', () => {
+  const ctx = load({ PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ secret: " '0123456789abcdef0123456789abcdef'; " }) }) } });
   assert(ctx.getSecret() === '0123456789abcdef0123456789abcdef', ctx.getSecret());
 });
 check('no secret is written in Code.gs', () => {

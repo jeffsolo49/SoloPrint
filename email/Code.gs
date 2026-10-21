@@ -7,7 +7,10 @@
 // It must match the secret in supabase/email-trigger.sql. New versions of this file can then be pasted as-is.
 function getSecret() {
   // Forgive quotes, a semicolon or spaces copied along with the secret.
-  return String(PropertiesService.getScriptProperties().getProperty('SECRET') || '').trim().replace(/^['"`]+|['"`;]+$/g, '').trim();
+  // The property name is matched in any capitalization (SECRET, Secret, secret).
+  const props = PropertiesService.getScriptProperties().getProperties();
+  const key = Object.keys(props).find(k => k.trim().toLowerCase() === 'secret');
+  return String(key ? props[key] : '').trim().replace(/^['"`]+|['"`;]+$/g, '').trim();
 }
 
 // Run from the editor if emails, backups or reminders say "forbidden": shows what the script has saved and
