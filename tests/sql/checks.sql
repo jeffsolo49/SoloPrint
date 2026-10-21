@@ -64,4 +64,36 @@ reset role;
 do $$ begin
   if (select count(*) from net.calls) <> 2 then raise exception 'expected 2 email calls (new order + approval), got %', (select count(*) from net.calls); end if;
 end $$;
+-- Site settings: anyone reads, only the owner writes.
+set role authenticated;
+set request.jwt.claims = '{"email":"jeffsolo49@gmail.com"}';
+insert into public.site_settings (id, data) values (1, '{"about":{"text":"Hi"}}') on conflict (id) do update set data = excluded.data;
+reset role;
+set role anon;
+do $$ begin if (select data->'about'->>'text' from public.site_settings where id = 1) <> 'Hi' then raise exception 'visitors cannot read site settings'; end if; end $$;
+select pg_temp.expect_denied($q$update public.site_settings set data = '{}'$q$, 'anon changing site settings');
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"email":"stranger@example.com"}';
+update public.site_settings set data = '{}';
+reset role;
+do $$ begin if (select data->'about'->>'text' from public.site_settings where id = 1) <> 'Hi' then raise exception 'a stranger account changed site settings'; end if; end $$;
+
+-- Quote reminders: one reminder per old, unapproved quote; never for recent or approved ones.
+insert into public.jobs (id, data) values
+  ('r-old',  jsonb_build_object('id','r-old','clientEmail','a@example.com','phase','quote_sent','phaseHistory', jsonb_build_object('quote_sent', (now() - interval '5 days')::text))),
+  ('r-new',  jsonb_build_object('id','r-new','clientEmail','b@example.com','phase','quote_sent','phaseHistory', jsonb_build_object('quote_sent', (now() - interval '1 day')::text))),
+  ('r-done', jsonb_build_object('id','r-done','clientEmail','c@example.com','phase','quote_sent','customerApprovedAt','2026-01-01T00:00:00Z','phaseHistory', jsonb_build_object('quote_sent', (now() - interval '9 days')::text)));
+create temp table calls_before as select count(*) as n from net.calls;
+grant select on calls_before to anon;
+set role anon;
+select pg_temp.expect_denied($q$select public.due_quote_reminders('wrong-secret')$q$, 'reminders with a wrong secret');
+do $$ declare ids text; begin
+  select string_agg(d->>'id', ',' order by d->>'id') into ids from public.due_quote_reminders('0123456789abcdef0123456789abcdef') d;
+  if ids is distinct from 'r-old' then raise exception 'first reminder run should return only r-old, got %', ids; end if;
+  if (select count(*) from public.due_quote_reminders('0123456789abcdef0123456789abcdef')) <> 0 then raise exception 'a quote was reminded twice'; end if;
+end $$;
+reset role;
+do $$ begin if (select count(*) from net.calls) <> (select n from calls_before) then raise exception 'marking a reminder should not send an order email'; end if; end $$;
+
 \echo 'All SQL checks passed.'

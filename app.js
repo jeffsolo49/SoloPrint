@@ -1012,6 +1012,7 @@ async function init() {
   state.ownerUnlocked = hasValidOwnerSession();
   handleAuthRedirect();
   await Promise.all([
+    loadSettings(),
     loadRemoteLibrary(),
     state.ownerUnlocked ? loadBatches() : state.historyEmail ? loadBatches(state.historyEmail) : null
   ]);
@@ -1091,6 +1092,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
+      <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Site Settings</button>
       <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
     </nav>
@@ -1403,9 +1405,11 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
-      ${state.ownerTab === 'gallery'
+      ${state.ownerTab === 'settings'
+        ? renderOwnerSettingsPage()
+        : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'library'
         ? renderOwnerLibraryPage()
@@ -1928,6 +1932,7 @@ function setOwnerTab(tab) {
   if (tab === 'analytics' && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
+  if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery()]).then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
@@ -1992,6 +1997,190 @@ async function lookupMyRequests() {
   persistClientHistoryEmail();
   await loadBatches(email);
   render();
+}
+
+// ── SITE SETTINGS ─────────────────────────────────────────────────────────
+// One row in site_settings (supabase/site-settings.sql): anyone can read it, only the owner edits it
+// from the Site Settings tab. Everything has a default so the site works before it's filled in.
+const DEFAULT_ABOUT = "I'm a veteran spouse who does 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life, and design work is free for veterans: I only charge for material and print time.";
+function blankSettings() {
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], printHoursPerDay: 8, reviews: [] };
+}
+
+function safeLink(url, hosts) {
+  const u = String(url || '').trim();
+  return /^https:\/\//i.test(u) && (!hosts || hosts.some(h => new RegExp(`^https://([a-z0-9-]+\\.)*${h.replace('.', '\\.')}(/|$)`, 'i').test(u))) ? u.slice(0, 300) : '';
+}
+
+function cleanSettings(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  const def = blankSettings();
+  const about = d.about && typeof d.about === 'object' ? d.about : {};
+  const links = d.links && typeof d.links === 'object' ? d.links : {};
+  return {
+    about: { text: cleanText(about.text, 1500) || def.about.text, photo: safeImageUrl(about.photo), replyTime: cleanText(about.replyTime, 80) },
+    links: { messenger: safeLink(links.messenger, ['m.me', 'messenger.com', 'facebook.com']), etsy: safeLink(links.etsy, ['etsy.com']) },
+    colors: (Array.isArray(d.colors) ? d.colors : []).slice(0, 30).map(c => ({
+      id: /^[a-z0-9-]{1,40}$/.test(String(c && c.id)) ? c.id : '',
+      name: cleanText(c && c.name, 40).trim(),
+      hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) ? c.hex : '#888888',
+      special: !!(c && c.special)
+    })).filter(c => c.id && c.name),
+    printHoursPerDay: Math.min(24, Math.max(1, parseFloat(d.printHoursPerDay) || def.printHoursPerDay)),
+    reviews: (Array.isArray(d.reviews) ? d.reviews : []).slice(0, 40).map(r => ({
+      id: /^[a-z0-9-]{1,40}$/.test(String(r && r.id)) ? r.id : '',
+      name: cleanText(r && r.name, 60).trim(),
+      text: cleanText(r && r.text, 600).trim(),
+      designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : ''
+    })).filter(r => r.id && r.text)
+  };
+}
+
+state.settings = blankSettings();
+async function loadSettings() {
+  try {
+    const rows = await supaFetch('/site_settings?id=eq.1&select=data');
+    if (rows && rows[0]) state.settings = cleanSettings(rows[0].data);
+    state.settingsError = false;
+  } catch (e) {
+    console.error('Settings load error:', e); // table not set up yet: defaults stay
+    state.settingsError = true;
+  }
+}
+
+async function saveSettings(next) {
+  const clean = cleanSettings(next);
+  await supaFetch('/site_settings', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ id: 1, data: clean })
+  });
+  state.settings = clean;
+}
+
+function settingsId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+// Owner tab. Edits happen on a copy (state.settingsDraft) until "Save settings".
+function renderOwnerSettingsPage() {
+  if (!state.settingsDraft) state.settingsDraft = JSON.parse(JSON.stringify(state.settings));
+  const d = state.settingsDraft;
+  const designs = state.gallery;
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
+        <div><h2 class="section-title">Site Settings</h2><div class="section-sub">What customers see about you, your colors, reviews and contact links</div></div>
+      </div>
+    </div>
+    ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+    <div class="card">
+      <h3 class="card-title">About you</h3>
+      <div class="field"><label>About text</label>
+        <div class="field-help">Shown at the top of the home page.</div>
+        <textarea id="set-about" style="min-height:110px;" oninput="state.settingsDraft.about.text = this.value">${esc(d.about.text)}</textarea>
+      </div>
+      <div class="field"><label>Typical reply time (optional)</label>
+        <input type="text" id="set-reply" value="${esc(d.about.replyTime)}" placeholder="I usually reply within a day" oninput="state.settingsDraft.about.replyTime = this.value" />
+      </div>
+      <div class="field"><label>Photo of you (optional)</label>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          ${d.about.photo ? `<img src="${esc(d.about.photo)}" alt="Current photo" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--bezel);" referrerpolicy="no-referrer" />` : ''}
+          <label class="btn-sm" style="display:inline-block;">${d.about.photo ? 'Replace photo' : 'Upload photo'}
+            <input type="file" accept="image/*" onchange="uploadAboutPhoto(this.files[0]); this.value='';" style="display:none;" />
+          </label>
+          ${d.about.photo ? `<button class="btn-sm danger" type="button" onclick="state.settingsDraft.about.photo=''; render();">Remove photo</button>` : ''}
+          <span class="field-help" id="about-photo-status"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Contact links</h3>
+      <div class="row2">
+        <div class="field"><label>Messenger link</label><input type="text" id="set-messenger" value="${esc(d.links.messenger)}" placeholder="https://m.me/yourname" oninput="state.settingsDraft.links.messenger = this.value" /></div>
+        <div class="field"><label>Etsy shop link</label><input type="text" id="set-etsy" value="${esc(d.links.etsy)}" placeholder="https://www.etsy.com/shop/YourShop" oninput="state.settingsDraft.links.etsy = this.value" /></div>
+      </div>
+      <div class="field-help">Each shows as a button for customers once filled in. Messenger links start with https://m.me/ (find yours in Messenger under your profile → Share).</div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Filament colors</h3>
+      <div class="field-help">The colors customers can pick. "Special" colors (silk, glow, specialty filament) use the special rate. With no colors listed, customers see Black, White and Special Request.</div>
+      ${d.colors.map((c, n) => `
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+          <input type="color" value="${esc(c.hex)}" aria-label="Color for ${esc(c.name || 'new color')}" oninput="state.settingsDraft.colors[${n}].hex = this.value" style="width:46px;height:40px;padding:2px;" />
+          <input type="text" value="${esc(c.name)}" aria-label="Color name" placeholder="e.g. Red" oninput="state.settingsDraft.colors[${n}].name = this.value" style="flex:1;min-width:140px;" />
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${c.special ? 'checked' : ''} onchange="state.settingsDraft.colors[${n}].special = this.checked" style="width:auto;" /> Special</label>
+          <button class="btn-sm danger" type="button" onclick="state.settingsDraft.colors.splice(${n}, 1); render();" aria-label="Remove ${esc(c.name || 'color')}">Remove</button>
+        </div>`).join('')}
+      <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
+      ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
+    </div>
+    <div class="card">
+      <h3 class="card-title">Ready dates</h3>
+      <div class="field" style="max-width:260px;"><label>Printing hours per day</label>
+        <input type="number" id="set-hours" min="1" max="24" step="0.5" value="${esc(d.printHoursPerDay)}" oninput="state.settingsDraft.printHoursPerDay = this.value" />
+      </div>
+      <div class="field-help">Used to estimate when a confirmed order will be ready, based on the print time of orders ahead of it. You can always change the date on an order.</div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Customer reviews</h3>
+      <div class="field-help">Add real reviews customers have given you, with their permission. They show on the home page, and on a design's page if you link them to it.</div>
+      ${d.reviews.map((r, n) => `
+        <div class="item-block" style="margin-bottom:10px;">
+          <div class="row2">
+            <div class="field"><label>Customer name</label><input type="text" value="${esc(r.name)}" placeholder="Jane S." oninput="state.settingsDraft.reviews[${n}].name = this.value" /></div>
+            <div class="field"><label>Design (optional)</label>
+              <select onchange="state.settingsDraft.reviews[${n}].designId = this.value">
+                <option value="">Not linked to a design</option>
+                ${designs.map(g => `<option value="${esc(g.id)}" ${r.designId === g.id ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>Review</label><textarea placeholder="What they said" oninput="state.settingsDraft.reviews[${n}].text = this.value">${esc(r.text)}</textarea></div>
+          <button class="btn-sm danger" type="button" onclick="state.settingsDraft.reviews.splice(${n}, 1); render();">Remove review</button>
+        </div>`).join('')}
+      <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>
+    </div>
+    <div class="alert error" id="settings-err"></div>
+    <div class="alert success" id="settings-ok"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-primary" style="max-width:260px;" type="button" id="settings-save" onclick="saveSettingsDraft()">Save settings</button>
+      <button class="btn-sm" type="button" onclick="state.settingsDraft = null; render();">Undo changes</button>
+    </div>`;
+}
+
+async function saveSettingsDraft() {
+  const btn = document.getElementById('settings-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  const d = state.settingsDraft;
+  d.colors.forEach(c => { c.name = String(c.name || '').trim(); });
+  try {
+    await saveSettings(d);
+    state.settingsDraft = null;
+    render();
+    showAlert('settings-ok', 'Settings saved. Customers see the changes right away.', 'success');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save settings'; }
+    showAlert('settings-err', "Couldn't save. If you were logged out, log in again; if this is the first time, run supabase/site-settings.sql.", 'error');
+  }
+}
+
+async function uploadAboutPhoto(file) {
+  const status = document.getElementById('about-photo-status');
+  const token = getOwnerToken();
+  if (!file || !token) return;
+  if (status) status.textContent = 'Uploading...';
+  try {
+    const blob = await resizePhoto(file, 800);
+    const path = `site/about-${Date.now()}.jpg`;
+    await uploadStoredPhoto(path, blob, token);
+    state.settingsDraft.about.photo = GALLERY_PUBLIC_PREFIX + path;
+    render();
+    showAlert('settings-ok', 'Photo uploaded. Click Save settings to show it.', 'success');
+  } catch (e) {
+    if (status) status.textContent = "Couldn't upload. Try a JPG or PNG, and check you're logged in.";
+  }
 }
 
 // ── GALLERY ───────────────────────────────────────────────────────────────
