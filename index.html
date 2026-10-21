@@ -440,7 +440,6 @@ textarea { resize: vertical; min-height: 70px; }
   <div class="loading-screen"><div class="spinner"></div><div>Loading SoloPrint...</div></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ─── CONFIG ────────────────────────────────────────────────────────────────
@@ -449,10 +448,6 @@ textarea { resize: vertical; min-height: 70px; }
 // Prefer configurable settings, reusable wording, and owner-agnostic behavior
 // over hardcoded assumptions tied to a single seller whenever practical.
 const OWNER_EMAIL     = 'jeffsolo49@gmail.com';
-const EJS_PUBLIC_KEY  = '6zjslr9saD0JtwkKf';
-const EJS_SERVICE_ID  = 'service_43656kn';
-const EJS_TMPL_OWNER  = 'template_t964xq8';
-const EJS_TMPL_CLIENT = 'template_s3fd9ba';
 const MAX_ITEMS       = 10;
 const SUPA_URL        = 'https://xpssamjjyarajtwtrwqx.supabase.co';
 const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
@@ -590,10 +585,6 @@ async function deleteBatchRemote(id) {
   try { await supaFetch(`/jobs?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch(e) { console.error(e); }
 }
 
-// ── EMAIL ─────────────────────────────────────────────────────────────────
-async function sendEmail(tid, params) {
-  try { await emailjs.send(EJS_SERVICE_ID, tid, params); } catch(e) { console.error('Email:', e); }
-}
 
 // ── PRICING ───────────────────────────────────────────────────────────────
 function calcPerPrint(mins, grams, filType) {
@@ -711,15 +702,6 @@ async function customerApproveQuote(batchId) {
       return;
     }
     b.customerApprovedAt = new Date().toISOString();
-    const total = batchTotal(b);
-    await sendEmail(EJS_TMPL_OWNER, {
-      to_email: OWNER_EMAIL, client_name: b.clientName, client_email: b.clientEmail,
-      model_name: `Quote approved (${b.items.length} item${b.items.length > 1 ? 's' : ''})`,
-      model_link: orderTitle(b),
-      filament_type: 'Phase: Quote Sent - ready for you to confirm',
-      grams: '',
-      notes: `${b.clientName} approved the quote${total ? ` of $${total.toFixed(2)}` : ''} on ${new Date(b.customerApprovedAt).toLocaleString()}.\nOrder: ${orderTitle(b)}`
-    });
   }
   render();
 }
@@ -1352,7 +1334,6 @@ async function fetchNameFromServer(url) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
-  emailjs.init(EJS_PUBLIC_KEY);
   loadModelLibrary();
   loadClientHistoryEmail();
   state.ownerUnlocked = hasValidOwnerSession();
@@ -2762,71 +2743,6 @@ async function submitBatch() {
   }
   state.batches.push(normalizeBatch(batch));
 
-  const itemsList = items.map((it, idx) =>
-    `${idx + 1}) Model: ${it.name}\n` +
-    `   Quantity: ${it.qty}\n` +
-    `   Filament: ${FIL_LABEL[it.filType]||it.filType}\n` +
-    `   Est. grams: ${it.grams ? `${it.grams}g` : 'Not provided'}\n` +
-    `   Link: ${it.link || 'Not provided'}\n` +
-    `   Notes: ${it.notes || 'None'}`
-  ).join('\n\n');
-
-  await sendEmail(EJS_TMPL_OWNER, {
-    to_email: OWNER_EMAIL, client_name: clientName, client_email: clientEmail,
-    model_name: `New request (${items.length} item${items.length>1?'s':''})`,
-    model_link: itemsList,
-    filament_type: 'Phase: Estimate Phase',
-    grams: '',
-    notes: `Customer: ${clientName}\nEmail: ${clientEmail}\nSubmitted: ${new Date(batch.createdAt).toLocaleString()}\n\n${itemsList}`
-  });
-
-  const customerOrders = state.batches.filter(b => (b.clientEmail || '').toLowerCase() === clientEmail.toLowerCase());
-  const otherOrders = customerOrders.filter(b => b.id !== batch.id);
-  const otherOrdersSummary = otherOrders.length
-    ? otherOrders.map((b, idx) => `${idx + 1}) ${orderTitle(b)} — ${phaseLabel(b.phase || 'estimate')}`).join('\n')
-    : 'No other active orders at this time.';
-  const currentPhaseText = phaseLabel(batch.phase || 'estimate');
-  const customerSummary = [
-    `Order submitted for: ${clientName}`,
-    `Email: ${clientEmail}`,
-    `Current phase: ${currentPhaseText}`,
-    '',
-    'Items submitted:',
-    itemsList,
-    '',
-    'Other orders and phases:',
-    otherOrdersSummary
-  ].join('\n');
-
-  if (quoteReady) {
-    const total = batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
-    const breakdown = batch.items.map(it => {
-      const pp = calcPerPrint(it.minutes, it.grams, it.filType);
-      return `${it.name} × ${it.qty}: $${(pp * it.qty).toFixed(2)} (${fmtTime(it.minutes)}, ${it.grams}g, ${FIL_LABEL[it.filType] || it.filType}${it.qty > 1 ? `, $${pp.toFixed(2)} each` : ''})`;
-    }).join('\n');
-    await sendEmail(EJS_TMPL_CLIENT, {
-      to_email: clientEmail,
-      client_name: clientName,
-      client_email: clientEmail,
-      model_name: `Quote Sent (${items.length} item${items.length>1?'s':''})`,
-      price: total.toFixed(2),
-      print_time: `${customerSummary}\n\nAuto-quoted breakdown:\n${breakdown}`,
-      grams: '',
-      filament_type: `Current phase: ${currentPhaseText}`
-    });
-  } else {
-    await sendEmail(EJS_TMPL_CLIENT, {
-      to_email: clientEmail,
-      client_name: clientName,
-      client_email: clientEmail,
-      model_name: `Order Received (${items.length} item${items.length>1?'s':''})`,
-      price: 'Pending estimate',
-      print_time: customerSummary,
-      grams: '',
-      filament_type: `Current phase: ${currentPhaseText}`
-    });
-  }
-
   showAlert('submit-ok', quoteReady
     ? `Submitted ${items.length} item${items.length>1?'s':''}! Known model estimate found, quote sent to ${clientEmail}.`
     : `Submitted ${items.length} item${items.length>1?'s':''}! We'll email ${clientEmail} when your quote is ready.`,
@@ -3055,19 +2971,7 @@ async function approveBatch(batchId) {
   stampPhase(batch, 'quote_sent');
   await upsertBatch(batch);
 
-  const total     = batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
-  const breakdown = batch.items.map(it => {
-    const pp = calcPerPrint(it.minutes, it.grams, it.filType);
-    return `${it.name} × ${it.qty}: $${(pp*it.qty).toFixed(2)} (${fmtTime(it.minutes)}, ${it.grams}g, ${FIL_LABEL[it.filType]||it.filType}${it.qty>1?`, $${pp.toFixed(2)} each`:''})`;
-  }).join('\n');
-
-  await sendEmail(EJS_TMPL_CLIENT, {
-    to_email: batch.clientEmail, client_name: batch.clientName, client_email: batch.clientEmail,
-    model_name: `${batch.items.length} item${batch.items.length>1?'s':''}`,
-    price: total.toFixed(2), print_time: breakdown, grams: '', filament_type: ''
-  });
-
-  showAlert(`batch-ok-${batchId}`, `Quote saved! Email sent to ${batch.clientEmail}.`, 'success');
+  showAlert(`batch-ok-${batchId}`, `Quote saved! ${batch.clientName || 'The customer'} will get an email at ${batch.clientEmail}.`, 'success');
   setTimeout(() => render(), 1800);
 }
 
