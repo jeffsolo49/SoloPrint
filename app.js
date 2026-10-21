@@ -74,7 +74,7 @@ function blankItem() {
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
-    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, showTime: false
+    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, leftoverFrom: '', showTime: false
   };
 }
 
@@ -419,7 +419,8 @@ function cleanItem(it) {
     color: cleanText(it.color, 40),
     colorId: /^[a-z0-9-]{1,40}$/.test(String(it.colorId)) ? it.colorId : '',
     specialColor: cleanText(it.specialColor, 60),
-    useLeftover: it.useLeftover === true
+    useLeftover: it.useLeftover === true,
+    leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : ''
   };
 }
 
@@ -1255,17 +1256,123 @@ function usesSpecialSpool(item) {
   return isSpecialOrder(item) && !item.useLeftover;
 }
 
+// Leftover rolls: a roll is bought when the owner confirms a special order. For 2 months the customer can
+// print more in that same color/material from it, up to 1000 g in all (the first order included).
+const ROLL_GRAMS = 1000;
+function colorKey(text) { return String(text || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function itemGrams(it) { return (Number(it.grams) || 0) * Math.max(1, Number(it.qty) || 1); }
+function rollExpiry(iso) { const d = new Date(iso); d.setMonth(d.getMonth() + 2); return d.toISOString(); }
+function fmtShortDate(iso) { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+function leftoverRolls(batches, excludeId = '') {
+  const rolls = [];
+  batches.forEach(b => {
+    if (phaseIndex(b.phase || 'estimate') < phaseIndex('order_received')) return;
+    const boughtAt = (b.phaseHistory || {}).order_received || b.createdAt;
+    b.items.filter(usesSpecialSpool).forEach(it => {
+      const key = colorKey(it.specialColor);
+      if (!key) return;
+      let roll = rolls.find(r => r.orderId === b.id && r.key === key);
+      if (!roll) rolls.push(roll = { orderId: b.id, key, color: it.specialColor, email: colorKey(b.clientEmail), boughtAt, expiresAt: rollExpiry(boughtAt), used: 0 });
+      roll.used += itemGrams(it);
+    });
+  });
+  batches.forEach(b => {
+    if (b.id === excludeId) return;
+    b.items.forEach(it => {
+      const roll = it.useLeftover && findRoll(rolls, b.clientEmail, it);
+      if (roll) roll.used += itemGrams(it);
+    });
+  });
+  rolls.forEach(r => { r.left = Math.max(0, ROLL_GRAMS - r.used); });
+  return rolls;
+}
+function findRoll(rolls, email, it) {
+  return rolls.find(r => r.orderId === it.leftoverFrom && r.key === colorKey(it.specialColor) && r.email === colorKey(email));
+}
+
+// Problems with an order's leftover-roll items, for the owner to see before quoting.
+function leftoverChecks(b) {
+  const rolls = leftoverRolls(state.batches, b.id);
+  const uses = {};
+  b.items.forEach(it => {
+    const roll = isSpecialOrder(it) && it.useLeftover && findRoll(rolls, b.clientEmail, it);
+    if (roll) uses[roll.orderId + roll.key] = (uses[roll.orderId + roll.key] || 0) + itemGrams(it);
+  });
+  return b.items.map(it => {
+    if (!isSpecialOrder(it) || !it.useLeftover) return null;
+    const roll = findRoll(rolls, b.clientEmail, it);
+    if (!roll) return { ok: false, text: `No ${it.specialColor || 'matching'} roll found for this customer${it.leftoverFrom ? ` from order ${it.leftoverFrom}` : ''}. Charge a new roll.` };
+    if (new Date(b.createdAt) > new Date(roll.expiresAt)) return { ok: false, text: `Their ${roll.color} roll expired ${fmtShortDate(roll.expiresAt)}. Charge a new roll.` };
+    const need = uses[roll.orderId + roll.key];
+    if (need > roll.left) return { ok: false, text: `Needs ${need.toFixed(0)} g but their ${roll.color} roll has ${roll.left.toFixed(0)} g left. Charge a new roll.` };
+    return { ok: true, text: `From their ${roll.color} roll (order ${roll.orderId}): ${roll.left.toFixed(0)} g left before this order, ${(roll.left - need).toFixed(0)} g after. Good until ${fmtShortDate(roll.expiresAt)}.` };
+  });
+}
+
+// Customer side: look up their rolls by the email on the form.
+async function findLeftoverRolls(i) {
+  const email = colorKey(state.clientEmail);
+  const msg = document.getElementById(`leftover-msg-${i}`);
+  if (!email.includes('@')) { if (msg) msg.textContent = 'Enter your email at the top first, so I can find your roll.'; return; }
+  if (msg) msg.textContent = 'Looking up your rolls...';
+  try {
+    const rows = await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || [];
+    const now = new Date();
+    state.leftoverRolls = leftoverRolls(rows.map(normalizeBatch).filter(Boolean))
+      .filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now);
+    state.leftoverRollsFor = email;
+    state.draftItems[i].showRolls = true;
+  } catch (e) {
+    if (msg) msg.textContent = "Couldn't look up your rolls right now. Please try again.";
+    return;
+  }
+  rerenderPills(i, state.draftItems[i].filType);
+}
+
+function useLeftoverRoll(i, n) {
+  const item = state.draftItems[i], roll = (state.leftoverRolls || [])[n];
+  if (!item) return;
+  item.useLeftover = !!roll;
+  item.leftoverFrom = roll ? roll.orderId : '';
+  if (roll) item.specialColor = roll.color;
+  item.showRolls = false;
+  rerenderPills(i, item.filType);
+  updateCustomerPricePreview(i);
+  queueDraftSave();
+}
+
+function draftRoll(item) {
+  return item.useLeftover && state.leftoverRollsFor === colorKey(state.clientEmail)
+    ? (state.leftoverRolls || []).find(r => r.orderId === item.leftoverFrom && r.key === colorKey(item.specialColor)) : null;
+}
+
+function renderLeftoverPicker(item, i) {
+  if (item.useLeftover) {
+    const roll = draftRoll(item);
+    return `<div class="special-order-check">Printing from your ${esc(item.specialColor)} roll${roll ? ` (about ${roll.left.toFixed(0)} g left, until ${fmtShortDate(roll.expiresAt)})` : ''}. No roll or material charge.
+      <button type="button" class="btn-sm" onclick="useLeftoverRoll(${i}, -1)">Order a new roll instead</button></div>`;
+  }
+  if (item.showRolls && state.leftoverRollsFor === colorKey(state.clientEmail)) {
+    const rolls = state.leftoverRolls || [];
+    return `<div class="special-order-check" role="group" aria-label="Your leftover rolls">
+      ${rolls.length ? rolls.map((r, n) => `<button type="button" class="btn-sm" onclick="useLeftoverRoll(${i}, ${n})">${esc(r.color)}: about ${r.left.toFixed(0)} g left, until ${fmtShortDate(r.expiresAt)}</button>`).join('')
+        : `<span>No leftover rolls found for this email. A roll can be used for 2 months after I order it, for the same color and material, up to ${ROLL_GRAMS} g in all.</span>`}
+    </div>`;
+  }
+  return `<div class="special-order-check"><button type="button" class="btn-sm" id="special-leftover-${i}" onclick="findLeftoverRolls(${i})">Use my leftover roll</button>
+    <span id="leftover-msg-${i}" role="status">Same color and material only, within 2 months, up to ${ROLL_GRAMS} g per roll in all.</span></div>`;
+}
+
 function renderSpecialOrderBox(item, i) {
   if (!isSpecialOrder(item)) return '';
   return `<div class="special-order">
     <div class="field" style="margin-bottom:8px;">
       <label for="special-color-${i}">Which color and material would you like?</label>
       <input type="text" id="special-color-${i}" value="${esc(item.specialColor || '')}" placeholder="e.g. Red TPU, translucent blue PLA"
-        oninput="updateDraft(${i}, 'specialColor', this.value)" />
+        oninput="updateDraft(${i}, 'specialColor', this.value)" ${item.useLeftover ? 'readonly' : ''} />
     </div>
-    <label class="special-order-check"><input type="checkbox" id="special-leftover-${i}" ${item.useLeftover ? 'checked' : ''}
-      onchange="updateDraft(${i}, 'useLeftover', this.checked); updateCustomerPricePreview(${i})" />
-      Use my leftover roll from a special order in the last 2 months (no roll or material charge)</label>
+    ${renderLeftoverPicker(item, i)}
     <p class="special-order-note">${esc(SPECIAL_ORDER_POLICY)}</p>
   </div>`;
 }
@@ -1336,7 +1443,7 @@ ${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty)
 ${grams.toFixed(1)}g × $${filamentRate.toFixed(3)} × ${qty} = $${(grams * filamentRate * qty).toFixed(2)}
 $${perPrint.toFixed(2)} per print × ${qty}</div>
     ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${SPECIAL_ORDER_TYPICAL} for the 1 kg special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
-    ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll (I'll confirm it's within 2 months).</div>` : ''}
+    ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll.</div>` : ''}
     <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
   </div>`;
 }
@@ -1967,6 +2074,8 @@ function renderOwnerBatch(b) {
   const allDone = b.items.every(it => it.minutes && it.grams);
   const total = allDone ? orderSum(b) : null;
   const hasSpecial = b.items.some(isSpecialOrder);
+  const checks = hasSpecial ? leftoverChecks(b) : [];
+  const rollProblem = checks.some(c => c && !c.ok);
   const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   return `<div class="job-card ${phase}" id="order-${b.id}">
     <div class="job-header">
@@ -2033,6 +2142,7 @@ function renderOwnerBatch(b) {
             <div class="owner-order-summary-label">Item ${i + 1}</div>
             <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
             <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
+            ${checks[i] ? `<div class="owner-order-summary-value roll-check ${checks[i].ok ? 'ok' : 'bad'}">${checks[i].ok ? '' : '⚠ '}${esc(checks[i].text)}</div>` : ''}
             <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
             <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
             <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
@@ -2046,7 +2156,7 @@ function renderOwnerBatch(b) {
       ${hasSpecial ? `
         <div class="field special-order">
           <label for="special-cost-${b.id}">Special order roll cost ($)</label>
-          <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${specialOrderCost(b).toFixed(2)}" />
+          <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? SPECIAL_ORDER_TYPICAL : specialOrderCost(b)).toFixed(2)}" />
           <div class="field-help">The full 1 kg roll, charged instead of material. Usually about $${SPECIAL_ORDER_TYPICAL}. Use 0 when they're printing from their own leftover roll (within 2 months).</div>
         </div>` : ''}
       <div class="alert error" id="batch-err-${b.id}"></div>
@@ -3565,6 +3675,16 @@ async function submitBatch() {
 
   const items = state.draftItems.filter(it => String(it.name || it.link || it.notes || '').trim());
   if (!items.length) { showAlert('submit-err', 'Please tell me about at least one thing you want printed.', 'error'); return; }
+  const rollUse = {};
+  items.filter(it => isSpecialOrder(it) && it.useLeftover).forEach(it => {
+    const roll = draftRoll(it);
+    if (roll) rollUse[roll.orderId + roll.key] = { roll, grams: ((rollUse[roll.orderId + roll.key] || {}).grams || 0) + itemGrams(it) };
+  });
+  const over = Object.values(rollUse).find(u => u.grams > u.roll.left);
+  if (over) {
+    showAlert('submit-err', `Your ${over.roll.color} roll has about ${over.roll.left.toFixed(0)} g left, but this request needs about ${over.grams.toFixed(0)} g. Choose "Order a new roll instead" for some items.`, 'error');
+    return;
+  }
   const noColor = state.draftItems.findIndex(it => items.includes(it) && isSpecialOrder(it) && !String(it.specialColor || '').trim());
   if (noColor >= 0) {
     showAlert('submit-err', 'Please type the special order color and material you would like.', 'error');
