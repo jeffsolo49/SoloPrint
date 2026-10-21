@@ -3030,7 +3030,7 @@ async function sendOwnerAuthEmail(kind) {
       headers: { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (res.status === 429) throw new Error('Too many emails sent. Wait a minute and try again.');
+    if (res.status === 429) throw new Error('Supabase only sends a few login emails per hour, and that limit has been reached. Try again in about an hour, or log in with your password and use Change password on the dashboard.');
     if (!res.ok) throw new Error("Couldn't send the email. Try again in a moment.");
     const pwErr = document.getElementById('pw-err');
     if (pwErr) pwErr.style.display = 'none';
