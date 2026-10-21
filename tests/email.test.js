@@ -43,9 +43,14 @@ check('owner notice lists customer photo links', () => {
   assert(emailsFor('INSERT', at({}), null)[0].body.includes('Photo 1: https://img.test/a.png'), 'photo link missing');
 });
 
-check('confirmation email includes the estimated ready date', () => {
-  const body = emailsFor('UPDATE', at({ phase: 'order_received', estimatedReady: '2026-10-28' }), at({ phase: 'quote_sent' }))[0].body;
-  assert(body.includes('Estimated ready: Wednesday, October 28'), body);
+check('special order color adds its spool cost to the quote', () => {
+  const special = { name: 'Vase', qty: 1, filType: 'special', specialColor: 'Glow green', minutes: 60, grams: 10 };
+  const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [special] }), at({}));
+  assert(mail.subject === 'Your SoloPrint quote: $23.78', mail.subject);
+  assert(mail.body.includes('Special order color: Glow green') && mail.body.includes('Special order color: $20.00'), mail.body);
+  assert(mail.body.includes('PLA unless noted'), 'PLA note missing');
+  const custom = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [special], specialOrderCost: 15 }), at({}))[0];
+  assert(custom.subject === 'Your SoloPrint quote: $18.78', custom.subject);
 });
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;

@@ -32,7 +32,7 @@ function fixtures() {
     settings: { about: { text: 'I am a veteran spouse who prints on the side.', replyTime: 'I usually reply within a day.' },
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
-      printHoursPerDay: 8, reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
+      reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
     log: []
   };
 }
@@ -105,6 +105,7 @@ const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession 
 const STATES = {
   'home': '0',
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
+  'home with a special order color': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A vase'); pickColor(0, ''); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
   'design page': "(async () => { await loadGallery(); openWork('g1'); })()",
   'my requests': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.clientTab = 'jobs'; render(); })()",
@@ -200,6 +201,27 @@ const STATES = {
     assert(/received your request/.test(await page.textContent('#submit-ok')), 'missing confirmation message');
     await page.close();
   });
+  await check('special order color: explains the policy, asks which color, and saves it', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.fill('#client-name', 'Lee');
+    await page.fill('#client-email', 'lee@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'A vase');
+    await page.click('button:has-text("Special order color")');
+    const note = await page.textContent('.special-order-note');
+    assert(/about \$20/.test(note) && /2 months/.test(note) && /keep any leftover/.test(note), note);
+    assert(/PLA unless noted/.test(await page.textContent('body')), 'PLA note missing');
+    await page.click('#submit-btn');
+    await page.waitForTimeout(200);
+    assert(!Object.values(db.jobs).some(j => j.clientName === 'Lee'), 'sent without a special color name');
+    await page.fill('#special-color-0', 'Translucent blue');
+    await page.click('#submit-btn');
+    await page.waitForTimeout(400);
+    const job = Object.values(db.jobs).find(j => j.clientName === 'Lee');
+    assert(job && job.items[0].specialColor === 'Translucent blue' && job.items[0].filType === 'special', `saved ${JSON.stringify(job && job.items[0])}`);
+    await page.close();
+  });
   await check('approve a quote', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -280,15 +302,39 @@ const STATES = {
     assert(urls.some(u => u.endsWith('/jobs?order=created_at.asc')), 'Load all did not fetch full history');
     await page.close();
   });
-  await check('confirming an order sets a ready date from the queue', async () => {
+  await check('owner sets the special order color cost and it is added to the quote', async () => {
     const db = fixtures();
-    db.jobs['q1'] = { id: 'q1', clientName: 'A', clientEmail: 'a@example.com', createdAt: ago(3000), phase: 'production', phaseHistory: { order_received: ago(2000) }, items: [{ name: 'X', qty: 1, minutes: 300, grams: 10 }] };
-    db.jobs['1'].items[0].minutes = 100;   // 2 x 100 min
+    db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate',
+      items: [{ name: 'Vase', qty: 1, filType: 'special', specialColor: 'Glow green', grams: 10 }] };
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
-    await page.evaluate(() => updateBatchPhase('1', 'order_received'));
-    const expected = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 2); return localDateString(d); });
-    assert(db.jobs['1'].estimatedReady === expected, `ready date ${db.jobs['1'].estimatedReady}, expected ${expected} (500 min at 8 h/day)`);
+    assert(await page.inputValue('#special-cost-s1') === '20.00', 'cost should default to $20');
+    await page.fill('#hours-s1-0', '1');
+    await page.fill('#special-cost-s1', '18');
+    await page.click('#approve-btn-s1');
+    await page.waitForTimeout(300);
+    assert(db.jobs['s1'].specialOrderCost === 18 && db.jobs['s1'].phase === 'quote_sent', `saved ${db.jobs['s1'].specialOrderCost}/${db.jobs['s1'].phase}`);
+    const total = await page.evaluate(() => batchTotal(state.batches.find(b => b.id === 's1')));
+    assert(Math.abs(total - 21.78) < 0.001, `total ${total}`);
+    const old = await page.evaluate(() => specialOrderCost({ items: [{ filType: 'special' }] }));
+    assert(old === 0, 'older special orders without a color name should not get a spool cost');
+    await page.close();
+  });
+  await check('typing a color name fills in the color picker', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('settings'));
+    await page.click('text=Add a color');
+    const n = await page.evaluate(() => state.settingsDraft.colors.length - 1);
+    const name = page.locator('input[aria-label="Color name"]').nth(n);
+    for (const [typed, hex] of [['Silk Rose Gold', '#b76e79'], ['Matte Dark Blue', '#00008b'], ['Glow-in-the-dark green', '#c8f5a0'], ['crimson', '#dc143c']]) {
+      await name.fill(typed);
+      const got = await page.inputValue(`#color-hex-${n}`);
+      assert(got === hex, `${typed}: ${got}, expected ${hex}`);
+    }
+    await page.evaluate(n => { const el = document.getElementById(`color-hex-${n}`); el.value = '#123456'; el.dispatchEvent(new Event('input')); }, n);
+    await name.fill('Red');
+    assert(await page.inputValue(`#color-hex-${n}`) === '#123456', 'a hand-picked color should not be replaced');
     await page.close();
   });
   await check('site settings save', async () => {
