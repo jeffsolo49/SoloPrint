@@ -248,6 +248,34 @@ textarea { resize: vertical; min-height: 70px; }
 .gallery-meta { font-size: 11px; color: var(--muted); }
 .gallery-thumbs { display: flex; gap: 6px; padding: 10px 14px 0; }
 .gallery-thumbs img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); }
+.bubble-nav { max-width: 900px; margin: 26px auto 0; padding: 0 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.bubble { position: relative; display: flex; align-items: center; gap: 14px; text-align: left; padding: 18px 20px; border-radius: 30px; background: var(--surface); border: 4px solid var(--bezel); color: var(--text); cursor: pointer; box-shadow: 0 10px 24px rgba(55,20,110,0.28); transition: transform 0.15s, box-shadow 0.15s; font-family: var(--sans); }
+.bubble:hover { transform: translateY(-3px); box-shadow: 0 16px 32px rgba(55,20,110,0.36); }
+.bubble:active { transform: translateY(0); }
+.bubble-icon { flex-shrink: 0; width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), #8d5cf6); color: #fff; box-shadow: inset 0 -3px 0 rgba(0,0,0,0.12); }
+.bubble-icon svg { width: 26px; height: 26px; }
+.bubble-label { display: block; font-family: var(--pixel); font-size: 17px; font-weight: 700; line-height: 1.2; letter-spacing: 0.3px; }
+.bubble-label .short { display: none; }
+.bubble-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+.bubble.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: #ffffff; color: #ffffff; }
+.bubble.active .bubble-sub { color: rgba(255,255,255,0.9); }
+.bubble.active .bubble-icon { background: #ffffff; color: var(--accent); }
+.bubble .nav-badge { position: absolute; top: -8px; right: -6px; min-width: 24px; height: 24px; font-size: 12px; border-radius: 12px; border: 3px solid #ffffff; }
+@media (max-width: 760px) {
+  .bubble-nav { gap: 10px; margin-top: 16px; padding: 0 12px; }
+  .bubble { flex-direction: column; justify-content: center; text-align: center; gap: 8px; padding: 14px 6px; border-radius: 22px; border-width: 3px; }
+  .bubble-icon { width: 44px; height: 44px; }
+  .bubble-icon svg { width: 22px; height: 22px; }
+  .bubble-label { font-size: 13px; }
+  .bubble-label .long { display: none; }
+  .bubble-label .short { display: inline; }
+  .bubble-sub { display: none; }
+}
+.home-gallery { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; gap: 10px; }
+.home-gallery .work-tile { aspect-ratio: 1; }
+.home-gallery .work-tile.featured { grid-column: span 2; grid-row: span 2; }
+.home-gallery .work-tile.featured span { font-size: 14px; padding: 24px 12px 10px; }
+@media (max-width: 640px) { .home-gallery { grid-template-columns: repeat(2, 1fr); } }
 .work-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .work-tile { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 3px solid var(--bezel); background: var(--surface2); cursor: pointer; padding: 0; }
 .work-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1463,14 +1491,30 @@ function render() {
   attachAll();
 }
 
+function renderBubble(tab, label, shortLabel, sub, iconPaths, badge = 0) {
+  const active = state.clientTab === tab;
+  return `<button class="bubble ${active ? 'active' : ''}" type="button" onclick="setTab('${tab}')" ${active ? 'aria-current="page"' : ''}>
+    <span class="bubble-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths}</svg></span>
+    <span>
+      <span class="bubble-label"><span class="long">${esc(label)}</span><span class="short">${esc(shortLabel)}</span></span>
+      <span class="bubble-sub">${esc(sub)}</span>
+    </span>
+    ${badge ? `<span class="nav-badge">${badge}</span>` : ''}
+  </button>`;
+}
+
 function renderClientApp() {
   const hasHistoryEmail = !!String(state.historyEmail || '').trim();
   return `
-    <div class="nav">
-      <button class="nav-tab ${state.clientTab==='submit'?'active':''}" onclick="setTab('submit')">Request a Quote</button>
-      <button class="nav-tab ${state.clientTab==='gallery'?'active':''}" onclick="setTab('gallery')">${esc(GALLERY_NAME)}</button>
-      <button class="nav-tab ${state.clientTab==='jobs'?'active':''}" onclick="setTab('jobs')">My Requests${hasHistoryEmail && state.batches.length?`<span class="nav-badge">${state.batches.length}</span>`:''}</button>
-    </div>
+    <nav class="bubble-nav" aria-label="Main">
+      ${renderBubble('submit', 'Request a Quote', 'Get a Quote', 'Start a print or custom design',
+        '<path d="M12 5v14M5 12h14"/>')}
+      ${renderBubble('gallery', GALLERY_NAME, 'Past Work', "See what I've made",
+        '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
+      ${renderBubble('jobs', 'My Requests', 'My Requests', 'Track your orders',
+        '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M4 5h.01M4 12h.01M4 19h.01"/>',
+        hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
+    </nav>
     <div class="main">
       ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : renderMyJobsTab()}
     </div>`;
@@ -1493,6 +1537,7 @@ function renderOwnerNav() {
 function renderSubmitTab() {
   const items = state.draftItems;
   return `
+    ${renderRecentWork()}
     <div class="section-header">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -1502,8 +1547,6 @@ function renderSubmitTab() {
         <div class="section-sub">Paste MakerWorld, Thingiverse, or Printables links, or enter "original design"</div>
       </div>
     </div>
-
-    ${renderRecentWork()}
 
     <div class="card">
       <div class="card-title">Your info</div>
@@ -2423,18 +2466,27 @@ function openWork(id) {
 }
 
 // Photo strip of recent work for the Request a Quote page.
+// Photo gallery at the top of the home page, built from the photos of published designs.
 function renderRecentWork() {
-  const items = state.gallery.filter(g => g.published && g.photos.length).slice(0, 8);
-  if (!items.length) return '';
+  const tiles = [];
+  state.gallery.filter(g => g.published).forEach(g => g.photos.forEach((photo, n) => tiles.push({ g, photo, first: n === 0 })));
+  tiles.sort((a, b) => (b.first - a.first));
+  // One featured photo (2x2) plus 4 or 8 small ones fills whole rows on both the 4- and 2-column layouts.
+  const shown = tiles.slice(0, tiles.length >= 9 ? 9 : tiles.length >= 5 ? 5 : tiles.length);
+  if (!shown.length) {
+    return state.ownerUnlocked
+      ? `<div class="card"><div class="card-title">My Work</div><div class="field-help">Your photo gallery shows here once you add designs with photos in Owner → Gallery. Customers don't see this note.</div></div>`
+      : '';
+  }
   return `<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px;">
-      <div class="card-title" style="margin-bottom:0;">Recent Work</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <div class="section-title" style="font-size:20px;">My Work</div>
       <button class="btn-link" type="button" onclick="setTab('gallery')">See all ${esc(GALLERY_NAME)} →</button>
     </div>
-    <div class="work-strip">${items.map(g => `
-      <button class="work-tile" type="button" onclick="openWork('${esc(g.id)}')" aria-label="${esc(g.title)}">
-        <img src="${esc(g.photos[0])}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.work-tile').remove()" />
-        <span>${esc(g.title)}</span>
+    <div class="home-gallery">${shown.map((t, i) => `
+      <button class="work-tile ${i === 0 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}">
+        <img src="${esc(t.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.work-tile').remove()" />
+        ${t.first ? `<span>${esc(t.g.title)}</span>` : ''}
       </button>`).join('')}</div>
   </div>`;
 }
