@@ -176,6 +176,29 @@ textarea { resize: vertical; min-height: 70px; }
   .tracker-dot { margin: 0; grid-row: span 2; }
   .tracker-time { min-height: 0; }
 }
+.model-preview { display: flex; gap: 12px; align-items: center; margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.model-preview img, .model-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--surface2); flex-shrink: 0; }
+.model-thumb { width: 56px; height: 56px; float: left; margin-right: 12px; }
+.model-preview-title { font-size: 13px; font-weight: 600; }
+.model-preview-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.model-preview.loading img { animation: pulse 1.2s infinite; }
+.notif-wrap { position: relative; }
+.notif-bell { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; }
+.notif-bell svg { width: 16px; height: 16px; }
+.notif-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; font-family: var(--mono); display: flex; align-items: center; justify-content: center; }
+.notif-panel { position: absolute; right: 0; top: 44px; width: min(360px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,0.45); z-index: 200; }
+@media (max-width: 640px) { .notif-panel { position: fixed; top: 68px; left: 16px; right: 16px; width: auto; } }
+.notif-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 13px; position: sticky; top: 0; background: var(--surface); }
+.notif-head button, .notif-foot button { background: none; border: none; color: var(--accent); font-size: 12px; cursor: pointer; padding: 0; }
+.notif-item { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 12px 14px 12px 26px; position: relative; color: var(--text); cursor: pointer; }
+.notif-item:hover { background: var(--surface2); }
+.notif-item.unread::before { content: ''; position: absolute; left: 11px; top: 17px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.notif-title { font-size: 13px; font-weight: 600; }
+.notif-item:not(.unread) .notif-title { font-weight: 500; color: var(--muted); }
+.notif-body { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.notif-time { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 4px; }
+.notif-empty { padding: 24px 14px; text-align: center; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.notif-foot { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
 .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; }
 .job-card.pending { border-left: 3px solid var(--amber); }
 .job-card.quoted { border-left: 3px solid var(--green); }
@@ -437,6 +460,11 @@ const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
 const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
+// Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
+const PREVIEW_API = 'https://api.microlink.io/?url=';
+const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
+const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
+const NOTIF_PREFS_KEY = 'soloprint_notif_prefs_v1';
 const ORDER_PHASES = [
   { id: 'estimate', label: 'Estimate Phase' },
   { id: 'quote_sent', label: 'Quote Sent' },
@@ -480,7 +508,8 @@ function blankItem() {
   return {
     link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
     printHours: '', printMinutes: '',
-    knownMinutes: null, knownFromLibrary: false, knownPrompted: false
+    knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
+    previewImage: '', previewLoading: false
   };
 }
 
@@ -1198,6 +1227,7 @@ function render() {
           ${formatBuildBadge()}
         </div>
         <span title="${state.synced ? 'Synced' : 'Offline'}"><span class="sync-dot ${state.synced?'':'offline'}"></span></span>
+        ${renderNotifBell()}
         ${state.view === 'client'
           ? `<button class="btn-sm" onclick="switchToOwner()">Owner</button>`
           : `<button class="btn-sm" onclick="state.view='client';render();">Client view</button>
@@ -1333,6 +1363,7 @@ function renderItemBlock(item, i) {
         <input type="text" id="link-${i}" value="${esc(item.link)}"
           placeholder="Paste a link or type original design"
           oninput="onLinkInput(${i}, this.value)" />
+        <div id="preview-${i}">${renderModelPreview(item)}</div>
       </div>
       <div class="field" style="margin-bottom:8px;">
         <label>Description</label>
@@ -1459,7 +1490,7 @@ function renderMyJobsTab() {
       const total = phase !== 'estimate' && allDone
         ? b.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0)
         : null;
-      return `<div class="job-card ${phase}">
+      return `<div class="job-card ${phase}" id="order-${b.id}">
         <div class="job-header">
           <div>
             <div class="job-title">${esc(b.clientName)}'s Request</div>
@@ -1474,7 +1505,7 @@ function renderMyJobsTab() {
           const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
           return `<div class="sub-item">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-              <div>
+              <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
                 <div class="sub-item-name">${esc(it.name)||'Unnamed'}${it.qty>1?` <span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
                 <div class="sub-item-meta">
                   <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
@@ -1839,7 +1870,7 @@ function renderOwnerBatch(b) {
   const allDone = b.items.every(it => it.minutes && it.grams);
   const total = allDone ? b.items.reduce((s,it) => s + (calcTotal(it.minutes,it.grams,it.filType,it.qty)||0), 0) : null;
   const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  return `<div class="job-card ${phase}">
+  return `<div class="job-card ${phase}" id="order-${b.id}">
     <div class="job-header">
       <div>
         <div class="job-title">${esc(b.clientName)}</div>
@@ -1955,7 +1986,7 @@ function renderOwnerItem(batchId, it, i) {
   const canUseKnown = known && (!it.minutes || !it.grams);
   return `<div class="sub-item" style="padding:1rem 0;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">
-      <div>
+      <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
@@ -2079,12 +2110,183 @@ async function lookupMyRequests() {
   render();
 }
 
-// Keep the order tracker current while a customer is watching "My Requests".
+// ── NOTIFICATIONS ─────────────────────────────────────────────────────────
+// The feed is derived from order data (phaseHistory, createdAt); read state and
+// preferences live in this browser only.
+const NOTIF_PAGE_OPENED_AT = Date.now();
+const NOTIF_UNREAD_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+function loadJsonPref(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
+}
+function saveJsonPref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+
+function notifScope() {
+  return state.view === 'owner' && state.ownerUnlocked ? 'owner' : 'client';
+}
+
+function buildNotifications() {
+  const scope = notifScope();
+  const read = new Set(loadJsonPref(NOTIF_READ_KEY, {})[scope] || []);
+  const list = [];
+  if (scope === 'owner') {
+    state.batches.forEach(b => {
+      const n = b.items.length;
+      list.push({ id: `new-${b.id}`, batchId: b.id, at: b.createdAt,
+        title: `New request from ${b.clientName || 'a customer'}`,
+        body: `${n} item${n === 1 ? '' : 's'}: ${orderTitle(b)}` });
+    });
+  } else {
+    const email = String(state.historyEmail || '').trim().toLowerCase();
+    if (!email) return [];
+    state.batches.filter(b => String(b.clientEmail || '').toLowerCase() === email).forEach(b => {
+      const history = { estimate: b.createdAt, ...(b.phaseHistory || {}) };
+      ORDER_PHASES.forEach(p => {
+        if (!history[p.id]) return;
+        list.push({ id: `${b.id}-${p.id}`, batchId: b.id, at: history[p.id],
+          title: `${TRACKER_STEPS[p.id].label}: ${orderTitle(b)}`,
+          body: TRACKER_STEPS[p.id].detail });
+      });
+    });
+  }
+  return list
+    .filter(n => n.at)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 50)
+    .map(n => ({ ...n, unread: !read.has(n.id) && Date.now() - Date.parse(n.at) < NOTIF_UNREAD_WINDOW_MS }));
+}
+
+function markNotifsRead(ids) {
+  const scope = notifScope();
+  const all = loadJsonPref(NOTIF_READ_KEY, {});
+  all[scope] = [...new Set([...(all[scope] || []), ...ids])].slice(-500);
+  saveJsonPref(NOTIF_READ_KEY, all);
+}
+
+function notifTimeAgo(iso) {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function browserAlertsSupported() {
+  return typeof window.Notification === 'function';
+}
+
+function browserAlertsOn() {
+  return browserAlertsSupported() && Notification.permission === 'granted' && !!loadJsonPref(NOTIF_PREFS_KEY, {}).alerts;
+}
+
+function renderNotifPanel(items, unread) {
+  let footer;
+  if (!browserAlertsSupported()) footer = `<span>Browser alerts aren't supported on this device.</span>`;
+  else if (Notification.permission === 'denied') footer = `<span>Browser alerts are blocked in your browser settings.</span>`;
+  else footer = `<span>${browserAlertsOn() ? 'Browser alerts are on.' : 'Get a pop-up when something changes.'}</span>
+    <button type="button" onclick="toggleBrowserAlerts()">${browserAlertsOn() ? 'Turn off' : 'Turn on alerts'}</button>`;
+  const empty = notifScope() === 'client' && !state.historyEmail
+    ? 'Look up your email under My Requests to get updates on your orders here.'
+    : "You're all caught up. Updates will show up here.";
+  return `<div class="notif-panel" role="dialog" aria-label="Notifications">
+    <div class="notif-head"><span>Notifications</span>${unread ? `<button type="button" onclick="markAllNotifsRead()">Mark all read</button>` : ''}</div>
+    ${items.length ? items.map(n => `
+      <button type="button" class="notif-item ${n.unread ? 'unread' : ''}" onclick="openNotif('${esc(n.id)}', '${esc(n.batchId)}')">
+        <div class="notif-title">${esc(n.title)}</div>
+        <div class="notif-body">${esc(n.body)}</div>
+        <div class="notif-time">${notifTimeAgo(n.at)}</div>
+      </button>`).join('') : `<div class="notif-empty">${empty}</div>`}
+    <div class="notif-foot">${footer}</div>
+  </div>`;
+}
+
+function renderNotifBell() {
+  const items = buildNotifications();
+  const unread = items.filter(n => n.unread).length;
+  document.title = `${unread ? `(${unread}) ` : ''}SoloPrint — 3D Print Quote Request`;
+  return `<div class="notif-wrap" id="notif-wrap">
+    <button class="notif-bell" type="button" aria-label="Notifications${unread ? ` (${unread} unread)` : ''}" onclick="toggleNotifPanel()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      ${unread ? `<span class="notif-count">${unread > 9 ? '9+' : unread}</span>` : ''}
+    </button>
+    ${state.notifOpen ? renderNotifPanel(items, unread) : ''}
+  </div>`;
+}
+
+function updateNotifBell() {
+  const el = document.getElementById('notif-wrap');
+  if (el) el.outerHTML = renderNotifBell();
+}
+
+function toggleNotifPanel() {
+  state.notifOpen = !state.notifOpen;
+  updateNotifBell();
+}
+
+function markAllNotifsRead() {
+  markNotifsRead(buildNotifications().map(n => n.id));
+  updateNotifBell();
+}
+
+function openNotif(id, batchId) {
+  markNotifsRead([id]);
+  state.notifOpen = false;
+  if (notifScope() === 'owner') state.ownerTab = 'dashboard';
+  else state.clientTab = 'jobs';
+  render();
+  const card = document.getElementById(`order-${batchId}`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function toggleBrowserAlerts() {
+  const prefs = loadJsonPref(NOTIF_PREFS_KEY, {});
+  if (browserAlertsOn()) {
+    prefs.alerts = false;
+  } else {
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    prefs.alerts = permission === 'granted';
+  }
+  saveJsonPref(NOTIF_PREFS_KEY, prefs);
+  updateNotifBell();
+}
+
+// Pop up a browser alert for updates that arrive while the page is open.
+function sendBrowserAlerts() {
+  if (!browserAlertsOn()) return;
+  const alerted = new Set(loadJsonPref(NOTIF_ALERTED_KEY, []));
+  const fresh = buildNotifications().filter(n => n.unread && !alerted.has(n.id) && Date.parse(n.at) > NOTIF_PAGE_OPENED_AT);
+  fresh.forEach(n => {
+    try {
+      const alert = new Notification(n.title, { body: n.body, tag: n.id });
+      alert.onclick = () => { window.focus(); openNotif(n.id, n.batchId); };
+    } catch (e) {}
+    alerted.add(n.id);
+  });
+  if (fresh.length) saveJsonPref(NOTIF_ALERTED_KEY, [...alerted].slice(-500));
+}
+
+document.addEventListener('click', e => {
+  if (state.notifOpen && !e.target.closest('.notif-wrap')) {
+    state.notifOpen = false;
+    updateNotifBell();
+  }
+});
+
+// Check for order updates every minute so the tracker and notifications stay current.
 setInterval(async () => {
-  if (state.view !== 'client' || state.clientTab !== 'jobs' || !state.historyEmail) return;
-  if (document.hidden || document.activeElement?.id === 'history-email') return;
-  await loadBatches(state.historyEmail);
-  if (state.view === 'client' && state.clientTab === 'jobs') render();
+  const scope = notifScope();
+  if (state.loading || (state.view === 'owner' && !state.ownerUnlocked)) return;
+  if (scope === 'client' && !state.historyEmail) return;
+  if (document.hidden && !browserAlertsOn()) return;
+  const before = JSON.stringify(state.batches);
+  await loadBatches(scope === 'client' ? state.historyEmail : '');
+  sendBrowserAlerts();
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+  // Only the customer tracker re-renders; owner pages hold unsaved form values in the DOM.
+  if (JSON.stringify(state.batches) !== before && scope === 'client' && state.clientTab === 'jobs' && !typing && !state.notifOpen) render();
+  else updateNotifBell();
 }, 60 * 1000);
 
 function clearMyRequestsLookup() {
@@ -2139,12 +2341,81 @@ function showFieldErr(inputId, errId) {
   if (err)   err.classList.add('show');
 }
 
+// ── MODEL PREVIEWS ────────────────────────────────────────────────────────
+const previewCache = new Map();
+const previewTimers = {};
+
+async function fetchModelPreview(url) {
+  const key = normalizeModelKey(url);
+  if (previewCache.has(key)) return previewCache.get(key);
+  const res = await fetch(PREVIEW_API + encodeURIComponent(String(url).trim()));
+  if (!res.ok) throw new Error(`Preview error ${res.status}`);
+  const json = await res.json();
+  const image = json?.data?.image?.url || json?.data?.logo?.url || '';
+  const preview = { image: /^https:\/\//i.test(image) ? image : '', title: json?.data?.title || '' };
+  previewCache.set(key, preview);
+  return preview;
+}
+
+function safeImageUrl(url) {
+  return /^https:\/\//i.test(String(url || '')) ? url : '';
+}
+
+function renderModelPreview(item) {
+  if (item.previewLoading) {
+    return `<div class="model-preview loading"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /><div class="model-preview-sub">Loading preview...</div></div>`;
+  }
+  const img = safeImageUrl(item.previewImage);
+  if (!img) return '';
+  return `<div class="model-preview">
+    <img src="${esc(img)}" alt="${esc(item.name || 'Model preview')}" loading="lazy" onerror="this.closest('.model-preview').remove()" />
+    <div><div class="model-preview-title">${esc(item.name || 'Model preview')}</div><div class="model-preview-sub">Preview from the model link</div></div>
+  </div>`;
+}
+
+function renderModelThumb(item) {
+  const img = safeImageUrl(item.previewImage);
+  return img ? `<img class="model-thumb" src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()" />` : '';
+}
+
+function rerenderModelPreview(i) {
+  const el = document.getElementById(`preview-${i}`);
+  if (el && state.draftItems[i]) el.innerHTML = renderModelPreview(state.draftItems[i]);
+}
+
+function queueModelPreview(i, url) {
+  clearTimeout(previewTimers[i]);
+  previewTimers[i] = setTimeout(async () => {
+    const item = state.draftItems[i];
+    if (!item || item.link !== url) return;
+    item.previewLoading = true;
+    rerenderModelPreview(i);
+    try {
+      const preview = await fetchModelPreview(url);
+      if (state.draftItems[i] !== item || item.link !== url) return;
+      item.previewImage = preview.image;
+      if (!item.name && preview.title) {
+        item.name = preview.title;
+        const el = document.getElementById(`name-${i}`);
+        if (el) el.value = item.name;
+      }
+    } catch (e) {
+      item.previewImage = '';
+    }
+    item.previewLoading = false;
+    rerenderModelPreview(i);
+  }, 600);
+}
+
 // Link input — extract name from slug or trigger server fetch for numeric IDs
 async function onLinkInput(i, value) {
   state.draftItems[i].link = value;
   state.draftItems[i].knownFromLibrary = false;
   state.draftItems[i].knownMinutes = null;
   state.draftItems[i].knownPrompted = false;
+  state.draftItems[i].previewImage = '';
+  if (isSupportedModelLink(value) && isWebUrl(value)) queueModelPreview(i, value);
+  else rerenderModelPreview(i);
   if (isOriginalDesignText(value)) {
     if (!state.draftItems[i].name) {
       state.draftItems[i].name = titleCaseWords(String(value).trim());
@@ -2283,7 +2554,8 @@ async function submitBatch() {
     items: items.map(it => ({
       ...it,
       minutes: it.knownFromLibrary ? it.knownMinutes : totalPrintMinutes(it.printHours, it.printMinutes),
-      fetching: false
+      fetching: false,
+      previewLoading: false
     })),
     status: 'pending',
     phase: 'estimate',
