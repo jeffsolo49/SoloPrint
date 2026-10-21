@@ -19,14 +19,15 @@
   --surface2: #f0f2ff;
   --border: #cfd5fb;
   --border-hover: #8c9cf4;
-  --accent: #c43ac8;
-  --accent2: #e05ad8;
-  --accent-rgb: 196,58,200;
+  --accent: #a82dad;
+  --accent2: #b833bc;
+  --accent-rgb: 168,45,173;
+  --accent-bright: #d04bcf;
   --coral: #e2603f;
   --pink: #f8c7dc;
   --green: #138a59;
   --green-rgb: 19,138,89;
-  --amber: #a86b00;
+  --amber: #8a5600;
   --amber-rgb: 214,150,20;
   --red: #c9354f;
   --red-rgb: 201,53,79;
@@ -36,12 +37,21 @@
   --field-border: #6f7fe6;
   --placeholder: #8b91c2;
   --text: #2f3477;
-  --muted: #5d65ad;
+  --muted: #545ca3;
   --mono: 'Space Mono', ui-monospace, 'Courier New', monospace;
   --pixel: 'Silkscreen', 'Space Mono', ui-monospace, monospace;
   --sans: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip-link { position: absolute; left: 12px; top: -60px; z-index: 300; background: var(--accent); color: var(--on-accent); padding: 10px 16px; border-radius: 10px; font-weight: 700; text-decoration: none; }
+.skip-link:focus { top: 12px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+main:focus { outline: none; }
+.logo { background: none; border: none; padding: 0; color: inherit; cursor: pointer; font: inherit; }
+.thumb-btn { padding: 0; border: none; background: none; cursor: pointer; border-radius: 8px; line-height: 0; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
 body { background: var(--bg-gradient) fixed; }
 
@@ -86,12 +96,12 @@ body { background: var(--bg-gradient) fixed; }
 @media (max-width: 640px) { .main { margin: 12px; padding: 1.25rem 1rem; border-width: 6px; border-radius: 18px; } .main.owner-main { max-width: none; } }
 
 .card { background: var(--surface); border: 2px solid var(--border); border-radius: 16px; box-shadow: 0 4px 14px rgba(var(--ink-rgb),0.06); padding: 1.5rem; margin-bottom: 1.25rem; }
-.card-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 1.25rem; }
+.card-title { font-weight: 400; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 1.25rem; }
 
 .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
 .section-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: rgba(var(--accent-rgb),0.12); color: var(--accent); }
 .section-icon svg { width: 20px; height: 20px; }
-.section-title { font-family: var(--pixel); font-size: 22px; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.section-title { font-family: var(--pixel); font-size: 22px; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, var(--accent), var(--accent-bright)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .section-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
 
 .field { margin-bottom: 1rem; }
@@ -136,7 +146,7 @@ textarea { resize: vertical; min-height: 70px; }
 .item-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 0.75rem; transition: border-color 0.2s; }
 .item-block:hover { border-color: var(--border-hover); }
 .item-block-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-.item-num-badge { font-family: var(--mono); font-size: 11px; color: var(--accent); background: rgba(var(--accent-rgb),0.12); padding: 3px 10px; border-radius: 20px; font-weight: 700; }
+.item-num-badge { font-family: var(--mono); font-size: 11px; color: var(--accent); background: rgba(var(--accent-rgb),0.08); padding: 3px 10px; border-radius: 20px; font-weight: 700; }
 .fetching-badge { font-size: 11px; color: var(--muted); font-family: var(--mono); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
@@ -232,8 +242,8 @@ textarea { resize: vertical; min-height: 70px; }
 .order-action strong { color: var(--green); }
 .order-action .btn-primary { margin-top: 0; }
 .order-action-sub { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
-.btn-venmo { display: block; text-align: center; padding: 12px; border-radius: 10px; background: #008cff; color: #fff; font-weight: 700; text-decoration: none; }
-.btn-venmo:hover { background: #0077d9; }
+.btn-venmo { display: block; text-align: center; padding: 12px; border-radius: 10px; background: #0070d6; color: #fff; font-weight: 700; text-decoration: none; }
+.btn-venmo:hover { background: #005db3; }
 .photo-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .photo-link { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: var(--surface2); color: var(--accent); font-size: 11px; text-decoration: none; text-align: center; }
 .photo-link img { width: 100%; height: 100%; object-fit: cover; }
@@ -263,7 +273,7 @@ textarea { resize: vertical; min-height: 70px; }
 .bubble-label .short { display: none; }
 .bubble-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
 .bubble.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: #ffffff; color: #ffffff; }
-.bubble.active .bubble-sub { color: rgba(255,255,255,0.9); }
+.bubble.active .bubble-sub { color: #ffffff; }
 .bubble.active .bubble-icon { background: #ffffff; color: var(--accent); }
 .bubble .nav-badge { position: absolute; top: -8px; right: -6px; min-width: 24px; height: 24px; font-size: 12px; border-radius: 12px; border: 3px solid #ffffff; }
 @media (max-width: 760px) {
@@ -1472,13 +1482,14 @@ async function init() {
 function render() {
   if (state.loading) return;
   document.getElementById('app-root').innerHTML = `
-    <div class="header">
-      <div class="logo" onclick="goHome()" style="cursor:pointer;">
-        <div class="logo-icon">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="header">
+      <button class="logo" type="button" onclick="goHome()" aria-label="SoloPrint home">
+        <span class="logo-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-        </div>
-        <div class="logo-text">SOLO<span>PRINT</span></div>
-      </div>
+        </span>
+        <span class="logo-text">SOLO<span>PRINT</span></span>
+      </button>
       <div class="header-actions">
         <div class="build-badge" title="Last change to this page: build id b… is the file timestamp (ms). Time is Austin (America/Chicago). Resave index.html to refresh.">
           ${formatBuildBadge()}
@@ -1490,7 +1501,7 @@ function render() {
           : `<button class="btn-sm" onclick="showClientView()">Client view</button>
              ${state.ownerUnlocked ? `<button class="btn-sm danger" onclick="logoutOwner()">Logout</button>` : ''}`}
       </div>
-    </div>
+    </header>
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
   `;
   attachAll();
@@ -1498,7 +1509,8 @@ function render() {
 
 function renderBubble(tab, label, shortLabel, sub, iconPaths, badge = 0) {
   const active = state.clientTab === tab;
-  return `<button class="bubble ${active ? 'active' : ''}" type="button" onclick="setTab('${tab}')" ${active ? 'aria-current="page"' : ''}>
+  const name = `${label}: ${sub}${badge ? ` (${badge})` : ''}`;
+  return `<button class="bubble ${active ? 'active' : ''}" type="button" onclick="setTab('${tab}')" aria-label="${esc(name)}" ${active ? 'aria-current="page"' : ''}>
     <span class="bubble-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths}</svg></span>
     <span>
       <span class="bubble-label"><span class="long">${esc(label)}</span><span class="short">${esc(shortLabel)}</span></span>
@@ -1520,22 +1532,23 @@ function renderClientApp() {
         '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M4 5h.01M4 12h.01M4 19h.01"/>',
         hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
     </nav>
-    <div class="main">
+    <main class="main" id="main" tabindex="-1">
+      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? 'Request a Quote' : state.clientTab === 'gallery' ? GALLERY_NAME : 'My Requests')}</h1>
       ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : renderMyJobsTab()}
-    </div>`;
+    </main>`;
 }
 
 function renderOwnerNav() {
   const libCount = sortedLibraryEntries().length;
   const analyticsCount = buildModelAnalyticsRows().length;
   return `
-    <div class="nav">
+    <nav class="nav" aria-label="Owner sections">
       <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
       <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
-    </div>
+    </nav>
   `;
 }
 
@@ -1548,13 +1561,13 @@ function renderSubmitTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
       </div>
       <div>
-        <div class="section-title">New Quote Request</div>
+        <h2 class="section-title">New Quote Request</h2>
         <div class="section-sub">Paste MakerWorld, Thingiverse, or Printables links, or enter "original design"</div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">Your info</div>
+      <h3 class="card-title">Your info</h3>
       <div class="row2">
         <div class="field">
           <label>Your name <span class="req">*</span></label>
@@ -1572,12 +1585,12 @@ function renderSubmitTab() {
     </div>
 
     <div class="card">
-      <div class="card-title">Items to print (${items.length}/${MAX_ITEMS})</div>
+      <h3 class="card-title">Items to print (${items.length}/${MAX_ITEMS})</h3>
       ${items.map((item, i) => renderItemBlock(item, i)).join('')}
       ${items.length < MAX_ITEMS ? `
         <div class="next-link-row">
           <div class="plus-circle">+</div>
-          <input type="text" id="next-link-input"
+          <input type="text" id="next-link-input" aria-label="Add another item: paste a model link or type an original design"
             placeholder="Paste next model link or type original design for item ${items.length + 1}..."
             onpaste="handleNextLinkPaste(event)"
             oninput="handleNextLinkType(this.value)" />
@@ -1709,7 +1722,7 @@ function renderMyJobsTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
-        <div class="section-title">My Requests</div>
+        <h2 class="section-title">My Requests</h2>
         <div class="section-sub">Enter your email to view your personal request history</div>
       </div>
     </div>
@@ -1728,7 +1741,7 @@ function renderMyJobsTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
-        <div class="section-title">My Requests</div>
+        <h2 class="section-title">My Requests</h2>
         <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
       </div>
     </div>
@@ -1754,7 +1767,7 @@ function renderMyJobsTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
-        <div class="section-title">My Requests</div>
+        <h2 class="section-title">My Requests</h2>
         <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
       </div>
     </div>
@@ -1817,12 +1830,12 @@ function renderMyJobsTab() {
 
 function renderOwnerApp() {
   if (!state.ownerUnlocked) {
-    return `<div class="main"><div class="login-wrap">
+    return `<main class="main" id="main" tabindex="-1"><h1 class="sr-only">SoloPrint owner login</h1><div class="login-wrap">
       <div class="section-header">
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </div>
-        <div><div class="section-title">Owner Login</div><div class="section-sub">Access your dashboard</div></div>
+        <div><h2 class="section-title">Owner Login</h2><div class="section-sub">Access your dashboard</div></div>
       </div>
       <div class="card">
         <div class="field"><label>Email</label>
@@ -1839,12 +1852,13 @@ function renderOwnerApp() {
           <button class="btn-link" type="button" onclick="sendOwnerAuthEmail('otp')">Email me a login link</button>
         </div>
       </div>
-    </div></div>`;
+    </div></main>`;
   }
 
   return `
     ${renderOwnerNav()}
-    <div class="main owner-main">
+    <main class="main owner-main" id="main" tabindex="-1">
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
@@ -1855,7 +1869,7 @@ function renderOwnerApp() {
           : state.ownerTab === 'calculator'
             ? renderOwnerCalculatorPage()
             : renderOwnerDashboard()}
-    </div>`;
+    </main>`;
 }
 
 function renderOwnerDashboard() {
@@ -1870,7 +1884,7 @@ function renderOwnerDashboard() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 13h6v7H4zM14 4h6v16h-6zM9 9h6v11H9z"/></svg>
         </div>
-        <div><div class="section-title">Owner Dashboard</div><div class="section-sub">Track quotes, production, and delivered orders · <button class="btn-link" type="button" onclick="state.showPasswordForm = true; render();">Change password</button></div></div>
+        <div><h2 class="section-title">Owner Dashboard</h2><div class="section-sub">Track quotes, production, and delivered orders · <button class="btn-link" type="button" onclick="state.showPasswordForm = true; render();">Change password</button></div></div>
       </div>
       <div class="owner-page-meta">${state.batches.length} total request${state.batches.length === 1 ? '' : 's'}</div>
     </div>
@@ -1880,8 +1894,8 @@ function renderOwnerDashboard() {
         <div class="stat-card"><div class="stat-val green">${delivered.length}</div><div class="stat-label">Delivered</div></div>
       </div>
       <div class="card">
-        <div class="card-title">Owner Sheet</div>
-        <div class="owner-sheet-wrap">
+        <h3 class="card-title">Owner Sheet</h3>
+        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
           <table class="owner-sheet">
             <thead>
               <tr>
@@ -1901,7 +1915,7 @@ function renderOwnerDashboard() {
                   <td>${b.items.length}</td>
                   <td>${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
                   <td>
-                    <select class="phase-select" onchange="updateBatchPhase('${b.id}', this.value)">
+                    <select class="phase-select" aria-label="Order phase for ${esc(b.clientName)}" onchange="updateBatchPhase('${b.id}', this.value)">
                       ${ORDER_PHASES.map((p, idx) => {
                         const currentIdx = phaseIndex(b.phase || 'estimate');
                         const isAllowed = idx === currentIdx || idx === currentIdx + 1;
@@ -1910,7 +1924,7 @@ function renderOwnerDashboard() {
                     </select>
                   </td>
                   <td>
-                    <select class="phase-select" onchange="updatePaymentStatus('${b.id}', this.value)">
+                    <select class="phase-select" aria-label="Payment status for ${esc(b.clientName)}" onchange="updatePaymentStatus('${b.id}', this.value)">
                       ${PAYMENT_PHASES.map((p, idx) => {
                         const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
                         const isAllowed = idx === currentIdx || idx === currentIdx + 1;
@@ -1925,7 +1939,7 @@ function renderOwnerDashboard() {
         </div>
       </div>
       <div class="card" style="margin-bottom:1rem;">
-        <div class="card-title">Delivered Revenue</div>
+        <h3 class="card-title">Delivered Revenue</h3>
         <div class="price-big" style="font-size:28px;color:var(--green);">$${rev.toFixed(2)}</div>
       </div>
       ${!state.batches.length
@@ -1942,7 +1956,7 @@ function renderOwnerLibraryPage() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
         </div>
-        <div><div class="section-title">Saved Models</div><div class="section-sub">Manage reusable estimate data in one place</div></div>
+        <div><h2 class="section-title">Saved Models</h2><div class="section-sub">Manage reusable estimate data in one place</div></div>
       </div>
       <div class="save-indicator ${librarySaveState === 'pending' ? 'pending' : ''}">
         <span class="save-indicator-dot"></span>
@@ -1950,7 +1964,7 @@ function renderOwnerLibraryPage() {
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Add Model</div>
+      <h3 class="card-title">Add Model</h3>
       <div class="lib-grid">
         <div class="field"><label>Model link</label><input type="text" id="lib-link" placeholder="https://makerworld.com/en/models/..." /></div>
         <div class="field"><label>Model name</label><input type="text" id="lib-name" placeholder="Model name" /></div>
@@ -1967,9 +1981,9 @@ function renderOwnerLibraryPage() {
       <div class="alert error" id="lib-err"></div>
       <div class="alert success" id="lib-ok"></div>
       ${!libEntries.length ? `<div style="font-size:12px;color:var(--muted);margin-top:10px;">No saved models yet.</div>` : `
-        <div class="owner-sheet-wrap">
+        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
           <table class="lib-table">
-            <thead><tr><th>Model Name</th><th>Model Link</th><th>Minutes (Hours)</th><th>Grams</th><th></th></tr></thead>
+            <thead><tr><th>Model Name</th><th>Model Link</th><th>Minutes (Hours)</th><th>Grams</th><th><span class="sr-only">Actions</span></th></tr></thead>
             <tbody>
               ${libEntries.map(([key, e], idx) => {
                 const rowId = `lib-row-${idx}`;
@@ -2046,12 +2060,12 @@ function renderOwnerCalculatorPage() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h14v18H5z"/><path d="M8 7h8M8 11h3M8 15h8"/></svg>
         </div>
-        <div><div class="section-title">Owner Calculator</div><div class="section-sub">Price a model instantly, then save it into your reusable model data</div></div>
+        <div><h2 class="section-title">Owner Calculator</h2><div class="section-sub">Price a model instantly, then save it into your reusable model data</div></div>
       </div>
       <div class="owner-page-meta">${sortedLibraryEntries().length} saved model${sortedLibraryEntries().length === 1 ? '' : 's'}</div>
     </div>
     <div class="card">
-      <div class="card-title">Calculate And Save</div>
+      <h3 class="card-title">Calculate And Save</h3>
       <div class="calc-shell">
         <div class="calc-form-card">
           <div class="lib-grid">
@@ -2084,7 +2098,7 @@ function renderOwnerCalculatorPage() {
           <div class="calc-hint">${canSave ? 'Press Enter in any calculator field to save this model.' : 'Add a model name or link, plus minutes and grams, to enable saving.'}</div>
         </div>
         <div class="calc-summary-card">
-          <div class="card-title">Live Quote Preview</div>
+          <h3 class="card-title">Live Quote Preview</h3>
           <div id="owner-calc-live-preview">${renderOwnerCalculatorLivePreview(calc)}</div>
           ${saved ? `
             <div class="total-box">
@@ -2113,7 +2127,7 @@ function renderOwnerAnalyticsPage() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19h16M7 16V8M12 16V5M17 16v-3"/></svg>
         </div>
-        <div><div class="section-title">Sales Data</div><div class="section-sub">Search quote demand and order performance by model</div></div>
+        <div><h2 class="section-title">Sales Data</h2><div class="section-sub">Search quote demand and order performance by model</div></div>
       </div>
       <div class="owner-page-meta">${rows.length} model${rows.length === 1 ? '' : 's'} shown</div>
     </div>
@@ -2123,7 +2137,7 @@ function renderOwnerAnalyticsPage() {
       <div class="stat-card"><div class="stat-val green">$${totalSoldRevenue.toFixed(0)}</div><div class="stat-label">Money Sold</div></div>
     </div>
     <div class="card">
-      <div class="card-title">Searchable Model Data</div>
+      <h3 class="card-title">Searchable Model Data</h3>
       <div class="analytics-toolbar">
         <div class="field">
           <label>Search models</label>
@@ -2132,7 +2146,7 @@ function renderOwnerAnalyticsPage() {
         <button type="button" class="btn-sm" onclick="exportModelAnalyticsCSV()">Export CSV</button>
       </div>
       ${!rows.length ? `<div style="font-size:12px;color:var(--muted);">No models match that search yet.</div>` : `
-        <div class="owner-sheet-wrap">
+        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
           <table class="analytics-table">
             <thead>
               <tr>
@@ -2474,22 +2488,22 @@ function openWork(id) {
 // Photo gallery at the top of the home page, built from the photos of published designs.
 function renderRecentWork() {
   const tiles = [];
-  state.gallery.filter(g => g.published).forEach(g => g.photos.forEach((photo, n) => tiles.push({ g, photo, first: n === 0 })));
+  state.gallery.filter(g => g.published).forEach(g => g.photos.forEach((photo, n) => tiles.push({ g, photo, n, first: n === 0 })));
   tiles.sort((a, b) => (b.first - a.first));
   // One featured photo (2x2) plus 4 or 8 small ones fills whole rows on both the 4- and 2-column layouts.
   const shown = tiles.slice(0, tiles.length >= 9 ? 9 : tiles.length >= 5 ? 5 : tiles.length);
   if (!shown.length) {
     return state.ownerUnlocked
-      ? `<div class="card"><div class="card-title">My Work</div><div class="field-help">Your photo gallery shows here once you add designs with photos in Owner → Gallery. Customers don't see this note.</div></div>`
+      ? `<div class="card"><h3 class="card-title">My Work</h3><div class="field-help">Your photo gallery shows here once you add designs with photos in Owner → Gallery. Customers don't see this note.</div></div>`
       : '';
   }
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-      <div class="section-title" style="font-size:20px;">My Work</div>
+      <h2 class="section-title" style="font-size:20px;">My Work</h2>
       <button class="btn-link" type="button" onclick="setTab('gallery')">See all ${esc(GALLERY_NAME)} →</button>
     </div>
     <div class="home-gallery">${shown.map((t, i) => `
-      <button class="work-tile ${i === 0 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}">
+      <button class="work-tile ${i === 0 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}${t.n ? `, photo ${t.n + 1}` : ''}">
         <img src="${esc(t.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.work-tile').remove()" />
         ${t.first ? `<span>${esc(t.g.title)}</span>` : ''}
       </button>`).join('')}</div>
@@ -2500,9 +2514,9 @@ function renderWorkDetail(g) {
   const price = galleryPrice(g);
   return `
     <button class="btn-link" type="button" onclick="state.galleryOpen=''; render();" style="margin-bottom:14px;">← All ${esc(GALLERY_NAME)}</button>
-    <div class="section-header" style="margin-bottom:1rem;"><div><div class="section-title">${esc(g.title || 'Untitled')}</div></div></div>
+    <div class="section-header" style="margin-bottom:1rem;"><div><h2 class="section-title">${esc(g.title || 'Untitled')}</h2></div></div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
-    ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map(u => `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onclick="showWorkPhoto('${esc(g.id)}', this.src)" onerror="this.remove()" />`).join('')}</div>` : ''}
+    ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', this.querySelector('img').src)" aria-label="Show photo ${n + 1}"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()" /></button>`).join('')}</div>` : ''}
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       ${price !== null ? `
@@ -2546,7 +2560,7 @@ function renderGalleryPhoto(g) {
   return `<div class="gallery-photo" id="gphoto-${esc(g.id)}">${photo
     ? `<img src="${esc(photo)}" alt="${esc(g.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('Photo unavailable'))" />`
     : 'No photo yet'}</div>
-    ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map(u => `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onclick="showGalleryPhoto('${esc(g.id)}', this.src)" onerror="this.remove()" />`).join('')}</div>` : ''}`;
+    ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showGalleryPhoto('${esc(g.id)}', this.querySelector('img').src)" aria-label="Show photo ${n + 1} of ${esc(g.title)}"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()" /></button>`).join('')}</div>` : ''}`;
 }
 
 function showGalleryPhoto(id, src) {
@@ -2565,7 +2579,7 @@ function renderGalleryTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
       <div>
-        <div class="section-title">${esc(GALLERY_NAME)}</div>
+        <h2 class="section-title">${esc(GALLERY_NAME)}</h2>
         <div class="section-sub">Designs we've made before, with the story behind each one. Want one? Tap "Request this".</div>
       </div>
     </div>`;
@@ -2650,13 +2664,13 @@ function renderOwnerGalleryPage() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
         </div>
-        <div><div class="section-title">Gallery</div><div class="section-sub">Show finished work with prices on the "${esc(GALLERY_NAME)}" tab</div></div>
+        <div><h2 class="section-title">Gallery</h2><div class="section-sub">Show finished work with prices on the "${esc(GALLERY_NAME)}" tab</div></div>
       </div>
       <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
     </div>
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
-      <div class="card-title">${editing ? 'Edit Item' : 'Add Item'}</div>
+      <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
       <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
       <div class="field"><label>Write-up</label>
         <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
@@ -3101,7 +3115,7 @@ async function sendOwnerAuthEmail(kind) {
 
 function renderSetPasswordCard() {
   return `<div class="card">
-    <div class="card-title">Set a new password</div>
+    <h3 class="card-title">Set a new password</h3>
     <div class="row2">
       <div class="field"><label>New password</label><input type="password" id="new-pw" autocomplete="new-password" placeholder="At least 8 characters" /></div>
       <div class="field"><label>Repeat it</label><input type="password" id="new-pw2" autocomplete="new-password" /></div>
@@ -3751,7 +3765,29 @@ function showAlert(id, msg, type) {
   el.textContent = msg; el.className = `alert ${type}`; el.style.display = 'block';
 }
 
+// Accessibility pass after each render: tie every .field label to its control, and make message
+// boxes announce themselves to screen readers.
+let a11yIdCounter = 0;
+function linkFieldLabels(root = document) {
+  root.querySelectorAll('.field').forEach(field => {
+    const label = field.querySelector(':scope > label');
+    const control = field.querySelector('input:not([type=hidden]), select, textarea');
+    if (!label || !control || label.contains(control) || label.htmlFor) return;
+    if (!control.id) control.id = `field-${++a11yIdCounter}`;
+    label.htmlFor = control.id;
+    const help = field.querySelector(':scope > .field-help');
+    if (help && !control.hasAttribute('aria-describedby')) {
+      if (!help.id) help.id = `help-${++a11yIdCounter}`;
+      control.setAttribute('aria-describedby', help.id);
+    }
+  });
+  root.querySelectorAll('.alert').forEach(el => {
+    if (!el.hasAttribute('role')) el.setAttribute('role', el.classList.contains('error') ? 'alert' : 'status');
+  });
+}
+
 function attachAll() {
+  linkFieldLabels();
   const pw = document.getElementById('owner-pw');
   if (pw) pw.addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
 
