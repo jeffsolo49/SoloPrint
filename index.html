@@ -659,12 +659,26 @@ async function supaFetch(path, opts = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+// The owner dashboard loads open orders plus the last 90 days; Sales Data and "Load all" fetch everything.
+const RECENT_ORDER_DAYS = 90;
+function ownerJobsQuery() {
+  if (state.ownerHistoryAll) return '/jobs?order=created_at.asc';
+  const since = new Date(Date.now() - RECENT_ORDER_DAYS * 864e5).toISOString();
+  return `/jobs?or=(data->>phase.is.null,data->>phase.neq.delivered,created_at.gte.${encodeURIComponent(since)})&order=created_at.asc`;
+}
+
+async function loadAllOrders() {
+  state.ownerHistoryAll = true;
+  await loadBatches();
+  render();
+}
+
 async function loadBatches(filterEmail = '') {
   try {
     const email = String(filterEmail || '').trim().toLowerCase();
     const rows = email
       ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
-      : await supaFetch('/jobs?order=created_at.asc');
+      : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
     state.synced = true;
   } catch(e) {
@@ -1974,7 +1988,7 @@ function renderOwnerDashboard() {
         </div>
         <div><h2 class="section-title">Owner Dashboard</h2><div class="section-sub">Track quotes, production, and delivered orders · <button class="btn-link" type="button" onclick="state.showPasswordForm = true; render();">Change password</button></div></div>
       </div>
-      <div class="owner-page-meta">${state.batches.length} total request${state.batches.length === 1 ? '' : 's'}</div>
+      <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
       <div class="stats-row">
         <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
@@ -2027,7 +2041,7 @@ function renderOwnerDashboard() {
         </div>
       </div>
       <div class="card" style="margin-bottom:1rem;">
-        <h3 class="card-title">Delivered Revenue</h3>
+        <h3 class="card-title">Delivered Revenue${state.ownerHistoryAll ? '' : ` (last ${RECENT_ORDER_DAYS} days)`}</h3>
         <div class="price-big" style="font-size:28px;color:var(--green);">$${rev.toFixed(2)}</div>
       </div>
       ${!state.batches.length
@@ -2468,6 +2482,7 @@ async function showClientView() {
 }
 function setOwnerTab(tab) {
   state.ownerTab = tab;
+  if (tab === 'analytics' && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
 }
