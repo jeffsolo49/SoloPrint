@@ -6,7 +6,32 @@
 // Project Settings (gear) -> Script properties -> Add script property: SECRET = your secret.
 // It must match the secret in supabase/email-trigger.sql. New versions of this file can then be pasted as-is.
 function getSecret() {
-  return String(PropertiesService.getScriptProperties().getProperty('SECRET') || '').trim();
+  // Forgive quotes, a semicolon or spaces copied along with the secret.
+  return String(PropertiesService.getScriptProperties().getProperty('SECRET') || '').trim().replace(/^['"`]+|['"`;]+$/g, '').trim();
+}
+
+// Run from the editor if emails, backups or reminders say "forbidden": shows what the script has saved and
+// asks Supabase whether it matches.
+function checkSetup() {
+  const props = PropertiesService.getScriptProperties().getProperties();
+  const names = Object.keys(props);
+  const secret = getSecret();
+  Logger.log('Script properties found: ' + (names.length ? names.join(', ') : '(none)'));
+  if (!secret) {
+    Logger.log('No SECRET property. Add it under Project Settings -> Script properties: name SECRET, value = your secret (no quotes).');
+    return;
+  }
+  Logger.log('SECRET is ' + secret.length + ' characters: ' + secret.slice(0, 4) + '...' + secret.slice(-4));
+  const res = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/rpc/due_quote_reminders', {
+    method: 'post', contentType: 'application/json',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
+    payload: JSON.stringify({ p_secret: secret, p_days: 36500 }),
+    muteHttpExceptions: true
+  });
+  const code = res.getResponseCode();
+  if (code === 200) Logger.log('Supabase accepted the secret. Emails, backups and reminders will work.');
+  else if (/forbidden/.test(res.getContentText())) Logger.log('Supabase says the secret does NOT match the one in private.email_settings. Fix whichever one is wrong (see email/README.md).');
+  else Logger.log('Supabase replied ' + code + ': ' + res.getContentText().slice(0, 200) + ' (if it says the function does not exist, run supabase/site-settings.sql).');
 }
 const OWNER_EMAIL = 'jeffsolo49@gmail.com';
 const SITE_URL = 'https://soloprint.vercel.app';  // your site's address, used for links in emails

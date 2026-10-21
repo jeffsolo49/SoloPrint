@@ -64,6 +64,10 @@ check('webhook accepts the saved secret and refuses anything else', () => {
   assert(post('wrong') === 'forbidden' && sent.length === 0, 'wrong secret was accepted');
   assert(post('0123456789abcdef0123456789abcdef') === 'sent 2' && sent.length === 2, 'right secret was refused');
 });
+check('secret saved with quotes or a semicolon still works', () => {
+  const ctx = load({ PropertiesService: { getScriptProperties: () => ({ getProperty: () => " '0123456789abcdef0123456789abcdef'; " }) } });
+  assert(ctx.getSecret() === '0123456789abcdef0123456789abcdef', ctx.getSecret());
+});
 check('no secret is written in Code.gs', () => {
   assert(!/[0-9a-f]{40}/i.test(CODE) && !/const SECRET\s*=/.test(CODE), 'Code.gs contains a secret');
 });
