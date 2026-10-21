@@ -464,7 +464,7 @@ const OWNER_SESSION_MS = 60 * 60 * 1000;
 const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
 const PREVIEW_API = 'https://api.microlink.io/?url=';
-// The SoloPrint Google Apps Script (email/Code.gs) also looks up print time and grams for MakerWorld and Printables links.
+// The SoloPrint Google Apps Script (email/Code.gs) also looks up print time and grams for MakerWorld links.
 const LOOKUP_API = 'https://script.google.com/macros/s/AKfycbxiOXN2535JUBDF_-Jvr7wF-X2rE5U34_BrC66Y8vEG5pFpokhBFImoHHQQZtJc3wGWIA/exec';
 const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
 const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
@@ -2561,7 +2561,7 @@ function rerenderModelPreview(i) {
 }
 
 async function lookupModelEstimate(url) {
-  if (!/(makerworld\.com|printables\.com)/i.test(url)) return null;
+  if (!/makerworld\.com/i.test(url)) return null;
   const res = await fetch(`${LOOKUP_API}?action=lookup&url=${encodeURIComponent(url)}`);
   if (!res.ok) return null;
   return res.json();
@@ -2582,7 +2582,7 @@ function applyLookedUpEstimate(i, item, found) {
   item.grams = grams;
   const profile = cleanText(found.profile, 80);
   const plates = parseInt(found.plates, 10) || 1;
-  item.estimateSource = `${found.source === 'Printables' ? 'Printables' : 'MakerWorld'}${profile ? ` profile "${profile}"` : ''}${plates > 1 ? ` (${plates} plates)` : ''}`;
+  item.estimateSource = `MakerWorld${profile ? ` profile "${profile}"` : ''}${plates > 1 ? ` (${plates} plates)` : ''}`;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set(`hours-${i}`, item.printHours);
   set(`minutes-${i}`, item.printMinutes);

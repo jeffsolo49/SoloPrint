@@ -51,15 +51,17 @@ Version: New version → Deploy**. The Web app URL stays the same, so Supabase n
 
 ## Print time and grams from model links
 
-The same script also looks up MakerWorld and Printables links, so the request form can pre-fill
-print time and filament weight. The customer can edit the numbers, they're labeled as automated
-estimates, and you see where they came from on each order. Thingiverse has no such data.
+The same script also looks up MakerWorld links, so the request form can pre-fill print time and
+filament weight from the model's print profile (the one in the link, or the default). The customer
+can edit the numbers, they're labeled as automated estimates, and you see where they came from on
+each order. A profile often covers a full plate, which can be several pieces. Printables blocks
+requests from Google's servers and Thingiverse has no such data, so those links are filled in by hand.
 
 After pasting the new `Code.gs` (put your secret back on line 5), deploy a new version, then:
 
 1. Pick `testLookup` in the function menu and click **Run**. Google asks for one more permission
    ("connect to an external service"); allow it the same way as before.
-2. Open **Execution log**. Each test link should show `"ok":true` with `minutes` and `grams`.
+2. Open **Execution log**. The test link should show `"ok":true` with `minutes` and `grams`.
    If something says `false` or `ERROR`, paste the log into your chat with Claude.
 
 ### Optional: MakerWorld login

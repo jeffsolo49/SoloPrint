@@ -24,8 +24,9 @@ function reply(text) {
 }
 
 // ── MODEL LOOKUPS ─────────────────────────────────────────────────────────
-// The site calls this (GET ?action=lookup&url=...) when a customer pastes a MakerWorld or Printables
-// link, to pre-fill print time and filament weight. Browsers can't read those sites directly.
+// The site calls this (GET ?action=lookup&url=...) when a customer pastes a MakerWorld link, to pre-fill
+// print time and filament weight. Browsers can't read MakerWorld directly. (Printables blocks requests
+// from Google's servers, so it isn't supported.)
 // Results are best-effort automated estimates; the customer can edit them and the owner reviews every order.
 
 function doGet(e) {
@@ -47,14 +48,11 @@ function lookupModel(url) {
   if (cached) return JSON.parse(cached);
   let result;
   const mw = url.match(/^https:\/\/(?:www\.)?makerworld\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?models\/(\d+)/i);
-  const pr = url.match(/^https:\/\/(?:www\.)?printables\.com\/(?:[a-z]{2}\/)?model\/(\d+)/i);
   if (mw) {
     const profile = (url.match(/profileId-(\d+)/i) || [])[1] || '';
     result = parseMakerWorldDesign(fetchMakerWorldDesign(mw[1]), profile);
-  } else if (pr) {
-    result = parsePrintablesModel(fetchPrintablesModel(pr[1]));
   } else {
-    result = { ok: false, error: 'Only MakerWorld and Printables links are supported.' };
+    result = { ok: false, error: 'Only MakerWorld links are supported.' };
   }
   if (result.ok) cache.put(cacheKey, JSON.stringify(result), 6 * 60 * 60);
   return result;
@@ -81,10 +79,11 @@ function fetchMakerWorldDesign(designId) {
   throw new Error('MakerWorld lookup failed: ' + errors.join(' || '));
 }
 
-// Pure function so it can be tested outside Apps Script.
+// Pure function so it can be tested outside Apps Script. prediction is in seconds, weight in grams.
 function parseMakerWorldDesign(design, profileId) {
   const instances = Array.isArray(design && design.instances) ? design.instances : [];
   const inst = instances.find(i => profileId && (String(i.id) === profileId || String(i.profileId) === profileId))
+    || instances.find(i => String(i.id) === String(design.defaultInstanceId))
     || instances.find(i => i.isDefault) || instances[0];
   if (!inst) return { ok: false, error: 'No print profiles found.' };
   const plates = Array.isArray(inst.plates) ? inst.plates : [];
@@ -104,45 +103,6 @@ function parseMakerWorldDesign(design, profileId) {
     minutes: minutes || null,
     grams: grams ? Math.round(grams * 10) / 10 : null,
     error: minutes && grams ? '' : 'This model has no print time or weight listed.'
-  };
-}
-
-function fetchPrintablesModel(modelId) {
-  const query = 'query ModelFiles($id: ID!) { model: print(id: $id) { id name gcodes { id name printDuration weight excludeFromTotalSum } } }';
-  const res = UrlFetchApp.fetch('https://api.printables.com/graphql/', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: {
-      'User-Agent': BROWSER_UA,
-      'Accept': 'application/graphql-response+json, application/json',
-      'Accept-Language': 'en',
-      'Origin': 'https://www.printables.com',
-      'Referer': 'https://www.printables.com/model/' + modelId
-    },
-    payload: JSON.stringify({ operationName: 'ModelFiles', query, variables: { id: modelId } }),
-    muteHttpExceptions: true
-  });
-  if (res.getResponseCode() !== 200) throw new Error('Printables lookup failed: ' + describeFailure('api.printables.com', res));
-  return JSON.parse(res.getContentText());
-}
-
-// Pure function so it can be tested outside Apps Script. printDuration is in hours.
-function parsePrintablesModel(json) {
-  const model = json && json.data && json.data.model;
-  if (!model) return { ok: false, error: 'Model not found on Printables.' };
-  const gcode = (model.gcodes || []).find(g => g.printDuration && g.weight);
-  const image = '';
-  if (!gcode) return { ok: false, source: 'Printables', name: String(model.name || ''), image, error: 'This model has no print file with time and weight.' };
-  return {
-    ok: true,
-    source: 'Printables',
-    name: String(model.name || ''),
-    image,
-    profile: String(gcode.name || ''),
-    plates: 1,
-    minutes: Math.round(Number(gcode.printDuration) * 60),
-    grams: Math.round(Number(gcode.weight) * 10) / 10,
-    error: ''
   };
 }
 
@@ -192,7 +152,7 @@ function connectMakerWorld() {
 
 // Run from the editor to check lookups; paste the log into your chat with Claude if something looks wrong.
 function testLookup() {
-  ['https://makerworld.com/en/models/922568', 'https://www.printables.com/model/3161-3dbenchy'].forEach(url => {
+  ['https://makerworld.com/en/models/922568'].forEach(url => {
     try {
       const mw = url.match(/makerworld\.com\/.*models\/(\d+)/);
       if (mw) {
@@ -352,4 +312,4 @@ function formatDate(iso) {
   return isNaN(d) ? '' : d.toLocaleString('en-US', { timeZone: 'America/Chicago' });
 }
 
-if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePrintablesModel };
+if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign };
