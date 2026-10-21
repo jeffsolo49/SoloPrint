@@ -3370,7 +3370,7 @@ function rerenderModelPreview(i) {
 }
 
 async function lookupModelEstimate(url) {
-  if (!/makerworld\.com/i.test(url)) return null;
+  if (!/(makerworld\.com|thingiverse\.com)/i.test(url)) return null;
   const res = await fetch(`${LOOKUP_API}?action=lookup&url=${encodeURIComponent(url)}`);
   if (!res.ok) return null;
   return res.json();
@@ -3382,7 +3382,7 @@ function applyLookedUpEstimate(i, item, found) {
   const minutes = cleanNumber(found.minutes);
   const grams = cleanNumber(found.grams);
   if (!found.ok || !minutes || !grams) {
-    if (found.source) item.estimateNote = 'We couldn\'t find a print time for this link, so please enter your best guess or leave it blank.';
+    if (found.source === 'MakerWorld') item.estimateNote = 'We couldn\'t find a print time for this link, so please enter your best guess or leave it blank.';
     return;
   }
   if (item.knownFromLibrary || item.printHours || item.printMinutes || item.grams) return;
@@ -3407,10 +3407,9 @@ function queueModelPreview(i, url) {
     if (!item || item.link !== url) return;
     item.previewLoading = true;
     rerenderModelPreview(i);
-    const [preview, found] = await Promise.all([
-      fetchModelPreview(url).catch(() => null),
-      lookupModelEstimate(url).catch(() => null)
-    ]);
+    // Our Apps Script handles MakerWorld and Thingiverse; Microlink (limited free plan) is only the fallback.
+    const found = await lookupModelEstimate(url).catch(() => null);
+    const preview = found && safeImageUrl(found.image) ? null : await fetchModelPreview(url).catch(() => null);
     if (state.draftItems[i] !== item || item.link !== url) return;
     item.previewImage = (preview && preview.image) || safeImageUrl(found && found.image);
     const title = (preview && preview.title) || cleanText(found && found.name, 200);

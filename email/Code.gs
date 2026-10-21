@@ -6,6 +6,11 @@ const SECRET = 'PASTE-YOUR-SECRET-HERE';   // must match the secret in supabase/
 const OWNER_EMAIL = 'jeffsolo49@gmail.com';
 const SITE_URL = '';                       // optional: your site's address, e.g. https://soloprint.example.com
 const VENMO_USERNAME = 'Jeffrey-Sol-3';
+// Public Supabase address and key (the same ones in index.html), used by the weekly backup.
+const SUPA_URL = 'https://xpssamjjyarajtwtrwqx.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
+const BACKUP_FOLDER = 'SoloPrint backups';
+const BACKUPS_TO_KEEP = 12;
 
 const FIL_RATE = { black: 0.024, white: 0.024, special: 0.034 };
 const FIL_LABEL = { black: 'Black', white: 'White', special: 'Special Request' };
@@ -51,11 +56,34 @@ function lookupModel(url) {
   if (mw) {
     const profile = (url.match(/profileId-(\d+)/i) || [])[1] || '';
     result = parseMakerWorldDesign(fetchMakerWorldDesign(mw[1]), profile);
+  } else if (/^https:\/\/(?:www\.)?thingiverse\.com\/thing:\d+/i.test(url)) {
+    result = fetchPagePreview(url, 'Thingiverse');
   } else {
-    result = { ok: false, error: 'Only MakerWorld links are supported.' };
+    result = { ok: false, error: 'Only MakerWorld and Thingiverse links are supported.' };
   }
-  if (result.ok) cache.put(cacheKey, JSON.stringify(result), 6 * 60 * 60);
+  if (result.ok || result.image) cache.put(cacheKey, JSON.stringify(result), 6 * 60 * 60);
   return result;
+}
+
+// Title and preview image from a page's link-preview tags. No print time or grams (those sites don't list them).
+function fetchPagePreview(url, source) {
+  const res = UrlFetchApp.fetch(url, { headers: { 'User-Agent': BROWSER_UA }, muteHttpExceptions: true, followRedirects: true });
+  if (res.getResponseCode() !== 200) return { ok: false, source, error: source + ' returned ' + res.getResponseCode() };
+  return parsePagePreview(res.getContentText().slice(0, 300000), source);
+}
+
+// Pure function so it can be tested outside Apps Script.
+function parsePagePreview(html, source) {
+  const meta = name => {
+    const re = new RegExp('<meta[^>]+(?:property|name)=["\']' + name + '["\'][^>]*>', 'i');
+    const tag = (html.match(re) || [])[0] || '';
+    return ((tag.match(/content=["']([^"']*)["']/i) || [])[1] || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  };
+  const image = meta('og:image') || meta('twitter:image');
+  return {
+    ok: false, source, name: meta('og:title') || meta('twitter:title'),
+    image: /^https:\/\//i.test(image) ? image : '', minutes: null, grams: null, error: ''
+  };
 }
 
 function fetchMakerWorldDesign(designId) {
@@ -167,6 +195,42 @@ function testLookup() {
       Logger.log(url + '\nERROR ' + err);
     }
   });
+}
+
+// ── WEEKLY BACKUP ─────────────────────────────────────────────────────────
+// Saves every order, gallery item and saved model to a JSON file in Google Drive ("SoloPrint backups"),
+// keeping the newest 12. Run setupWeeklyBackup once; it makes a backup now and every Monday at about 3am.
+function setupWeeklyBackup() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'backupToDrive')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('backupToDrive').timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
+  backupToDrive();
+  Logger.log('Weekly backup scheduled for Mondays around 3am, and a first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+}
+
+function backupToDrive() {
+  const res = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/rpc/backup_export', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
+    payload: JSON.stringify({ p_secret: SECRET }),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    const msg = 'SoloPrint backup failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300);
+    MailApp.sendEmail({ to: OWNER_EMAIL, subject: 'SoloPrint backup failed', body: msg + '\n\nCheck that supabase/library-and-backups.sql has been run.', name: 'SoloPrint' });
+    throw new Error(msg);
+  }
+  const folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(BACKUP_FOLDER);
+  const stamp = Utilities.formatDate(new Date(), 'America/Chicago', 'yyyy-MM-dd');
+  folder.createFile('soloprint-backup-' + stamp + '.json', res.getContentText(), 'application/json');
+  const files = [];
+  const it = folder.getFiles();
+  while (it.hasNext()) files.push(it.next());
+  files.sort((a, b) => b.getDateCreated() - a.getDateCreated()).slice(BACKUPS_TO_KEEP).forEach(f => f.setTrashed(true));
+  Logger.log('Backup saved: soloprint-backup-' + stamp + '.json');
 }
 
 // Run this once from the Apps Script editor to approve Gmail access and send yourself a test email.
@@ -313,4 +377,4 @@ function formatDate(iso) {
   return isNaN(d) ? '' : d.toLocaleString('en-US', { timeZone: 'America/Chicago' });
 }
 
-if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign };
+if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview };
