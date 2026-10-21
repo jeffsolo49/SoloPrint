@@ -14,3 +14,16 @@ Live at https://soloprint.vercel.app/
 - **Emails and MakerWorld lookups:** a Google Apps Script, `email/Code.gs`, called by the trigger in
   `supabase/email-trigger.sql`. Setup steps are in `email/README.md`.
 - **Link previews:** `og-image.png` is the picture shown when the site's link is texted or shared.
+
+## Automatic checks
+
+Every push runs `.github/workflows/checks.yml` on GitHub:
+
+- `tests/site.test.js`: every page loads without errors and passes WCAG 2.2 AA (axe-core), no sideways
+  scrolling at phone widths, security (forged orders, owner login, customer data routes), pricing math,
+  and the main customer and owner flows, with Supabase mocked.
+- `tests/email.test.js`: order emails, MakerWorld/Thingiverse lookups and the weekly backup in `email/Code.gs`.
+- `tests/sql/run.sh`: runs every file in `supabase/` twice on a fresh Postgres and checks the access rules.
+
+Run locally: `cd tests && npm install && npx playwright install chromium && npm test`, and
+`PGHOST=... PGUSER=... tests/sql/run.sh` against a scratch Postgres server.

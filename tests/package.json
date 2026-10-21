@@ -1,0 +1,12 @@
+{
+  "name": "soloprint-tests",
+  "private": true,
+  "description": "Automatic checks for the SoloPrint site. Run: npm install && npm test",
+  "scripts": {
+    "test": "node site.test.js && node email.test.js"
+  },
+  "devDependencies": {
+    "axe-core": "4.10.2",
+    "playwright": "1.56.1"
+  }
+}
