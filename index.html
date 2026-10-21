@@ -2469,7 +2469,7 @@ async function showClientView() {
 function setOwnerTab(tab) {
   state.ownerTab = tab;
   render();
-  if (tab === 'gallery') loadGallery().then(render);
+  if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
@@ -2592,7 +2592,7 @@ function renderRecentWork() {
     </div>
     <div class="home-gallery">${shown.map((t, i) => `
       <button class="work-tile ${i === 0 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}${t.n ? `, photo ${t.n + 1}` : ''}">
-        <img src="${esc(t.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.work-tile').remove()" />
+        ${thumbImg(t.photo, '', 'tile')}
         ${t.first ? `<span>${esc(t.g.title)}</span>` : ''}
       </button>`).join('')}</div>
   </div>`;
@@ -2604,7 +2604,7 @@ function renderWorkDetail(g) {
     <button class="btn-link" type="button" onclick="state.galleryOpen=''; render();" style="margin-bottom:14px;">← All ${esc(GALLERY_NAME)}</button>
     <div class="section-header" style="margin-bottom:1rem;"><div><h2 class="section-title">${esc(g.title || 'Untitled')}</h2></div></div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
-    ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', this.querySelector('img').src)" aria-label="Show photo ${n + 1}"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()" /></button>`).join('')}</div>` : ''}
+    ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       ${price !== null ? `
@@ -2621,10 +2621,11 @@ function renderWorkDetail(g) {
     </div>`;
 }
 
-function showWorkPhoto(id, src) {
+function showWorkPhoto(id, n) {
   const g = state.gallery.find(x => x.id === id);
   const el = document.getElementById('work-main-photo');
-  if (el && g && g.photos.includes(src)) el.innerHTML = `<img src="${esc(src)}" alt="${esc(g.title)}" referrerpolicy="no-referrer" />`;
+  const src = g && g.photos[n];
+  if (el && src) el.innerHTML = `<img src="${esc(src)}" alt="${esc(g.title)}" referrerpolicy="no-referrer" />`;
 }
 
 function galleryPrice(g) {
@@ -2643,18 +2644,32 @@ async function loadGallery() {
   state.galleryLoaded = true;
 }
 
+// Show the thumbnail, fall back to the full photo if the thumbnail is missing, then give up gracefully.
+function thumbImg(url, alt, mode, extra = '') {
+  const thumb = thumbUrl(url);
+  return `<img src="${esc(thumb)}" ${thumb !== url ? `data-full="${esc(url)}"` : ''} alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="photoFailed(this, '${mode}')" ${extra} />`;
+}
+
+function photoFailed(img, mode) {
+  if (img.dataset.full && img.getAttribute('src') !== img.dataset.full) { img.src = img.dataset.full; return; }
+  if (mode === 'tile') img.closest('.work-tile')?.remove();
+  else if (mode === 'thumb') img.parentNode?.remove();
+  else img.replaceWith(document.createTextNode('Photo unavailable'));
+}
+
 function renderGalleryPhoto(g) {
   const photo = g.photos[0];
   return `<div class="gallery-photo" id="gphoto-${esc(g.id)}">${photo
-    ? `<img src="${esc(photo)}" alt="${esc(g.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('Photo unavailable'))" />`
+    ? thumbImg(photo, g.title, 'text')
     : 'No photo yet'}</div>
-    ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showGalleryPhoto('${esc(g.id)}', this.querySelector('img').src)" aria-label="Show photo ${n + 1} of ${esc(g.title)}"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()" /></button>`).join('')}</div>` : ''}`;
+    ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showGalleryPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1} of ${esc(g.title)}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}`;
 }
 
-function showGalleryPhoto(id, src) {
+function showGalleryPhoto(id, n) {
   const el = document.getElementById(`gphoto-${id}`);
   const g = state.gallery.find(x => x.id === id);
-  if (el && g && g.photos.includes(src)) el.innerHTML = `<img src="${esc(src)}" alt="${esc(g.title)}" referrerpolicy="no-referrer" />`;
+  const src = g && g.photos[n];
+  if (el && src) el.innerHTML = thumbImg(src, g.title, 'text');
 }
 
 function renderGalleryTab() {
@@ -2875,6 +2890,13 @@ async function toggleGalleryItem(id) {
 // ── GALLERY PHOTO UPLOADS (Supabase Storage bucket "gallery", see supabase/gallery.sql) ──
 const GALLERY_BUCKET = 'gallery';
 const GALLERY_PUBLIC_PREFIX = `${SUPA_URL}/storage/v1/object/public/${GALLERY_BUCKET}/`;
+const THUMB_SIDE = 640;
+
+// Uploaded photos get a small "-thumb.jpg" copy for tiles and cards; other links have no thumbnail.
+function thumbUrl(url) {
+  return String(url).startsWith(GALLERY_PUBLIC_PREFIX) && /\.jpg$/i.test(url) && !/-thumb\.jpg$/i.test(url)
+    ? url.replace(/\.jpg$/i, '-thumb.jpg') : url;
+}
 
 // Shrink photos before uploading so they load fast and stay well inside the free storage limit.
 async function resizePhoto(file, maxSide = 1600) {
@@ -2910,14 +2932,11 @@ async function uploadGalleryPhotos(files) {
     if (status) status.textContent = `Uploading ${n + 1} of ${list.length}...`;
     try {
       const blob = await resizePhoto(list[n]);
-      if (!blob) throw new Error('resize failed');
+      const thumb = await resizePhoto(list[n], THUMB_SIDE);
+      if (!blob || !thumb) throw new Error('resize failed');
       const path = `${f.id}/${Date.now()}-${n}.jpg`;
-      const res = await fetch(`${SUPA_URL}/storage/v1/object/${GALLERY_BUCKET}/${path}`, {
-        method: 'POST',
-        headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
-        body: blob
-      });
-      if (!res.ok) throw new Error(`upload ${res.status}`);
+      await uploadStoredPhoto(path, blob, token);
+      await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token);
       added.push(GALLERY_PUBLIC_PREFIX + path);
     } catch (e) {
       console.error('Photo upload error:', e);
@@ -2936,8 +2955,39 @@ async function uploadGalleryPhotos(files) {
   }
 }
 
+async function uploadStoredPhoto(path, blob, token, upsert = false) {
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${GALLERY_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'x-upsert': upsert ? 'true' : 'false' },
+    body: blob
+  });
+  if (!res.ok) throw new Error(`upload ${res.status}`);
+}
+
+// Make thumbnails for photos uploaded before thumbnails existed. Runs quietly when the owner opens Gallery.
+let thumbBackfillDone = false;
+async function backfillThumbnails() {
+  const token = getOwnerToken();
+  if (thumbBackfillDone || !token) return;
+  thumbBackfillDone = true;
+  const urls = [...new Set(state.gallery.flatMap(g => g.photos))].filter(u => thumbUrl(u) !== u);
+  for (const url of urls) {
+    try {
+      const head = await fetch(thumbUrl(url), { method: 'HEAD', cache: 'no-store' });
+      if (head.ok) continue;
+      const full = await fetch(url);
+      if (!full.ok) continue;
+      const thumb = await resizePhoto(await full.blob(), THUMB_SIDE);
+      if (thumb) await uploadStoredPhoto(thumbUrl(url).slice(GALLERY_PUBLIC_PREFIX.length), thumb, token, true);
+    } catch (e) {
+      console.error('Thumbnail backfill error:', e);
+    }
+  }
+}
+
 async function deleteStoredPhotos(urls) {
-  const prefixes = cleanImageLinks(urls).filter(u => u.startsWith(GALLERY_PUBLIC_PREFIX)).map(u => u.slice(GALLERY_PUBLIC_PREFIX.length));
+  const stored = cleanImageLinks(urls).filter(u => u.startsWith(GALLERY_PUBLIC_PREFIX));
+  const prefixes = stored.concat(stored.map(thumbUrl).filter(u => !stored.includes(u))).map(u => u.slice(GALLERY_PUBLIC_PREFIX.length));
   if (!prefixes.length) return;
   try {
     await fetch(`${SUPA_URL}/storage/v1/object/${GALLERY_BUCKET}`, {
