@@ -199,6 +199,12 @@ textarea { resize: vertical; min-height: 70px; }
 .notif-time { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 4px; }
 .notif-empty { padding: 24px 14px; text-align: center; font-size: 12px; color: var(--muted); line-height: 1.6; }
 .notif-foot { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.order-action { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 14px; font-size: 13px; }
+.order-action strong { color: var(--green); }
+.order-action .btn-primary { margin-top: 0; }
+.order-action-sub { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+.btn-venmo { display: block; text-align: center; padding: 12px; border-radius: 10px; background: #008cff; color: #fff; font-weight: 700; text-decoration: none; }
+.btn-venmo:hover { background: #0077d9; }
 .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; }
 .job-card.pending { border-left: 3px solid var(--amber); }
 .job-card.quoted { border-left: 3px solid var(--green); }
@@ -460,6 +466,8 @@ const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
 const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
+// Your Venmo username without the @ (e.g. 'Jeff-Solo'). The "Pay with Venmo" button stays hidden while this is blank.
+const VENMO_USERNAME = '';
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
 const PREVIEW_API = 'https://api.microlink.io/?url=';
 const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
@@ -619,7 +627,7 @@ function phaseIndex(phaseId) {
 // Customer-facing wording for the order tracker on "My Requests".
 const TRACKER_STEPS = {
   estimate:       { label: 'Request Received', detail: "We're reviewing your models and estimating print time and filament." },
-  quote_sent:     { label: 'Quote Ready',      detail: 'Your quote is ready. Check your email to review it and confirm your order.' },
+  quote_sent:     { label: 'Quote Ready',      detail: "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead." },
   order_received: { label: 'Order Confirmed',  detail: "Your order is confirmed and queued for the printer." },
   production:     { label: 'Printing',         detail: 'Your parts are on the printer right now.' },
   delivered:      { label: 'Delivered',        detail: 'Your order is complete. Enjoy!' }
@@ -628,6 +636,64 @@ const TRACKER_STEPS = {
 function stampPhase(batch, phase) {
   batch.phaseHistory = { ...(batch.phaseHistory || {}) };
   if (!batch.phaseHistory[phase]) batch.phaseHistory[phase] = new Date().toISOString();
+}
+
+function batchTotal(batch) {
+  if (!isBatchQuoteReady(batch)) return null;
+  return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
+}
+
+function venmoPayUrl(batch, total) {
+  const note = `SoloPrint order ${batch.id}: ${orderTitle(batch)}`.slice(0, 140);
+  return `https://venmo.com/${encodeURIComponent(VENMO_USERNAME)}?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(note)}`;
+}
+
+// Next step the customer can take on an order: approve the quote, then pay once the owner confirms.
+function renderCustomerOrderAction(batch) {
+  const phase = batch.phase || 'estimate';
+  const total = batchTotal(batch);
+  if (phase === 'quote_sent') {
+    if (batch.customerApprovedAt) {
+      return `<div class="order-action"><strong>Thanks!</strong> We got your go-ahead and will confirm your order soon.</div>`;
+    }
+    return `<div class="order-action">
+      <button class="btn-primary" id="customer-approve-${esc(batch.id)}" type="button" onclick="customerApproveQuote('${esc(batch.id)}')">Looks good, I'd like to order</button>
+      <div class="order-action-sub">Nothing is charged yet. We'll confirm we can make your order before asking for payment.</div>
+    </div>`;
+  }
+  if (phaseIndex(phase) >= phaseIndex('order_received')) {
+    if (batch.paymentStatus === 'payment_recieved') {
+      return `<div class="order-action"><strong>Payment received.</strong> Thank you!</div>`;
+    }
+    if (VENMO_USERNAME && total) {
+      return `<div class="order-action">
+        <a class="btn-venmo" href="${esc(venmoPayUrl(batch, total))}" target="_blank" rel="noopener noreferrer">Pay $${total.toFixed(2)} with Venmo</a>
+        <div class="order-action-sub">Opens Venmo with the amount and order note filled in. We'll mark your payment received once it comes through.</div>
+      </div>`;
+    }
+  }
+  return '';
+}
+
+async function customerApproveQuote(batchId) {
+  const btn = document.getElementById(`customer-approve-${batchId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  await loadBatches(state.historyEmail);
+  const b = state.batches.find(x => x.id === batchId);
+  if (b && b.phase === 'quote_sent' && !b.customerApprovedAt) {
+    b.customerApprovedAt = new Date().toISOString();
+    await upsertBatch(b);
+    const total = batchTotal(b);
+    await sendEmail(EJS_TMPL_OWNER, {
+      to_email: OWNER_EMAIL, client_name: b.clientName, client_email: b.clientEmail,
+      model_name: `Quote approved (${b.items.length} item${b.items.length > 1 ? 's' : ''})`,
+      model_link: orderTitle(b),
+      filament_type: 'Phase: Quote Sent - ready for you to confirm',
+      grams: '',
+      notes: `${b.clientName} approved the quote${total ? ` of $${total.toFixed(2)}` : ''} on ${new Date(b.customerApprovedAt).toLocaleString()}.\nOrder: ${orderTitle(b)}`
+    });
+  }
+  render();
 }
 
 function renderOrderTracker(batch) {
@@ -646,7 +712,8 @@ function renderOrderTracker(batch) {
   }).join('');
   const deliveryInfo = [batch.deliveryDate && `Delivery: ${esc(batch.deliveryDate)}`, batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
-    <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>`;
+    <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    ${renderCustomerOrderAction(batch)}`;
 }
 
 function canAdvanceToPhase(currentPhase, nextPhase) {
@@ -1883,6 +1950,7 @@ function renderOwnerBatch(b) {
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
         <span class="status ${phase}">${phaseLabel(phase)}</span>
         <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
+        ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
         <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
       </div>
     </div>
@@ -2137,6 +2205,9 @@ function buildNotifications() {
       list.push({ id: `new-${b.id}`, batchId: b.id, at: b.createdAt,
         title: `New request from ${b.clientName || 'a customer'}`,
         body: `${n} item${n === 1 ? '' : 's'}: ${orderTitle(b)}` });
+      if (b.customerApprovedAt) list.push({ id: `approved-${b.id}-${b.customerApprovedAt}`, batchId: b.id, at: b.customerApprovedAt,
+        title: `${b.clientName || 'A customer'} approved their quote`,
+        body: `Ready for you to confirm: ${orderTitle(b)}` });
     });
   } else {
     const email = String(state.historyEmail || '').trim().toLowerCase();
@@ -2867,6 +2938,7 @@ async function approveBatch(batchId) {
   batch.status = 'quoted';
   batch.phase = 'quote_sent';
   batch.paymentStatus = 'payment_requested';
+  batch.customerApprovedAt = '';
   stampPhase(batch, 'quote_sent');
   await upsertBatch(batch);
 
@@ -2891,6 +2963,7 @@ async function resetBatch(batchId) {
   if (!b) return;
   b.status = 'pending';
   b.phase = 'estimate';
+  b.customerApprovedAt = '';
   b.phaseHistory = { estimate: (b.phaseHistory || {}).estimate || b.createdAt };
   b.items.forEach(it => it.minutes = null);
   await upsertBatch(b);
