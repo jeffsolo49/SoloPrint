@@ -12,8 +12,8 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const BACKUP_FOLDER = 'SoloPrint backups';
 const BACKUPS_TO_KEEP = 12;
 
-const FIL_RATE = { black: 0.024, white: 0.024, special: 0.034 };
-const FIL_LABEL = { black: 'Black', white: 'White', special: 'Special Request' };
+const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034 };
+const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request' };
 
 function doPost(e) {
   let body;
@@ -328,7 +328,7 @@ function quoteLines(rec) {
 function itemLines(rec, withPrices) {
   return (rec.items || []).map((it, i) => {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
-    const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   Filament: ${FIL_LABEL[it.filType] || 'Black'}`];
+    const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${it.color ? 'Color' : 'Filament'}: ${it.color ? it.color + (it.filType === 'special' ? ' (special)' : '') : (FIL_LABEL[it.filType] || 'Black')}`];
     if (withPrices && it.minutes && it.grams) {
       const each = perPrint(it);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);

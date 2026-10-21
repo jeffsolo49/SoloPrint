@@ -9,8 +9,8 @@ const SUPA_URL        = 'https://xpssamjjyarajtwtrwqx.supabase.co';
 const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
 
 // Filament pricing
-const FIL_RATE = { black: 0.024, white: 0.024, special: 0.034 };
-const FIL_LABEL = { black: 'Black', white: 'White', special: 'Special Request' };
+const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034 };
+const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request' };
 const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
 const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
@@ -28,10 +28,10 @@ const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
 const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
 const NOTIF_PREFS_KEY = 'soloprint_notif_prefs_v1';
 const ORDER_PHASES = [
-  { id: 'estimate', label: 'Estimate Phase' },
-  { id: 'quote_sent', label: 'Quote Sent' },
-  { id: 'order_received', label: 'Order Received' },
-  { id: 'production', label: 'In Production' },
+  { id: 'estimate', label: 'Reviewing' },
+  { id: 'quote_sent', label: 'Quote Ready' },
+  { id: 'order_received', label: 'Confirmed' },
+  { id: 'production', label: 'Printing' },
   { id: 'delivered', label: 'Delivered' }
 ];
 const PAYMENT_PHASES = [
@@ -73,7 +73,7 @@ function blankItem() {
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
-    imageLinks: []
+    imageLinks: [], mode: '', color: '', colorId: '', showTime: false
   };
 }
 
@@ -163,6 +163,12 @@ async function deleteBatchRemote(id) {
 
 
 // ── PRICING ───────────────────────────────────────────────────────────────
+// Color name when the customer picked one of the owner's colors, otherwise Black / White / Special Request.
+function filamentLabel(it) {
+  if (it && it.color) return it.filType === 'special' ? `${it.color} (special)` : it.color;
+  return FIL_LABEL[it && it.filType] || 'Black';
+}
+
 function calcPerPrint(mins, grams, filType) {
   if (!mins || !grams) return null;
   return 2 + mins * 0.024 + grams * (FIL_RATE[filType] || 0.024);
@@ -386,7 +392,10 @@ function cleanItem(it) {
     knownFromLibrary: it.knownFromLibrary === true,
     previewImage: safeImageUrl(it.previewImage),
     estimateSource: cleanText(it.estimateSource, 200),
-    imageLinks: cleanImageLinks(it.imageLinks)
+    imageLinks: cleanImageLinks(it.imageLinks),
+    mode: ['link', 'idea', 'gallery'].includes(it.mode) ? it.mode : '',
+    color: cleanText(it.color, 40),
+    colorId: /^[a-z0-9-]{1,40}$/.test(String(it.colorId)) ? it.colorId : ''
   };
 }
 
@@ -1009,6 +1018,7 @@ async function fetchNameFromServer(url) {
 async function init() {
   loadModelLibrary();
   loadClientHistoryEmail();
+  restoreDraft();
   state.ownerUnlocked = hasValidOwnerSession();
   handleAuthRedirect();
   await Promise.all([
@@ -1051,6 +1061,7 @@ function render() {
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
   `;
   attachAll();
+  if (state.view === 'client' && state.clientTab === 'submit') queueDraftSave();
 }
 
 function renderBubble(tab, label, shortLabel, sub, iconPaths, badge = 0) {
@@ -1109,7 +1120,7 @@ function renderSubmitTab() {
       </div>
       <div>
         <h2 class="section-title">New Quote Request</h2>
-        <div class="section-sub">Paste MakerWorld, Thingiverse, or Printables links, or enter "original design"</div>
+        <div class="section-sub">Tell me what you'd like printed. Nothing is charged until you approve a quote.</div>
       </div>
     </div>
 
@@ -1135,29 +1146,59 @@ function renderSubmitTab() {
       <h3 class="card-title">Items to print (${items.length}/${MAX_ITEMS})</h3>
       ${items.map((item, i) => renderItemBlock(item, i)).join('')}
       ${items.length < MAX_ITEMS ? `
-        <div class="next-link-row">
-          <div class="plus-circle">+</div>
-          <input type="text" id="next-link-input" aria-label="Add another item: paste a model link or type an original design"
-            placeholder="Paste next model link or type original design for item ${items.length + 1}..."
-            onpaste="handleNextLinkPaste(event)"
-            oninput="handleNextLinkType(this.value)" />
-        </div>` : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
+        <button class="next-link-row" type="button" onclick="addItem()"><span class="plus-circle" aria-hidden="true">+</span> Add another item</button>`
+        : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
     </div>
 
-    <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Submit Quote Request</button>
+    <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Send My Request</button>
+    <div class="field-help" style="text-align:center;margin-top:8px;">Free to ask. I'll review it and email you a quote${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
     <div class="alert error" id="submit-err"></div>
     <div class="alert success" id="submit-ok"></div>
   `;
 }
 
+// With owner colors set up, every item has one picked: the matching Black/White, else the first color.
+function ensureItemColor(item) {
+  const colors = state.settings.colors;
+  if (!colors.length || item.colorId || item.filType === 'special') return;
+  const c = colors.find(x => x.name.toLowerCase() === (FIL_LABEL[item.filType] || '').toLowerCase() && !x.special) || colors.find(x => !x.special) || colors[0];
+  item.colorId = c.id;
+  item.color = c.name;
+  item.filType = c.special ? 'special' : (['black', 'white'].includes(item.filType) && c.name.toLowerCase() === item.filType ? item.filType : 'color');
+}
+
 function renderFilamentPills(i, current) {
-  return `<div class="filament-pills">
+  const item = state.draftItems[i] || {};
+  const colors = state.settings.colors;
+  ensureItemColor(item);
+  if (colors.length) {
+    return `<div class="filament-pills" role="group" aria-label="Color">
+      ${colors.map(c => `
+        <button type="button" class="fil-pill swatch-pill ${item.colorId === c.id ? 'active-color' : ''}" aria-pressed="${item.colorId === c.id}" onclick="pickColor(${i}, '${esc(c.id)}')">
+          <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}
+        </button>`).join('')}
+      <button type="button" class="fil-pill ${!item.colorId && current === 'special' ? 'active-special' : ''}" aria-pressed="${!item.colorId && current === 'special'}" onclick="pickColor(${i}, '')">Something else (describe it)</button>
+    </div>`;
+  }
+  return `<div class="filament-pills" role="group" aria-label="Filament">
     ${['black','white','special'].map(f => `
-      <button class="fil-pill ${current===f?'active-'+f:''}"
+      <button type="button" class="fil-pill ${current===f?'active-'+f:''}" aria-pressed="${current===f}"
         onclick="updateDraft(${i},'filType','${f}'); rerenderPills(${i},'${f}')">
         ${FIL_LABEL[f]}
       </button>`).join('')}
   </div>`;
+}
+
+function pickColor(i, colorId) {
+  const item = state.draftItems[i];
+  if (!item) return;
+  const c = state.settings.colors.find(x => x.id === colorId);
+  item.colorId = c ? c.id : '';
+  item.color = c ? c.name : '';
+  item.filType = c ? (c.special ? 'special' : 'color') : 'special';
+  rerenderPills(i, item.filType);
+  updateCustomerPricePreview(i);
+  queueDraftSave();
 }
 
 function renderCustomerPricePreview(item) {
@@ -1165,7 +1206,7 @@ function renderCustomerPricePreview(item) {
   const grams = Number(item.grams);
   const qty = Math.max(1, Number(item.qty) || 1);
   if (!minutes || !grams) {
-    return `<div class="calc-hint">Enter print time and filament weight to see a live estimate.</div>`;
+    return `<div class="calc-hint">No need to know the price yet: I'll work it out when I review your request.</div>`;
   }
   const perPrint = calcPerPrint(minutes, grams, item.filType);
   const total = perPrint * qty;
@@ -1182,82 +1223,159 @@ $${perPrint.toFixed(2)} per print × ${qty}</div>
   </div>`;
 }
 
+function inferMode(item) {
+  if (item.mode) return item.mode;
+  if (item.link && isWebUrl(item.link)) return 'link';
+  if (item.link || item.notes || item.name) return 'idea';
+  return '';
+}
+
+function setItemMode(i, mode) {
+  const item = state.draftItems[i];
+  if (!item) return;
+  if (mode === 'gallery') { setTab('gallery'); return; }
+  item.mode = mode;
+  render();
+  const focusId = mode === 'link' ? `link-${i}` : `notes-${i}`;
+  setTimeout(() => document.getElementById(focusId)?.focus(), 0);
+}
+
+function toggleItemTime(i) {
+  const item = state.draftItems[i];
+  if (!item) return;
+  item.showTime = !item.showTime;
+  render();
+  if (item.showTime) setTimeout(() => document.getElementById(`hours-${i}`)?.focus(), 0);
+}
+
+function renderModeChooser(i) {
+  const opt = (mode, title, sub, icon) => `
+    <button type="button" class="mode-option" onclick="setItemMode(${i}, '${mode}')">
+      <span class="mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg></span>
+      <span><span class="mode-title">${title}</span><span class="mode-sub">${sub}</span></span>
+    </button>`;
+  return `<div class="field" style="margin-bottom:4px;">
+    <div class="mode-question">What would you like printed?</div>
+    <div class="mode-options">
+      ${opt('link', 'I have a link', 'A model on MakerWorld, Printables or Thingiverse', '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>')}
+      ${opt('idea', 'I have an idea', 'Something custom: describe it and I can design it', '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>')}
+      ${opt('gallery', 'Something from my past work', 'Pick a design I have made before', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
+    </div>
+  </div>`;
+}
+
+function renderPhotoField(item, i) {
+  return `<div class="field" style="margin-bottom:8px;">
+    <label>Photo links (optional)</label>
+    <div class="field-help">Photos, sketches or examples help a lot. Paste links, one per line (up to 5). Google Photos, Imgur and Dropbox work; make sure each is shared publicly.</div>
+    <textarea id="photos-${i}" placeholder="https://..." style="min-height:52px;"
+      oninput="updateImageLinks(${i}, this.value)">${esc((item.imageLinks || []).join('\n'))}</textarea>
+    <div id="photo-previews-${i}">${renderPhotoLinks(item.imageLinks)}</div>
+  </div>`;
+}
+
+// Print time and grams: hidden behind a link until the customer opens it or a lookup fills them in.
+function renderTimeSection(item, i) {
+  const hasTime = !!(item.printHours || item.printMinutes || item.grams || item.knownFromLibrary);
+  if (!(item.showTime || hasTime)) return `
+          <button class="btn-link" type="button" onclick="toggleItemTime(${i})">I know the print time and weight (optional)</button>`;
+  return `
+          <div class="row3">
+            <div class="field" style="margin-bottom:0;">
+              <label>Hours (est.)</label>
+              <input type="number" id="hours-${i}" value="${item.printHours || hoursFromMinutes(item.knownMinutes)}" placeholder="1"
+                min="0" step="1" oninput="updateDraftPrintTime(${i}, 'hours', this.value)" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label>Minutes (est.)</label>
+              <input type="number" id="minutes-${i}" value="${item.printMinutes || minuteRemainder(item.knownMinutes)}" placeholder="30"
+                min="0" max="59" step="1" oninput="updateDraftPrintTime(${i}, 'minutes', this.value)" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label>Print Time (min.)</label>
+              <input class="print-time-output" type="number" id="print-time-${i}" value="${item.knownFromLibrary ? item.knownMinutes : (totalPrintMinutes(item.printHours, item.printMinutes) || '')}" placeholder="Auto" readonly />
+            </div>
+          </div>
+          <div class="field" style="margin:12px 0 0;max-width:220px;">
+            <label>Grams (est.)</label>
+            <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
+              min="0" step="0.1" oninput="clearEstimateSource(${i}); updateDraft(${i},'grams',parseFloat(this.value)||null)" />
+          </div>`;
+}
+
 function renderItemBlock(item, i) {
+  const mode = inferMode(item);
+  const modeLabel = { link: 'Model link', idea: 'Custom idea', gallery: 'From my past work' }[mode];
   return `
     <div class="item-block" id="iblock-${i}">
       <div class="item-block-header">
-        <span class="item-num-badge">Item ${i + 1}</span>
+        <span class="item-num-badge">Item ${i + 1}${modeLabel ? ` · ${modeLabel}` : ''}</span>
         <div style="display:flex;gap:8px;align-items:center;">
           ${item.fetching ? `<span class="fetching-badge">Looking up...</span>` : ''}
-          ${state.draftItems.length > 1 ? `<button class="btn-sm danger" onclick="removeItem(${i})">Remove</button>` : ''}
+          ${mode && mode !== 'gallery' ? `<button class="btn-link" type="button" onclick="state.draftItems[${i}].mode=''; render();">Change</button>` : ''}
+          ${state.draftItems.length > 1 ? `<button class="btn-sm danger" type="button" onclick="removeItem(${i})">Remove</button>` : ''}
         </div>
       </div>
-      <div class="field" style="margin-bottom:8px;">
-        <label>Requests</label>
-        <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px;">
-          Tell us what you are looking for. Are you trying to create an original idea like a holder for a brush you have, or saw something cool and want to make something like it. Share your idea or inspiration.
+      ${!mode ? renderModeChooser(i) : ''}
+      ${mode === 'link' ? `
+        <div class="field" style="margin-bottom:8px;">
+          <label>Model link</label>
+          <input type="text" id="link-${i}" value="${esc(item.link)}" placeholder="https://makerworld.com/en/models/..."
+            oninput="onLinkInput(${i}, this.value)" />
+          <div id="preview-${i}">${renderModelPreview(item)}</div>
         </div>
-        <input type="text" id="link-${i}" value="${esc(item.link)}"
-          placeholder="Paste a link or type original design"
-          oninput="onLinkInput(${i}, this.value)" />
-        <div id="preview-${i}">${renderModelPreview(item)}</div>
-      </div>
-      <div class="field" style="margin-bottom:8px;">
-        <label>Description</label>
-        <div class="field-help">Custom design? Tell us what you need: what it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. The more detail you share, the better we can estimate it.</div>
-        <textarea id="notes-${i}" placeholder="Describe what you want to make, the idea you have, or the inspiration you found"
-          oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
-      </div>
-      <div class="field" style="margin-bottom:8px;">
-        <label>Photo links (optional)</label>
-        <div class="field-help">Have photos, sketches or examples? Paste links to them, one per line (up to 5). Google Photos, Imgur, Dropbox and similar work; make sure each link is shared publicly.</div>
-        <textarea id="photos-${i}" placeholder="https://..." style="min-height:52px;"
-          oninput="updateImageLinks(${i}, this.value)">${esc((item.imageLinks || []).join('\n'))}</textarea>
-        <div id="photo-previews-${i}">${renderPhotoLinks(item.imageLinks)}</div>
-      </div>
-      <div class="field" style="margin-bottom:8px;">
-        <label>Model name</label>
-        <input type="text" id="name-${i}" value="${esc(item.name)}"
-          placeholder="Auto-filled from link or type manually"
-          oninput="updateDraft(${i},'name',this.value)" />
-      </div>
-      <div class="field" style="margin-bottom:10px;">
-        <label>Filament type</label>
-        <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
-      </div>
-      ${item.knownFromLibrary ? `<div class="price-preview-box" style="margin-bottom:10px;">
-        <div class="card-title" style="margin-bottom:6px;">Saved Estimate</div>
-        <div style="font-size:12px;color:var(--muted);">Filled in from a previous print: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. We'll still review your request before sending a quote.</div>
-      </div>` : ``}
-      <div class="row3">
-        <div class="field" style="margin-bottom:0;">
-          <label>Hours (est.)</label>
-          <input type="number" id="hours-${i}" value="${item.printHours || hoursFromMinutes(item.knownMinutes)}" placeholder="1"
-            min="0" step="1" oninput="updateDraftPrintTime(${i}, 'hours', this.value)" />
+        <div class="field" style="margin-bottom:8px;">
+          <label>Model name</label>
+          <input type="text" id="name-${i}" value="${esc(item.name)}" placeholder="Fills in from the link"
+            oninput="updateDraft(${i},'name',this.value)" />
         </div>
-        <div class="field" style="margin-bottom:0;">
-          <label>Minutes (est.)</label>
-          <input type="number" id="minutes-${i}" value="${item.printMinutes || minuteRemainder(item.knownMinutes)}" placeholder="30"
-            min="0" max="59" step="1" oninput="updateDraftPrintTime(${i}, 'minutes', this.value)" />
+        <div class="field" style="margin-bottom:8px;">
+          <label>Anything you'd like changed? (optional)</label>
+          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
+            oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
-        <div class="field" style="margin-bottom:0;">
-          <label>Print Time (min.)</label>
-          <input class="print-time-output" type="number" id="print-time-${i}" value="${item.knownFromLibrary ? item.knownMinutes : (totalPrintMinutes(item.printHours, item.printMinutes) || '')}" placeholder="Auto" readonly />
+        ${renderPhotoField(item, i)}` : ''}
+      ${mode === 'idea' ? `
+        <div class="field" style="margin-bottom:8px;">
+          <label>Describe your idea</label>
+          <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom design work is free for veterans.</div>
+          <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white"
+            oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
-      </div>
-      <div class="row2" style="margin-top:12px;">
-        <div class="field" style="margin-bottom:0;">
-          <label>Grams (est.)</label>
-          <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
-            min="0" step="0.1" oninput="clearEstimateSource(${i}); updateDraft(${i},'grams',parseFloat(this.value)||null)" />
+        ${renderPhotoField(item, i)}
+        <div class="field" style="margin-bottom:8px;">
+          <label>Short name (optional)</label>
+          <input type="text" id="name-${i}" value="${esc(item.name)}" placeholder="e.g. Brush holder"
+            oninput="updateDraft(${i},'name',this.value)" />
         </div>
-        <div class="field" style="margin-bottom:0;">
+        <div id="preview-${i}" hidden></div>` : ''}
+      ${mode === 'gallery' ? `
+        <div class="field" style="margin-bottom:8px;">
+          <label>Design</label>
+          <input type="text" id="name-${i}" value="${esc(item.name)}" oninput="updateDraft(${i},'name',this.value)" />
+          <div id="preview-${i}">${renderModelPreview(item)}</div>
+        </div>
+        <div class="field" style="margin-bottom:8px;">
+          <label>Anything you'd like changed? (optional)</label>
+          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
+            oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
+        </div>` : ''}
+      ${mode ? `
+        <div class="field" style="margin-bottom:10px;">
+          <label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
+          <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
+        </div>
+        <div class="field" style="margin-bottom:10px;max-width:160px;">
           <label>Quantity</label>
           <input type="number" id="qty-${i}" value="${item.qty}" min="1" max="999" step="1"
             oninput="updateDraft(${i},'qty',parseInt(this.value)||1)" />
         </div>
-      </div>
-      <div id="customer-price-preview-${i}">${renderCustomerPricePreview(item)}</div>
+        ${item.knownFromLibrary ? `<div class="price-preview-box" style="margin-bottom:10px;">
+          <div class="card-title" style="margin-bottom:6px;">Saved Estimate</div>
+          <div style="font-size:12px;color:var(--muted);">Filled in from a previous print: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. I'll still review your request before sending a quote.</div>
+        </div>` : ``}
+        <div id="time-${i}">${renderTimeSection(item, i)}</div>
+        <div id="customer-price-preview-${i}">${renderCustomerPricePreview(item)}</div>` : ''}
     </div>`;
 }
 
@@ -1353,7 +1471,7 @@ function renderMyJobsTab() {
               <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
                 <div class="sub-item-name">${esc(it.name)||'Unnamed'}${it.qty>1?` <span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
                 <div class="sub-item-meta">
-                  <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+                  <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
                   ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : ''}
                 ${isWebUrl(it.link) ? `<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>` : it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
                 </div>
@@ -1795,7 +1913,7 @@ function renderOwnerBatch(b) {
           <div class="owner-item-summary">
             <div class="owner-order-summary-label">Item ${i + 1}</div>
             <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
-            <div class="owner-order-summary-value">Filament: ${esc(FIL_LABEL[it.filType] || it.filType || 'Not set')}</div>
+            <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
             <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
             <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
             <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
@@ -1851,7 +1969,7 @@ function renderOwnerItem(batchId, it, i) {
       <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
-          <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+          <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
           <span style="font-size:12px;color:var(--muted);">$${(FIL_RATE[it.filType]||0.024).toFixed(3)}/g</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
@@ -2361,7 +2479,8 @@ function requestGalleryItem(id) {
   const item = {
     ...blankItem(),
     name: g.title,
-    notes: `From the ${GALLERY_NAME} gallery.`,
+    notes: '',
+    mode: 'gallery',
     filType: g.filType,
     grams: g.grams,
     knownMinutes: g.minutes,
@@ -3089,11 +3208,8 @@ function applyLookedUpEstimate(i, item, found) {
   const profile = cleanText(found.profile, 80);
   const plates = parseInt(found.plates, 10) || 1;
   item.estimateSource = `MakerWorld${profile ? ` profile "${profile}"` : ''}${plates > 1 ? ` (${plates} plates)` : ''}`;
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set(`hours-${i}`, item.printHours);
-  set(`minutes-${i}`, item.printMinutes);
-  set(`print-time-${i}`, minutes);
-  set(`grams-${i}`, grams);
+  const timeEl = document.getElementById(`time-${i}`);
+  if (timeEl) timeEl.innerHTML = renderTimeSection(item, i);
   updateCustomerPricePreview(i);
 }
 
@@ -3131,7 +3247,8 @@ async function onLinkInput(i, value) {
   state.draftItems[i].estimateNote = '';
   if (state.draftItems[i].estimateSource) {
     Object.assign(state.draftItems[i], { printHours: '', printMinutes: '', grams: null, estimateSource: '' });
-    ['hours', 'minutes', 'print-time', 'grams'].forEach(f => { const el = document.getElementById(`${f}-${i}`); if (el) el.value = ''; });
+    const timeEl = document.getElementById(`time-${i}`);
+    if (timeEl) timeEl.innerHTML = renderTimeSection(state.draftItems[i], i);
     updateCustomerPricePreview(i);
   }
   if (isSupportedModelLink(value) && isWebUrl(value)) queueModelPreview(i, value);
@@ -3185,54 +3302,11 @@ function rerenderFetchBadge(i, fetching) {
   }
 }
 
-function handleNextLinkPaste(event) {
-  event.preventDefault();
-  const pasted = (event.clipboardData || window.clipboardData).getData('text').trim();
-  if (pasted) promoteNextLink(pasted);
-}
-
-function handleNextLinkType(value) {
-  if (value.length > 12 && isDirectModelReference(value)) promoteNextLink(value);
-}
-
-async function promoteNextLink(url) {
-  const item = blankItem();
-  item.link = url;
-  if (isOriginalDesignText(url)) {
-    item.name = titleCaseWords(String(url).trim());
-  } else {
-    const slugName = nameFromUrl(url);
-    if (slugName) {
-      item.name = slugName;
-    } else if (isNumericOnlySlug(url)) {
-      item.fetching = true;
-    }
-  }
-  state.draftItems.push(item);
+function addItem() {
+  if (state.draftItems.length >= MAX_ITEMS) return;
+  state.draftItems.push(blankItem());
   render();
-  const insertedIdx = state.draftItems.length - 1;
-  maybeOfferKnownEstimate(insertedIdx);
-  setTimeout(() => {
-    const blocks = document.querySelectorAll('.item-block');
-    if (blocks.length) blocks[blocks.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 100);
-  // Fetch name async if numeric
-  if (isSupportedModelLink(url) && isNumericOnlySlug(url)) {
-    const idx = state.draftItems.length - 1;
-    try {
-      const name = await fetchNameFromServer(url);
-      if (name && state.draftItems[idx]) {
-        state.draftItems[idx].name = name;
-        state.draftItems[idx].fetching = false;
-        const el = document.getElementById(`name-${idx}`);
-        if (el) el.value = name;
-        rerenderFetchBadge(idx, false);
-      }
-    } catch(e) {
-      if (state.draftItems[idx]) state.draftItems[idx].fetching = false;
-      rerenderFetchBadge(idx, false);
-    }
-  }
+  setTimeout(() => document.querySelectorAll('.item-block')[state.draftItems.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
 }
 
 function removeItem(i) {
@@ -3240,6 +3314,37 @@ function removeItem(i) {
   state.draftItems.splice(i, 1);
   render();
 }
+
+// ── DRAFT AUTOSAVE ────────────────────────────────────────────────────────
+// A half-filled request survives reloads and closed tabs; cleared once it's sent.
+const DRAFT_KEY = 'soloprint_request_draft_v1';
+let draftSaveTimer = null;
+function queueDraftSave() {
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(saveDraft, 400);
+}
+function saveDraft() {
+  const items = state.draftItems.map(it => ({ ...it, fetching: false, previewLoading: false }));
+  const empty = !state.clientName && !state.clientEmail && items.every(it => !it.name && !it.link && !it.notes && !it.mode);
+  try {
+    if (empty) localStorage.removeItem(DRAFT_KEY);
+    else localStorage.setItem(DRAFT_KEY, JSON.stringify({ clientName: state.clientName, clientEmail: state.clientEmail, items, savedAt: Date.now() }));
+  } catch (e) {}
+}
+function restoreDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (!d || Date.now() - d.savedAt > 30 * 864e5) return;
+    state.clientName = cleanText(d.clientName, 120);
+    state.clientEmail = cleanText(d.clientEmail, 200);
+    const items = (Array.isArray(d.items) ? d.items : []).slice(0, MAX_ITEMS).map(it => ({ ...cleanItem(it), showTime: !!it.showTime }));
+    if (items.length) state.draftItems = items;
+  } catch (e) {}
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+}
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#app-root') && state.view === 'client' && state.clientTab === 'submit') queueDraftSave(); });
 
 // ── SUBMIT ────────────────────────────────────────────────────────────────
 async function submitBatch() {
@@ -3261,10 +3366,14 @@ async function submitBatch() {
     return;
   }
 
-  const items = state.draftItems.filter(it => it.name || it.link);
-  if (!items.length) { showAlert('submit-err', 'Please add at least one item.', 'error'); return; }
-  const unnamed = items.findIndex(it => !it.name);
-  if (unnamed >= 0) { showAlert('submit-err', `Item ${unnamed + 1} needs a model name.`, 'error'); return; }
+  const items = state.draftItems.filter(it => String(it.name || it.link || it.notes || '').trim());
+  if (!items.length) { showAlert('submit-err', 'Please tell me about at least one thing you want printed.', 'error'); return; }
+  // Custom ideas don't need a name: use the first few words of the description.
+  items.forEach(it => {
+    if (it.name.trim()) return;
+    const words = String(it.notes || '').trim().split(/\s+/).slice(0, 6).join(' ');
+    it.name = it.link ? (nameFromUrl(it.link) || 'Model from link') : (words ? `Custom: ${words}` : 'Custom design');
+  });
 
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
@@ -3298,6 +3407,7 @@ async function submitBatch() {
   showAlert('submit-ok', `Thanks! We've received your request for ${items.length} item${items.length>1?'s':''} and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs. We'll email ${clientEmail} with your confirmed quote.`, 'success');
   btn.disabled = false; btn.textContent = 'Submit Quote Request';
   state.draftItems = [blankItem()];
+  clearDraft();
   state.clientTab = 'jobs';
   setTimeout(() => render(), 1200);
 }

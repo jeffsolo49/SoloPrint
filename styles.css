@@ -140,10 +140,22 @@ textarea { resize: vertical; min-height: 70px; }
 .fetching-badge { font-size: 11px; color: var(--muted); font-family: var(--mono); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-.next-link-row { display: flex; align-items: center; gap: 10px; border: 1px dashed rgba(var(--accent-rgb),0.3); border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem; transition: all 0.2s; background: rgba(var(--accent-rgb),0.03); }
-.next-link-row:focus-within { border-color: var(--accent); background: rgba(var(--accent-rgb),0.06); }
-.next-link-row input { background: transparent; border: none; padding: 0; flex: 1; font-size: 14px; color: var(--text); }
-.next-link-row input:focus { outline: none; }
+.next-link-row { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; border: 2px dashed rgba(var(--accent-rgb),0.45); border-radius: 12px; padding: 14px; margin-bottom: 0.75rem; background: rgba(var(--accent-rgb),0.04); color: var(--accent); font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--sans); }
+.next-link-row:hover { background: rgba(var(--accent-rgb),0.09); }
+.mode-question { font-family: var(--pixel); font-size: 16px; color: var(--text); margin-bottom: 12px; }
+.mode-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.mode-option { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 16px; border-radius: 16px; border: 3px solid var(--bezel); background: var(--surface); color: var(--text); cursor: pointer; font-family: var(--sans); transition: transform 0.15s, box-shadow 0.15s; }
+.mode-option:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(55,20,110,0.18); }
+.mode-icon { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), #8d5cf6); color: #fff; }
+.mode-icon svg { width: 22px; height: 22px; }
+.mode-title { display: block; font-weight: 700; font-size: 15px; }
+.mode-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+@media (max-width: 640px) { .mode-options { grid-template-columns: 1fr; } .mode-option { flex-direction: row; align-items: center; } }
+.swatch-pill { display: inline-flex; align-items: center; gap: 8px; }
+.swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(var(--ink-rgb),0.25); flex-shrink: 0; }
+.swatch-note { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.fil-pill.active-color { background: var(--surface); border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
+.status.color { background: #ffffff; color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 .plus-circle { width: 28px; height: 28px; background: rgba(var(--accent-rgb),0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--accent); font-size: 20px; font-weight: 300; line-height: 1; flex-shrink: 0; }
 
 /* Filament pill selector */
