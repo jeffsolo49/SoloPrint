@@ -1424,6 +1424,7 @@ async function init() {
   loadModelLibrary();
   loadClientHistoryEmail();
   state.ownerUnlocked = hasValidOwnerSession();
+  handleAuthRedirect();
   if (state.ownerUnlocked) await loadBatches();
   else if (state.historyEmail) await loadBatches(state.historyEmail);
   state.loading = false;
@@ -1454,7 +1455,7 @@ function render() {
         ${state.view === 'client'
           ? `<button class="btn-sm" onclick="switchToOwner()">Owner</button>`
           : `<button class="btn-sm" onclick="showClientView()">Client view</button>
-             <button class="btn-sm danger" onclick="logoutOwner()">Logout</button>`}
+             ${state.ownerUnlocked ? `<button class="btn-sm danger" onclick="logoutOwner()">Logout</button>` : ''}`}
       </div>
     </div>
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
@@ -1782,8 +1783,13 @@ function renderOwnerApp() {
         <div class="field"><label>Password</label>
           <input type="password" id="owner-pw" placeholder="Enter your password" autocomplete="current-password" />
         </div>
-        <div class="alert error" id="pw-err" style="margin-bottom:10px;"></div>
+        <div class="alert error" id="pw-err" style="margin-bottom:10px;${state.authNotice ? 'display:block;' : ''}">${esc(state.authNotice || '')}</div>
+        <div class="alert success" id="pw-ok" style="margin-bottom:10px;"></div>
         <button class="btn-primary" id="owner-login-btn" onclick="checkPw()">Login</button>
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <button class="btn-link" type="button" onclick="sendOwnerAuthEmail('recover')">Forgot password?</button>
+          <button class="btn-link" type="button" onclick="sendOwnerAuthEmail('otp')">Email me a login link</button>
+        </div>
       </div>
     </div></div>`;
   }
@@ -1791,6 +1797,7 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <div class="main owner-main">
+      ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'library'
@@ -1815,7 +1822,7 @@ function renderOwnerDashboard() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 13h6v7H4zM14 4h6v16h-6zM9 9h6v11H9z"/></svg>
         </div>
-        <div><div class="section-title">Owner Dashboard</div><div class="section-sub">Track quotes, production, and delivered orders</div></div>
+        <div><div class="section-title">Owner Dashboard</div><div class="section-sub">Track quotes, production, and delivered orders · <button class="btn-link" type="button" onclick="state.showPasswordForm = true; render();">Change password</button></div></div>
       </div>
       <div class="owner-page-meta">${state.batches.length} total request${state.batches.length === 1 ? '' : 's'}</div>
     </div>
@@ -2986,6 +2993,95 @@ function clearMyRequestsLookup() {
   render();
 }
 
+// ── EMAIL LINKS (magic link / password reset) ─────────────────────────────
+// Supabase sends the owner back to this page with the session in the URL fragment
+// (#access_token=...&type=magiclink|recovery). Finish the login and, for resets, ask for a new password.
+function handleAuthRedirect() {
+  const params = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  if (!params.has('access_token') && !params.has('error') && !params.has('error_description')) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  state.view = 'owner';
+  if (!params.has('access_token')) {
+    state.authNotice = params.get('error_code') === 'otp_expired'
+      ? 'That email link has expired or was already used. Request a new one below.'
+      : `That email link didn't work (${params.get('error_description') || params.get('error') || 'unknown error'}). Request a new one below.`;
+    return;
+  }
+  persistOwnerSession({ access_token: params.get('access_token'), expires_in: params.get('expires_in') });
+  state.ownerUnlocked = true;
+  state.ownerTab = 'dashboard';
+  state.showPasswordForm = params.get('type') === 'recovery';
+}
+
+function authRedirectUrl() {
+  return location.origin && location.origin !== 'null' ? location.origin + location.pathname : '';
+}
+
+async function sendOwnerAuthEmail(kind) {
+  const email = (document.getElementById('owner-email') || { value: OWNER_EMAIL }).value.trim();
+  if (!email) { showAlert('pw-err', 'Enter your email first.', 'error'); return; }
+  const redirect = authRedirectUrl();
+  const query = redirect ? `?redirect_to=${encodeURIComponent(redirect)}` : '';
+  const path = kind === 'recover' ? '/auth/v1/recover' : '/auth/v1/otp';
+  const body = kind === 'recover' ? { email } : { email, create_user: false };
+  try {
+    const res = await fetch(`${SUPA_URL}${path}${query}`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.status === 429) throw new Error('Too many emails sent. Wait a minute and try again.');
+    if (!res.ok) throw new Error("Couldn't send the email. Try again in a moment.");
+    const pwErr = document.getElementById('pw-err');
+    if (pwErr) pwErr.style.display = 'none';
+    showAlert('pw-ok', kind === 'recover'
+      ? `If ${email} has an owner account, a password reset link is on its way. Open it on this device.`
+      : `If ${email} has an owner account, a login link is on its way. Open it on this device.`, 'success');
+  } catch (e) {
+    showAlert('pw-err', e.message, 'error');
+  }
+}
+
+function renderSetPasswordCard() {
+  return `<div class="card">
+    <div class="card-title">Set a new password</div>
+    <div class="row2">
+      <div class="field"><label>New password</label><input type="password" id="new-pw" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+      <div class="field"><label>Repeat it</label><input type="password" id="new-pw2" autocomplete="new-password" /></div>
+    </div>
+    <div class="alert error" id="new-pw-err"></div>
+    <div class="alert success" id="new-pw-ok"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-sm" type="button" id="new-pw-btn" onclick="saveNewPassword()">Save password</button>
+      <button class="btn-sm" type="button" onclick="state.showPasswordForm = false; render();">Not now</button>
+    </div>
+  </div>`;
+}
+
+async function saveNewPassword() {
+  const pw = document.getElementById('new-pw').value;
+  const pw2 = document.getElementById('new-pw2').value;
+  if (pw.length < 8) { showAlert('new-pw-err', 'Use at least 8 characters.', 'error'); return; }
+  if (pw !== pw2) { showAlert('new-pw-err', "The two passwords don't match.", 'error'); return; }
+  const btn = document.getElementById('new-pw-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    const res = await fetch(`${SUPA_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${getOwnerToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.msg || json.error_description || json.message || `Error ${res.status}`);
+    document.getElementById('new-pw-err').style.display = 'none';
+    showAlert('new-pw-ok', 'Password saved. Use it next time you log in.', 'success');
+    setTimeout(() => { state.showPasswordForm = false; render(); }, 1800);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save password'; }
+    showAlert('new-pw-err', `Couldn't save the password: ${e.message}`, 'error');
+  }
+}
+
 // Owner sign-in goes through Supabase Auth; the database only lets this account read and edit orders.
 async function checkPw() {
   const email = (document.getElementById('owner-email') || { value: OWNER_EMAIL }).value.trim();
@@ -3002,6 +3098,7 @@ async function checkPw() {
     const session = await res.json().catch(() => ({}));
     if (!res.ok || !session.access_token) throw new Error('login failed');
     persistOwnerSession(session);
+    state.authNotice = '';
     state.ownerUnlocked = true;
     state.ownerTab = 'dashboard';
     await loadBatches();
