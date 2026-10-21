@@ -448,7 +448,6 @@ textarea { resize: vertical; min-height: 70px; }
 // Build changes as if SoloPrint may be sold to other small 3D print businesses.
 // Prefer configurable settings, reusable wording, and owner-agnostic behavior
 // over hardcoded assumptions tied to a single seller whenever practical.
-const OWNER_PASSWORD  = 'bambu2024';
 const OWNER_EMAIL     = 'jeffsolo49@gmail.com';
 const EJS_PUBLIC_KEY  = '6zjslr9saD0JtwkKf';
 const EJS_SERVICE_ID  = 'service_43656kn';
@@ -467,7 +466,7 @@ const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
 // Your Venmo username without the @ (e.g. 'Jeff-Solo'). The "Pay with Venmo" button stays hidden while this is blank.
-const VENMO_USERNAME = '';
+const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
 const PREVIEW_API = 'https://api.microlink.io/?url=';
 const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
@@ -522,17 +521,25 @@ function blankItem() {
 }
 
 // ── SUPABASE ──────────────────────────────────────────────────────────────
+// Owner requests carry the signed-in owner's token; everyone else uses the public key,
+// which the database rules (supabase/security.sql) limit to the customer RPCs.
 async function supaFetch(path, opts = {}) {
+  const ownerToken = state.ownerUnlocked ? getOwnerToken() : '';
   const res = await fetch(`${SUPA_URL}/rest/v1${path}`, {
     ...opts,
     headers: {
       'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${SUPA_KEY}`,
+      'Authorization': `Bearer ${ownerToken || SUPA_KEY}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
       ...(opts.headers || {})
     }
   });
+  if (res.status === 401 && ownerToken) {
+    clearOwnerSession();
+    state.ownerUnlocked = false;
+    render();
+  }
   if (!res.ok) throw new Error(`Supabase error ${res.status}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
@@ -541,11 +548,10 @@ async function supaFetch(path, opts = {}) {
 async function loadBatches(filterEmail = '') {
   try {
     const email = String(filterEmail || '').trim().toLowerCase();
-    const query = email
-      ? `/jobs?data->>clientEmail=ilike.${encodeURIComponent(email)}&order=created_at.asc`
-      : '/jobs?order=created_at.asc';
-    const rows = await supaFetch(query);
-    state.batches = (rows || []).map(r => normalizeBatch(r.data));
+    const rows = email
+      ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
+      : await supaFetch('/jobs?order=created_at.asc');
+    state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
     state.synced = true;
   } catch(e) {
     console.error('Load error:', e);
@@ -561,11 +567,27 @@ async function upsertBatch(batch) {
       headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify({ id: normalized.id, data: normalized })
     });
-  } catch(e) { console.error('Upsert error:', e); }
+    return true;
+  } catch(e) {
+    console.error('Upsert error:', e);
+    alert("Couldn't save this change to the database. If you were logged out, log in again and retry.");
+    return false;
+  }
+}
+
+// Customers can only create new requests; returns false if the save failed.
+async function submitBatchRemote(batch) {
+  try {
+    await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job: normalizeBatch(batch) }) });
+    return true;
+  } catch (e) {
+    console.error('Submit error:', e);
+    return false;
+  }
 }
 
 async function deleteBatchRemote(id) {
-  try { await supaFetch(`/jobs?id=eq.${id}`, { method: 'DELETE' }); } catch(e) { console.error(e); }
+  try { await supaFetch(`/jobs?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch(e) { console.error(e); }
 }
 
 // ── EMAIL ─────────────────────────────────────────────────────────────────
@@ -613,7 +635,7 @@ function totalPrintMinutes(hours, minutes) {
   return total > 0 ? total : null;
 }
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function phaseLabel(phaseId) {
@@ -681,8 +703,14 @@ async function customerApproveQuote(batchId) {
   await loadBatches(state.historyEmail);
   const b = state.batches.find(x => x.id === batchId);
   if (b && b.phase === 'quote_sent' && !b.customerApprovedAt) {
+    try {
+      await supaFetch('/rpc/customer_approve_quote', { method: 'POST', body: JSON.stringify({ job_id: b.id, email: state.historyEmail }) });
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = "Looks good, I'd like to order"; }
+      alert("We couldn't send your approval. Please try again in a moment.");
+      return;
+    }
     b.customerApprovedAt = new Date().toISOString();
-    await upsertBatch(b);
     const total = batchTotal(b);
     await sendEmail(EJS_TMPL_OWNER, {
       to_email: OWNER_EMAIL, client_name: b.clientName, client_email: b.clientEmail,
@@ -744,8 +772,61 @@ function isBatchQuoteReady(batch) {
   return !!(batch && Array.isArray(batch.items) && batch.items.length && batch.items.every(it => it.minutes && it.grams));
 }
 
+// Orders come from a shared database, so coerce every field to the shape the UI
+// expects before anything renders it (ids and filament types end up in HTML attributes).
+function cleanText(value, max = 2000) {
+  return typeof value === 'string' ? value.slice(0, max) : (typeof value === 'number' ? String(value) : '');
+}
+function cleanNumber(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function cleanIso(value) {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : '';
+}
+function cleanFilType(value) {
+  return Object.prototype.hasOwnProperty.call(FIL_LABEL, value) ? value : 'black';
+}
+function cleanItem(it) {
+  it = it && typeof it === 'object' ? it : {};
+  return {
+    ...blankItem(),
+    link: cleanText(it.link, 500),
+    name: cleanText(it.name, 200),
+    notes: cleanText(it.notes),
+    filType: cleanFilType(it.filType),
+    qty: Math.max(1, Math.min(999, parseInt(it.qty, 10) || 1)),
+    minutes: cleanNumber(it.minutes),
+    grams: cleanNumber(it.grams),
+    printHours: cleanText(it.printHours, 10),
+    printMinutes: cleanText(it.printMinutes, 10),
+    knownMinutes: cleanNumber(it.knownMinutes),
+    knownFromLibrary: it.knownFromLibrary === true,
+    previewImage: safeImageUrl(it.previewImage)
+  };
+}
+
 function normalizeBatch(batch) {
-  if (!batch) return batch;
+  if (!batch || typeof batch !== 'object') return null;
+  const id = String(batch.id ?? '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  const phaseHistory = {};
+  if (batch.phaseHistory && typeof batch.phaseHistory === 'object') {
+    ORDER_PHASES.forEach(p => { const at = cleanIso(batch.phaseHistory[p.id]); if (at) phaseHistory[p.id] = at; });
+  }
+  batch = {
+    ...batch,
+    id,
+    clientName: cleanText(batch.clientName, 120),
+    clientEmail: cleanText(batch.clientEmail, 200),
+    createdAt: cleanIso(batch.createdAt) || new Date(0).toISOString(),
+    customerApprovedAt: cleanIso(batch.customerApprovedAt),
+    deliveryNotes: cleanText(batch.deliveryNotes),
+    deliveryTracking: cleanText(batch.deliveryTracking, 200),
+    deliveryDate: cleanText(batch.deliveryDate, 100),
+    items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
+    phaseHistory
+  };
   const legacyStatus = batch.status;
   let phase = batch.phase;
   let paymentStatus = batch.paymentStatus;
@@ -758,11 +839,7 @@ function normalizeBatch(batch) {
   return {
     ...batch,
     phase,
-    paymentStatus,
-    deliveryNotes: batch.deliveryNotes || '',
-    deliveryTracking: batch.deliveryTracking || '',
-    deliveryDate: batch.deliveryDate || '',
-    phaseHistory: batch.phaseHistory || {}
+    paymentStatus
   };
 }
 
@@ -834,13 +911,21 @@ function persistClientHistoryEmail() {
   } catch (e) {}
 }
 
-function persistOwnerSession() {
+function persistOwnerSession(session) {
+  const expiresInMs = Math.min(OWNER_SESSION_MS, (Number(session.expires_in) || 3600) * 1000);
+  ownerSession = { token: session.access_token, expiresAt: Date.now() + expiresInMs };
   try {
-    localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify({ unlockedAt: Date.now() }));
+    localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify(ownerSession));
   } catch (e) {}
 }
 
+let ownerSession = null;
+function getOwnerToken() {
+  return ownerSession && ownerSession.expiresAt > Date.now() ? ownerSession.token : '';
+}
+
 function clearOwnerSession() {
+  ownerSession = null;
   try { localStorage.removeItem(OWNER_SESSION_KEY); } catch (e) {}
 }
 
@@ -848,11 +933,10 @@ function hasValidOwnerSession() {
   try {
     const raw = localStorage.getItem(OWNER_SESSION_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    const unlockedAt = parsed && Number(parsed.unlockedAt);
-    if (!Number.isFinite(unlockedAt)) return false;
-    const valid = (Date.now() - unlockedAt) < OWNER_SESSION_MS;
-    if (!valid) clearOwnerSession();
-    return valid;
+    const valid = !!(parsed && typeof parsed.token === 'string' && Number(parsed.expiresAt) > Date.now());
+    if (!valid) { clearOwnerSession(); return false; }
+    ownerSession = { token: parsed.token, expiresAt: Number(parsed.expiresAt) };
+    return true;
   } catch (e) {
     clearOwnerSession();
     return false;
@@ -894,7 +978,7 @@ function saveModelLibraryEntry(entry) {
   const name = String(entry?.name || '').trim();
   const minutes = parseFloat(entry?.minutes);
   const grams = parseFloat(entry?.grams);
-  const filType = entry?.filType || 'black';
+  const filType = cleanFilType(entry?.filType);
 
   const key = modelKeyFromItem({ link, name });
   if (!key) return { ok: false, error: 'Please enter a model link or model name.' };
@@ -1297,7 +1381,7 @@ function render() {
         ${renderNotifBell()}
         ${state.view === 'client'
           ? `<button class="btn-sm" onclick="switchToOwner()">Owner</button>`
-          : `<button class="btn-sm" onclick="state.view='client';render();">Client view</button>
+          : `<button class="btn-sm" onclick="showClientView()">Client view</button>
              <button class="btn-sm danger" onclick="logoutOwner()">Logout</button>`}
       </div>
     </div>
@@ -1605,11 +1689,14 @@ function renderOwnerApp() {
         <div><div class="section-title">Owner Login</div><div class="section-sub">Access your dashboard</div></div>
       </div>
       <div class="card">
+        <div class="field"><label>Email</label>
+          <input type="email" id="owner-email" value="${esc(OWNER_EMAIL)}" autocomplete="username" />
+        </div>
         <div class="field"><label>Password</label>
-          <input type="password" id="owner-pw" placeholder="Enter your password" />
+          <input type="password" id="owner-pw" placeholder="Enter your password" autocomplete="current-password" />
         </div>
         <div class="alert error" id="pw-err" style="margin-bottom:10px;"></div>
-        <button class="btn-primary" onclick="checkPw()">Login</button>
+        <button class="btn-primary" id="owner-login-btn" onclick="checkPw()">Login</button>
       </div>
     </div></div>`;
   }
@@ -2110,13 +2197,20 @@ function renderOwnerItem(batchId, it, i) {
 
 function setTab(tab) { state.clientTab = tab; render(); }
 function goHome() {
-  state.view = 'client';
   state.clientTab = 'submit';
+  if (state.view === 'owner') { showClientView(); return; }
   render();
 }
 async function switchToOwner() {
   state.view = 'owner';
   if (state.ownerUnlocked) await loadBatches();
+  render();
+}
+// The owner view loads every order; reload just the looked-up customer's orders for the client view.
+async function showClientView() {
+  state.view = 'client';
+  state.batches = [];
+  if (state.historyEmail) await loadBatches(state.historyEmail);
   render();
 }
 function setOwnerTab(tab) { state.ownerTab = tab; render(); }
@@ -2367,15 +2461,30 @@ function clearMyRequestsLookup() {
   render();
 }
 
-function checkPw() {
-  const pw = document.getElementById('owner-pw').value;
-  if (pw === OWNER_PASSWORD) {
+// Owner sign-in goes through Supabase Auth; the database only lets this account read and edit orders.
+async function checkPw() {
+  const email = (document.getElementById('owner-email') || { value: OWNER_EMAIL }).value.trim();
+  const password = document.getElementById('owner-pw').value;
+  const btn = document.getElementById('owner-login-btn');
+  if (!password) { showAlert('pw-err', 'Please enter your password.', 'error'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Logging in...'; }
+  try {
+    const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const session = await res.json().catch(() => ({}));
+    if (!res.ok || !session.access_token) throw new Error('login failed');
+    persistOwnerSession(session);
     state.ownerUnlocked = true;
     state.ownerTab = 'dashboard';
-    persistOwnerSession();
-    loadBatches().then(() => render());
+    await loadBatches();
+    render();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Login'; }
+    showAlert('pw-err', 'Incorrect email or password.', 'error');
   }
-  else showAlert('pw-err', 'Incorrect password.', 'error');
 }
 
 function logoutOwner() {
@@ -2646,8 +2755,12 @@ async function submitBatch() {
   }
   state.historyEmail = clientEmail.toLowerCase();
   persistClientHistoryEmail();
-  state.batches.push(batch);
-  await upsertBatch(batch);
+  if (!(await submitBatchRemote(batch))) {
+    showAlert('submit-err', "We couldn't save your request. Please check your connection and try again.", 'error');
+    btn.disabled = false; btn.textContent = 'Submit Quote Request';
+    return;
+  }
+  state.batches.push(normalizeBatch(batch));
 
   const itemsList = items.map((it, idx) =>
     `${idx + 1}) Model: ${it.name}\n` +
