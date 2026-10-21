@@ -43,14 +43,18 @@ check('owner notice lists customer photo links', () => {
   assert(emailsFor('INSERT', at({}), null)[0].body.includes('Photo 1: https://img.test/a.png'), 'photo link missing');
 });
 
-check('special order color adds its spool cost to the quote', () => {
-  const special = { name: 'Vase', qty: 1, filType: 'special', specialColor: 'Glow green', minutes: 60, grams: 10 };
+check('special order: 1 kg roll replaces the material charge', () => {
+  const special = { name: 'Vase', qty: 1, filType: 'special_order', specialColor: 'Red TPU', minutes: 60, grams: 10 };
   const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [special] }), at({}));
-  assert(mail.subject === 'Your SoloPrint quote: $23.78', mail.subject);
-  assert(mail.body.includes('Special order color: Glow green') && mail.body.includes('Special order color: $20.00'), mail.body);
+  assert(mail.subject === 'Your SoloPrint quote: $23.44', mail.subject);   // 2 + 1.44 print time + 20 roll, no per-gram charge
+  assert(mail.body.includes('Special order: Red TPU') && mail.body.includes('Special order roll (1 kg): $20.00'), mail.body);
   assert(mail.body.includes('PLA unless noted'), 'PLA note missing');
   const custom = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [special], specialOrderCost: 15 }), at({}))[0];
-  assert(custom.subject === 'Your SoloPrint quote: $18.78', custom.subject);
+  assert(custom.subject === 'Your SoloPrint quote: $18.44', custom.subject);
+  const leftover = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ ...special, useLeftover: true }] }), at({}))[0];
+  assert(leftover.subject === 'Your SoloPrint quote: $3.44', leftover.subject);
+  const stocked = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ ...special, filType: 'special', colorId: 'red', color: 'Red', specialColor: '' }] }), at({}))[0];
+  assert(stocked.subject === 'Your SoloPrint quote: $3.78', `a stocked special color is not a special order: ${stocked.subject}`);
 });
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;

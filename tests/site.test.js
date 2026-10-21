@@ -208,18 +208,18 @@ const STATES = {
     await page.fill('#client-email', 'lee@example.com');
     await page.click('text=I have an idea');
     await page.fill('#notes-0', 'A vase');
-    await page.click('button:has-text("Special order color")');
+    await page.click('button:has-text("Special order")');
     const note = await page.textContent('.special-order-note');
-    assert(/about \$20/.test(note) && /2 months/.test(note) && /keep any leftover/.test(note), note);
+    assert(/1 kg/.test(note) && /about \$20/.test(note) && /2 months/.test(note) && /keep any leftover/.test(note) && /Red TPU/.test(note), note);
     assert(/PLA unless noted/.test(await page.textContent('body')), 'PLA note missing');
     await page.click('#submit-btn');
     await page.waitForTimeout(200);
     assert(!Object.values(db.jobs).some(j => j.clientName === 'Lee'), 'sent without a special color name');
-    await page.fill('#special-color-0', 'Translucent blue');
+    await page.fill('#special-color-0', 'Red TPU');
     await page.click('#submit-btn');
     await page.waitForTimeout(400);
     const job = Object.values(db.jobs).find(j => j.clientName === 'Lee');
-    assert(job && job.items[0].specialColor === 'Translucent blue' && job.items[0].filType === 'special', `saved ${JSON.stringify(job && job.items[0])}`);
+    assert(job && job.items[0].specialColor === 'Red TPU' && job.items[0].filType === 'special_order', `saved ${JSON.stringify(job && job.items[0])}`);
     await page.close();
   });
   await check('approve a quote', async () => {
@@ -305,7 +305,7 @@ const STATES = {
   await check('owner sets the special order color cost and it is added to the quote', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate',
-      items: [{ name: 'Vase', qty: 1, filType: 'special', specialColor: 'Glow green', grams: 10 }] };
+      items: [{ name: 'Vase', qty: 1, filType: 'special_order', specialColor: 'Red TPU', grams: 10 }] };
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
     assert(await page.inputValue('#special-cost-s1') === '20.00', 'cost should default to $20');
@@ -315,9 +315,15 @@ const STATES = {
     await page.waitForTimeout(300);
     assert(db.jobs['s1'].specialOrderCost === 18 && db.jobs['s1'].phase === 'quote_sent', `saved ${db.jobs['s1'].specialOrderCost}/${db.jobs['s1'].phase}`);
     const total = await page.evaluate(() => batchTotal(state.batches.find(b => b.id === 's1')));
-    assert(Math.abs(total - 21.78) < 0.001, `total ${total}`);
-    const old = await page.evaluate(() => specialOrderCost({ items: [{ filType: 'special' }] }));
-    assert(old === 0, 'older special orders without a color name should not get a spool cost');
+    assert(Math.abs(total - 21.44) < 0.001, `total ${total} (2 + 1.44 print time + 18 roll, no per-gram charge)`);
+    const costs = await page.evaluate(() => [
+      specialOrderCost({ items: [{ filType: 'special', colorId: 'silk', color: 'Silk Gold' }] }),
+      specialOrderCost({ items: [{ filType: 'special_order', specialColor: 'Red TPU', useLeftover: true }] }),
+      cleanItem({ filType: 'special', specialColor: 'Red TPU' }).filType
+    ]);
+    assert(costs[0] === 0, 'a stocked special color is not a special order');
+    assert(costs[1] === 0, 'leftover roll should not add a roll cost');
+    assert(costs[2] === 'special_order', 'first-version special orders should be recognized');
     await page.close();
   });
   await check('typing a color name fills in the color picker', async () => {
