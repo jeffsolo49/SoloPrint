@@ -18,6 +18,7 @@ create table if not exists private.email_settings (
   webhook_url text not null,
   secret text not null
 );
+alter table private.email_settings enable row level security;
 
 insert into private.email_settings (id, webhook_url, secret)
 values (1, 'PASTE-WEB-APP-URL-HERE', 'PASTE-YOUR-SECRET-HERE')
