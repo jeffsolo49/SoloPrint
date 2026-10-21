@@ -208,6 +208,27 @@ textarea { resize: vertical; min-height: 70px; }
 .order-action-sub { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 .btn-venmo { display: block; text-align: center; padding: 12px; border-radius: 10px; background: #008cff; color: #fff; font-weight: 700; text-decoration: none; }
 .btn-venmo:hover { background: #0077d9; }
+.photo-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.photo-link { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: var(--surface2); color: var(--accent); font-size: 11px; text-decoration: none; text-align: center; }
+.photo-link img { width: 100%; height: 100%; object-fit: cover; }
+.photo-link span { display: none; padding: 4px; }
+.photo-link.broken img { display: none; }
+.photo-link.broken span { display: block; }
+.field-help { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 8px; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.gallery-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+.gallery-card.hidden-item { opacity: 0.55; }
+.gallery-photo { aspect-ratio: 4 / 3; background: var(--surface2); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
+.gallery-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.gallery-title { font-weight: 600; font-size: 15px; }
+.gallery-desc { font-size: 12px; color: var(--muted); line-height: 1.6; flex: 1; }
+.gallery-price { font-family: var(--mono); font-weight: 700; color: var(--accent); font-size: 18px; }
+.gallery-meta { font-size: 11px; color: var(--muted); }
+.gallery-thumbs { display: flex; gap: 6px; padding: 10px 14px 0; }
+.gallery-thumbs img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); }
+.gallery-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.gallery-form-grid .field { margin-bottom: 0; }
 .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; }
 .job-card.pending { border-left: 3px solid var(--amber); }
 .job-card.quoted { border-left: 3px solid var(--green); }
@@ -463,6 +484,8 @@ const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
 const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
+// Name of the customer tab that shows finished work with prices.
+const GALLERY_NAME = 'Ready to Print';
 // Your Venmo username without the @ (e.g. 'Jeff-Solo'). The "Pay with Venmo" button stays hidden while this is blank.
 const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
@@ -502,6 +525,7 @@ function blankOwnerCalculator() {
 let state = {
   view: 'client', ownerUnlocked: false,
   batches: [], clientTab: 'submit', ownerTab: 'dashboard',
+  gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null,
   draftItems: [blankItem()],
   clientName: '', clientEmail: '', historyEmail: '',
   modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
@@ -516,7 +540,8 @@ function blankItem() {
     link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
-    previewImage: '', previewLoading: false, estimateSource: '', estimateNote: ''
+    previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
+    imageLinks: []
   };
 }
 
@@ -774,6 +799,30 @@ function cleanIso(value) {
 function cleanFilType(value) {
   return Object.prototype.hasOwnProperty.call(FIL_LABEL, value) ? value : 'black';
 }
+function cleanImageLinks(list) {
+  return (Array.isArray(list) ? list : []).map(u => safeImageUrl(cleanText(u, 500))).filter(Boolean).slice(0, 5);
+}
+function parseImageLinks(text) {
+  return cleanImageLinks([...new Set(String(text || '').split(/[\s,]+/))]);
+}
+
+// Thumbnails for customer photo links; falls back to a text link when the URL isn't a direct image.
+function renderPhotoLinks(links) {
+  const list = cleanImageLinks(links);
+  if (!list.length) return '';
+  return `<div class="photo-links">${list.map((u, n) => `
+    <a class="photo-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open photo ${n + 1}">
+      <img src="${esc(u)}" alt="Photo ${n + 1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('broken')" /><span>Photo ${n + 1} ↗</span>
+    </a>`).join('')}</div>`;
+}
+
+function updateImageLinks(i, text) {
+  if (!state.draftItems[i]) return;
+  state.draftItems[i].imageLinks = parseImageLinks(text);
+  const el = document.getElementById(`photo-previews-${i}`);
+  if (el) el.innerHTML = renderPhotoLinks(state.draftItems[i].imageLinks);
+}
+
 function cleanItem(it) {
   it = it && typeof it === 'object' ? it : {};
   return {
@@ -790,7 +839,8 @@ function cleanItem(it) {
     knownMinutes: cleanNumber(it.knownMinutes),
     knownFromLibrary: it.knownFromLibrary === true,
     previewImage: safeImageUrl(it.previewImage),
-    estimateSource: cleanText(it.estimateSource, 200)
+    estimateSource: cleanText(it.estimateSource, 200),
+    imageLinks: cleanImageLinks(it.imageLinks)
   };
 }
 
@@ -1382,10 +1432,11 @@ function renderClientApp() {
   return `
     <div class="nav">
       <button class="nav-tab ${state.clientTab==='submit'?'active':''}" onclick="setTab('submit')">Request a Quote</button>
+      <button class="nav-tab ${state.clientTab==='gallery'?'active':''}" onclick="setTab('gallery')">${esc(GALLERY_NAME)}</button>
       <button class="nav-tab ${state.clientTab==='jobs'?'active':''}" onclick="setTab('jobs')">My Requests${hasHistoryEmail && state.batches.length?`<span class="nav-badge">${state.batches.length}</span>`:''}</button>
     </div>
     <div class="main">
-      ${state.clientTab === 'submit' ? renderSubmitTab() : renderMyJobsTab()}
+      ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : renderMyJobsTab()}
     </div>`;
 }
 
@@ -1396,6 +1447,7 @@ function renderOwnerNav() {
     <div class="nav">
       <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
+      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
       <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
     </div>
@@ -1506,8 +1558,16 @@ function renderItemBlock(item, i) {
       </div>
       <div class="field" style="margin-bottom:8px;">
         <label>Description</label>
+        <div class="field-help">Custom design? Tell us what you need: what it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. The more detail you share, the better we can estimate it.</div>
         <textarea id="notes-${i}" placeholder="Describe what you want to make, the idea you have, or the inspiration you found"
           oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Photo links (optional)</label>
+        <div class="field-help">Have photos, sketches or examples? Paste links to them, one per line (up to 5). Google Photos, Imgur, Dropbox and similar work; make sure each link is shared publicly.</div>
+        <textarea id="photos-${i}" placeholder="https://..." style="min-height:52px;"
+          oninput="updateImageLinks(${i}, this.value)">${esc((item.imageLinks || []).join('\n'))}</textarea>
+        <div id="photo-previews-${i}">${renderPhotoLinks(item.imageLinks)}</div>
       </div>
       <div class="field" style="margin-bottom:8px;">
         <label>Model name</label>
@@ -1652,6 +1712,7 @@ function renderMyJobsTab() {
                 ${isWebUrl(it.link) ? `<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>` : it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
                 </div>
                 ${it.notes?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;">"${esc(it.notes)}"</div>`:''}
+                ${renderPhotoLinks(it.imageLinks)}
               </div>
               ${ip!==null
                 ? `<div style="text-align:right;flex-shrink:0;">
@@ -1693,7 +1754,9 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <div class="main owner-main">
-      ${state.ownerTab === 'library'
+      ${state.ownerTab === 'gallery'
+        ? renderOwnerGalleryPage()
+        : state.ownerTab === 'library'
         ? renderOwnerLibraryPage()
         : state.ownerTab === 'analytics'
           ? renderOwnerAnalyticsPage()
@@ -2139,6 +2202,7 @@ function renderOwnerItem(batchId, it, i) {
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
         ${it.estimateSource ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">Time and grams auto-filled from ${esc(it.estimateSource)}</div>` : ''}
+        ${renderPhotoLinks(it.imageLinks)}
         ${canUseKnown ? `
           <div class="price-preview-box" style="margin-top:10px;margin-bottom:0;">
             <div class="card-title" style="margin-bottom:6px;">Saved Model Match</div>
@@ -2185,7 +2249,11 @@ function renderOwnerItem(batchId, it, i) {
 
 // ── INTERACTIONS ──────────────────────────────────────────────────────────
 
-function setTab(tab) { state.clientTab = tab; render(); }
+function setTab(tab) {
+  state.clientTab = tab;
+  render();
+  if (tab === 'gallery') loadGallery().then(render);
+}
 function goHome() {
   state.clientTab = 'submit';
   if (state.view === 'owner') { showClientView(); return; }
@@ -2203,7 +2271,11 @@ async function showClientView() {
   if (state.historyEmail) await loadBatches(state.historyEmail);
   render();
 }
-function setOwnerTab(tab) { state.ownerTab = tab; render(); }
+function setOwnerTab(tab) {
+  state.ownerTab = tab;
+  render();
+  if (tab === 'gallery') loadGallery().then(render);
+}
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
   if (!state.ownerCalculator) state.ownerCalculator = blankOwnerCalculator();
@@ -2266,6 +2338,271 @@ async function lookupMyRequests() {
   state.historyEmail = email;
   persistClientHistoryEmail();
   await loadBatches(email);
+  render();
+}
+
+// ── GALLERY ───────────────────────────────────────────────────────────────
+// Finished work with prices. Stored in the gallery_items table (supabase/gallery.sql):
+// visitors see published items, the signed-in owner sees and edits everything.
+function cleanGalleryItem(row) {
+  const data = row && row.data && typeof row.data === 'object' ? row.data : {};
+  const id = String(row && row.id || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  return {
+    id,
+    published: row.published !== false,
+    sortOrder: parseInt(row.sort_order, 10) || 0,
+    title: cleanText(data.title, 120),
+    description: cleanText(data.description, 1000),
+    photos: cleanImageLinks(data.photos),
+    filType: cleanFilType(data.filType),
+    minutes: cleanNumber(data.minutes),
+    grams: cleanNumber(data.grams)
+  };
+}
+
+function galleryPrice(g) {
+  return calcPerPrint(g.minutes, g.grams, g.filType);
+}
+
+async function loadGallery() {
+  try {
+    const rows = await supaFetch('/gallery_items?select=id,data,published,sort_order&order=sort_order.asc,created_at.desc');
+    state.gallery = (rows || []).map(cleanGalleryItem).filter(Boolean);
+    state.galleryError = false;
+  } catch (e) {
+    console.error('Gallery load error:', e);
+    state.galleryError = true;
+  }
+  state.galleryLoaded = true;
+}
+
+function renderGalleryPhoto(g) {
+  const photo = g.photos[0];
+  return `<div class="gallery-photo" id="gphoto-${esc(g.id)}">${photo
+    ? `<img src="${esc(photo)}" alt="${esc(g.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('Photo unavailable'))" />`
+    : 'No photo yet'}</div>
+    ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map(u => `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onclick="showGalleryPhoto('${esc(g.id)}', this.src)" onerror="this.remove()" />`).join('')}</div>` : ''}`;
+}
+
+function showGalleryPhoto(id, src) {
+  const el = document.getElementById(`gphoto-${id}`);
+  const g = state.gallery.find(x => x.id === id);
+  if (el && g && g.photos.includes(src)) el.innerHTML = `<img src="${esc(src)}" alt="${esc(g.title)}" referrerpolicy="no-referrer" />`;
+}
+
+function renderGalleryTab() {
+  const items = state.gallery.filter(g => g.published);
+  const header = `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      </div>
+      <div>
+        <div class="section-title">${esc(GALLERY_NAME)}</div>
+        <div class="section-sub">Things we've made before, with prices. Tap "Request this" to add one to your request.</div>
+      </div>
+    </div>`;
+  if (!state.galleryLoaded) return `${header}<div class="empty-state"><div class="empty-state-text">Loading...</div></div>`;
+  if (!items.length) return `${header}<div class="empty-state"><div class="empty-state-icon">🖼️</div><div class="empty-state-text">Nothing here yet</div><div class="empty-state-sub">Check back soon, or request a custom print.</div></div>`;
+  return `${header}
+    <div class="gallery-grid">${items.map(g => {
+      const price = galleryPrice(g);
+      return `<div class="gallery-card">
+        ${renderGalleryPhoto(g)}
+        <div class="gallery-body">
+          <div class="gallery-title">${esc(g.title || 'Untitled')}</div>
+          ${g.description ? `<div class="gallery-desc">${esc(g.description)}</div>` : '<div class="gallery-desc"></div>'}
+          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each</span></div>` : ''}
+          <div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>
+          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>
+        </div>
+      </div>`;
+    }).join('')}</div>
+    <div class="field-help" style="margin-top:14px;">Prices are per item. We'll review your request and confirm before asking for payment.</div>`;
+}
+
+// Add a gallery piece to the customer's request form with its known print time and grams.
+function requestGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id && x.published);
+  if (!g) return;
+  const item = {
+    ...blankItem(),
+    name: g.title,
+    notes: `From the ${GALLERY_NAME} gallery.`,
+    filType: g.filType,
+    grams: g.grams,
+    knownMinutes: g.minutes,
+    knownFromLibrary: !!(g.minutes && g.grams),
+    knownPrompted: true,
+    previewImage: g.photos[0] || '',
+    estimateSource: `the ${GALLERY_NAME} gallery`
+  };
+  const first = state.draftItems[0];
+  const firstIsEmpty = state.draftItems.length === 1 && first && !first.name && !first.link && !first.notes;
+  if (firstIsEmpty) state.draftItems[0] = item;
+  else state.draftItems.push(item);
+  state.clientTab = 'submit';
+  render();
+  showAlert('submit-ok', `Added "${g.title}" to your request. Add your name and email, then submit.`, 'success');
+  document.getElementById('submit-ok')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function blankGalleryForm() {
+  return { id: '', title: '', description: '', photos: '', filType: 'black', hours: '', minutes: '', grams: '', published: true };
+}
+
+function renderGalleryFormPrice() {
+  const f = state.galleryForm || blankGalleryForm();
+  const minutes = totalPrintMinutes(f.hours, f.minutes);
+  const price = calcPerPrint(minutes, parseFloat(f.grams), f.filType);
+  return price !== null
+    ? `<div class="price-big">$${price.toFixed(2)}</div><div class="field-help">Customer price per item, using the same pricing as quotes (${fmtTime(minutes)}, ${parseFloat(f.grams).toFixed(1)}g ${esc(FIL_LABEL[f.filType])}).</div>`
+    : `<div class="field-help">Enter print time and grams to see the price customers will see.</div>`;
+}
+
+function updateGalleryForm(field, value) {
+  if (!state.galleryForm) state.galleryForm = blankGalleryForm();
+  state.galleryForm[field] = value;
+  const priceEl = document.getElementById('gallery-form-price');
+  if (priceEl) priceEl.innerHTML = renderGalleryFormPrice();
+  if (field === 'photos') {
+    const el = document.getElementById('gallery-form-photos');
+    if (el) el.innerHTML = renderPhotoLinks(parseImageLinks(value));
+  }
+}
+
+function renderOwnerGalleryPage() {
+  const f = state.galleryForm || blankGalleryForm();
+  const editing = !!f.id;
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        </div>
+        <div><div class="section-title">Gallery</div><div class="section-sub">Show finished work with prices on the "${esc(GALLERY_NAME)}" tab</div></div>
+      </div>
+      <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
+    </div>
+    ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
+    <div class="card">
+      <div class="card-title">${editing ? 'Edit Item' : 'Add Item'}</div>
+      <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
+      <div class="field"><label>Description</label><textarea id="gallery-desc" placeholder="Size, colors, what it's for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea></div>
+      <div class="field"><label>Photo links</label>
+        <div class="field-help">One per line, up to 5. The first is the main photo. Use direct, publicly shared image links.</div>
+        <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
+        <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
+      </div>
+      <div class="gallery-form-grid">
+        <div class="field"><label>Filament</label>
+          <select id="gallery-fil" onchange="updateGalleryForm('filType', this.value)">
+            ${Object.entries(FIL_LABEL).map(([v, label]) => `<option value="${v}" ${f.filType === v ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
+        <div class="field"><label>Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
+        <div class="field"><label>Filament (g)</label><input type="number" id="gallery-grams" min="0" step="0.1" value="${esc(f.grams)}" placeholder="85.4" oninput="updateGalleryForm('grams', this.value)" /></div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
+        <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(GALLERY_NAME)} tab
+      </label>
+      <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>
+      <div class="alert error" id="gallery-err"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btn-sm" type="button" id="gallery-save" onclick="saveGalleryItem()">${editing ? 'Save Changes' : 'Add to Gallery'}</button>
+        ${editing ? `<button class="btn-sm" type="button" onclick="state.galleryForm = null; render();">Cancel</button>` : ''}
+      </div>
+    </div>
+    ${state.gallery.length ? `<div class="gallery-grid">${state.gallery.map(g => {
+      const price = galleryPrice(g);
+      return `<div class="gallery-card ${g.published ? '' : 'hidden-item'}">
+        ${renderGalleryPhoto(g)}
+        <div class="gallery-body">
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}</div>
+          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
+            <button class="btn-sm" type="button" onclick="toggleGalleryItem('${esc(g.id)}')">${g.published ? 'Hide' : 'Show'}</button>
+            <button class="btn-sm danger" type="button" onclick="deleteGalleryItem('${esc(g.id)}')">Delete</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>` : (state.galleryLoaded && !state.galleryError ? `<div class="empty-state"><div class="empty-state-text">No gallery items yet</div><div class="empty-state-sub">Add your first finished project above.</div></div>` : '')}`;
+}
+
+function editGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  state.galleryForm = {
+    id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType,
+    hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
+    grams: g.grams ? String(g.grams) : '', published: g.published
+  };
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function writeGalleryItem(g) {
+  await supaFetch('/gallery_items', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      id: g.id,
+      published: g.published,
+      sort_order: g.sortOrder || 0,
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams }
+    })
+  });
+}
+
+async function saveGalleryItem() {
+  const f = state.galleryForm || blankGalleryForm();
+  if (!f.title.trim()) { showAlert('gallery-err', 'Please add a title.', 'error'); return; }
+  const existing = state.gallery.find(x => x.id === f.id);
+  const item = cleanGalleryItem({
+    id: f.id || `g${Date.now()}`,
+    published: f.published,
+    sort_order: existing ? existing.sortOrder : 0,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(f.photos), filType: f.filType,
+      minutes: totalPrintMinutes(f.hours, f.minutes), grams: parseFloat(f.grams) }
+  });
+  const btn = document.getElementById('gallery-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await writeGalleryItem(item);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = f.id ? 'Save Changes' : 'Add to Gallery'; }
+    showAlert('gallery-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
+    return;
+  }
+  state.galleryForm = null;
+  await loadGallery();
+  render();
+}
+
+async function toggleGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  try {
+    await writeGalleryItem({ ...g, published: !g.published });
+  } catch (e) {
+    alert("Couldn't save this change. If you were logged out, log in again and retry.");
+  }
+  await loadGallery();
+  render();
+}
+
+async function deleteGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g || !confirm(`Delete "${g.title || 'this item'}" from the gallery? This cannot be undone.`)) return;
+  try {
+    await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch (e) {
+    alert("Couldn't delete it. If you were logged out, log in again and retry.");
+  }
+  await loadGallery();
   render();
 }
 

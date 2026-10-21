@@ -271,6 +271,7 @@ function itemLines(rec, withPrices) {
     }
     if (it.link) lines.push(`   Link: ${it.link}`);
     if (it.notes) lines.push(`   Notes: ${it.notes}`);
+    (Array.isArray(it.imageLinks) ? it.imageLinks : []).slice(0, 5).forEach((u, n) => lines.push(`   Photo ${n + 1}: ${u}`));
     return lines.join('\n');
   });
 }
