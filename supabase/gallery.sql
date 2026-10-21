@@ -31,3 +31,30 @@ create policy "owner manages the gallery" on public.gallery_items
   for all to authenticated
   using ((auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com')
   with check ((auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
+
+-- Photo storage for gallery items. Photos are public to view; only the owner account can upload or delete.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('gallery', 'gallery', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+  set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "owner uploads gallery photos" on storage.objects;
+drop policy if exists "owner updates gallery photos" on storage.objects;
+drop policy if exists "owner deletes gallery photos" on storage.objects;
+drop policy if exists "owner reads gallery photos" on storage.objects;
+
+create policy "owner uploads gallery photos" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'gallery' and (auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
+
+create policy "owner updates gallery photos" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'gallery' and (auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
+
+create policy "owner deletes gallery photos" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'gallery' and (auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
+
+create policy "owner reads gallery photos" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'gallery' and (auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
