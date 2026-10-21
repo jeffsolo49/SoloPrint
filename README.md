@@ -5,7 +5,8 @@ Live at https://soloprint.vercel.app/
 
 ## How it's put together
 
-- `index.html`: the whole site (customer pages and the owner dashboard).
+- `index.html` (page shell and link-preview tags), `styles.css` (look) and `app.js` (everything the
+  customer pages and owner dashboard do).
 - **Hosting:** Vercel builds and publishes `main` automatically. Builds for `claude/*` work branches
   are turned off in `vercel.json` so they don't hold up the live site.
 - **Data and owner login:** Supabase. Database rules are in `supabase/security.sql` and

@@ -1,0 +1,3414 @@
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+// Product direction note:
+// Build changes as if SoloPrint may be sold to other small 3D print businesses.
+// Prefer configurable settings, reusable wording, and owner-agnostic behavior
+// over hardcoded assumptions tied to a single seller whenever practical.
+const OWNER_EMAIL     = 'jeffsolo49@gmail.com';
+const MAX_ITEMS       = 10;
+const SUPA_URL        = 'https://xpssamjjyarajtwtrwqx.supabase.co';
+const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
+
+// Filament pricing
+const FIL_RATE = { black: 0.024, white: 0.024, special: 0.034 };
+const FIL_LABEL = { black: 'Black', white: 'White', special: 'Special Request' };
+const AUSTIN_TIMEZONE = 'America/Chicago';
+const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
+const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
+const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
+const OWNER_SESSION_MS = 60 * 60 * 1000;
+// Name of the customer tab that shows finished work with prices.
+const GALLERY_NAME = 'Previous Design Work';
+// Your Venmo username without the @ (e.g. 'Jeff-Solo'). The "Pay with Venmo" button stays hidden while this is blank.
+const VENMO_USERNAME = 'Jeffrey-Sol-3';
+// Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
+const PREVIEW_API = 'https://api.microlink.io/?url=';
+// The SoloPrint Google Apps Script (email/Code.gs) also looks up print time and grams for MakerWorld links.
+const LOOKUP_API = 'https://script.google.com/macros/s/AKfycbxiOXN2535JUBDF_-Jvr7wF-X2rE5U34_BrC66Y8vEG5pFpokhBFImoHHQQZtJc3wGWIA/exec';
+const NOTIF_READ_KEY = 'soloprint_notif_read_v1';
+const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
+const NOTIF_PREFS_KEY = 'soloprint_notif_prefs_v1';
+const ORDER_PHASES = [
+  { id: 'estimate', label: 'Estimate Phase' },
+  { id: 'quote_sent', label: 'Quote Sent' },
+  { id: 'order_received', label: 'Order Received' },
+  { id: 'production', label: 'In Production' },
+  { id: 'delivered', label: 'Delivered' }
+];
+const PAYMENT_PHASES = [
+  { id: 'unpaid', label: 'Unpaid' },
+  { id: 'payment_requested', label: 'Payment Requested' },
+  { id: 'payment_recieved', label: 'Payment Recieved' }
+];
+// ──────────────────────────────────────────────────────────────────────────
+
+function blankOwnerCalculator() {
+  return {
+    link: '',
+    name: '',
+    hours: '',
+    minutes: '',
+    grams: '',
+    qty: 1,
+    filType: 'black',
+    lastResult: null
+  };
+}
+
+let state = {
+  view: 'client', ownerUnlocked: false,
+  batches: [], clientTab: 'submit', ownerTab: 'dashboard',
+  gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null, galleryOpen: '',
+  draftItems: [blankItem()],
+  clientName: '', clientEmail: '', historyEmail: '',
+  modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
+  synced: false, loading: true
+};
+
+let libraryAutoSaveTimer = null;
+let librarySaveState = 'saved';
+
+function blankItem() {
+  return {
+    link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
+    printHours: '', printMinutes: '',
+    knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
+    previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
+    imageLinks: []
+  };
+}
+
+// ── SUPABASE ──────────────────────────────────────────────────────────────
+// Owner requests carry the signed-in owner's token; everyone else uses the public key,
+// which the database rules (supabase/security.sql) limit to the customer RPCs.
+async function supaFetch(path, opts = {}) {
+  const ownerToken = state.ownerUnlocked ? getOwnerToken() : '';
+  const res = await fetch(`${SUPA_URL}/rest/v1${path}`, {
+    ...opts,
+    headers: {
+      'apikey': SUPA_KEY,
+      'Authorization': `Bearer ${ownerToken || SUPA_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...(opts.headers || {})
+    }
+  });
+  if (res.status === 401 && ownerToken) {
+    clearOwnerSession();
+    state.ownerUnlocked = false;
+    render();
+  }
+  if (!res.ok) throw new Error(`Supabase error ${res.status}`);
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// The owner dashboard loads open orders plus the last 90 days; Sales Data and "Load all" fetch everything.
+const RECENT_ORDER_DAYS = 90;
+function ownerJobsQuery() {
+  if (state.ownerHistoryAll) return '/jobs?order=created_at.asc';
+  const since = new Date(Date.now() - RECENT_ORDER_DAYS * 864e5).toISOString();
+  return `/jobs?or=(data->>phase.is.null,data->>phase.neq.delivered,created_at.gte.${encodeURIComponent(since)})&order=created_at.asc`;
+}
+
+async function loadAllOrders() {
+  state.ownerHistoryAll = true;
+  await loadBatches();
+  render();
+}
+
+async function loadBatches(filterEmail = '') {
+  try {
+    const email = String(filterEmail || '').trim().toLowerCase();
+    const rows = email
+      ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
+      : await supaFetch(ownerJobsQuery());
+    state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
+    state.synced = true;
+  } catch(e) {
+    console.error('Load error:', e);
+    state.synced = false;
+  }
+}
+
+async function upsertBatch(batch) {
+  try {
+    const normalized = normalizeBatch(batch);
+    await supaFetch('/jobs', {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({ id: normalized.id, data: normalized })
+    });
+    return true;
+  } catch(e) {
+    console.error('Upsert error:', e);
+    alert("Couldn't save this change to the database. If you were logged out, log in again and retry.");
+    return false;
+  }
+}
+
+// Customers can only create new requests; returns false if the save failed.
+async function submitBatchRemote(batch) {
+  try {
+    await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job: normalizeBatch(batch) }) });
+    return true;
+  } catch (e) {
+    console.error('Submit error:', e);
+    return false;
+  }
+}
+
+async function deleteBatchRemote(id) {
+  try { await supaFetch(`/jobs?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch(e) { console.error(e); }
+}
+
+
+// ── PRICING ───────────────────────────────────────────────────────────────
+function calcPerPrint(mins, grams, filType) {
+  if (!mins || !grams) return null;
+  return 2 + mins * 0.024 + grams * (FIL_RATE[filType] || 0.024);
+}
+function calcTotal(mins, grams, filType, qty) {
+  const pp = calcPerPrint(mins, grams, filType);
+  return pp !== null ? pp * qty : null;
+}
+function fmtTime(m) {
+  const h = Math.floor(m / 60), mm = Math.round(m % 60);
+  return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
+}
+function fmtMinutesWithHours(m) {
+  if (!m && m !== 0) return '';
+  const mins = Number(m);
+  if (!Number.isFinite(mins)) return '';
+  return `${mins} min (${fmtTime(mins)})`;
+}
+function hoursFromMinutes(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return String(Math.floor(Math.round(value) / 60));
+}
+function minuteRemainder(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return String(Math.round(value) % 60);
+}
+function minutesFromHours(hours) {
+  const value = Number(hours);
+  return Number.isFinite(value) && value > 0 ? Math.round(value * 60) : null;
+}
+function totalPrintMinutes(hours, minutes) {
+  const hourValue = Number(hours) || 0;
+  const minuteValue = Number(minutes) || 0;
+  const total = Math.round(hourValue * 60 + minuteValue);
+  return total > 0 ? total : null;
+}
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function phaseLabel(phaseId) {
+  return (ORDER_PHASES.find(p => p.id === phaseId) || ORDER_PHASES[0]).label;
+}
+
+function phaseIndex(phaseId) {
+  return ORDER_PHASES.findIndex(p => p.id === phaseId);
+}
+
+// Customer-facing wording for the order tracker on "My Requests".
+const TRACKER_STEPS = {
+  estimate:       { label: 'Request Received', detail: "We've received your request and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs." },
+  quote_sent:     { label: 'Quote Ready',      detail: "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead." },
+  order_received: { label: 'Order Confirmed',  detail: "Your order is confirmed and queued for the printer." },
+  production:     { label: 'Printing',         detail: 'Your parts are on the printer right now.' },
+  delivered:      { label: 'Delivered',        detail: 'Your order is complete. Enjoy!' }
+};
+
+function stampPhase(batch, phase) {
+  batch.phaseHistory = { ...(batch.phaseHistory || {}) };
+  if (!batch.phaseHistory[phase]) batch.phaseHistory[phase] = new Date().toISOString();
+}
+
+function batchTotal(batch) {
+  if (!isBatchQuoteReady(batch)) return null;
+  return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0);
+}
+
+function venmoPayUrl(batch, total) {
+  const note = `SoloPrint order ${batch.id}: ${orderTitle(batch)}`.slice(0, 140);
+  return `https://venmo.com/${encodeURIComponent(VENMO_USERNAME)}?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(note)}`;
+}
+
+// Next step the customer can take on an order: approve the quote, then pay once the owner confirms.
+function renderCustomerOrderAction(batch) {
+  const phase = batch.phase || 'estimate';
+  const total = batchTotal(batch);
+  if (phase === 'quote_sent') {
+    if (batch.customerApprovedAt) {
+      return `<div class="order-action"><strong>Thanks!</strong> We got your go-ahead and will confirm your order soon.</div>`;
+    }
+    return `<div class="order-action">
+      <button class="btn-primary" id="customer-approve-${esc(batch.id)}" type="button" onclick="customerApproveQuote('${esc(batch.id)}')">Looks good, I'd like to order</button>
+      <div class="order-action-sub">Nothing is charged yet. We'll confirm we can make your order before asking for payment.</div>
+    </div>`;
+  }
+  if (phaseIndex(phase) >= phaseIndex('order_received')) {
+    if (batch.paymentStatus === 'payment_recieved') {
+      return `<div class="order-action"><strong>Payment received.</strong> Thank you!</div>`;
+    }
+    if (VENMO_USERNAME && total) {
+      return `<div class="order-action">
+        <a class="btn-venmo" href="${esc(venmoPayUrl(batch, total))}" target="_blank" rel="noopener noreferrer">Pay $${total.toFixed(2)} with Venmo</a>
+        <div class="order-action-sub">Opens Venmo with the amount and order note filled in. We'll mark your payment received once it comes through.</div>
+      </div>`;
+    }
+  }
+  return '';
+}
+
+async function customerApproveQuote(batchId) {
+  const btn = document.getElementById(`customer-approve-${batchId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  await loadBatches(state.historyEmail);
+  const b = state.batches.find(x => x.id === batchId);
+  if (b && b.phase === 'quote_sent' && !b.customerApprovedAt) {
+    try {
+      await supaFetch('/rpc/customer_approve_quote', { method: 'POST', body: JSON.stringify({ job_id: b.id, email: state.historyEmail }) });
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = "Looks good, I'd like to order"; }
+      alert("We couldn't send your approval. Please try again in a moment.");
+      return;
+    }
+    b.customerApprovedAt = new Date().toISOString();
+  }
+  render();
+}
+
+function renderOrderTracker(batch) {
+  const phase = batch.phase || 'estimate';
+  const currentIdx = Math.max(0, phaseIndex(phase));
+  const history = batch.phaseHistory || {};
+  const shortTime = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const steps = ORDER_PHASES.map((p, idx) => {
+    const cls = idx < currentIdx || phase === 'delivered' ? 'done' : idx === currentIdx ? 'current' : '';
+    const at = history[p.id] || (p.id === 'estimate' ? batch.createdAt : null);
+    return `<div class="tracker-step ${cls}">
+      <div class="tracker-dot">${cls === 'done' ? '✓' : idx + 1}</div>
+      <div class="tracker-label">${TRACKER_STEPS[p.id].label}</div>
+      <div class="tracker-time">${cls && at ? shortTime(at) : ''}</div>
+    </div>`;
+  }).join('');
+  const deliveryInfo = [batch.deliveryDate && `Delivery: ${esc(batch.deliveryDate)}`, batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`].filter(Boolean).join(' · ');
+  return `<div class="tracker">${steps}</div>
+    <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    ${renderCustomerOrderAction(batch)}`;
+}
+
+function canAdvanceToPhase(currentPhase, nextPhase) {
+  const currentIdx = phaseIndex(currentPhase || 'estimate');
+  const nextIdx = phaseIndex(nextPhase || 'estimate');
+  if (currentIdx < 0 || nextIdx < 0) return false;
+  // Enforce sequential flow: stay on current phase or move exactly one step forward.
+  return nextIdx === currentIdx || nextIdx === currentIdx + 1;
+}
+
+function paymentLabel(paymentStatus) {
+  return (PAYMENT_PHASES.find(p => p.id === paymentStatus) || PAYMENT_PHASES[0]).label;
+}
+
+function paymentIndex(paymentStatus) {
+  return PAYMENT_PHASES.findIndex(p => p.id === (paymentStatus || 'unpaid'));
+}
+
+function canAdvancePayment(currentStatus, nextStatus) {
+  const currentIdx = paymentIndex(currentStatus);
+  const nextIdx = paymentIndex(nextStatus);
+  if (currentIdx < 0 || nextIdx < 0) return false;
+  // Enforce sequential flow: stay on current status or move exactly one step forward.
+  return nextIdx === currentIdx || nextIdx === currentIdx + 1;
+}
+
+function isBatchQuoteReady(batch) {
+  return !!(batch && Array.isArray(batch.items) && batch.items.length && batch.items.every(it => it.minutes && it.grams));
+}
+
+// Orders come from a shared database, so coerce every field to the shape the UI
+// expects before anything renders it (ids and filament types end up in HTML attributes).
+function cleanText(value, max = 2000) {
+  return typeof value === 'string' ? value.slice(0, max) : (typeof value === 'number' ? String(value) : '');
+}
+function cleanNumber(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function cleanIso(value) {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : '';
+}
+function cleanFilType(value) {
+  return Object.prototype.hasOwnProperty.call(FIL_LABEL, value) ? value : 'black';
+}
+function cleanImageLinks(list) {
+  return (Array.isArray(list) ? list : []).map(u => safeImageUrl(cleanText(u, 500))).filter(Boolean).slice(0, 5);
+}
+function parseImageLinks(text) {
+  return cleanImageLinks([...new Set(String(text || '').split(/[\s,]+/))]);
+}
+
+// Thumbnails for customer photo links; falls back to a text link when the URL isn't a direct image.
+function renderPhotoLinks(links) {
+  const list = cleanImageLinks(links);
+  if (!list.length) return '';
+  return `<div class="photo-links">${list.map((u, n) => `
+    <a class="photo-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open photo ${n + 1}">
+      <img src="${esc(u)}" alt="Photo ${n + 1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('broken')" /><span>Photo ${n + 1} ↗</span>
+    </a>`).join('')}</div>`;
+}
+
+function updateImageLinks(i, text) {
+  if (!state.draftItems[i]) return;
+  state.draftItems[i].imageLinks = parseImageLinks(text);
+  const el = document.getElementById(`photo-previews-${i}`);
+  if (el) el.innerHTML = renderPhotoLinks(state.draftItems[i].imageLinks);
+}
+
+function cleanItem(it) {
+  it = it && typeof it === 'object' ? it : {};
+  return {
+    ...blankItem(),
+    link: cleanText(it.link, 500),
+    name: cleanText(it.name, 200),
+    notes: cleanText(it.notes),
+    filType: cleanFilType(it.filType),
+    qty: Math.max(1, Math.min(999, parseInt(it.qty, 10) || 1)),
+    minutes: cleanNumber(it.minutes),
+    grams: cleanNumber(it.grams),
+    printHours: cleanText(it.printHours, 10),
+    printMinutes: cleanText(it.printMinutes, 10),
+    knownMinutes: cleanNumber(it.knownMinutes),
+    knownFromLibrary: it.knownFromLibrary === true,
+    previewImage: safeImageUrl(it.previewImage),
+    estimateSource: cleanText(it.estimateSource, 200),
+    imageLinks: cleanImageLinks(it.imageLinks)
+  };
+}
+
+function normalizeBatch(batch) {
+  if (!batch || typeof batch !== 'object') return null;
+  const id = String(batch.id ?? '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  const phaseHistory = {};
+  if (batch.phaseHistory && typeof batch.phaseHistory === 'object') {
+    ORDER_PHASES.forEach(p => { const at = cleanIso(batch.phaseHistory[p.id]); if (at) phaseHistory[p.id] = at; });
+  }
+  batch = {
+    ...batch,
+    id,
+    clientName: cleanText(batch.clientName, 120),
+    clientEmail: cleanText(batch.clientEmail, 200),
+    createdAt: cleanIso(batch.createdAt) || new Date(0).toISOString(),
+    customerApprovedAt: cleanIso(batch.customerApprovedAt),
+    deliveryNotes: cleanText(batch.deliveryNotes),
+    deliveryTracking: cleanText(batch.deliveryTracking, 200),
+    deliveryDate: cleanText(batch.deliveryDate, 100),
+    items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
+    phaseHistory
+  };
+  const legacyStatus = batch.status;
+  let phase = batch.phase;
+  let paymentStatus = batch.paymentStatus;
+  if (!phase) {
+    phase = legacyStatus === 'quoted' ? 'quote_sent' : 'estimate';
+  }
+  if (!ORDER_PHASES.find(p => p.id === phase)) phase = 'estimate';
+  if (paymentStatus === 'partial' || paymentStatus === 'paid') paymentStatus = 'payment_recieved';
+  if (!PAYMENT_PHASES.find(p => p.id === paymentStatus)) paymentStatus = 'unpaid';
+  return {
+    ...batch,
+    phase,
+    paymentStatus
+  };
+}
+
+function orderTitle(batch) {
+  if (!batch || !Array.isArray(batch.items) || !batch.items.length) return 'Untitled request';
+  return batch.items.map(it => it.name || 'Unnamed').join(', ');
+}
+
+function normalizeModelKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isOriginalDesignText(value) {
+  const s = normalizeModelKey(value);
+  return !!s && /(original\s*design|custom\s*design|my\s*design|own\s*design|designed\s*by\s*me|self\s*designed)/i.test(s);
+}
+
+function isSupportedModelLink(value) {
+  const s = normalizeModelKey(value);
+  return !!s && /(makerworld\.com|thingiverse\.com|printables\.com)/i.test(s);
+}
+
+function isDirectModelReference(value) {
+  return isSupportedModelLink(value) || isOriginalDesignText(value);
+}
+
+function isWebUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+function titleCaseWords(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function modelKeyFromItem(item) {
+  const linkKey = normalizeModelKey(item.link);
+  if (isSupportedModelLink(linkKey)) return `link:${linkKey}`;
+  const nameKey = normalizeModelKey(item.name);
+  return nameKey ? `name:${nameKey}` : '';
+}
+
+function loadModelLibrary() {
+  try {
+    const raw = localStorage.getItem(MODEL_LIBRARY_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    state.modelLibrary = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    state.modelLibrary = {};
+  }
+}
+
+// Saved Models live in Supabase (model_library table, supabase/library-and-backups.sql) so every device
+// and every customer's browser sees them. localStorage is a cache and a fallback if Supabase is unreachable.
+const LIBRARY_MIGRATED_KEY = 'soloprint_model_library_uploaded_v1';
+let libraryRemote = null;      // key -> JSON of each entry as last seen in Supabase; null until loaded
+let librarySyncTimer = null;
+
+function persistModelLibrary() {
+  try { localStorage.setItem(MODEL_LIBRARY_KEY, JSON.stringify(state.modelLibrary)); } catch (e) {}
+  if (state.ownerUnlocked && libraryRemote) {
+    clearTimeout(librarySyncTimer);
+    librarySyncTimer = setTimeout(syncModelLibrary, 600);
+  }
+}
+
+function cleanLibraryEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const minutes = cleanNumber(e.minutes), grams = cleanNumber(e.grams);
+  if (!minutes || !grams) return null;
+  return { link: cleanText(e.link, 500), name: cleanText(e.name, 200), minutes, grams, filType: cleanFilType(e.filType), updatedAt: cleanIso(e.updatedAt) };
+}
+
+async function loadRemoteLibrary() {
+  let rows;
+  try {
+    rows = await supaFetch('/model_library?select=key,data');
+  } catch (e) {
+    return; // table not set up yet or offline: keep the local copy
+  }
+  const remote = {};
+  (rows || []).forEach(r => {
+    const entry = cleanLibraryEntry(r && r.data);
+    if (entry && typeof r.key === 'string' && r.key.length <= 600) remote[r.key] = entry;
+  });
+  libraryRemote = Object.fromEntries(Object.entries(remote).map(([k, v]) => [k, JSON.stringify(v)]));
+  let migrated = false;
+  try { migrated = localStorage.getItem(LIBRARY_MIGRATED_KEY) === '1'; } catch (e) {}
+  if (state.ownerUnlocked && !migrated) {
+    // First time on this device: upload anything only saved in this browser, keeping the newer copy of each.
+    Object.entries(state.modelLibrary || {}).forEach(([k, v]) => {
+      const local = cleanLibraryEntry(v);
+      if (local && (!remote[k] || (local.updatedAt || '') > (remote[k].updatedAt || ''))) remote[k] = local;
+    });
+    state.modelLibrary = remote;
+    persistModelLibrary();
+    await syncModelLibrary();
+    try { localStorage.setItem(LIBRARY_MIGRATED_KEY, '1'); } catch (e) {}
+  } else {
+    state.modelLibrary = remote;
+    try { localStorage.setItem(MODEL_LIBRARY_KEY, JSON.stringify(remote)); } catch (e) {}
+  }
+}
+
+// Push the owner's changes: upsert entries that differ from Supabase, delete ones that were removed.
+async function syncModelLibrary() {
+  if (!state.ownerUnlocked || !libraryRemote) return;
+  const upserts = [];
+  Object.entries(state.modelLibrary || {}).forEach(([key, v]) => {
+    const entry = cleanLibraryEntry(v);
+    if (entry && libraryRemote[key] !== JSON.stringify(entry)) upserts.push({ key, data: entry });
+  });
+  const deletes = Object.keys(libraryRemote).filter(k => !state.modelLibrary[k]);
+  try {
+    if (upserts.length) {
+      await supaFetch('/model_library', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(upserts) });
+      upserts.forEach(u => { libraryRemote[u.key] = JSON.stringify(u.data); });
+    }
+    for (const key of deletes) {
+      await supaFetch(`/model_library?key=eq.${encodeURIComponent(key)}`, { method: 'DELETE' });
+      delete libraryRemote[key];
+    }
+  } catch (e) {
+    console.error('Saved model sync error:', e);
+  }
+}
+
+function loadClientHistoryEmail() {
+  try {
+    state.historyEmail = localStorage.getItem(CLIENT_HISTORY_EMAIL_KEY) || '';
+  } catch (e) {
+    state.historyEmail = '';
+  }
+}
+
+function persistClientHistoryEmail() {
+  try {
+    localStorage.setItem(CLIENT_HISTORY_EMAIL_KEY, state.historyEmail || '');
+  } catch (e) {}
+}
+
+function persistOwnerSession(session) {
+  const expiresInMs = Math.min(OWNER_SESSION_MS, (Number(session.expires_in) || 3600) * 1000);
+  ownerSession = { token: session.access_token, expiresAt: Date.now() + expiresInMs };
+  try {
+    localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify(ownerSession));
+  } catch (e) {}
+}
+
+let ownerSession = null;
+function getOwnerToken() {
+  return ownerSession && ownerSession.expiresAt > Date.now() ? ownerSession.token : '';
+}
+
+function clearOwnerSession() {
+  ownerSession = null;
+  try { localStorage.removeItem(OWNER_SESSION_KEY); } catch (e) {}
+}
+
+function hasValidOwnerSession() {
+  try {
+    const raw = localStorage.getItem(OWNER_SESSION_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const valid = !!(parsed && typeof parsed.token === 'string' && Number(parsed.expiresAt) > Date.now());
+    if (!valid) { clearOwnerSession(); return false; }
+    ownerSession = { token: parsed.token, expiresAt: Number(parsed.expiresAt) };
+    return true;
+  } catch (e) {
+    clearOwnerSession();
+    return false;
+  }
+}
+
+function getKnownEstimate(item) {
+  if (!item) return null;
+  const linkKey = normalizeModelKey(item.link);
+  if (linkKey && linkKey.includes('makerworld.com')) {
+    const linkMatch = state.modelLibrary[`link:${linkKey}`];
+    if (linkMatch) return linkMatch;
+  }
+  const nameKey = normalizeModelKey(item.name);
+  if (nameKey) {
+    const nameMatch = state.modelLibrary[`name:${nameKey}`];
+    if (nameMatch) return nameMatch;
+  }
+  const key = modelKeyFromItem(item);
+  return key ? (state.modelLibrary[key] || null) : null;
+}
+
+function saveKnownEstimate(item) {
+  const key = modelKeyFromItem(item);
+  if (!key || !item.minutes || !item.grams) return;
+  state.modelLibrary[key] = {
+    name: item.name || '',
+    link: item.link || '',
+    minutes: item.minutes,
+    grams: item.grams,
+    filType: item.filType || 'black',
+    updatedAt: new Date().toISOString()
+  };
+  persistModelLibrary();
+}
+
+function saveModelLibraryEntry(entry) {
+  const link = String(entry?.link || '').trim();
+  const name = String(entry?.name || '').trim();
+  const minutes = parseFloat(entry?.minutes);
+  const grams = parseFloat(entry?.grams);
+  const filType = cleanFilType(entry?.filType);
+
+  const key = modelKeyFromItem({ link, name });
+  if (!key) return { ok: false, error: 'Please enter a model link or model name.' };
+  if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(grams) || grams <= 0) {
+    return { ok: false, error: 'Please enter valid minutes and grams.' };
+  }
+
+  state.modelLibrary[key] = {
+    link,
+    name,
+    minutes,
+    grams,
+    filType,
+    updatedAt: new Date().toISOString()
+  };
+  persistModelLibrary();
+  return { ok: true, key, entry: state.modelLibrary[key] };
+}
+
+function sortedLibraryEntries() {
+  return Object.entries(state.modelLibrary || {})
+    .sort((a, b) => {
+      const aName = String(a[1]?.name || a[1]?.link || a[0] || '').toLowerCase();
+      const bName = String(b[1]?.name || b[1]?.link || b[0] || '').toLowerCase();
+      return aName.localeCompare(bName, 'en', { sensitivity: 'base' });
+    });
+}
+
+function isSoldPhase(phase) {
+  return ['order_received', 'production', 'delivered'].includes(phase || '');
+}
+
+function buildModelAnalyticsRows() {
+  const rowsByKey = {};
+
+  Object.entries(state.modelLibrary || {}).forEach(([key, entry]) => {
+    rowsByKey[key] = {
+      key,
+      modelName: entry?.name || '',
+      modelLink: entry?.link || '',
+      quoteRequests: 0,
+      quantityOrdered: 0,
+      moneySold: 0,
+      differentCustomers: new Set()
+    };
+  });
+
+  (state.batches || []).forEach(batch => {
+    (batch.items || []).forEach(item => {
+      const key = modelKeyFromItem(item) || `fallback:${normalizeModelKey(item.name || item.link || '')}`;
+      if (!rowsByKey[key]) {
+        rowsByKey[key] = {
+          key,
+          modelName: item.name || '',
+          modelLink: item.link || '',
+          quoteRequests: 0,
+          quantityOrdered: 0,
+          moneySold: 0,
+          differentCustomers: new Set()
+        };
+      }
+
+      const row = rowsByKey[key];
+      if (!row.modelName && item.name) row.modelName = item.name;
+      if (!row.modelLink && item.link) row.modelLink = item.link;
+
+      row.quoteRequests += 1;
+      if (batch.clientEmail) row.differentCustomers.add(String(batch.clientEmail).toLowerCase());
+
+      if (isSoldPhase(batch.phase)) {
+        row.quantityOrdered += Number(item.qty) || 0;
+        const total = calcTotal(item.minutes, item.grams, item.filType, item.qty);
+        if (total !== null) row.moneySold += total;
+      }
+    });
+  });
+
+  return Object.values(rowsByKey)
+    .map(row => ({ ...row, differentCustomers: row.differentCustomers.size }))
+    .sort((a, b) =>
+      String(a.modelName || a.modelLink || a.key).localeCompare(
+        String(b.modelName || b.modelLink || b.key),
+        'en',
+        { sensitivity: 'base' }
+      )
+    );
+}
+
+function filteredModelAnalyticsRows() {
+  const query = String(state.analyticsQuery || '').trim().toLowerCase();
+  const rows = buildModelAnalyticsRows();
+  if (!query) return rows;
+  return rows.filter(row =>
+    String(row.modelName || '').toLowerCase().includes(query) ||
+    String(row.modelLink || '').toLowerCase().includes(query)
+  );
+}
+
+function exportModelAnalyticsCSV() {
+  const rows = filteredModelAnalyticsRows();
+  const escCsv = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = ['Model Name', 'Model', 'Quote Requests', 'Orders', 'Money Sold', 'Customers'];
+  const csv = [
+    header.join(','),
+    ...rows.map(row => [
+      escCsv(row.modelName),
+      escCsv(row.modelLink),
+      row.quoteRequests,
+      row.quantityOrdered,
+      row.moneySold.toFixed(2),
+      row.differentCustomers
+    ].join(','))
+  ].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'soloprint-model-analytics.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function normLibHeader(h) {
+  return String(h || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseCSVLine(line) {
+  const out = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { out.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+function parseCSVText(text) {
+  let t = String(text || '');
+  if (t.charCodeAt(0) === 0xfeff) t = t.slice(1);
+  const lines = t.split(/\r?\n/).filter(l => l.length);
+  return lines.map(parseCSVLine);
+}
+
+function findLibColumnIndex(headers, patterns) {
+  const nh = headers.map(normLibHeader);
+  for (const pat of patterns) {
+    const p = normLibHeader(pat);
+    if (!p) continue;
+    for (let i = 0; i < nh.length; i++) {
+      if (nh[i] === p) return i;
+    }
+  }
+  for (const pat of patterns) {
+    const p = normLibHeader(pat);
+    if (!p || p.length < 2) continue;
+    for (let i = 0; i < nh.length; i++) {
+      if (nh[i].includes(p)) return i;
+    }
+  }
+  return -1;
+}
+
+function resolveFilamentFromImport(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return 'black';
+  if (s.includes('special') || s === 's') return 'special';
+  if (s.includes('white') || s === 'w') return 'white';
+  if (s.includes('black') || s === 'b') return 'black';
+  return 'black';
+}
+
+function importRowsIntoLibrary(rows) {
+  const errors = [];
+  if (!rows || rows.length < 2) {
+    return { imported: 0, skipped: 0, errors: ['Need a header row and at least one data row.'] };
+  }
+  const headers = rows[0].map(c => String(c || ''));
+  const li = findLibColumnIndex(headers, ['model link', 'makerworld link', 'url', 'link', 'makerworld']);
+  const ni = findLibColumnIndex(headers, ['model name', 'name', 'title']);
+  const mi = findLibColumnIndex(headers, ['minutes', 'min', 'print time (min)', 'print time', 'time (min)']);
+  const gi = findLibColumnIndex(headers, ['grams', 'gram', 'weight', 'filament g', 'filament (g)', 'est grams', 'est. grams', 'g']);
+  const fi = findLibColumnIndex(headers, ['filament type', 'fil type', 'material']);
+
+  if (li < 0 && ni < 0) {
+    return { imported: 0, skipped: 0, errors: ['Missing a Model Link or Model Name column.'] };
+  }
+  if (mi < 0 || gi < 0) {
+    return { imported: 0, skipped: 0, errors: ['Missing Minutes and/or Grams columns.'] };
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row.length) { skipped++; continue; }
+    const link = li >= 0 ? String(row[li] ?? '').trim() : '';
+    const name = ni >= 0 ? String(row[ni] ?? '').trim() : '';
+    const minutes = parseFloat(String(row[mi] ?? '').replace(/,/g, '').trim());
+    const grams = parseFloat(String(row[gi] ?? '').replace(/,/g, '').trim());
+    const filRaw = fi >= 0 ? row[fi] : '';
+    const filType = resolveFilamentFromImport(filRaw);
+
+    const key = modelKeyFromItem({ link, name });
+    if (!key) {
+      skipped++;
+      errors.push(`Row ${r + 1}: need a model link or model name.`);
+      continue;
+    }
+    if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(grams) || grams <= 0) {
+      skipped++;
+      errors.push(`Row ${r + 1}: invalid minutes or grams.`);
+      continue;
+    }
+
+    state.modelLibrary[key] = {
+      link,
+      name,
+      minutes,
+      grams,
+      filType,
+      updatedAt: new Date().toISOString()
+    };
+    imported++;
+  }
+  persistModelLibrary();
+  return { imported, skipped, errors };
+}
+
+function downloadLibraryTemplate() {
+  const csv = 'Model Link,Model Name,Minutes,Grams,Filament Type\n' +
+    'https://makerworld.com/en/models/123-example,,120,45.5,black\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'soloprint-model-library-template.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importModelLibrarySpreadsheet(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if (input) input.value = '';
+  if (!file) return;
+
+  const lower = file.name.toLowerCase();
+  const reader = new FileReader();
+  reader.onerror = () => alert('Could not read that file.');
+  reader.onload = (ev) => {
+    try {
+      let rows;
+      if (lower.endsWith('.csv')) {
+        rows = parseCSVText(ev.target.result);
+      } else if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        if (typeof XLSX === 'undefined') {
+          alert('Excel support did not load. Save as CSV or refresh the page.');
+          return;
+        }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+      } else {
+        alert('Please upload a .csv or .xlsx file.');
+        return;
+      }
+
+      const res = importRowsIntoLibrary(rows);
+      let msg = `Imported ${res.imported} row(s). Skipped ${res.skipped}.`;
+      if (res.errors.length) msg += '\n\n' + res.errors.slice(0, 12).join('\n');
+      alert(msg);
+      render();
+    } catch (err) {
+      alert('Import failed: ' + (err && err.message ? err.message : err));
+    }
+  };
+
+  if (lower.endsWith('.csv')) reader.readAsText(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+function maybeOfferKnownEstimate(i) {
+  const draft = state.draftItems[i];
+  if (!draft || draft.knownFromLibrary || draft.knownPrompted) return;
+  const known = getKnownEstimate(draft);
+  if (!known) return;
+  draft.knownPrompted = true;
+  const accepted = window.confirm('Good news: we have printed this model before, so we can fill in an automated estimate of its print time and filament. This is not a final price; we will review your request and confirm your quote. Use the saved estimate?');
+  if (!accepted) return;
+  draft.knownFromLibrary = true;
+  draft.knownMinutes = known.minutes;
+  draft.grams = known.grams;
+  if (!draft.name && known.name) draft.name = known.name;
+  if (!draft.filType && known.filType) draft.filType = known.filType;
+  render();
+  showAlert('submit-ok', `Saved estimate filled in for "${draft.name || 'model'}". It's an automated estimate; we'll confirm your quote after reviewing your request.`, 'success');
+}
+
+function formatAustinTime(iso) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: AUSTIN_TIMEZONE,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(new Date(iso));
+}
+
+/** Last write time of this HTML document (browser). Updates whenever index.html is saved or the server sends a new Last-Modified. */
+function getBuildDate() {
+  const d = new Date(document.lastModified);
+  if (!Number.isFinite(d.getTime()) || d.getTime() === 0) return null;
+  return d;
+}
+
+/**
+ * Auto build id from file mtime (milliseconds). Changes on every save that updates the file timestamp.
+ * Same instant as the time shown — both come from document.lastModified.
+ */
+function formatBuildBadge() {
+  const d = getBuildDate();
+  if (!d) return '—';
+  const buildId = `b${d.getTime()}`;
+  const when = `${formatAustinTime(d.toISOString())} CT`;
+  return `${buildId} · ${when}`;
+}
+
+// ── URL PARSING ───────────────────────────────────────────────────────────
+function isNumericOnlySlug(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const seg = parts.find(p => /^\d/.test(p)) || parts[parts.length - 1];
+    return /^\d+$/.test(seg);
+  } catch(e) { return false; }
+}
+
+function nameFromUrl(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const slug = parts.find(p => /^\d+-[a-z]/i.test(p));
+    if (!slug) return null;
+    return slug
+      .replace(/^\d+-/, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim();
+  } catch(e) { return null; }
+}
+
+async function fetchNameFromServer(url) {
+  // Netlify function removed; without a backend proxy, cross-origin fetches can fail.
+  // Keep this async helper so existing flows still work and users can manually fill names.
+  return null;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+async function init() {
+  loadModelLibrary();
+  loadClientHistoryEmail();
+  state.ownerUnlocked = hasValidOwnerSession();
+  handleAuthRedirect();
+  await Promise.all([
+    loadRemoteLibrary(),
+    state.ownerUnlocked ? loadBatches() : state.historyEmail ? loadBatches(state.historyEmail) : null
+  ]);
+  state.loading = false;
+  render();
+  loadGallery().then(() => {
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if (state.view === 'client' && !typing) render();
+  });
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────
+function render() {
+  if (state.loading) return;
+  document.getElementById('app-root').innerHTML = `
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="header">
+      <button class="logo" type="button" onclick="goHome()" aria-label="SoloPrint home">
+        <span class="logo-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </span>
+        <span class="logo-text">SOLO<span>PRINT</span></span>
+      </button>
+      <div class="header-actions">
+        <div class="build-badge" title="Last change to this page: build id b… is the file timestamp (ms). Time is Austin (America/Chicago). Resave index.html to refresh.">
+          ${formatBuildBadge()}
+        </div>
+        <span title="${state.synced ? 'Synced' : 'Offline'}"><span class="sync-dot ${state.synced?'':'offline'}"></span></span>
+        ${renderNotifBell()}
+        ${state.view === 'client'
+          ? `<button class="btn-sm" onclick="switchToOwner()">Owner</button>`
+          : `<button class="btn-sm" onclick="showClientView()">Client view</button>
+             ${state.ownerUnlocked ? `<button class="btn-sm danger" onclick="logoutOwner()">Logout</button>` : ''}`}
+      </div>
+    </header>
+    ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
+  `;
+  attachAll();
+}
+
+function renderBubble(tab, label, shortLabel, sub, iconPaths, badge = 0) {
+  const active = state.clientTab === tab;
+  const name = `${label}: ${sub}${badge ? ` (${badge})` : ''}`;
+  return `<button class="bubble ${active ? 'active' : ''}" type="button" onclick="setTab('${tab}')" aria-label="${esc(name)}" ${active ? 'aria-current="page"' : ''}>
+    <span class="bubble-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths}</svg></span>
+    <span>
+      <span class="bubble-label"><span class="long">${esc(label)}</span><span class="short">${esc(shortLabel)}</span></span>
+      <span class="bubble-sub">${esc(sub)}</span>
+    </span>
+    ${badge ? `<span class="nav-badge">${badge}</span>` : ''}
+  </button>`;
+}
+
+function renderClientApp() {
+  const hasHistoryEmail = !!String(state.historyEmail || '').trim();
+  return `
+    <nav class="bubble-nav" aria-label="Main">
+      ${renderBubble('submit', 'Request a Quote', 'Get a Quote', 'Start a print or custom design',
+        '<path d="M12 5v14M5 12h14"/>')}
+      ${renderBubble('gallery', GALLERY_NAME, 'Past Work', "See what I've made",
+        '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
+      ${renderBubble('jobs', 'My Requests', 'My Requests', 'Track your orders',
+        '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M4 5h.01M4 12h.01M4 19h.01"/>',
+        hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
+    </nav>
+    <main class="main" id="main" tabindex="-1">
+      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? 'Request a Quote' : state.clientTab === 'gallery' ? GALLERY_NAME : 'My Requests')}</h1>
+      ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : renderMyJobsTab()}
+    </main>`;
+}
+
+function renderOwnerNav() {
+  const libCount = sortedLibraryEntries().length;
+  const analyticsCount = buildModelAnalyticsRows().length;
+  return `
+    <nav class="nav" aria-label="Owner sections">
+      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
+      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
+      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
+      <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
+    </nav>
+  `;
+}
+
+function renderSubmitTab() {
+  const items = state.draftItems;
+  return `
+    ${renderRecentWork()}
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+      <div>
+        <h2 class="section-title">New Quote Request</h2>
+        <div class="section-sub">Paste MakerWorld, Thingiverse, or Printables links, or enter "original design"</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">Your info</h3>
+      <div class="row2">
+        <div class="field">
+          <label>Your name <span class="req">*</span></label>
+          <input type="text" id="client-name" value="${esc(state.clientName)}" placeholder="Jane Smith"
+            oninput="state.clientName=this.value; clearErr(this,'err-name')" />
+          <div class="field-err" id="err-name">Please enter your name</div>
+        </div>
+        <div class="field">
+          <label>Your email <span class="req">*</span></label>
+          <input type="email" id="client-email" value="${esc(state.clientEmail)}" placeholder="you@email.com"
+            oninput="state.clientEmail=this.value; clearErr(this,'err-email')" />
+          <div class="field-err" id="err-email">Please enter a valid email</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">Items to print (${items.length}/${MAX_ITEMS})</h3>
+      ${items.map((item, i) => renderItemBlock(item, i)).join('')}
+      ${items.length < MAX_ITEMS ? `
+        <div class="next-link-row">
+          <div class="plus-circle">+</div>
+          <input type="text" id="next-link-input" aria-label="Add another item: paste a model link or type an original design"
+            placeholder="Paste next model link or type original design for item ${items.length + 1}..."
+            onpaste="handleNextLinkPaste(event)"
+            oninput="handleNextLinkType(this.value)" />
+        </div>` : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
+    </div>
+
+    <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Submit Quote Request</button>
+    <div class="alert error" id="submit-err"></div>
+    <div class="alert success" id="submit-ok"></div>
+  `;
+}
+
+function renderFilamentPills(i, current) {
+  return `<div class="filament-pills">
+    ${['black','white','special'].map(f => `
+      <button class="fil-pill ${current===f?'active-'+f:''}"
+        onclick="updateDraft(${i},'filType','${f}'); rerenderPills(${i},'${f}')">
+        ${FIL_LABEL[f]}
+      </button>`).join('')}
+  </div>`;
+}
+
+function renderCustomerPricePreview(item) {
+  const minutes = item.knownFromLibrary ? item.knownMinutes : totalPrintMinutes(item.printHours, item.printMinutes);
+  const grams = Number(item.grams);
+  const qty = Math.max(1, Number(item.qty) || 1);
+  if (!minutes || !grams) {
+    return `<div class="calc-hint">Enter print time and filament weight to see a live estimate.</div>`;
+  }
+  const perPrint = calcPerPrint(minutes, grams, item.filType);
+  const total = perPrint * qty;
+  const filamentRate = FIL_RATE[item.filType] || 0.024;
+  return `<div class="price-preview-box" style="margin-top:12px;">
+    <div class="card-title" style="margin-bottom:6px;">Automated Estimate</div>
+    <div class="price-big">$${total.toFixed(2)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${grams.toFixed(1)}g · quantity ${qty}</div>
+    <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
+${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
+${grams.toFixed(1)}g × $${filamentRate.toFixed(3)} × ${qty} = $${(grams * filamentRate * qty).toFixed(2)}
+$${perPrint.toFixed(2)} per print × ${qty}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
+  </div>`;
+}
+
+function renderItemBlock(item, i) {
+  return `
+    <div class="item-block" id="iblock-${i}">
+      <div class="item-block-header">
+        <span class="item-num-badge">Item ${i + 1}</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${item.fetching ? `<span class="fetching-badge">Looking up...</span>` : ''}
+          ${state.draftItems.length > 1 ? `<button class="btn-sm danger" onclick="removeItem(${i})">Remove</button>` : ''}
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Requests</label>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px;">
+          Tell us what you are looking for. Are you trying to create an original idea like a holder for a brush you have, or saw something cool and want to make something like it. Share your idea or inspiration.
+        </div>
+        <input type="text" id="link-${i}" value="${esc(item.link)}"
+          placeholder="Paste a link or type original design"
+          oninput="onLinkInput(${i}, this.value)" />
+        <div id="preview-${i}">${renderModelPreview(item)}</div>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Description</label>
+        <div class="field-help">Custom design? Tell us what you need: what it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. The more detail you share, the better we can estimate it.</div>
+        <textarea id="notes-${i}" placeholder="Describe what you want to make, the idea you have, or the inspiration you found"
+          oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Photo links (optional)</label>
+        <div class="field-help">Have photos, sketches or examples? Paste links to them, one per line (up to 5). Google Photos, Imgur, Dropbox and similar work; make sure each link is shared publicly.</div>
+        <textarea id="photos-${i}" placeholder="https://..." style="min-height:52px;"
+          oninput="updateImageLinks(${i}, this.value)">${esc((item.imageLinks || []).join('\n'))}</textarea>
+        <div id="photo-previews-${i}">${renderPhotoLinks(item.imageLinks)}</div>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Model name</label>
+        <input type="text" id="name-${i}" value="${esc(item.name)}"
+          placeholder="Auto-filled from link or type manually"
+          oninput="updateDraft(${i},'name',this.value)" />
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>Filament type</label>
+        <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
+      </div>
+      ${item.knownFromLibrary ? `<div class="price-preview-box" style="margin-bottom:10px;">
+        <div class="card-title" style="margin-bottom:6px;">Saved Estimate</div>
+        <div style="font-size:12px;color:var(--muted);">Filled in from a previous print: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. We'll still review your request before sending a quote.</div>
+      </div>` : ``}
+      <div class="row3">
+        <div class="field" style="margin-bottom:0;">
+          <label>Hours (est.)</label>
+          <input type="number" id="hours-${i}" value="${item.printHours || hoursFromMinutes(item.knownMinutes)}" placeholder="1"
+            min="0" step="1" oninput="updateDraftPrintTime(${i}, 'hours', this.value)" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Minutes (est.)</label>
+          <input type="number" id="minutes-${i}" value="${item.printMinutes || minuteRemainder(item.knownMinutes)}" placeholder="30"
+            min="0" max="59" step="1" oninput="updateDraftPrintTime(${i}, 'minutes', this.value)" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Print Time (min.)</label>
+          <input class="print-time-output" type="number" id="print-time-${i}" value="${item.knownFromLibrary ? item.knownMinutes : (totalPrintMinutes(item.printHours, item.printMinutes) || '')}" placeholder="Auto" readonly />
+        </div>
+      </div>
+      <div class="row2" style="margin-top:12px;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Grams (est.)</label>
+          <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
+            min="0" step="0.1" oninput="clearEstimateSource(${i}); updateDraft(${i},'grams',parseFloat(this.value)||null)" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Quantity</label>
+          <input type="number" id="qty-${i}" value="${item.qty}" min="1" max="999" step="1"
+            oninput="updateDraft(${i},'qty',parseInt(this.value)||1)" />
+        </div>
+      </div>
+      <div id="customer-price-preview-${i}">${renderCustomerPricePreview(item)}</div>
+    </div>`;
+}
+
+function renderMyJobsTab() {
+  const historyEmail = String(state.historyEmail || '').trim();
+  if (!historyEmail) return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
+      </div>
+      <div>
+        <h2 class="section-title">My Requests</h2>
+        <div class="section-sub">Enter your email to view your personal request history</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your email</label>
+        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
+      </div>
+      <button class="btn-primary" onclick="lookupMyRequests()">View My Requests</button>
+      <div class="alert error" id="history-err"></div>
+    </div>`;
+
+  if (!state.batches.length) return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
+      </div>
+      <div>
+        <h2 class="section-title">My Requests</h2>
+        <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your email</label>
+        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="lookupMyRequests()">Refresh</button>
+        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Use a different email</button>
+      </div>
+    </div>
+    <div class="empty-state">
+      <div class="empty-state-icon">📋</div>
+      <div class="empty-state-text">No requests found</div>
+      <div class="empty-state-sub">We couldn't find request history for ${esc(historyEmail)}</div>
+    </div>`;
+
+  return `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
+      </div>
+      <div>
+        <h2 class="section-title">My Requests</h2>
+        <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your email</label>
+        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="lookupMyRequests()">Refresh</button>
+        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Use a different email</button>
+      </div>
+      <div class="alert error" id="history-err"></div>
+    </div>
+    ${[...state.batches].reverse().map(b => {
+      const phase = b.phase || 'estimate';
+      const allDone = b.items.every(it => it.minutes && it.grams);
+      const total = phase !== 'estimate' && allDone
+        ? b.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it.filType, it.qty) || 0), 0)
+        : null;
+      return `<div class="job-card ${phase}" id="order-${b.id}">
+        <div class="job-header">
+          <div>
+            <div class="job-title">${esc(b.clientName)}'s Request</div>
+            <div class="job-meta">${b.items.length} item${b.items.length>1?'s':''} · ${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+          </div>
+          <span class="status ${phase}">${phaseLabel(phase)}</span>
+        </div>
+        <div class="job-divider"></div>
+        ${renderOrderTracker(b)}
+        ${b.items.map(it => {
+          const ip = it.minutes ? calcTotal(it.minutes, it.grams, it.filType, it.qty) : null;
+          const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+          return `<div class="sub-item">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
+                <div class="sub-item-name">${esc(it.name)||'Unnamed'}${it.qty>1?` <span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
+                <div class="sub-item-meta">
+                  <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+                  ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : ''}
+                ${isWebUrl(it.link) ? `<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>` : it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
+                </div>
+                ${it.notes?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;">"${esc(it.notes)}"</div>`:''}
+                ${renderPhotoLinks(it.imageLinks)}
+              </div>
+              ${ip!==null
+                ? `<div style="text-align:right;flex-shrink:0;">
+                    <div class="sub-item-price">$${ip.toFixed(2)}</div>
+                    ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} each</div>`:''}
+                    ${phase === 'estimate' ? `<div style="font-size:11px;color:var(--muted);">Automated estimate</div>` : ''}
+                  </div>`
+                : `<div style="font-size:12px;color:var(--muted);font-style:italic;">Pending</div>`}
+            </div>
+          </div>`;
+        }).join('')}
+        ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
+      </div>`;
+    }).join('')}`;
+}
+
+function renderOwnerApp() {
+  if (!state.ownerUnlocked) {
+    return `<main class="main" id="main" tabindex="-1"><h1 class="sr-only">SoloPrint owner login</h1><div class="login-wrap">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div><h2 class="section-title">Owner Login</h2><div class="section-sub">Access your dashboard</div></div>
+      </div>
+      <div class="card">
+        <div class="field"><label>Email</label>
+          <input type="email" id="owner-email" value="${esc(OWNER_EMAIL)}" autocomplete="username" />
+        </div>
+        <div class="field"><label>Password</label>
+          <input type="password" id="owner-pw" placeholder="Enter your password" autocomplete="current-password" />
+        </div>
+        <div class="alert error" id="pw-err" style="margin-bottom:10px;${state.authNotice ? 'display:block;' : ''}">${esc(state.authNotice || '')}</div>
+        <div class="alert success" id="pw-ok" style="margin-bottom:10px;"></div>
+        <button class="btn-primary" id="owner-login-btn" onclick="checkPw()">Login</button>
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;">
+          <button class="btn-link" type="button" onclick="sendOwnerAuthEmail('recover')">Forgot password?</button>
+          <button class="btn-link" type="button" onclick="sendOwnerAuthEmail('otp')">Email me a login link</button>
+        </div>
+      </div>
+    </div></main>`;
+  }
+
+  return `
+    ${renderOwnerNav()}
+    <main class="main owner-main" id="main" tabindex="-1">
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
+      ${state.showPasswordForm ? renderSetPasswordCard() : ''}
+      ${state.ownerTab === 'gallery'
+        ? renderOwnerGalleryPage()
+        : state.ownerTab === 'library'
+        ? renderOwnerLibraryPage()
+        : state.ownerTab === 'analytics'
+          ? renderOwnerAnalyticsPage()
+          : state.ownerTab === 'calculator'
+            ? renderOwnerCalculatorPage()
+            : renderOwnerDashboard()}
+    </main>`;
+}
+
+function renderOwnerDashboard() {
+  const estimate = state.batches.filter(b => (b.phase || 'estimate') === 'estimate');
+  const production = state.batches.filter(b => (b.phase || 'estimate') === 'production');
+  const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
+  const rev = delivered.reduce((s,b) => s + b.items.reduce((ss,it) => ss + (calcTotal(it.minutes,it.grams,it.filType,it.qty)||0), 0), 0);
+
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 13h6v7H4zM14 4h6v16h-6zM9 9h6v11H9z"/></svg>
+        </div>
+        <div><h2 class="section-title">Owner Dashboard</h2><div class="section-sub">Track quotes, production, and delivered orders · <button class="btn-link" type="button" onclick="state.showPasswordForm = true; render();">Change password</button></div></div>
+      </div>
+      <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
+    </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
+        <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
+        <div class="stat-card"><div class="stat-val green">${delivered.length}</div><div class="stat-label">Delivered</div></div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Owner Sheet</h3>
+        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
+          <table class="owner-sheet">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Email</th>
+                <th>Items</th>
+                <th>Created</th>
+                <th>Phase</th>
+                <th>Payment</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[...state.batches].reverse().map(b => `
+                <tr>
+                  <td>${esc(b.clientName)}</td>
+                  <td><a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a></td>
+                  <td>${b.items.length}</td>
+                  <td>${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+                  <td>
+                    <select class="phase-select" aria-label="Order phase for ${esc(b.clientName)}" onchange="updateBatchPhase('${b.id}', this.value)">
+                      ${ORDER_PHASES.map((p, idx) => {
+                        const currentIdx = phaseIndex(b.phase || 'estimate');
+                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+                        return `<option value="${p.id}" ${(b.phase||'estimate')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+                      }).join('')}
+                    </select>
+                  </td>
+                  <td>
+                    <select class="phase-select" aria-label="Payment status for ${esc(b.clientName)}" onchange="updatePaymentStatus('${b.id}', this.value)">
+                      ${PAYMENT_PHASES.map((p, idx) => {
+                        const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
+                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+                        return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+                      }).join('')}
+                    </select>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 class="card-title">Delivered Revenue${state.ownerHistoryAll ? '' : ` (last ${RECENT_ORDER_DAYS} days)`}</h3>
+        <div class="price-big" style="font-size:28px;color:var(--green);">$${rev.toFixed(2)}</div>
+      </div>
+      ${!state.batches.length
+        ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
+        : [...state.batches].reverse().map(b => renderOwnerBatch(b)).join('')}
+  `;
+}
+
+function renderOwnerLibraryPage() {
+  const libEntries = sortedLibraryEntries();
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </div>
+        <div><h2 class="section-title">Saved Models</h2><div class="section-sub">Manage reusable estimate data in one place</div></div>
+      </div>
+      <div class="save-indicator ${librarySaveState === 'pending' ? 'pending' : ''}">
+        <span class="save-indicator-dot"></span>
+        <span>${librarySaveState === 'pending' ? 'Saving changes...' : 'All changes saved automatically'}</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Add Model</h3>
+      <div class="lib-grid">
+        <div class="field"><label>Model link</label><input type="text" id="lib-link" placeholder="https://makerworld.com/en/models/..." /></div>
+        <div class="field"><label>Model name</label><input type="text" id="lib-name" placeholder="Model name" /></div>
+        <div class="field"><label>Minutes</label><input type="number" id="lib-mins" min="0" step="1" placeholder="120" /></div>
+        <div class="field"><label>Filament (g)</label><input type="number" id="lib-grams" min="0" step="0.1" placeholder="85.4" /></div>
+        <button class="btn-sm" onclick="addLibraryEntry()">Add Model</button>
+      </div>
+      <div class="lib-import-row">
+        <input type="file" id="lib-import-file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="importModelLibrarySpreadsheet(event)" />
+        <button type="button" class="btn-sm" onclick="document.getElementById('lib-import-file').click()">Import spreadsheet</button>
+        <button type="button" class="btn-sm" onclick="downloadLibraryTemplate()">Download CSV template</button>
+        <span style="font-size:12px;color:var(--muted);">Use .csv or .xlsx. Header row required. Columns: <strong>Model Link</strong> (or Name), <strong>Minutes</strong>, and <strong>Grams</strong>. Imports merge into your library automatically.</span>
+      </div>
+      <div class="alert error" id="lib-err"></div>
+      <div class="alert success" id="lib-ok"></div>
+      ${!libEntries.length ? `<div style="font-size:12px;color:var(--muted);margin-top:10px;">No saved models yet.</div>` : `
+        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
+          <table class="lib-table">
+            <thead><tr><th>Model Name</th><th>Model Link</th><th>Minutes (Hours)</th><th>Grams</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody>
+              ${libEntries.map(([key, e], idx) => {
+                const rowId = `lib-row-${idx}`;
+                const encodedKey = encodeURIComponent(key);
+                const isEditingLink = state.libraryEditingKey === key;
+                return `<tr>
+                  <td><input type="text" id="${rowId}-name" value="${esc(e.name || '')}" placeholder="Name" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
+                  <td>
+                    <div class="lib-link-cell">
+                      ${isEditingLink
+                        ? `<input class="lib-link-edit" type="text" id="${rowId}-link" value="${esc(e.link || '')}" placeholder="https://makerworld.com/en/models/..." oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" />`
+                        : `<input type="hidden" id="${rowId}-link" value="${esc(e.link || '')}" />
+                           ${e.link ? `<a class="lib-link-chip" href="${esc(e.link)}" target="_blank" rel="noopener noreferrer" title="${esc(e.link)}">Model Link</a>` : `<span class="lib-link-empty">No Link</span>`}`
+                      }
+                      <button class="btn-sm" type="button" onclick="toggleLibraryLinkEdit('${encodedKey}')">${isEditingLink ? 'Done' : 'Edit'}</button>
+                    </div>
+                  </td>
+                  <td>
+                    <input type="number" id="${rowId}-mins" value="${e.minutes || ''}" min="0" step="1" placeholder="mins" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" />
+                    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${e.minutes ? fmtMinutesWithHours(e.minutes) : ''}</div>
+                  </td>
+                  <td><input type="number" id="${rowId}-grams" value="${e.grams || ''}" min="0" step="0.1" placeholder="grams" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
+                  <td><button class="btn-sm danger btn-icon" type="button" aria-label="Remove saved model" onclick="deleteLibraryEntry('${encodedKey}')">×</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderOwnerCalculatorLivePreview(calc) {
+  const minutes = totalPrintMinutes(calc.hours, calc.minutes);
+  const grams = parseFloat(calc.grams);
+  const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
+  if (!minutes || !grams) {
+    return `<div style="font-size:12px;color:var(--muted);line-height:1.8;">Fill in print time and filament weight to see the quote update live here.</div>`;
+  }
+  const perPrint = calcPerPrint(minutes, grams, calc.filType);
+  const total = perPrint * qty;
+  return `
+    <div class="price-big">$${total.toFixed(2)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${FIL_LABEL[calc.filType] || calc.filType} filament.</div>
+    <div class="calc-stat-grid">
+      <div class="calc-stat"><div class="calc-stat-label">Per Print</div><div class="calc-stat-value accent">$${perPrint.toFixed(2)}</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Quantity</div><div class="calc-stat-value">${qty}</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Print Time</div><div class="calc-stat-value">${fmtTime(minutes)}</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Filament</div><div class="calc-stat-value green">${grams.toFixed(1)}g</div></div>
+    </div>
+    <div class="price-preview-box" style="margin-top:16px;">
+      <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
+      <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
+${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
+${grams.toFixed(1)}g × $${(FIL_RATE[calc.filType] || 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] || 0.024) * qty).toFixed(2)}
+$${perPrint.toFixed(2)} per print × ${qty}</div>
+    </div>`;
+}
+
+function renderOwnerCalculatorPage() {
+  const calc = state.ownerCalculator || blankOwnerCalculator();
+  const minutes = totalPrintMinutes(calc.hours, calc.minutes);
+  const grams = parseFloat(calc.grams);
+  const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
+  const hasNumbers = Number.isFinite(minutes) && minutes > 0 && Number.isFinite(grams) && grams > 0;
+  const saved = calc.lastResult;
+  const modelMatch = getKnownEstimate({ link: calc.link, name: calc.name });
+  const canSave = !!modelKeyFromItem({ link: calc.link, name: calc.name }) && hasNumbers;
+
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h14v18H5z"/><path d="M8 7h8M8 11h3M8 15h8"/></svg>
+        </div>
+        <div><h2 class="section-title">Owner Calculator</h2><div class="section-sub">Price a model instantly, then save it into your reusable model data</div></div>
+      </div>
+      <div class="owner-page-meta">${sortedLibraryEntries().length} saved model${sortedLibraryEntries().length === 1 ? '' : 's'}</div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Calculate And Save</h3>
+      <div class="calc-shell">
+        <div class="calc-form-card">
+          <div class="lib-grid">
+            <div class="field"><label>Model link</label><input type="text" id="owner-calc-link" value="${esc(calc.link)}" placeholder="https://makerworld.com/en/models/..." oninput="updateOwnerCalculatorField('link', this.value)" /></div>
+            <div class="field"><label>Model name</label><input type="text" id="owner-calc-name" value="${esc(calc.name)}" placeholder="Model name" oninput="updateOwnerCalculatorField('name', this.value)" /></div>
+            <div class="field"><label>Hours</label><input type="number" id="owner-calc-hours" value="${esc(calc.hours)}" min="0" step="1" placeholder="2" oninput="updateOwnerCalculatorField('hours', this.value)" /></div>
+            <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" max="59" step="1" placeholder="30" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
+            <div class="field"><label>Print Time (min.)</label><input class="print-time-output" type="number" id="owner-calc-print-time" value="${minutes || ''}" placeholder="Auto" readonly /></div>
+            <div class="field"><label>Filament (g)</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
+            <div class="field">
+              <label>Filament type</label>
+              <select id="owner-calc-fil" onchange="updateOwnerCalculatorField('filType', this.value)">
+                ${Object.entries(FIL_LABEL).map(([value, label]) => `<option value="${value}" ${calc.filType === value ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Quantity</label><input type="number" id="owner-calc-qty" value="${qty}" min="1" step="1" oninput="updateOwnerCalculatorField('qty', this.value)" /></div>
+          </div>
+          ${modelMatch ? `
+            <div class="calc-match">
+              <strong>Saved model found</strong>
+              <div style="font-size:12px;color:var(--muted);">This model already exists in your library with ${fmtMinutesWithHours(modelMatch.minutes)}, ${modelMatch.grams}g, ${FIL_LABEL[modelMatch.filType] || modelMatch.filType}. Saving here will update it with the values in this calculator.</div>
+            </div>
+          ` : ``}
+          <div class="calc-actions">
+            <button class="btn-sm" id="owner-calc-save" type="button" onclick="calculateAndSaveOwnerModel()" ${canSave ? '' : 'disabled'}>Calculate &amp; Save Model</button>
+            <button class="btn-sm" type="button" onclick="resetOwnerCalculator()">Clear</button>
+          </div>
+          <div class="alert error" id="owner-calc-err"></div>
+          <div class="alert success" id="owner-calc-ok"></div>
+          <div class="calc-hint">${canSave ? 'Press Enter in any calculator field to save this model.' : 'Add a model name or link, plus minutes and grams, to enable saving.'}</div>
+        </div>
+        <div class="calc-summary-card">
+          <h3 class="card-title">Live Quote Preview</h3>
+          <div id="owner-calc-live-preview">${renderOwnerCalculatorLivePreview(calc)}</div>
+          ${saved ? `
+            <div class="total-box">
+              <span class="total-label">Last saved model</span>
+              <span class="total-price">$${saved.total.toFixed(2)}</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:10px;">
+              Saved ${esc(saved.name || 'Unnamed model')} with ${fmtMinutesWithHours(saved.minutes)}, ${saved.grams}g, ${FIL_LABEL[saved.filType] || saved.filType}, qty ${saved.qty}.
+            </div>
+          ` : ``}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderOwnerAnalyticsPage() {
+  const rows = filteredModelAnalyticsRows();
+  const totalQuotes = rows.reduce((sum, row) => sum + row.quoteRequests, 0);
+  const totalSoldQty = rows.reduce((sum, row) => sum + row.quantityOrdered, 0);
+  const totalSoldRevenue = rows.reduce((sum, row) => sum + row.moneySold, 0);
+
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19h16M7 16V8M12 16V5M17 16v-3"/></svg>
+        </div>
+        <div><h2 class="section-title">Sales Data</h2><div class="section-sub">Search quote demand and order performance by model</div></div>
+      </div>
+      <div class="owner-page-meta">${rows.length} model${rows.length === 1 ? '' : 's'} shown</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-val orange">${totalQuotes}</div><div class="stat-label">Quote Requests</div></div>
+      <div class="stat-card"><div class="stat-val">${totalSoldQty}</div><div class="stat-label">Units Ordered</div></div>
+      <div class="stat-card"><div class="stat-val green">$${totalSoldRevenue.toFixed(0)}</div><div class="stat-label">Money Sold</div></div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Searchable Model Data</h3>
+      <div class="analytics-toolbar">
+        <div class="field">
+          <label>Search models</label>
+          <input type="text" id="analytics-query" value="${esc(state.analyticsQuery)}" placeholder="Search by model name or link" oninput="updateAnalyticsQuery(this.value)" />
+        </div>
+        <button type="button" class="btn-sm" onclick="exportModelAnalyticsCSV()">Export CSV</button>
+      </div>
+      ${!rows.length ? `<div style="font-size:12px;color:var(--muted);">No models match that search yet.</div>` : `
+        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
+          <table class="analytics-table">
+            <thead>
+              <tr>
+                <th>Model Name</th>
+                <th>Model</th>
+                <th>Quote Requests</th>
+                <th>Orders</th>
+                <th>Money Sold</th>
+                <th>Customers</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td>${esc(row.modelName || 'Unnamed')}</td>
+                  <td>${row.modelLink ? `<a href="${esc(row.modelLink)}" target="_blank" rel="noopener noreferrer">Open</a>` : `<span style="color:var(--muted);">No link</span>`}</td>
+                  <td class="num">${row.quoteRequests}</td>
+                  <td class="num">${row.quantityOrdered}</td>
+                  <td class="num">$${row.moneySold.toFixed(2)}</td>
+                  <td class="num">${row.differentCustomers}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderOwnerBatch(b) {
+  const phase = b.phase || 'estimate';
+  const allDone = b.items.every(it => it.minutes && it.grams);
+  const total = allDone ? b.items.reduce((s,it) => s + (calcTotal(it.minutes,it.grams,it.filType,it.qty)||0), 0) : null;
+  const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  return `<div class="job-card ${phase}" id="order-${b.id}">
+    <div class="job-header">
+      <div>
+        <div class="job-title">${esc(b.clientName)}</div>
+        <div class="job-meta">
+          <a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a>
+          · ${b.items.length} item${b.items.length>1?'s':''}
+          · ${createdLabel}
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <span class="status ${phase}">${phaseLabel(phase)}</span>
+        <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
+        ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
+        <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
+      </div>
+    </div>
+    <div class="owner-batch-controls">
+      <div class="field" style="margin-bottom:0;">
+        <label>Order Phase</label>
+        <select class="phase-select" onchange="updateBatchPhase('${b.id}', this.value)">
+          ${ORDER_PHASES.map((p, idx) => {
+            const currentIdx = phaseIndex(b.phase || 'estimate');
+            const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+            return `<option value="${p.id}" ${(b.phase||'estimate')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Payment Status</label>
+        <select class="phase-select" onchange="updatePaymentStatus('${b.id}', this.value)">
+          ${PAYMENT_PHASES.map((p, idx) => {
+            const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
+            const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+            return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+          }).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="owner-order-summary">
+      <div class="card-title" style="margin-bottom:10px;">Submitted Order Summary</div>
+      <div class="owner-order-summary-grid">
+        <div>
+          <div class="owner-order-summary-label">Customer</div>
+          <div class="owner-order-summary-value">${esc(b.clientName)}</div>
+        </div>
+        <div>
+          <div class="owner-order-summary-label">Email</div>
+          <div class="owner-order-summary-value"><a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a></div>
+        </div>
+        <div>
+          <div class="owner-order-summary-label">Submitted</div>
+          <div class="owner-order-summary-value">${createdLabel}</div>
+        </div>
+        <div>
+          <div class="owner-order-summary-label">Items</div>
+          <div class="owner-order-summary-value">${b.items.length}</div>
+        </div>
+      </div>
+      <div class="owner-item-summary-list">
+        ${b.items.map((it, i) => `
+          <div class="owner-item-summary">
+            <div class="owner-order-summary-label">Item ${i + 1}</div>
+            <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
+            <div class="owner-order-summary-value">Filament: ${esc(FIL_LABEL[it.filType] || it.filType || 'Not set')}</div>
+            <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
+            <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
+            <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="job-divider"></div>
+    ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
+    ${phase === 'estimate' ? `
+      <div class="alert error" id="batch-err-${b.id}"></div>
+      <div class="alert success" id="batch-ok-${b.id}"></div>
+      <button class="btn-primary" id="approve-btn-${b.id}" onclick="approveBatch('${b.id}')" style="margin-top:1rem;">
+        Save All &amp; Notify Client
+      </button>
+    ` : `
+      <div class="total-box">
+        <span class="total-label">Total quoted</span>
+        <span class="total-price">$${total!==null?total.toFixed(2):'—'}</span>
+      </div>
+      ${phase === 'delivered' ? `
+        <div class="delivery-meta">
+          <div class="card-title" style="margin-bottom:10px;">Delivered Order Details</div>
+          <div class="row2">
+            <div class="field" style="margin-bottom:0;">
+              <label>Delivery Date</label>
+              <input type="text" id="ddate-${b.id}" value="${esc(b.deliveryDate || '')}" placeholder="Apr 3, 2026" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label>Tracking / Pickup</label>
+              <input type="text" id="dtrack-${b.id}" value="${esc(b.deliveryTracking || '')}" placeholder="Tracking number or pickup note" />
+            </div>
+          </div>
+          <div class="field" style="margin-top:10px;margin-bottom:0;">
+            <label>Delivery Notes</label>
+            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery">${esc(b.deliveryNotes || '')}</textarea>
+          </div>
+          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save Delivery Details</button>
+        </div>
+      ` : ``}
+      <button class="btn-secondary" onclick="resetBatch('${b.id}')" style="margin-top:0.75rem;">Edit Quotes</button>
+    `}
+  </div>`;
+}
+
+function renderOwnerItem(batchId, it, i) {
+  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it.filType) : null;
+  const tot = pp !== null ? pp * it.qty : null;
+  const known = getKnownEstimate(it);
+  const canUseKnown = known && (!it.minutes || !it.grams);
+  return `<div class="sub-item" style="padding:1rem 0;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">
+      <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
+        <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
+        <div class="sub-item-meta">
+          <span class="status ${it.filType}">${FIL_LABEL[it.filType]||it.filType}</span>
+          <span style="font-size:12px;color:var(--muted);">$${(FIL_RATE[it.filType]||0.024).toFixed(3)}/g</span>
+          ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
+        </div>
+        ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
+        ${it.estimateSource ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">Time and grams auto-filled from ${esc(it.estimateSource)}</div>` : ''}
+        ${renderPhotoLinks(it.imageLinks)}
+        ${canUseKnown ? `
+          <div class="price-preview-box" style="margin-top:10px;margin-bottom:0;">
+            <div class="card-title" style="margin-bottom:6px;">Saved Model Match</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Found saved estimate data for this model name: ${fmtMinutesWithHours(known.minutes)}, ${known.grams}g.</div>
+            <button class="btn-sm" type="button" onclick="applyKnownEstimateToOwnerItem('${batchId}', ${i})">Use Saved Model</button>
+          </div>
+        ` : ``}
+      </div>
+      ${tot!==null?`<div style="text-align:right;flex-shrink:0;">
+        <div class="sub-item-price">$${tot.toFixed(2)}</div>
+        ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} ea</div>`:''}
+      </div>`:''}
+    </div>
+    <div class="row3">
+      <div class="field" style="margin-bottom:0;">
+        <label>Hours</label>
+        <input type="number" id="hours-${batchId}-${i}" value="${hoursFromMinutes(it.minutes)}"
+          placeholder="2" min="0" step="1" oninput="updateOwnerItemPrintTime('${batchId}',${i})" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Minutes</label>
+        <input type="number" id="minutes-${batchId}-${i}" value="${minuteRemainder(it.minutes)}"
+          placeholder="30" min="0" max="59" step="1" oninput="updateOwnerItemPrintTime('${batchId}',${i})" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Print Time (min.)</label>
+        <input class="print-time-output" type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
+          placeholder="Auto" readonly />
+      </div>
+    </div>
+    <div class="row2" style="margin-top:12px;">
+      <div class="field" style="margin-bottom:0;">
+        <label>Filament (grams)</label>
+        <input type="number" id="ograms-${batchId}-${i}" value="${it.grams||''}"
+          placeholder="From Bambu Studio" min="0" step="0.1" oninput="previewOwnerItem('${batchId}',${i})" />
+      </div>
+    </div>
+    <div id="opreview-${batchId}-${i}" style="display:none;" class="price-preview-box">
+      <div class="price-big" id="opval-${batchId}-${i}"></div>
+      <div class="price-breakdown" id="opsub-${batchId}-${i}"></div>
+    </div>
+  </div>`;
+}
+
+// ── INTERACTIONS ──────────────────────────────────────────────────────────
+
+function setTab(tab) {
+  state.clientTab = tab;
+  if (tab === 'gallery') state.galleryOpen = '';
+  render();
+  if (tab === 'gallery') loadGallery().then(render);
+}
+function goHome() {
+  state.clientTab = 'submit';
+  if (state.view === 'owner') { showClientView(); return; }
+  render();
+}
+async function switchToOwner() {
+  state.view = 'owner';
+  if (state.ownerUnlocked) await loadBatches();
+  render();
+}
+// The owner view loads every order; reload just the looked-up customer's orders for the client view.
+async function showClientView() {
+  state.view = 'client';
+  state.batches = [];
+  if (state.historyEmail) await loadBatches(state.historyEmail);
+  render();
+}
+function setOwnerTab(tab) {
+  state.ownerTab = tab;
+  if (tab === 'analytics' && !state.ownerHistoryAll) { loadAllOrders(); return; }
+  render();
+  if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
+}
+function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
+function updateOwnerCalculatorField(field, value) {
+  if (!state.ownerCalculator) state.ownerCalculator = blankOwnerCalculator();
+  state.ownerCalculator[field] = value;
+  const printMinutes = totalPrintMinutes(state.ownerCalculator.hours, state.ownerCalculator.minutes);
+  const printTimeInput = document.getElementById('owner-calc-print-time');
+  if (printTimeInput) printTimeInput.value = printMinutes || '';
+  const livePreview = document.getElementById('owner-calc-live-preview');
+  if (livePreview) livePreview.innerHTML = renderOwnerCalculatorLivePreview(state.ownerCalculator);
+  const err = document.getElementById('owner-calc-err');
+  const ok = document.getElementById('owner-calc-ok');
+  if (err) err.style.display = 'none';
+  if (ok) ok.style.display = 'none';
+  const saveButton = document.getElementById('owner-calc-save');
+  if (saveButton) {
+    const hasModel = !!modelKeyFromItem({ link: state.ownerCalculator.link, name: state.ownerCalculator.name });
+    const hasTime = !!printMinutes;
+    const hasGrams = Number(state.ownerCalculator.grams) > 0;
+    saveButton.disabled = !(hasModel && hasTime && hasGrams);
+  }
+}
+
+function clearEstimateSource(i) {
+  if (!state.draftItems[i] || !state.draftItems[i].estimateSource) return;
+  state.draftItems[i].estimateSource = '';
+  rerenderModelPreview(i);
+}
+
+function updateDraftPrintTime(i, field, value) {
+  if (!state.draftItems[i]) return;
+  clearEstimateSource(i);
+  state.draftItems[i][field === 'hours' ? 'printHours' : 'printMinutes'] = value;
+  const printTimeInput = document.getElementById(`print-time-${i}`);
+  const total = totalPrintMinutes(state.draftItems[i].printHours, state.draftItems[i].printMinutes);
+  if (printTimeInput) printTimeInput.value = total || '';
+  updateCustomerPricePreview(i);
+}
+
+function updateCustomerPricePreview(i) {
+  const preview = document.getElementById(`customer-price-preview-${i}`);
+  const item = state.draftItems[i];
+  if (preview && item) preview.innerHTML = renderCustomerPricePreview(item);
+}
+
+function updateOwnerItemPrintTime(batchId, i) {
+  const hours = (document.getElementById(`hours-${batchId}-${i}`) || { value: '' }).value;
+  const minutes = (document.getElementById(`minutes-${batchId}-${i}`) || { value: '' }).value;
+  const total = totalPrintMinutes(hours, minutes);
+  const minutesInput = document.getElementById(`mins-${batchId}-${i}`);
+  if (minutesInput) minutesInput.value = total || '';
+  previewOwnerItem(batchId, i);
+}
+
+async function lookupMyRequests() {
+  const email = String((document.getElementById('history-email') || { value: state.historyEmail }).value || '').trim().toLowerCase();
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    showAlert('history-err', 'Please enter a valid email to view your request history.', 'error');
+    return;
+  }
+  state.historyEmail = email;
+  persistClientHistoryEmail();
+  await loadBatches(email);
+  render();
+}
+
+// ── GALLERY ───────────────────────────────────────────────────────────────
+// Finished work with prices. Stored in the gallery_items table (supabase/gallery.sql):
+// visitors see published items, the signed-in owner sees and edits everything.
+function cleanGalleryItem(row) {
+  const data = row && row.data && typeof row.data === 'object' ? row.data : {};
+  const id = String(row && row.id || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  return {
+    id,
+    published: row.published !== false,
+    sortOrder: parseInt(row.sort_order, 10) || 0,
+    title: cleanText(data.title, 120),
+    description: cleanText(data.description, 8000),
+    photos: cleanImageLinks(data.photos),
+    filType: cleanFilType(data.filType),
+    minutes: cleanNumber(data.minutes),
+    grams: cleanNumber(data.grams)
+  };
+}
+
+function renderWriteup(text) {
+  return String(text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => `<p>${esc(p)}</p>`).join('');
+}
+
+function writeupExcerpt(text, max = 160) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max).replace(/\s+\S*$/, '') + '…' : t;
+}
+
+function openWork(id) {
+  state.galleryOpen = id;
+  state.clientTab = 'gallery';
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Photo strip of recent work for the Request a Quote page.
+// Photo gallery at the top of the home page, built from the photos of published designs.
+function renderRecentWork() {
+  const tiles = [];
+  state.gallery.filter(g => g.published).forEach(g => g.photos.forEach((photo, n) => tiles.push({ g, photo, n, first: n === 0 })));
+  tiles.sort((a, b) => (b.first - a.first));
+  // One featured photo (2x2) plus 4 or 8 small ones fills whole rows on both the 4- and 2-column layouts.
+  const shown = tiles.slice(0, tiles.length >= 9 ? 9 : tiles.length >= 5 ? 5 : tiles.length);
+  if (!shown.length) {
+    return state.ownerUnlocked
+      ? `<div class="card"><h3 class="card-title">My Work</h3><div class="field-help">Your photo gallery shows here once you add designs with photos in Owner → Gallery. Customers don't see this note.</div></div>`
+      : '';
+  }
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <h2 class="section-title" style="font-size:20px;">My Work</h2>
+      <button class="btn-link" type="button" onclick="setTab('gallery')">See all ${esc(GALLERY_NAME)} →</button>
+    </div>
+    <div class="home-gallery">${shown.map((t, i) => `
+      <button class="work-tile ${i === 0 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}${t.n ? `, photo ${t.n + 1}` : ''}">
+        ${thumbImg(t.photo, '', 'tile')}
+        ${t.first ? `<span>${esc(t.g.title)}</span>` : ''}
+      </button>`).join('')}</div>
+  </div>`;
+}
+
+function renderWorkDetail(g) {
+  const price = galleryPrice(g);
+  return `
+    <button class="btn-link" type="button" onclick="state.galleryOpen=''; render();" style="margin-bottom:14px;">← All ${esc(GALLERY_NAME)}</button>
+    <div class="section-header" style="margin-bottom:1rem;"><div><h2 class="section-title">${esc(g.title || 'Untitled')}</h2></div></div>
+    ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
+    ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
+    <div class="card">
+      ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
+      ${price !== null ? `
+        <div class="job-divider" style="margin:6px 0 14px;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each</span></div>
+            <div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>
+          </div>
+          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>
+        </div>
+        <div class="field-help" style="margin-top:10px;">Price is per item. We'll review your request and confirm before asking for payment.</div>` : `
+        <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
+    </div>`;
+}
+
+function showWorkPhoto(id, n) {
+  const g = state.gallery.find(x => x.id === id);
+  const el = document.getElementById('work-main-photo');
+  const src = g && g.photos[n];
+  if (el && src) el.innerHTML = `<img src="${esc(src)}" alt="${esc(g.title)}" referrerpolicy="no-referrer" />`;
+}
+
+function galleryPrice(g) {
+  return calcPerPrint(g.minutes, g.grams, g.filType);
+}
+
+async function loadGallery() {
+  try {
+    const rows = await supaFetch('/gallery_items?select=id,data,published,sort_order&order=sort_order.asc,created_at.desc');
+    state.gallery = (rows || []).map(cleanGalleryItem).filter(Boolean);
+    state.galleryError = false;
+  } catch (e) {
+    console.error('Gallery load error:', e);
+    state.galleryError = true;
+  }
+  state.galleryLoaded = true;
+}
+
+// Show the thumbnail, fall back to the full photo if the thumbnail is missing, then give up gracefully.
+function thumbImg(url, alt, mode, extra = '') {
+  const thumb = thumbUrl(url);
+  return `<img src="${esc(thumb)}" ${thumb !== url ? `data-full="${esc(url)}"` : ''} alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="photoFailed(this, '${mode}')" ${extra} />`;
+}
+
+function photoFailed(img, mode) {
+  if (img.dataset.full && img.getAttribute('src') !== img.dataset.full) { img.src = img.dataset.full; return; }
+  if (mode === 'tile') img.closest('.work-tile')?.remove();
+  else if (mode === 'thumb') img.parentNode?.remove();
+  else img.replaceWith(document.createTextNode('Photo unavailable'));
+}
+
+function renderGalleryPhoto(g) {
+  const photo = g.photos[0];
+  return `<div class="gallery-photo" id="gphoto-${esc(g.id)}">${photo
+    ? thumbImg(photo, g.title, 'text')
+    : 'No photo yet'}</div>
+    ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showGalleryPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1} of ${esc(g.title)}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}`;
+}
+
+function showGalleryPhoto(id, n) {
+  const el = document.getElementById(`gphoto-${id}`);
+  const g = state.gallery.find(x => x.id === id);
+  const src = g && g.photos[n];
+  if (el && src) el.innerHTML = thumbImg(src, g.title, 'text');
+}
+
+function renderGalleryTab() {
+  const items = state.gallery.filter(g => g.published);
+  const open = state.galleryOpen && items.find(g => g.id === state.galleryOpen);
+  if (open) return renderWorkDetail(open);
+  const header = `
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      </div>
+      <div>
+        <h2 class="section-title">${esc(GALLERY_NAME)}</h2>
+        <div class="section-sub">Designs we've made before, with the story behind each one. Want one? Tap "Request this".</div>
+      </div>
+    </div>`;
+  if (!state.galleryLoaded) return `${header}<div class="empty-state"><div class="empty-state-text">Loading...</div></div>`;
+  if (!items.length) return `${header}<div class="empty-state"><div class="empty-state-icon">🖼️</div><div class="empty-state-text">Nothing here yet</div><div class="empty-state-sub">Check back soon, or request a custom print.</div></div>`;
+  return `${header}
+    <div class="gallery-grid">${items.map(g => {
+      const price = galleryPrice(g);
+      return `<div class="gallery-card">
+        ${renderGalleryPhoto(g)}
+        <div class="gallery-body">
+          <div class="gallery-title">${esc(g.title || 'Untitled')}</div>
+          <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
+          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each</span></div>` : ''}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
+            ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>
+    <div class="field-help" style="margin-top:14px;">Prices are per item. We'll review every request and confirm before asking for payment.</div>`;
+}
+
+// Add a gallery piece to the customer's request form with its known print time and grams.
+function requestGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id && x.published);
+  if (!g) return;
+  const item = {
+    ...blankItem(),
+    name: g.title,
+    notes: `From the ${GALLERY_NAME} gallery.`,
+    filType: g.filType,
+    grams: g.grams,
+    knownMinutes: g.minutes,
+    knownFromLibrary: !!(g.minutes && g.grams),
+    knownPrompted: true,
+    previewImage: g.photos[0] || '',
+    estimateSource: `the ${GALLERY_NAME} gallery`
+  };
+  const first = state.draftItems[0];
+  const firstIsEmpty = state.draftItems.length === 1 && first && !first.name && !first.link && !first.notes;
+  if (firstIsEmpty) state.draftItems[0] = item;
+  else state.draftItems.push(item);
+  state.clientTab = 'submit';
+  render();
+  showAlert('submit-ok', `Added "${g.title}" to your request. Add your name and email, then submit.`, 'success');
+  document.getElementById('submit-ok')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function blankGalleryForm() {
+  return { id: `g${Date.now()}`, title: '', description: '', photos: '', filType: 'black', hours: '', minutes: '', grams: '', published: true };
+}
+
+function renderGalleryFormPrice() {
+  const f = state.galleryForm || blankGalleryForm();
+  const minutes = totalPrintMinutes(f.hours, f.minutes);
+  const price = calcPerPrint(minutes, parseFloat(f.grams), f.filType);
+  return price !== null
+    ? `<div class="price-big">$${price.toFixed(2)}</div><div class="field-help">Customer price per item, using the same pricing as quotes (${fmtTime(minutes)}, ${parseFloat(f.grams).toFixed(1)}g ${esc(FIL_LABEL[f.filType])}).</div>`
+    : `<div class="field-help">Enter print time and grams to see the price customers will see.</div>`;
+}
+
+function updateGalleryForm(field, value) {
+  if (!state.galleryForm) state.galleryForm = blankGalleryForm();
+  state.galleryForm[field] = value;
+  const priceEl = document.getElementById('gallery-form-price');
+  if (priceEl) priceEl.innerHTML = renderGalleryFormPrice();
+  if (field === 'photos') {
+    const el = document.getElementById('gallery-form-photos');
+    if (el) el.innerHTML = renderPhotoLinks(parseImageLinks(value));
+  }
+}
+
+function renderOwnerGalleryPage() {
+  if (!state.galleryForm) state.galleryForm = blankGalleryForm();
+  const f = state.galleryForm;
+  const editing = state.gallery.some(x => x.id === f.id);
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        </div>
+        <div><h2 class="section-title">Gallery</h2><div class="section-sub">Show finished work with prices on the "${esc(GALLERY_NAME)}" tab</div></div>
+      </div>
+      <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
+    </div>
+    ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
+    <div class="card">
+      <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
+      <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
+      <div class="field"><label>Write-up</label>
+        <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
+        <textarea id="gallery-desc" style="min-height:180px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
+      </div>
+      <div class="field"><label>Photos</label>
+        <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one.</div>
+        <label class="btn-sm" style="display:inline-block;margin-bottom:8px;">Upload photos
+          <input type="file" accept="image/*" multiple onchange="uploadGalleryPhotos(this.files); this.value='';" style="display:none;" />
+        </label>
+        <span class="field-help" id="gallery-upload-status" style="margin-left:8px;"></span>
+        <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
+        <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
+      </div>
+      <div class="gallery-form-grid">
+        <div class="field"><label>Filament</label>
+          <select id="gallery-fil" onchange="updateGalleryForm('filType', this.value)">
+            ${Object.entries(FIL_LABEL).map(([v, label]) => `<option value="${v}" ${f.filType === v ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
+        <div class="field"><label>Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
+        <div class="field"><label>Filament (g)</label><input type="number" id="gallery-grams" min="0" step="0.1" value="${esc(f.grams)}" placeholder="85.4" oninput="updateGalleryForm('grams', this.value)" /></div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
+        <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(GALLERY_NAME)} tab
+      </label>
+      <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>
+      <div class="alert error" id="gallery-err"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btn-sm" type="button" id="gallery-save" onclick="saveGalleryItem()">${editing ? 'Save Changes' : 'Add to Gallery'}</button>
+        ${editing ? `<button class="btn-sm" type="button" onclick="state.galleryForm = null; render();">Cancel</button>` : ''}
+      </div>
+    </div>
+    ${state.gallery.length ? `<div class="gallery-grid">${state.gallery.map(g => {
+      const price = galleryPrice(g);
+      return `<div class="gallery-card ${g.published ? '' : 'hidden-item'}">
+        ${renderGalleryPhoto(g)}
+        <div class="gallery-body">
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}</div>
+          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
+            <button class="btn-sm" type="button" onclick="toggleGalleryItem('${esc(g.id)}')">${g.published ? 'Hide' : 'Show'}</button>
+            <button class="btn-sm danger" type="button" onclick="deleteGalleryItem('${esc(g.id)}')">Delete</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>` : (state.galleryLoaded && !state.galleryError ? `<div class="empty-state"><div class="empty-state-text">No gallery items yet</div><div class="empty-state-sub">Add your first finished project above.</div></div>` : '')}`;
+}
+
+function editGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  state.galleryForm = {
+    id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType,
+    hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
+    grams: g.grams ? String(g.grams) : '', published: g.published
+  };
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function writeGalleryItem(g) {
+  await supaFetch('/gallery_items', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      id: g.id,
+      published: g.published,
+      sort_order: g.sortOrder || 0,
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams }
+    })
+  });
+}
+
+async function saveGalleryItem() {
+  const f = state.galleryForm || blankGalleryForm();
+  if (!f.title.trim()) { showAlert('gallery-err', 'Please add a title.', 'error'); return; }
+  const existing = state.gallery.find(x => x.id === f.id);
+  const item = cleanGalleryItem({
+    id: f.id,
+    published: f.published,
+    sort_order: existing ? existing.sortOrder : 0,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(f.photos), filType: f.filType,
+      minutes: totalPrintMinutes(f.hours, f.minutes), grams: parseFloat(f.grams) }
+  });
+  const btn = document.getElementById('gallery-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await writeGalleryItem(item);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = existing ? 'Save Changes' : 'Add to Gallery'; }
+    showAlert('gallery-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
+    return;
+  }
+  state.galleryForm = null;
+  await loadGallery();
+  render();
+}
+
+async function toggleGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  try {
+    await writeGalleryItem({ ...g, published: !g.published });
+  } catch (e) {
+    alert("Couldn't save this change. If you were logged out, log in again and retry.");
+  }
+  await loadGallery();
+  render();
+}
+
+// ── GALLERY PHOTO UPLOADS (Supabase Storage bucket "gallery", see supabase/gallery.sql) ──
+const GALLERY_BUCKET = 'gallery';
+const GALLERY_PUBLIC_PREFIX = `${SUPA_URL}/storage/v1/object/public/${GALLERY_BUCKET}/`;
+const THUMB_SIDE = 640;
+
+// Uploaded photos get a small "-thumb.jpg" copy for tiles and cards; other links have no thumbnail.
+function thumbUrl(url) {
+  return String(url).startsWith(GALLERY_PUBLIC_PREFIX) && /\.jpg$/i.test(url) && !/-thumb\.jpg$/i.test(url)
+    ? url.replace(/\.jpg$/i, '-thumb.jpg') : url;
+}
+
+// Shrink photos before uploading so they load fast and stay well inside the free storage limit.
+async function resizePhoto(file, maxSide = 1600) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('unsupported image'));
+      el.src = url;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function uploadGalleryPhotos(files) {
+  const f = state.galleryForm;
+  const status = document.getElementById('gallery-upload-status');
+  const token = getOwnerToken();
+  if (!f || !token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
+  const current = parseImageLinks(f.photos);
+  const list = [...files].slice(0, Math.max(0, 5 - current.length));
+  if (!list.length) { if (status) status.textContent = 'This item already has 5 photos.'; return; }
+  const added = [];
+  for (let n = 0; n < list.length; n++) {
+    if (status) status.textContent = `Uploading ${n + 1} of ${list.length}...`;
+    try {
+      const blob = await resizePhoto(list[n]);
+      const thumb = await resizePhoto(list[n], THUMB_SIDE);
+      if (!blob || !thumb) throw new Error('resize failed');
+      const path = `${f.id}/${Date.now()}-${n}.jpg`;
+      await uploadStoredPhoto(path, blob, token);
+      await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token);
+      added.push(GALLERY_PUBLIC_PREFIX + path);
+    } catch (e) {
+      console.error('Photo upload error:', e);
+      if (status) status.textContent = /unsupported/.test(e.message)
+        ? `"${list[n].name}" isn't a format this browser can read. Try a JPG or PNG.`
+        : "Couldn't upload. Check that supabase/gallery.sql has been run, and that you're logged in.";
+      break;
+    }
+  }
+  if (added.length) {
+    f.photos = current.concat(added).join('\n');
+    const area = document.getElementById('gallery-photos');
+    if (area) area.value = f.photos;
+    updateGalleryForm('photos', f.photos);
+    if (status) status.textContent = `Uploaded ${added.length} photo${added.length === 1 ? '' : 's'}. Remember to save.`;
+  }
+}
+
+async function uploadStoredPhoto(path, blob, token, upsert = false) {
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${GALLERY_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'x-upsert': upsert ? 'true' : 'false' },
+    body: blob
+  });
+  if (!res.ok) throw new Error(`upload ${res.status}`);
+}
+
+// Make thumbnails for photos uploaded before thumbnails existed. Runs quietly when the owner opens Gallery.
+let thumbBackfillDone = false;
+async function backfillThumbnails() {
+  const token = getOwnerToken();
+  if (thumbBackfillDone || !token) return;
+  thumbBackfillDone = true;
+  const urls = [...new Set(state.gallery.flatMap(g => g.photos))].filter(u => thumbUrl(u) !== u);
+  for (const url of urls) {
+    try {
+      const head = await fetch(thumbUrl(url), { method: 'HEAD', cache: 'no-store' });
+      if (head.ok) continue;
+      const full = await fetch(url);
+      if (!full.ok) continue;
+      const thumb = await resizePhoto(await full.blob(), THUMB_SIDE);
+      if (thumb) await uploadStoredPhoto(thumbUrl(url).slice(GALLERY_PUBLIC_PREFIX.length), thumb, token, true);
+    } catch (e) {
+      console.error('Thumbnail backfill error:', e);
+    }
+  }
+}
+
+async function deleteStoredPhotos(urls) {
+  const stored = cleanImageLinks(urls).filter(u => u.startsWith(GALLERY_PUBLIC_PREFIX));
+  const prefixes = stored.concat(stored.map(thumbUrl).filter(u => !stored.includes(u))).map(u => u.slice(GALLERY_PUBLIC_PREFIX.length));
+  if (!prefixes.length) return;
+  try {
+    await fetch(`${SUPA_URL}/storage/v1/object/${GALLERY_BUCKET}`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${getOwnerToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefixes })
+    });
+  } catch (e) {
+    console.error('Photo cleanup error:', e);
+  }
+}
+
+async function deleteGalleryItem(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g || !confirm(`Delete "${g.title || 'this item'}" from the gallery? This cannot be undone.`)) return;
+  try {
+    await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await deleteStoredPhotos(g.photos);
+  } catch (e) {
+    alert("Couldn't delete it. If you were logged out, log in again and retry.");
+  }
+  await loadGallery();
+  render();
+}
+
+// ── NOTIFICATIONS ─────────────────────────────────────────────────────────
+// The feed is derived from order data (phaseHistory, createdAt); read state and
+// preferences live in this browser only.
+const NOTIF_PAGE_OPENED_AT = Date.now();
+const NOTIF_UNREAD_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+function loadJsonPref(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
+}
+function saveJsonPref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+
+function notifScope() {
+  return state.view === 'owner' && state.ownerUnlocked ? 'owner' : 'client';
+}
+
+function buildNotifications() {
+  const scope = notifScope();
+  const read = new Set(loadJsonPref(NOTIF_READ_KEY, {})[scope] || []);
+  const list = [];
+  if (scope === 'owner') {
+    state.batches.forEach(b => {
+      const n = b.items.length;
+      list.push({ id: `new-${b.id}`, batchId: b.id, at: b.createdAt,
+        title: `New request from ${b.clientName || 'a customer'}`,
+        body: `${n} item${n === 1 ? '' : 's'}: ${orderTitle(b)}` });
+      if (b.customerApprovedAt) list.push({ id: `approved-${b.id}-${b.customerApprovedAt}`, batchId: b.id, at: b.customerApprovedAt,
+        title: `${b.clientName || 'A customer'} approved their quote`,
+        body: `Ready for you to confirm: ${orderTitle(b)}` });
+    });
+  } else {
+    const email = String(state.historyEmail || '').trim().toLowerCase();
+    if (!email) return [];
+    state.batches.filter(b => String(b.clientEmail || '').toLowerCase() === email).forEach(b => {
+      const history = { estimate: b.createdAt, ...(b.phaseHistory || {}) };
+      ORDER_PHASES.forEach(p => {
+        if (!history[p.id]) return;
+        list.push({ id: `${b.id}-${p.id}`, batchId: b.id, at: history[p.id],
+          title: `${TRACKER_STEPS[p.id].label}: ${orderTitle(b)}`,
+          body: TRACKER_STEPS[p.id].detail });
+      });
+    });
+  }
+  return list
+    .filter(n => n.at)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 50)
+    .map(n => ({ ...n, unread: !read.has(n.id) && Date.now() - Date.parse(n.at) < NOTIF_UNREAD_WINDOW_MS }));
+}
+
+function markNotifsRead(ids) {
+  const scope = notifScope();
+  const all = loadJsonPref(NOTIF_READ_KEY, {});
+  all[scope] = [...new Set([...(all[scope] || []), ...ids])].slice(-500);
+  saveJsonPref(NOTIF_READ_KEY, all);
+}
+
+function notifTimeAgo(iso) {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function browserAlertsSupported() {
+  return typeof window.Notification === 'function';
+}
+
+function browserAlertsOn() {
+  return browserAlertsSupported() && Notification.permission === 'granted' && !!loadJsonPref(NOTIF_PREFS_KEY, {}).alerts;
+}
+
+function renderNotifPanel(items, unread) {
+  let footer;
+  if (!browserAlertsSupported()) footer = `<span>Browser alerts aren't supported on this device.</span>`;
+  else if (Notification.permission === 'denied') footer = `<span>Browser alerts are blocked in your browser settings.</span>`;
+  else footer = `<span>${browserAlertsOn() ? 'Browser alerts are on.' : 'Get a pop-up when something changes.'}</span>
+    <button type="button" onclick="toggleBrowserAlerts()">${browserAlertsOn() ? 'Turn off' : 'Turn on alerts'}</button>`;
+  const empty = notifScope() === 'client' && !state.historyEmail
+    ? 'Look up your email under My Requests to get updates on your orders here.'
+    : "You're all caught up. Updates will show up here.";
+  return `<div class="notif-panel" role="dialog" aria-label="Notifications">
+    <div class="notif-head"><span>Notifications</span>${unread ? `<button type="button" onclick="markAllNotifsRead()">Mark all read</button>` : ''}</div>
+    ${items.length ? items.map(n => `
+      <button type="button" class="notif-item ${n.unread ? 'unread' : ''}" onclick="openNotif('${esc(n.id)}', '${esc(n.batchId)}')">
+        <div class="notif-title">${esc(n.title)}</div>
+        <div class="notif-body">${esc(n.body)}</div>
+        <div class="notif-time">${notifTimeAgo(n.at)}</div>
+      </button>`).join('') : `<div class="notif-empty">${empty}</div>`}
+    <div class="notif-foot">${footer}</div>
+  </div>`;
+}
+
+function renderNotifBell() {
+  const items = buildNotifications();
+  const unread = items.filter(n => n.unread).length;
+  document.title = `${unread ? `(${unread}) ` : ''}SoloPrint — 3D Print Quote Request`;
+  return `<div class="notif-wrap" id="notif-wrap">
+    <button class="notif-bell" type="button" aria-label="Notifications${unread ? ` (${unread} unread)` : ''}" onclick="toggleNotifPanel()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      ${unread ? `<span class="notif-count">${unread > 9 ? '9+' : unread}</span>` : ''}
+    </button>
+    ${state.notifOpen ? renderNotifPanel(items, unread) : ''}
+  </div>`;
+}
+
+function updateNotifBell() {
+  const el = document.getElementById('notif-wrap');
+  if (el) el.outerHTML = renderNotifBell();
+}
+
+function toggleNotifPanel() {
+  state.notifOpen = !state.notifOpen;
+  updateNotifBell();
+}
+
+function markAllNotifsRead() {
+  markNotifsRead(buildNotifications().map(n => n.id));
+  updateNotifBell();
+}
+
+function openNotif(id, batchId) {
+  markNotifsRead([id]);
+  state.notifOpen = false;
+  if (notifScope() === 'owner') state.ownerTab = 'dashboard';
+  else state.clientTab = 'jobs';
+  render();
+  const card = document.getElementById(`order-${batchId}`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function toggleBrowserAlerts() {
+  const prefs = loadJsonPref(NOTIF_PREFS_KEY, {});
+  if (browserAlertsOn()) {
+    prefs.alerts = false;
+  } else {
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    prefs.alerts = permission === 'granted';
+  }
+  saveJsonPref(NOTIF_PREFS_KEY, prefs);
+  updateNotifBell();
+}
+
+// Pop up a browser alert for updates that arrive while the page is open.
+function sendBrowserAlerts() {
+  if (!browserAlertsOn()) return;
+  const alerted = new Set(loadJsonPref(NOTIF_ALERTED_KEY, []));
+  const fresh = buildNotifications().filter(n => n.unread && !alerted.has(n.id) && Date.parse(n.at) > NOTIF_PAGE_OPENED_AT);
+  fresh.forEach(n => {
+    try {
+      const alert = new Notification(n.title, { body: n.body, tag: n.id });
+      alert.onclick = () => { window.focus(); openNotif(n.id, n.batchId); };
+    } catch (e) {}
+    alerted.add(n.id);
+  });
+  if (fresh.length) saveJsonPref(NOTIF_ALERTED_KEY, [...alerted].slice(-500));
+}
+
+document.addEventListener('click', e => {
+  if (state.notifOpen && !e.target.closest('.notif-wrap')) {
+    state.notifOpen = false;
+    updateNotifBell();
+  }
+});
+
+// Check for order updates every minute so the tracker and notifications stay current.
+setInterval(async () => {
+  const scope = notifScope();
+  if (state.loading || (state.view === 'owner' && !state.ownerUnlocked)) return;
+  if (scope === 'client' && !state.historyEmail) return;
+  if (document.hidden && !browserAlertsOn()) return;
+  const before = JSON.stringify(state.batches);
+  await loadBatches(scope === 'client' ? state.historyEmail : '');
+  sendBrowserAlerts();
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+  // Only the customer tracker re-renders; owner pages hold unsaved form values in the DOM.
+  if (JSON.stringify(state.batches) !== before && scope === 'client' && state.clientTab === 'jobs' && !typing && !state.notifOpen) render();
+  else updateNotifBell();
+}, 60 * 1000);
+
+function clearMyRequestsLookup() {
+  state.historyEmail = '';
+  state.batches = [];
+  persistClientHistoryEmail();
+  render();
+}
+
+// ── EMAIL LINKS (magic link / password reset) ─────────────────────────────
+// Supabase sends the owner back to this page with the session in the URL fragment
+// (#access_token=...&type=magiclink|recovery). Finish the login and, for resets, ask for a new password.
+function handleAuthRedirect() {
+  const params = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  if (!params.has('access_token') && !params.has('error') && !params.has('error_description')) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  state.view = 'owner';
+  if (!params.has('access_token')) {
+    state.authNotice = params.get('error_code') === 'otp_expired'
+      ? 'That email link has expired or was already used. Request a new one below.'
+      : `That email link didn't work (${params.get('error_description') || params.get('error') || 'unknown error'}). Request a new one below.`;
+    return;
+  }
+  persistOwnerSession({ access_token: params.get('access_token'), expires_in: params.get('expires_in') });
+  state.ownerUnlocked = true;
+  state.ownerTab = 'dashboard';
+  state.showPasswordForm = params.get('type') === 'recovery';
+}
+
+function authRedirectUrl() {
+  return location.origin && location.origin !== 'null' ? location.origin + location.pathname : '';
+}
+
+async function sendOwnerAuthEmail(kind) {
+  const email = (document.getElementById('owner-email') || { value: OWNER_EMAIL }).value.trim();
+  if (!email) { showAlert('pw-err', 'Enter your email first.', 'error'); return; }
+  const redirect = authRedirectUrl();
+  const query = redirect ? `?redirect_to=${encodeURIComponent(redirect)}` : '';
+  const path = kind === 'recover' ? '/auth/v1/recover' : '/auth/v1/otp';
+  const body = kind === 'recover' ? { email } : { email, create_user: false };
+  try {
+    const res = await fetch(`${SUPA_URL}${path}${query}`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.status === 429) throw new Error('Supabase only sends a few login emails per hour, and that limit has been reached. Try again in about an hour, or log in with your password and use Change password on the dashboard.');
+    if (!res.ok) throw new Error("Couldn't send the email. Try again in a moment.");
+    const pwErr = document.getElementById('pw-err');
+    if (pwErr) pwErr.style.display = 'none';
+    showAlert('pw-ok', kind === 'recover'
+      ? `If ${email} has an owner account, a password reset link is on its way. Open it on this device.`
+      : `If ${email} has an owner account, a login link is on its way. Open it on this device.`, 'success');
+  } catch (e) {
+    showAlert('pw-err', e.message, 'error');
+  }
+}
+
+function renderSetPasswordCard() {
+  return `<div class="card">
+    <h3 class="card-title">Set a new password</h3>
+    <div class="row2">
+      <div class="field"><label>New password</label><input type="password" id="new-pw" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+      <div class="field"><label>Repeat it</label><input type="password" id="new-pw2" autocomplete="new-password" /></div>
+    </div>
+    <div class="alert error" id="new-pw-err"></div>
+    <div class="alert success" id="new-pw-ok"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-sm" type="button" id="new-pw-btn" onclick="saveNewPassword()">Save password</button>
+      <button class="btn-sm" type="button" onclick="state.showPasswordForm = false; render();">Not now</button>
+    </div>
+  </div>`;
+}
+
+async function saveNewPassword() {
+  const pw = document.getElementById('new-pw').value;
+  const pw2 = document.getElementById('new-pw2').value;
+  if (pw.length < 8) { showAlert('new-pw-err', 'Use at least 8 characters.', 'error'); return; }
+  if (pw !== pw2) { showAlert('new-pw-err', "The two passwords don't match.", 'error'); return; }
+  const btn = document.getElementById('new-pw-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    const res = await fetch(`${SUPA_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${getOwnerToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.msg || json.error_description || json.message || `Error ${res.status}`);
+    document.getElementById('new-pw-err').style.display = 'none';
+    showAlert('new-pw-ok', 'Password saved. Use it next time you log in.', 'success');
+    setTimeout(() => { state.showPasswordForm = false; render(); }, 1800);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save password'; }
+    showAlert('new-pw-err', `Couldn't save the password: ${e.message}`, 'error');
+  }
+}
+
+// Owner sign-in goes through Supabase Auth; the database only lets this account read and edit orders.
+async function checkPw() {
+  const email = (document.getElementById('owner-email') || { value: OWNER_EMAIL }).value.trim();
+  const password = document.getElementById('owner-pw').value;
+  const btn = document.getElementById('owner-login-btn');
+  if (!password) { showAlert('pw-err', 'Please enter your password.', 'error'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Logging in...'; }
+  try {
+    const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const session = await res.json().catch(() => ({}));
+    if (!res.ok || !session.access_token) throw new Error('login failed');
+    persistOwnerSession(session);
+    state.authNotice = '';
+    state.ownerUnlocked = true;
+    state.ownerTab = 'dashboard';
+    await Promise.all([loadBatches(), loadRemoteLibrary()]);
+    render();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Login'; }
+    showAlert('pw-err', 'Incorrect email or password.', 'error');
+  }
+}
+
+function logoutOwner() {
+  state.ownerUnlocked = false;
+  state.view = 'client';
+  clearOwnerSession();
+  state.batches = [];
+  if (state.historyEmail) loadBatches(state.historyEmail).then(() => render());
+  render();
+}
+
+function updateDraft(i, field, value) {
+  if (!state.draftItems[i]) return;
+  state.draftItems[i][field] = value;
+  if (field === 'name' || field === 'link') maybeOfferKnownEstimate(i);
+  if (field === 'grams' || field === 'qty' || field === 'filType') updateCustomerPricePreview(i);
+}
+
+function rerenderPills(i, selected) {
+  const el = document.getElementById(`pills-${i}`);
+  if (el) el.innerHTML = renderFilamentPills(i, selected);
+}
+
+function clearErr(input, errId) {
+  input.classList.remove('invalid');
+  const el = document.getElementById(errId);
+  if (el) el.classList.remove('show');
+}
+
+function showFieldErr(inputId, errId) {
+  const input = document.getElementById(inputId);
+  const err   = document.getElementById(errId);
+  if (input) input.classList.add('invalid');
+  if (err)   err.classList.add('show');
+}
+
+// ── MODEL PREVIEWS ────────────────────────────────────────────────────────
+const previewCache = new Map();
+const previewTimers = {};
+
+async function fetchModelPreview(url) {
+  const key = normalizeModelKey(url);
+  if (previewCache.has(key)) return previewCache.get(key);
+  const res = await fetch(PREVIEW_API + encodeURIComponent(String(url).trim()));
+  if (!res.ok) throw new Error(`Preview error ${res.status}`);
+  const json = await res.json();
+  const image = json?.data?.image?.url || json?.data?.logo?.url || '';
+  const preview = { image: /^https:\/\//i.test(image) ? image : '', title: json?.data?.title || '' };
+  previewCache.set(key, preview);
+  return preview;
+}
+
+function safeImageUrl(url) {
+  return /^https:\/\//i.test(String(url || '')) ? url : '';
+}
+
+// Printables blocks our lookups, so point the customer to where Printables lists the numbers.
+function printablesFilesUrl(link) {
+  const m = String(link || '').trim().match(/^https?:\/\/(?:www\.)?printables\.com\/(?:[a-z]{2}\/)?model\/(\d+[A-Za-z0-9-]*)/i);
+  return m ? `https://www.printables.com/model/${m[1]}/files` : '';
+}
+
+function renderPrintablesHint(item) {
+  const filesUrl = printablesFilesUrl(item.link);
+  if (!filesUrl) return '';
+  return `<div class="lookup-hint">
+    <strong>Print time and filament are listed on Printables</strong>
+    We can't fill these in automatically for Printables links, but you can usually find them yourself:
+    open the model's <a href="${esc(filesUrl)}" target="_blank" rel="noopener noreferrer">Files tab on Printables ↗</a>,
+    find a print file (G-code), and copy its print time and weight (g) into Hours, Minutes and Grams below.
+    If the model has no print file, leave them blank and we'll estimate it for you.
+  </div>`;
+}
+
+function renderModelPreview(item) {
+  return renderModelPreviewCard(item) + renderPrintablesHint(item);
+}
+
+function renderModelPreviewCard(item) {
+  if (item.previewLoading) {
+    return `<div class="model-preview loading"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /><div class="model-preview-sub">Loading preview...</div></div>`;
+  }
+  const img = safeImageUrl(item.previewImage);
+  const note = item.estimateSource
+    ? `Print time and filament filled in from ${esc(item.estimateSource)}. This is an automated estimate; edit it if you know better.`
+    : esc(item.estimateNote || '');
+  if (!img && !note) return '';
+  return `<div class="model-preview">
+    ${img ? `<img src="${esc(img)}" alt="${esc(item.name || 'Model preview')}" loading="lazy" onerror="this.remove()" />` : ''}
+    <div><div class="model-preview-title">${esc(item.name || 'Model preview')}</div><div class="model-preview-sub">${note || 'Preview from the model link'}</div></div>
+  </div>`;
+}
+
+function renderModelThumb(item) {
+  const img = safeImageUrl(item.previewImage);
+  return img ? `<img class="model-thumb" src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()" />` : '';
+}
+
+function rerenderModelPreview(i) {
+  const el = document.getElementById(`preview-${i}`);
+  if (el && state.draftItems[i]) el.innerHTML = renderModelPreview(state.draftItems[i]);
+}
+
+async function lookupModelEstimate(url) {
+  if (!/(makerworld\.com|thingiverse\.com)/i.test(url)) return null;
+  const res = await fetch(`${LOOKUP_API}?action=lookup&url=${encodeURIComponent(url)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// Fill print time and grams from a looked-up profile, unless the customer typed them or a saved estimate applies.
+function applyLookedUpEstimate(i, item, found) {
+  if (!found) return;
+  const minutes = cleanNumber(found.minutes);
+  const grams = cleanNumber(found.grams);
+  if (!found.ok || !minutes || !grams) {
+    if (found.source === 'MakerWorld') item.estimateNote = 'We couldn\'t find a print time for this link, so please enter your best guess or leave it blank.';
+    return;
+  }
+  if (item.knownFromLibrary || item.printHours || item.printMinutes || item.grams) return;
+  item.printHours = String(Math.floor(minutes / 60));
+  item.printMinutes = String(Math.round(minutes % 60));
+  item.grams = grams;
+  const profile = cleanText(found.profile, 80);
+  const plates = parseInt(found.plates, 10) || 1;
+  item.estimateSource = `MakerWorld${profile ? ` profile "${profile}"` : ''}${plates > 1 ? ` (${plates} plates)` : ''}`;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set(`hours-${i}`, item.printHours);
+  set(`minutes-${i}`, item.printMinutes);
+  set(`print-time-${i}`, minutes);
+  set(`grams-${i}`, grams);
+  updateCustomerPricePreview(i);
+}
+
+function queueModelPreview(i, url) {
+  clearTimeout(previewTimers[i]);
+  previewTimers[i] = setTimeout(async () => {
+    const item = state.draftItems[i];
+    if (!item || item.link !== url) return;
+    item.previewLoading = true;
+    rerenderModelPreview(i);
+    // Our Apps Script handles MakerWorld and Thingiverse; Microlink (limited free plan) is only the fallback.
+    const found = await lookupModelEstimate(url).catch(() => null);
+    const preview = found && safeImageUrl(found.image) ? null : await fetchModelPreview(url).catch(() => null);
+    if (state.draftItems[i] !== item || item.link !== url) return;
+    item.previewImage = (preview && preview.image) || safeImageUrl(found && found.image);
+    const title = (preview && preview.title) || cleanText(found && found.name, 200);
+    if (!item.name && title) {
+      item.name = title;
+      const el = document.getElementById(`name-${i}`);
+      if (el) el.value = item.name;
+    }
+    applyLookedUpEstimate(i, item, found);
+    item.previewLoading = false;
+    rerenderModelPreview(i);
+  }, 600);
+}
+
+// Link input — extract name from slug or trigger server fetch for numeric IDs
+async function onLinkInput(i, value) {
+  state.draftItems[i].link = value;
+  state.draftItems[i].knownFromLibrary = false;
+  state.draftItems[i].knownMinutes = null;
+  state.draftItems[i].knownPrompted = false;
+  state.draftItems[i].previewImage = '';
+  state.draftItems[i].estimateNote = '';
+  if (state.draftItems[i].estimateSource) {
+    Object.assign(state.draftItems[i], { printHours: '', printMinutes: '', grams: null, estimateSource: '' });
+    ['hours', 'minutes', 'print-time', 'grams'].forEach(f => { const el = document.getElementById(`${f}-${i}`); if (el) el.value = ''; });
+    updateCustomerPricePreview(i);
+  }
+  if (isSupportedModelLink(value) && isWebUrl(value)) queueModelPreview(i, value);
+  else rerenderModelPreview(i);
+  if (isOriginalDesignText(value)) {
+    if (!state.draftItems[i].name) {
+      state.draftItems[i].name = titleCaseWords(String(value).trim());
+      const el = document.getElementById(`name-${i}`);
+      if (el) el.value = state.draftItems[i].name;
+    }
+    maybeOfferKnownEstimate(i);
+    return;
+  }
+  if (!isSupportedModelLink(value)) return;
+
+  const slugName = nameFromUrl(value);
+  if (slugName) {
+    // Slug URL — fill immediately
+    state.draftItems[i].name = slugName;
+    const el = document.getElementById(`name-${i}`);
+    if (el) el.value = slugName;
+  } else if (isNumericOnlySlug(value) && value.length > 30) {
+    // Numeric-only URL — call Netlify function
+    state.draftItems[i].fetching = true;
+    rerenderFetchBadge(i, true);
+    try {
+      const name = await fetchNameFromServer(value);
+      if (name) {
+        state.draftItems[i].name = name;
+        const el = document.getElementById(`name-${i}`);
+        if (el) el.value = name;
+      }
+    } catch(e) { /* silently fail — user can type name */ }
+    state.draftItems[i].fetching = false;
+    rerenderFetchBadge(i, false);
+  }
+  maybeOfferKnownEstimate(i);
+}
+
+function rerenderFetchBadge(i, fetching) {
+  const header = document.querySelector(`#iblock-${i} .item-block-header`);
+  if (!header) return;
+  const existing = header.querySelector('.fetching-badge');
+  if (fetching && !existing) {
+    const span = document.createElement('span');
+    span.className = 'fetching-badge';
+    span.textContent = 'Looking up...';
+    header.querySelector('div') ? header.querySelector('div').prepend(span) : header.appendChild(span);
+  } else if (!fetching && existing) {
+    existing.remove();
+  }
+}
+
+function handleNextLinkPaste(event) {
+  event.preventDefault();
+  const pasted = (event.clipboardData || window.clipboardData).getData('text').trim();
+  if (pasted) promoteNextLink(pasted);
+}
+
+function handleNextLinkType(value) {
+  if (value.length > 12 && isDirectModelReference(value)) promoteNextLink(value);
+}
+
+async function promoteNextLink(url) {
+  const item = blankItem();
+  item.link = url;
+  if (isOriginalDesignText(url)) {
+    item.name = titleCaseWords(String(url).trim());
+  } else {
+    const slugName = nameFromUrl(url);
+    if (slugName) {
+      item.name = slugName;
+    } else if (isNumericOnlySlug(url)) {
+      item.fetching = true;
+    }
+  }
+  state.draftItems.push(item);
+  render();
+  const insertedIdx = state.draftItems.length - 1;
+  maybeOfferKnownEstimate(insertedIdx);
+  setTimeout(() => {
+    const blocks = document.querySelectorAll('.item-block');
+    if (blocks.length) blocks[blocks.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+  // Fetch name async if numeric
+  if (isSupportedModelLink(url) && isNumericOnlySlug(url)) {
+    const idx = state.draftItems.length - 1;
+    try {
+      const name = await fetchNameFromServer(url);
+      if (name && state.draftItems[idx]) {
+        state.draftItems[idx].name = name;
+        state.draftItems[idx].fetching = false;
+        const el = document.getElementById(`name-${idx}`);
+        if (el) el.value = name;
+        rerenderFetchBadge(idx, false);
+      }
+    } catch(e) {
+      if (state.draftItems[idx]) state.draftItems[idx].fetching = false;
+      rerenderFetchBadge(idx, false);
+    }
+  }
+}
+
+function removeItem(i) {
+  if (!confirm('Remove this item from your quote request?')) return;
+  state.draftItems.splice(i, 1);
+  render();
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────────────────
+async function submitBatch() {
+  const clientName  = state.clientName.trim();
+  const clientEmail = state.clientEmail.trim();
+  let valid = true;
+
+  // Required field validation
+  if (!clientName) {
+    showFieldErr('client-name', 'err-name');
+    valid = false;
+  }
+  if (!clientEmail || !clientEmail.includes('@') || !clientEmail.includes('.')) {
+    showFieldErr('client-email', 'err-email');
+    valid = false;
+  }
+  if (!valid) {
+    document.getElementById('client-name')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const items = state.draftItems.filter(it => it.name || it.link);
+  if (!items.length) { showAlert('submit-err', 'Please add at least one item.', 'error'); return; }
+  const unnamed = items.findIndex(it => !it.name);
+  if (unnamed >= 0) { showAlert('submit-err', `Item ${unnamed + 1} needs a model name.`, 'error'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const batch = {
+    id: Date.now().toString(), clientName, clientEmail,
+    items: items.map(it => ({
+      ...it,
+      minutes: it.knownFromLibrary ? it.knownMinutes : totalPrintMinutes(it.printHours, it.printMinutes),
+      fetching: false,
+      previewLoading: false
+    })),
+    status: 'pending',
+    phase: 'estimate',
+    paymentStatus: 'unpaid',
+    deliveryNotes: '',
+    deliveryTracking: '',
+    deliveryDate: '',
+    createdAt: new Date().toISOString()
+  };
+  batch.phaseHistory = { estimate: batch.createdAt };
+  state.historyEmail = clientEmail.toLowerCase();
+  persistClientHistoryEmail();
+  if (!(await submitBatchRemote(batch))) {
+    showAlert('submit-err', "We couldn't save your request. Please check your connection and try again.", 'error');
+    btn.disabled = false; btn.textContent = 'Submit Quote Request';
+    return;
+  }
+  state.batches.push(normalizeBatch(batch));
+
+  showAlert('submit-ok', `Thanks! We've received your request for ${items.length} item${items.length>1?'s':''} and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs. We'll email ${clientEmail} with your confirmed quote.`, 'success');
+  btn.disabled = false; btn.textContent = 'Submit Quote Request';
+  state.draftItems = [blankItem()];
+  state.clientTab = 'jobs';
+  setTimeout(() => render(), 1200);
+}
+
+// ── OWNER ACTIONS ─────────────────────────────────────────────────────────
+function previewOwnerItem(batchId, i) {
+  const batch = state.batches.find(b => b.id === batchId);
+  if (!batch) return;
+  const it    = batch.items[i];
+  const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
+  const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
+  const pEl   = document.getElementById(`opreview-${batchId}-${i}`);
+  if (!pEl) return;
+  if (!mins || !grams) { pEl.style.display = 'none'; return; }
+  const pp  = calcPerPrint(mins, grams, it.filType);
+  const tot = pp * it.qty;
+  const fr  = FIL_RATE[it.filType] || 0.024;
+  document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
+  document.getElementById(`opsub-${batchId}-${i}`).textContent =
+    `$2.00 flat × ${it.qty} = $${(2*it.qty).toFixed(2)}\n` +
+    `${fmtMinutesWithHours(mins)} × $0.024 × ${it.qty} = $${(mins*0.024*it.qty).toFixed(2)}\n` +
+    `${grams}g × $${fr} × ${it.qty} = $${(grams*fr*it.qty).toFixed(2)}` +
+    (it.qty > 1 ? `\n$${pp.toFixed(2)} per print × ${it.qty}` : '');
+  pEl.style.display = 'block';
+}
+
+function applyKnownEstimateToOwnerItem(batchId, i) {
+  const batch = state.batches.find(b => b.id === batchId);
+  if (!batch || !batch.items || !batch.items[i]) return;
+  const item = batch.items[i];
+  const known = getKnownEstimate(item);
+  if (!known) return;
+
+  item.minutes = known.minutes;
+  item.grams = known.grams;
+
+  const minsInput = document.getElementById(`mins-${batchId}-${i}`);
+  const hoursInput = document.getElementById(`hours-${batchId}-${i}`);
+  const minutesInput = document.getElementById(`minutes-${batchId}-${i}`);
+  const gramsInput = document.getElementById(`ograms-${batchId}-${i}`);
+  if (minsInput) minsInput.value = known.minutes;
+  if (hoursInput) hoursInput.value = hoursFromMinutes(known.minutes);
+  if (minutesInput) minutesInput.value = minuteRemainder(known.minutes);
+  if (gramsInput) gramsInput.value = known.grams;
+
+  previewOwnerItem(batchId, i);
+  render();
+}
+
+async function updateBatchPhase(batchId, phase) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const currentPhase = b.phase || 'estimate';
+  if (!canAdvanceToPhase(currentPhase, phase)) {
+    alert(`Phase must move in order. Next step after "${phaseLabel(currentPhase)}" is "${phaseLabel(ORDER_PHASES[phaseIndex(currentPhase) + 1]?.id || currentPhase)}".`);
+    render();
+    return;
+  }
+  b.phase = phase;
+  b.status = phase === 'estimate' ? 'pending' : 'quoted';
+  stampPhase(b, phase);
+  await upsertBatch(b);
+  render();
+}
+
+async function updatePaymentStatus(batchId, paymentStatus) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const currentStatus = b.paymentStatus || 'unpaid';
+  if (!canAdvancePayment(currentStatus, paymentStatus)) {
+    alert(`Payment status must move in order. Next step after "${paymentLabel(currentStatus)}" is "${paymentLabel(PAYMENT_PHASES[paymentIndex(currentStatus) + 1]?.id || currentStatus)}".`);
+    render();
+    return;
+  }
+  b.paymentStatus = paymentStatus;
+  await upsertBatch(b);
+  render();
+}
+
+function addLibraryEntry() {
+  const link = (document.getElementById('lib-link') || { value: '' }).value.trim();
+  const name = (document.getElementById('lib-name') || { value: '' }).value.trim();
+  const minutes = parseFloat((document.getElementById('lib-mins') || { value: '' }).value);
+  const grams = parseFloat((document.getElementById('lib-grams') || { value: '' }).value);
+
+  const res = saveModelLibraryEntry({ link, name, minutes, grams, filType: 'black' });
+  if (!res.ok) { showAlert('lib-err', res.error, 'error'); return; }
+
+  showAlert('lib-ok', `Saved library entry (${fmtMinutesWithHours(minutes)}, ${grams}g).`, 'success');
+  render();
+}
+
+function calculateAndSaveOwnerModel() {
+  const calc = state.ownerCalculator || blankOwnerCalculator();
+  const link = String(calc.link || '').trim();
+  const name = String(calc.name || '').trim();
+  const minutes = totalPrintMinutes(calc.hours, calc.minutes);
+  const grams = parseFloat(calc.grams);
+  const qty = Math.max(1, parseInt(calc.qty, 10) || 1);
+  const filType = calc.filType || 'black';
+
+  const res = saveModelLibraryEntry({ link, name, minutes, grams, filType });
+  if (!res.ok) {
+    showAlert('owner-calc-err', res.error, 'error');
+    return;
+  }
+
+  const perPrint = calcPerPrint(minutes, grams, filType) || 0;
+  state.ownerCalculator.lastResult = {
+    link,
+    name,
+    minutes,
+    grams,
+    qty,
+    filType,
+    perPrint,
+    total: perPrint * qty
+  };
+
+  showAlert('owner-calc-ok', `Calculated and saved ${name || 'model'} to Saved Models for future quotes.`, 'success');
+  render();
+}
+
+function resetOwnerCalculator() {
+  state.ownerCalculator = blankOwnerCalculator();
+  render();
+}
+
+function setLibrarySaveState(next) {
+  librarySaveState = next;
+  const text = document.querySelector('.save-indicator span:last-child');
+  const wrap = document.querySelector('.save-indicator');
+  if (wrap) wrap.classList.toggle('pending', next === 'pending');
+  if (text) text.textContent = next === 'pending' ? 'Saving changes...' : 'All changes saved automatically';
+}
+
+function toggleLibraryLinkEdit(encodedKey) {
+  const key = decodeURIComponent(encodedKey);
+  state.libraryEditingKey = state.libraryEditingKey === key ? '' : key;
+  render();
+}
+
+function updateLibraryEntry(encodedKey, rowId, shouldRender = true) {
+  const oldKey = decodeURIComponent(encodedKey);
+  const link = (document.getElementById(`${rowId}-link`) || { value: '' }).value.trim();
+  const name = (document.getElementById(`${rowId}-name`) || { value: '' }).value.trim();
+  const minutes = parseFloat((document.getElementById(`${rowId}-mins`) || { value: '' }).value);
+  const grams = parseFloat((document.getElementById(`${rowId}-grams`) || { value: '' }).value);
+  const existing = state.modelLibrary[oldKey] || {};
+
+  const hasAnyValue = !!(link || name || Number.isFinite(minutes) || Number.isFinite(grams));
+  if (!hasAnyValue) return;
+
+  const newKey = modelKeyFromItem({ link, name });
+  if (!newKey || !Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(grams) || grams <= 0) return;
+
+  if (newKey !== oldKey) delete state.modelLibrary[oldKey];
+  state.modelLibrary[newKey] = {
+    link,
+    name,
+    minutes,
+    grams,
+    filType: existing.filType || 'black',
+    updatedAt: new Date().toISOString()
+  };
+  if (state.libraryEditingKey === oldKey || state.libraryEditingKey === newKey) state.libraryEditingKey = newKey;
+  persistModelLibrary();
+  setLibrarySaveState('saved');
+  if (shouldRender) render();
+}
+
+function queueLibraryRowSave(encodedKey, rowId) {
+  setLibrarySaveState('pending');
+  if (libraryAutoSaveTimer) clearTimeout(libraryAutoSaveTimer);
+  libraryAutoSaveTimer = setTimeout(() => {
+    libraryAutoSaveTimer = null;
+    updateLibraryEntry(encodedKey, rowId, true);
+  }, 350);
+}
+
+function deleteLibraryEntry(encodedKey) {
+  const key = decodeURIComponent(encodedKey);
+  delete state.modelLibrary[key];
+  if (state.libraryEditingKey === key) state.libraryEditingKey = '';
+  persistModelLibrary();
+  setLibrarySaveState('saved');
+  render();
+}
+
+async function saveDeliveryInfo(batchId) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  b.deliveryDate = (document.getElementById(`ddate-${batchId}`) || { value: '' }).value.trim();
+  b.deliveryTracking = (document.getElementById(`dtrack-${batchId}`) || { value: '' }).value.trim();
+  b.deliveryNotes = (document.getElementById(`dnotes-${batchId}`) || { value: '' }).value.trim();
+  await upsertBatch(b);
+  render();
+}
+
+async function approveBatch(batchId) {
+  const batch = state.batches.find(b => b.id === batchId);
+  if (!batch) return;
+  let allValid = true;
+  batch.items.forEach((it, i) => {
+    const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
+    const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
+    if (!mins || !grams) allValid = false;
+    it.minutes = mins  || null;
+    it.grams   = grams || it.grams;
+    if (mins && grams) saveKnownEstimate(it);
+  });
+  if (!allValid) { showAlert(`batch-err-${batchId}`, 'Please fill in print time and grams for every item.', 'error'); return; }
+
+  const btn = document.getElementById(`approve-btn-${batchId}`);
+  btn.disabled = true; btn.textContent = 'Saving & notifying...';
+  batch.status = 'quoted';
+  batch.phase = 'quote_sent';
+  batch.paymentStatus = 'payment_requested';
+  batch.customerApprovedAt = '';
+  stampPhase(batch, 'quote_sent');
+  await upsertBatch(batch);
+
+  showAlert(`batch-ok-${batchId}`, `Quote saved! ${batch.clientName || 'The customer'} will get an email at ${batch.clientEmail}.`, 'success');
+  setTimeout(() => render(), 1800);
+}
+
+async function resetBatch(batchId) {
+  const b = state.batches.find(b => b.id === batchId);
+  if (!b) return;
+  b.status = 'pending';
+  b.phase = 'estimate';
+  b.customerApprovedAt = '';
+  b.phaseHistory = { estimate: (b.phaseHistory || {}).estimate || b.createdAt };
+  b.items.forEach(it => it.minutes = null);
+  await upsertBatch(b);
+  render();
+}
+
+async function deleteBatch(batchId) {
+  if (!confirm('Are you sure you want to delete this order? This cannot be undone.')) return;
+  state.batches = state.batches.filter(b => b.id !== batchId);
+  await deleteBatchRemote(batchId);
+  render();
+}
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg; el.className = `alert ${type}`; el.style.display = 'block';
+}
+
+// Accessibility pass after each render: tie every .field label to its control, and make message
+// boxes announce themselves to screen readers.
+let a11yIdCounter = 0;
+function linkFieldLabels(root = document) {
+  root.querySelectorAll('.field').forEach(field => {
+    const label = field.querySelector(':scope > label');
+    const control = field.querySelector('input:not([type=hidden]), select, textarea');
+    if (!label || !control || label.contains(control) || label.htmlFor) return;
+    if (!control.id) control.id = `field-${++a11yIdCounter}`;
+    label.htmlFor = control.id;
+    const help = field.querySelector(':scope > .field-help');
+    if (help && !control.hasAttribute('aria-describedby')) {
+      if (!help.id) help.id = `help-${++a11yIdCounter}`;
+      control.setAttribute('aria-describedby', help.id);
+    }
+  });
+  root.querySelectorAll('.alert').forEach(el => {
+    if (!el.hasAttribute('role')) el.setAttribute('role', el.classList.contains('error') ? 'alert' : 'status');
+  });
+}
+
+function attachAll() {
+  linkFieldLabels();
+  const pw = document.getElementById('owner-pw');
+  if (pw) pw.addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+
+  const addLibraryFields = ['lib-link', 'lib-name', 'lib-mins', 'lib-grams'];
+  addLibraryFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addLibraryEntry();
+      }
+    });
+  });
+
+  const ownerCalcFields = ['owner-calc-link', 'owner-calc-name', 'owner-calc-hours', 'owner-calc-mins', 'owner-calc-grams', 'owner-calc-qty'];
+  ownerCalcFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        calculateAndSaveOwnerModel();
+      }
+    });
+  });
+}
+
+init();
