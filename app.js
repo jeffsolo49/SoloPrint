@@ -302,7 +302,11 @@ function renderOrderTracker(batch) {
       <div class="tracker-time">${cls && at ? shortTime(at) : ''}</div>
     </div>`;
   }).join('');
-  const deliveryInfo = [batch.deliveryDate && `Delivery: ${esc(batch.deliveryDate)}`, batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`].filter(Boolean).join(' · ');
+  const deliveryInfo = [
+    ['order_received', 'production'].includes(phase) && batch.estimatedReady && `<strong>Estimated ready: ${esc(formatReadyDate(batch.estimatedReady))}</strong>`,
+    batch.deliveryDate && `Delivery: ${esc(batch.deliveryDate)}`,
+    batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`
+  ].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
     <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
     ${renderCustomerOrderAction(batch)}`;
@@ -417,6 +421,7 @@ function normalizeBatch(batch) {
     deliveryNotes: cleanText(batch.deliveryNotes),
     deliveryTracking: cleanText(batch.deliveryTracking, 200),
     deliveryDate: cleanText(batch.deliveryDate, 100),
+    estimatedReady: /^\d{4}-\d{2}-\d{2}$/.test(String(batch.estimatedReady)) ? batch.estimatedReady : '',
     items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
     phaseHistory
   };
@@ -1933,6 +1938,11 @@ function renderOwnerBatch(b) {
           }).join('')}
         </select>
       </div>
+      ${['order_received', 'production'].includes(b.phase) ? `
+      <div class="field" style="margin-bottom:0;">
+        <label>Estimated ready</label>
+        <input type="date" value="${esc(b.estimatedReady || '')}" onchange="updateReadyDate('${b.id}', this.value)" />
+      </div>` : ''}
       <div class="field" style="margin-bottom:0;">
         <label>Payment Status</label>
         <select class="phase-select" onchange="updatePaymentStatus('${b.id}', this.value)">
@@ -3514,6 +3524,42 @@ function applyKnownEstimateToOwnerItem(batchId, i) {
   render();
 }
 
+// ── READY DATES ───────────────────────────────────────────────────────────
+// Confirmed orders are printed in the order they were confirmed. A new order's ready date is today plus
+// the print time of everything confirmed ahead of it (and itself), at the owner's printing hours per day.
+function batchPrintMinutes(b) {
+  return (b.items || []).reduce((s, it) => s + (Number(it.minutes) || 0) * Math.max(1, parseInt(it.qty, 10) || 1), 0);
+}
+
+function localDateString(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function estimateReadyDate(batch) {
+  const confirmedAt = o => (o.phaseHistory && o.phaseHistory.order_received) || o.createdAt;
+  const ahead = state.batches.filter(o => o.id !== batch.id && ['order_received', 'production'].includes(o.phase) && confirmedAt(o) <= confirmedAt(batch));
+  const minutes = ahead.reduce((s, o) => s + batchPrintMinutes(o), 0) + batchPrintMinutes(batch);
+  const perDay = (state.settings.printHoursPerDay || 8) * 60;
+  const days = Math.max(1, Math.ceil(minutes / perDay));
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return localDateString(d);
+}
+
+function formatReadyDate(ymd) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+async function updateReadyDate(batchId, value) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b || (value && !/^\d{4}-\d{2}-\d{2}$/.test(value))) return;
+  b.estimatedReady = value;
+  await upsertBatch(b);
+  render();
+}
+
 async function updateBatchPhase(batchId, phase) {
   const b = state.batches.find(x => x.id === batchId);
   if (!b) return;
@@ -3526,6 +3572,7 @@ async function updateBatchPhase(batchId, phase) {
   b.phase = phase;
   b.status = phase === 'estimate' ? 'pending' : 'quoted';
   stampPhase(b, phase);
+  if (phase === 'order_received' && !b.estimatedReady) b.estimatedReady = estimateReadyDate(b);
   await upsertBatch(b);
   render();
 }

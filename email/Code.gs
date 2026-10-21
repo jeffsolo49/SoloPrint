@@ -286,6 +286,8 @@ function emailsFor(type, rec, old) {
     } else if (rec.phase === 'order_received') {
       const total = orderTotal(rec);
       const lines = [`Good news: your order for ${title} is confirmed and queued for the printer.`];
+      const ready = formatYmd(rec.estimatedReady);
+      if (ready) lines.push(`Estimated ready: ${ready}`);
       if (total && rec.paymentStatus !== 'payment_recieved') {
         lines.push('', `Total: $${money(total)}`, `Pay with Venmo: ${venmoUrl(rec, total)}`, '(The link fills in the amount and your order number.)');
       }
@@ -366,6 +368,12 @@ function orderTitle(rec) {
 function venmoUrl(rec, total) {
   const note = `SoloPrint order ${rec.id}: ${orderTitle(rec)}`.slice(0, 140);
   return `https://venmo.com/${encodeURIComponent(VENMO_USERNAME)}?txn=pay&amount=${money(total)}&note=${encodeURIComponent(note)}`;
+}
+
+function formatYmd(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 function money(n) {
