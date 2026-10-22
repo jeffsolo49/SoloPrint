@@ -24,7 +24,7 @@ function fixtures() {
         items: [{ name: 'A', filType: '"><img src=x onerror=window.__xss=2>', qty: '<b>', grams: '<img src=x onerror=window.__xss=3>' }] }
     },
     gallery: {
-      g1: { id: 'g1', published: true, sort_order: 0, data: { title: 'Dragon Organizer', description: 'Started as a request.\n\nPrinted three test versions.', photos: ['https://img.test/d1.png', 'https://img.test/d2.png'], filType: 'black', minutes: 150, grams: 85.4 } },
+      g1: { id: 'g1', published: true, sort_order: 0, data: { title: 'Dragon Organizer', description: 'Started as a request.\n\nPrinted three test versions.', photos: ['https://img.test/d1.png', 'https://img.test/d2.png'], videos: ['dQw4w9WgXcQ'], filType: 'black', minutes: 150, grams: 85.4 } },
       g2: { id: 'g2', published: true, sort_order: 1, data: { title: 'Name Sign', photos: ['https://img.test/s.png'] } },
       g3: { id: 'g3', published: false, sort_order: 2, data: { title: 'Hidden prototype', photos: [] } }
     },
@@ -994,6 +994,32 @@ const STATES = {
     const sent = Object.values(db.jobs).find(j => j.id !== 'e1' && j.clientEmail === 'pat@example.com');
     assert(sent && sent.items[0].ownerPrice == null && !(sent.extraCharges || []).length, JSON.stringify(sent));
     await page.close();
+  });
+  await check('YouTube videos play on the design page and are never thumbnails', async () => {
+    const db = fixtures();
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('#work-detail');
+    const frames = await page.$$eval('iframe', els => els.map(e => e.getAttribute('src')));
+    assert(frames.length === 1 && frames[0].startsWith('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ'), `players: ${frames}`);
+    const notPlayer = await page.$$eval('img', els => els.map(e => e.getAttribute('src') || '').filter(u => /youtu|ytimg/.test(u)));
+    assert(!notPlayer.length && !(await page.$('.gallery-strip iframe, .work-card iframe, .gallery-card iframe')), `video used as a picture: ${notPlayer}`);
+    await page.evaluate(() => { setTab('submit'); });
+    assert(!(await page.$('iframe')) && !(await page.$$eval('img', els => els.some(e => /youtu|ytimg/.test(e.src)))), 'video shows outside the design page');
+    await page.close();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    assert((await owner.inputValue('#gallery-videos')) === 'https://youtu.be/dQw4w9WgXcQ', 'saved video not shown in the form');
+    await owner.fill('#gallery-videos', 'not a video');
+    await owner.click('#gallery-save');
+    assert(/isn't a YouTube link/.test(await owner.textContent('#gallery-err')), 'bad link accepted');
+    await owner.fill('#gallery-videos', 'https://www.youtube.com/watch?v=abcdefghijk&t=5s\nhttps://youtube.com/shorts/ABCDEFGHIJK');
+    await owner.fill('#gallery-photos', 'https://img.test/d1.png\nhttps://youtu.be/zyxwvutsrqp');
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    const data = db.gallery.g1.data;
+    assert(data.videos.join() === 'abcdefghijk,ABCDEFGHIJK,zyxwvutsrqp' && data.photos.join() === 'https://img.test/d1.png', JSON.stringify(data));
+    await owner.close();
   });
   await check('each design has its own link, with the gallery still visible above it', async () => {
     const page = await open(fixtures(), { suffix: '?design=g2' });

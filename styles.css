@@ -721,3 +721,8 @@ textarea { resize: vertical; min-height: 70px; }
 .owner-edit-extras { list-style: none; margin: 4px 0 8px; padding: 0; }
 .owner-edit-extras li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
 .owner-edit-charge { align-items: end; }
+
+/* YouTube videos on a design page (never used as thumbnails) */
+.work-videos { display: grid; gap: 10px; margin-bottom: 10px; }
+.video-frame { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; border: 4px solid var(--bezel); background: var(--surface2); }
+.video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
