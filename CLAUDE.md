@@ -28,6 +28,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `app.js` | Everything else on the site: state, Supabase calls, customer request form, My Requests, owner dashboard/calculator/gallery/saved models/sales data/site settings/emails tabs. Global functions called from inline `onclick`; `render()` redraws the whole page from `state`. |
 | `features.js` | Newer features: vacation mode, Order again, leftover-roll card, finished-print photos, reviews (form + owner approval), private notes, Filament tab, Money tab, Prices/Wording settings cards, service worker registration. |
 | `styles.css` | Theme variables on `:root` (retro purple). Contrast is checked by the tests (WCAG 2.2 AA). |
+| `api/design.js` | Vercel function: `/?design=<name>` links (rewritten here by `vercel.json`) get that design's title, description and photo in the link-preview tags. Its `designSlug` must match app.js (a test checks). Tested by `tests/share.test.js`. |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Install as an app. The service worker is network-first. |
 | `email/Code.gs` | The Apps Script: order emails (`emailsFor`), daily jobs (`sendQuoteReminders` runs quote reminders, review requests, roll reminders, Monday summary), weekly Drive backup, MakerWorld lookups, `healthCheck`. Contains an exact copy of `email-templates.js` between the `SHARED EMAIL TEMPLATES` markers. |
 | `email/Loader.gs` | The only code pasted into Apps Script. Runs the latest `email/Code.gs` from GitHub `main` (checked every 15 min), keeps a saved copy, emails the owner on problems. |
@@ -83,6 +84,7 @@ Run all three before pushing (CI runs the same on every push):
 cd tests && npm install   # done for you at session start by .claude/hooks/session-start.sh
 CHROMIUM_PATH=/opt/pw-browsers/chromium node site.test.js   # pages, axe accessibility, phone widths, features
 node email.test.js                                         # Code.gs and Loader.gs with Google stubbed
+node share.test.js                                         # api/design.js link previews
 # Database rules, against a scratch Postgres 16:
 D=/var/tmp/soloprint-pg; B=$(ls -d /usr/lib/postgresql/*/bin | tail -1); rm -rf $D; mkdir -p $D; chown postgres $D
 su postgres -c "$B/initdb -D $D/data -A trust >/dev/null && $B/pg_ctl -D $D/data -o '-p 5499 -k $D' -l $D/log start >/dev/null"

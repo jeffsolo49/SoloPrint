@@ -936,12 +936,12 @@ const STATES = {
     const tiles = await page.$$eval('.gallery-strip .work-card-name', els => els.map(e => e.textContent.trim()));
     assert(tiles.join() === 'Dragon Organizer,Name Sign' && await page.$('.gallery-strip .work-card.current:has-text("Name Sign")'), `gallery above the design: ${tiles}`);
     await page.click('.gallery-strip .work-card:has-text("Dragon Organizer")');
-    assert(await page.evaluate(() => new URLSearchParams(location.search).get('design')) === 'g1' && /Dragon Organizer/.test(await page.textContent('#work-detail')), 'switching designs did not update the address');
+    assert(await page.evaluate(() => new URLSearchParams(location.search).get('design')) === 'dragon-organizer' && /Dragon Organizer/.test(await page.textContent('#work-detail')), 'switching designs did not put the name in the address');
     await page.goBack();
     await page.waitForTimeout(200);
     assert(/Name Sign/.test(await page.textContent('#work-detail')), 'back button did not return to the previous design');
     const link = await page.evaluate(() => designLink('g2'));
-    assert(/\?design=g2$/.test(link), link);
+    assert(/\?design=name-sign$/.test(link), link);
     await page.click('#work-detail >> text=Close');
     assert(!(await page.evaluate(() => location.search.includes('design'))) && await page.$('.gallery-grid'), 'closing did not go back to the full gallery');
     await page.close();
@@ -970,6 +970,21 @@ const STATES = {
     await owner.evaluate(asOwner('dashboard'));
     assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /#2 in line/.test(await owner.textContent('#order-q1')), 'owner queue missing');
     await owner.close();
+  });
+  await check('design links use the name, and match the link-preview function', async () => {
+    const page = await open(fixtures(), { suffix: '?design=name-sign' });
+    await page.waitForSelector('#work-detail');
+    assert(/Name Sign/.test(await page.textContent('#work-detail')), 'name link did not open the design');
+    const samples = [
+      { id: 'a1', title: 'Café Sign — Large!', createdAt: '2026-01-01' }, { id: 'a2', title: 'Cafe sign large', createdAt: '2026-02-01' },
+      { id: 'a3', title: '', createdAt: '2026-03-01' }, { id: 'a4', title: '   ***   ', createdAt: '2026-03-02' }
+    ];
+    const site = await page.evaluate(all => all.map(d => designSlug(d, all)), samples);
+    const api = require('../api/design.js');
+    const fn = samples.map(d => api.designSlug(d, samples));
+    assert(JSON.stringify(site) === JSON.stringify(fn) && site.join() === 'cafe-sign-large,cafe-sign-large-2,a3,a4', `site ${site} vs function ${fn}`);
+    assert(api.findDesign('cafe-sign-large-2', samples).id === 'a2' && api.findDesign('a1', samples).id === 'a1', 'function lookup');
+    await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');

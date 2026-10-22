@@ -3,5 +3,8 @@
     "deploymentEnabled": {
       "claude/*": false
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/", "has": [{ "type": "query", "key": "design" }], "destination": "/api/design" }
+  ]
 }
