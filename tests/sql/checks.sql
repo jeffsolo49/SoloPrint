@@ -177,4 +177,17 @@ select public.clear_request_draft('Kim@Example.com');
 do $$ begin if public.get_request_draft((select id from draft_ids)) is not null then raise exception 'draft not cleared after sending'; end if; end $$;
 reset role;
 
+-- Order queue: anyone can see the line, but only timing and whether it's custom, never details.
+insert into public.jobs (id, data) values
+  ('q-1', jsonb_build_object('id','q-1','clientName','Secret Name','clientEmail','q1@example.com','phase','order_received','phaseHistory', jsonb_build_object('order_received','2026-10-01T10:00:00.000Z'),'items', jsonb_build_array(jsonb_build_object('name','Hook','mode','link')))),
+  ('q-2', jsonb_build_object('id','q-2','clientEmail','q2@example.com','phase','production','phaseHistory', jsonb_build_object('order_received','2026-10-02T10:00:00.000Z'),'items', jsonb_build_array(jsonb_build_object('name','Thing','mode','idea'))));
+set role anon;
+do $$ declare q jsonb; begin
+  q := public.order_queue();
+  if jsonb_array_length(q) <> 2 then raise exception 'queue should list the 2 confirmed/printing orders, got %', q; end if;
+  if q::text like '%Secret%' or q::text like '%example.com%' or q::text like '%Hook%' then raise exception 'queue leaks order details: %', q; end if;
+  if (q->0->>'custom')::boolean or not (q->1->>'custom')::boolean or not (q->1->>'printing')::boolean then raise exception 'queue flags wrong: %', q; end if;
+end $$;
+reset role;
+
 \echo 'All SQL checks passed.'
