@@ -819,3 +819,268 @@ function exportMoneyReport(year) {
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
+
+// ── OWNER: EDIT A REQUEST ─────────────────────────────────────────────────
+// While reviewing a request the owner can change anything the customer sent (name, email, items, colors,
+// special orders, notes), set their own price per item, and add charges with their own labels. Customers
+// see only the label and amount of a charge. Works on a copy until Save, so Cancel throws it away.
+function startOwnerEdit(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  state.ownerEdit = { id, draft: JSON.parse(JSON.stringify(b)) };
+  if (!state.galleryLoaded) loadGallery().then(render);
+  render();
+  document.getElementById(`order-${id}`)?.scrollIntoView({ block: 'start' });
+}
+function cancelOwnerEdit() { state.ownerEdit = null; render(); }
+function oeDraft() { return state.ownerEdit && state.ownerEdit.draft; }
+function oeItem(i) { const d = oeDraft(); return d && d.items[i]; }
+
+// Text boxes save as you type without redrawing (so the keyboard stays open); choices redraw.
+function oeSet(field, value) { const d = oeDraft(); if (d) d[field] = value; }
+function oeItemSet(i, field, value, redraw) {
+  const it = oeItem(i);
+  if (!it) return;
+  it[field] = value;
+  if (redraw) render();
+}
+function oeMode(i, mode) {
+  const it = oeItem(i);
+  if (!it) return;
+  it.mode = mode;
+  if (mode !== 'gallery') { it.galleryId = ''; it.setPrice = null; }
+  render();
+}
+function oeDesign(i, galleryId) {
+  const it = oeItem(i);
+  const g = state.gallery.find(x => x.id === galleryId);
+  if (!it) return;
+  it.galleryId = g ? g.id : '';
+  if (g) { it.name = g.title || it.name; it.previewImage = (g.photos || [])[0] || it.previewImage; }
+  render();
+}
+// Value: a color id, 'black'/'white' (no colors set up), or 'special_order'.
+function oeColor(i, value) {
+  const it = oeItem(i);
+  if (!it) return;
+  const c = state.settings.colors.find(x => x.id === value);
+  if (c) { it.colorId = c.id; it.color = c.name; it.filType = c.special ? 'special' : 'color'; }
+  else { it.colorId = ''; it.color = ''; it.filType = ['black', 'white'].includes(value) ? value : 'special_order'; }
+  if (it.filType !== 'special_order') { it.useLeftover = false; it.leftoverFrom = ''; }
+  render();
+}
+function oeRolls() {
+  const d = oeDraft();
+  return d ? leftoverRolls(state.batches, d.id, currentRules()).filter(r => r.email === colorKey(d.clientEmail)) : [];
+}
+function oeLeftover(i, value) {
+  const it = oeItem(i);
+  if (!it) return;
+  const roll = oeRolls().find(r => r.orderId + '|' + r.key === value);
+  it.useLeftover = !!roll;
+  it.leftoverFrom = roll ? roll.orderId : '';
+  if (roll) it.specialColor = roll.color;
+  render();
+}
+function oeColorChoices() {
+  const colors = [...state.settings.colors].sort(byName);
+  return colors.length
+    ? colors.map(c => ({ value: c.id, name: c.name + (c.special ? ' (special)' : '') + (c.outOfStock ? ' (out of stock)' : ''), part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
+    : ['black', 'white'].map(f => ({ value: f, name: FIL_LABEL[f], part: { name: FIL_LABEL[f], filType: f, colorId: '' } }));
+}
+function oeAddExtra(i, value) {
+  const it = oeItem(i);
+  if (!it || !value) return;
+  const roll = oeRolls().find(r => 'roll|' + r.orderId + '|' + r.key === value);
+  const choice = oeColorChoices().find(c => c.value === value);
+  const part = roll ? { name: roll.color, filType: 'leftover', colorId: '', leftoverFrom: roll.orderId } : choice && { ...choice.part, leftoverFrom: '' };
+  if (part && !(it.extraColors || []).some(p => sameColorPart(p, part))) it.extraColors = [...(it.extraColors || []), part];
+  render();
+}
+function oeRemoveExtra(i, j) { const it = oeItem(i); if (it) { it.extraColors.splice(j, 1); render(); } }
+function oeAddItem() { const d = oeDraft(); if (d) { d.items.push({ ...blankItem(), mode: 'idea' }); render(); } }
+function oeRemoveItem(i) {
+  const d = oeDraft();
+  if (!d || d.items.length < 2) return;
+  if (!confirm(`Remove item ${i + 1} (${d.items[i].name || 'Unnamed'}) from this request?`)) return;
+  d.items.splice(i, 1);
+  render();
+}
+function oeCharge(j, field, value) { const d = oeDraft(); if (d && d.extraCharges[j]) d.extraCharges[j][field] = value; }
+function oeAddCharge() { const d = oeDraft(); if (d) { d.extraCharges = [...(d.extraCharges || []), { label: 'Special costs', amount: '' }]; render(); } }
+function oeRemoveCharge(j) { const d = oeDraft(); if (d) { d.extraCharges.splice(j, 1); render(); } }
+
+function renderOwnerEditItem(it, i, count) {
+  const mode = inferMode(it);
+  const choices = oeColorChoices();
+  const current = it.filType === 'special_order' ? 'special_order' : (it.colorId || (choices.find(c => c.value === it.filType) || {}).value || '');
+  const rolls = oeRolls();
+  const extras = it.extraColors || [];
+  const main = itemParts(it)[0];
+  const extraChoices = [...choices.filter(c => !sameColorPart(c.part, main)),
+    ...rolls.map(r => ({ value: 'roll|' + r.orderId + '|' + r.key, name: `${r.color} (their leftover roll, ${r.left.toFixed(0)} g left)`, part: { name: r.color, filType: 'leftover', leftoverFrom: r.orderId } }))]
+    .filter(c => !extras.some(p => sameColorPart(p, c.part)));
+  const designs = [...state.gallery].sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+  const own = it.ownerPrice === null || it.ownerPrice === undefined ? '' : it.ownerPrice;
+  return `<fieldset class="owner-edit-item">
+    <legend>Item ${i + 1}</legend>
+    <div class="field">
+      <label for="oe-mode-${i}">Type</label>
+      <select id="oe-mode-${i}" onchange="oeMode(${i}, this.value)">
+        <option value="gallery" ${mode === 'gallery' ? 'selected' : ''}>Something from my past work</option>
+        <option value="link" ${mode === 'link' ? 'selected' : ''}>Model link</option>
+        <option value="idea" ${mode === 'idea' ? 'selected' : ''}>Custom design / idea</option>
+      </select>
+    </div>
+    ${mode === 'gallery' ? `<div class="field">
+      <label for="oe-design-${i}">Design</label>
+      <select id="oe-design-${i}" onchange="oeDesign(${i}, this.value)">
+        <option value="">${state.galleryLoaded ? 'Pick a design' : 'Loading designs...'}</option>
+        ${designs.map(g => `<option value="${esc(g.id)}" ${g.id === it.galleryId ? 'selected' : ''}>${esc(g.title || 'Untitled')}${g.price > 0 ? ` ($${Number(g.price).toFixed(2)} set price)` : ''}</option>`).join('')}
+      </select>
+    </div>` : ''}
+    <div class="field">
+      <label for="oe-name-${i}">Name</label>
+      <input type="text" id="oe-name-${i}" value="${esc(it.name || '')}" maxlength="200" oninput="oeItemSet(${i}, 'name', this.value)" />
+    </div>
+    <div class="field">
+      <label for="oe-link-${i}">Link</label>
+      <input type="text" id="oe-link-${i}" value="${esc(it.link || '')}" maxlength="500" placeholder="Optional" oninput="oeItemSet(${i}, 'link', this.value)" />
+    </div>
+    <div class="field">
+      <label for="oe-notes-${i}">Notes</label>
+      <textarea id="oe-notes-${i}" oninput="oeItemSet(${i}, 'notes', this.value)">${esc(it.notes || '')}</textarea>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label for="oe-qty-${i}">Quantity</label>
+        <input type="number" id="oe-qty-${i}" value="${esc(it.qty || 1)}" min="1" max="999" step="1" oninput="oeItemSet(${i}, 'qty', this.value)" />
+      </div>
+      <div class="field">
+        <label for="oe-grams-${i}">Grams (optional)</label>
+        <input type="number" id="oe-grams-${i}" value="${esc(it.grams || '')}" min="0" step="0.1" oninput="oeItemSet(${i}, 'grams', this.value)" />
+      </div>
+    </div>
+    <div class="field">
+      <label for="oe-color-${i}">Color</label>
+      <select id="oe-color-${i}" onchange="oeColor(${i}, this.value)">
+        ${choices.map(c => `<option value="${esc(c.value)}" ${c.value === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        <option value="special_order" ${current === 'special_order' ? 'selected' : ''}>Special order (color or material I don't carry)</option>
+      </select>
+    </div>
+    ${it.filType === 'special_order' ? `<div class="special-order">
+      <div class="field">
+        <label for="oe-special-${i}">Special order color and material</label>
+        <input type="text" id="oe-special-${i}" value="${esc(it.specialColor || '')}" maxlength="60" placeholder="e.g. Red TPU" oninput="oeItemSet(${i}, 'specialColor', this.value)" ${it.useLeftover ? 'readonly' : ''} />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label for="oe-roll-${i}">Roll</label>
+        <select id="oe-roll-${i}" onchange="oeLeftover(${i}, this.value)">
+          <option value="">Buy a new roll</option>
+          ${rolls.map(r => `<option value="${esc(r.orderId + '|' + r.key)}" ${it.useLeftover && it.leftoverFrom === r.orderId && colorKey(it.specialColor) === r.key ? 'selected' : ''}>Their leftover ${esc(r.color)} roll (${r.left.toFixed(0)} g left, until ${esc(fmtShortDate(r.expiresAt))})</option>`).join('')}
+          ${it.useLeftover && !rolls.some(r => r.orderId === it.leftoverFrom && r.key === colorKey(it.specialColor)) ? `<option value="keep" selected>Their leftover ${esc(it.specialColor)} roll (not found)</option>` : ''}
+        </select>
+      </div>
+    </div>` : ''}
+    <div class="field">
+      <div class="owner-order-summary-label">Extra colors (multi-color print)</div>
+      ${extras.length ? `<ul class="owner-edit-extras">${extras.map((p, j) => `<li>${esc(p.name)}${p.filType === 'leftover' ? ' (leftover roll)' : p.filType === 'special' ? ' (special)' : ''}
+        <button type="button" class="btn-sm" onclick="oeRemoveExtra(${i}, ${j})" aria-label="Remove ${esc(p.name)} from item ${i + 1}">Remove</button></li>`).join('')}</ul>` : '<div class="field-help">None</div>'}
+      ${extraChoices.length ? `<label for="oe-extra-${i}" class="sr-only">Add a color to item ${i + 1}</label>
+      <select id="oe-extra-${i}" onchange="oeAddExtra(${i}, this.value)">
+        <option value="">+ Add a color</option>
+        ${extraChoices.map(c => `<option value="${esc(c.value)}">${esc(c.name)}</option>`).join('')}
+      </select>` : ''}
+    </div>
+    <div class="field">
+      <label for="oe-price-${i}">Your price per print ($)</label>
+      <input type="number" id="oe-price-${i}" value="${esc(own)}" min="0" step="0.01" placeholder="Blank = calculate from time and grams" oninput="oeItemSet(${i}, 'ownerPrice', this.value)" />
+      <div class="field-help">Optional. Replaces the calculated price for this item. The customer sees only the price.</div>
+    </div>
+    ${count > 1 ? `<button type="button" class="btn-sm danger" onclick="oeRemoveItem(${i})">Remove item ${i + 1}</button>` : ''}
+  </fieldset>`;
+}
+
+function renderOwnerEditForm(b) {
+  const d = state.ownerEdit.draft;
+  const charges = d.extraCharges || [];
+  return `<div class="owner-edit" id="owner-edit-${b.id}">
+    <div class="card-title">Edit request</div>
+    <div class="field-help" style="margin-bottom:10px;">Change anything, then Save. The customer isn't emailed until you send the quote.</div>
+    <div class="row2">
+      <div class="field">
+        <label for="oe-client-name">Customer name</label>
+        <input type="text" id="oe-client-name" value="${esc(d.clientName || '')}" maxlength="120" oninput="oeSet('clientName', this.value)" />
+      </div>
+      <div class="field">
+        <label for="oe-client-email">Customer email</label>
+        <input type="email" id="oe-client-email" value="${esc(d.clientEmail || '')}" maxlength="200" oninput="oeSet('clientEmail', this.value)" />
+      </div>
+    </div>
+    ${d.items.map((it, i) => renderOwnerEditItem(it, i, d.items.length)).join('')}
+    <button type="button" class="btn-sm" onclick="oeAddItem()">+ Add an item</button>
+    <fieldset class="owner-edit-item">
+      <legend>Added charges</legend>
+      <div class="field-help" style="margin-bottom:8px;">Any amount you decide, with your own label (e.g. "Special costs"). The customer sees only the label and amount.</div>
+      ${charges.map((c, j) => `<div class="row2 owner-edit-charge">
+        <div class="field">
+          <label for="oe-charge-label-${j}">Label</label>
+          <input type="text" id="oe-charge-label-${j}" value="${esc(c.label || '')}" maxlength="60" oninput="oeCharge(${j}, 'label', this.value)" />
+        </div>
+        <div class="field">
+          <label for="oe-charge-amount-${j}">Amount ($)</label>
+          <input type="number" id="oe-charge-amount-${j}" value="${esc(c.amount ?? '')}" min="0" step="0.01" oninput="oeCharge(${j}, 'amount', this.value)" />
+        </div>
+        <button type="button" class="btn-sm" onclick="oeRemoveCharge(${j})" aria-label="Remove charge ${j + 1}">Remove</button>
+      </div>`).join('')}
+      ${charges.length < 10 ? `<button type="button" class="btn-sm" onclick="oeAddCharge()">+ Add a charge</button>` : ''}
+    </fieldset>
+    <div class="alert error" id="owner-edit-err"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+      <button class="btn-primary" id="owner-edit-save" onclick="saveOwnerEdit()">Save changes</button>
+      <button class="btn-secondary" onclick="cancelOwnerEdit()">Cancel</button>
+    </div>
+  </div>`;
+}
+
+// Read-only list of an order's added charges and per-item prices, under its items on the owner card.
+function renderOwnerCharges(b) {
+  const charges = extraCharges(b);
+  if (!charges.length) return '';
+  return `<div class="owner-charges">${charges.map(c => `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;">
+    <div class="sub-item-name">${esc(c.label)} <span class="field-help">(added by you)</span></div><div class="sub-item-price">$${c.amount.toFixed(2)}</div></div></div>`).join('')}</div>`;
+}
+
+async function saveOwnerEdit() {
+  const d = oeDraft();
+  if (!d) return;
+  const err = msg => showAlert('owner-edit-err', msg, 'error');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.clientEmail || '').trim())) return err('Enter a valid customer email.');
+  for (let i = 0; i < d.items.length; i++) {
+    const it = d.items[i];
+    if (inferMode(it) === 'gallery' && !it.galleryId) return err(`Item ${i + 1}: pick a design, or change its type.`);
+    if (it.filType === 'special_order' && !String(it.specialColor || '').trim()) return err(`Item ${i + 1}: say which special order color and material.`);
+    const own = it.ownerPrice;
+    if (own !== '' && own !== null && own !== undefined && !(Number(own) >= 0)) return err(`Item ${i + 1}: your price must be 0 or more, or blank.`);
+    it.ownerPrice = own === '' || own === undefined ? null : own === null ? null : Math.round(Number(own) * 100) / 100;
+    it.qty = Math.max(1, parseInt(it.qty, 10) || 1);
+    it.grams = Number(it.grams) > 0 ? Number(it.grams) : null;
+  }
+  for (const c of d.extraCharges || []) {
+    if (c.amount !== '' && !(Number(c.amount) >= 0)) return err('Each charge amount must be 0 or more.');
+  }
+  d.clientEmail = String(d.clientEmail).trim();
+  d.clientName = String(d.clientName || '').trim();
+  d.extraCharges = (d.extraCharges || []).filter(c => Number(c.amount) > 0)
+    .map(c => ({ label: String(c.label || '').trim() || 'Special costs', amount: Math.round(Number(c.amount) * 100) / 100 }));
+  if (d.items.some(it => it.galleryId) && !state.galleryLoaded) await loadGallery();
+  d.items.forEach(it => { it.setPrice = ownerSetPrice(it); });
+  d.ownerEditedAt = new Date().toISOString();
+  const btn = document.getElementById('owner-edit-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  const clean = normalizeBatch(d);
+  if (!(await upsertBatch(clean))) { if (btn) { btn.disabled = false; btn.textContent = 'Save changes'; } return; }
+  state.batches = state.batches.map(x => x.id === clean.id ? clean : x);
+  state.ownerEdit = null;
+  render();
+}

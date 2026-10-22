@@ -149,7 +149,11 @@ async function upsertBatch(batch) {
 // Customers can only create new requests; returns false if the save failed.
 async function submitBatchRemote(batch) {
   try {
-    await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job: normalizeBatch(batch) }) });
+    // The owner's own prices and charges are never set by a customer (the database drops them too).
+    const job = normalizeBatch(batch);
+    job.extraCharges = [];
+    job.items.forEach(it => { it.ownerPrice = null; });
+    await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job }) });
     return true;
   } catch (e) {
     console.error('Submit error:', e);
@@ -178,7 +182,8 @@ function rulesFor(batch) { return orderRules(batch, state.settings); }
 
 // Pass an item to price all of its colors, or a filament type for a single-color price.
 function calcPerPrint(mins, grams, filType, rules = currentRules()) {
-  if (setPriceOf(filType)) return setPriceOf(filType);
+  const fixed = filType && typeof filType === 'object' ? fixedPrice(filType) : null;
+  if (fixed !== null) return fixed;
   if (!mins || !grams) return null;
   return printPrice(mins, grams, filType, rules);
 }
@@ -272,7 +277,7 @@ function specialOrderCost(batch) {
 }
 
 function orderSum(batch) {
-  return itemsSubtotal(batch) + specialOrderCost(batch);
+  return itemsSubtotal(batch) + specialOrderCost(batch) + extraChargesTotal(batch);
 }
 
 function batchTotal(batch) {
@@ -465,6 +470,7 @@ function cleanItem(it) {
     })).filter(p => p.name),
     galleryId: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.galleryId)) ? it.galleryId : '',
     setPrice: cleanNumber(it.setPrice),
+    ownerPrice: it.ownerPrice !== null && it.ownerPrice !== undefined && it.ownerPrice !== '' && Number(it.ownerPrice) >= 0 && Number(it.ownerPrice) <= 100000 ? Number(it.ownerPrice) : null,
     modeDrafts: cleanModeDrafts(it.modeDrafts)
   };
 }
@@ -510,6 +516,9 @@ function normalizeBatch(batch) {
     paidAt: cleanIso(batch.paidAt),
     rates: quoteRates(cleanRules(batch.rates)),
     designTerms: cleanText(batch.designTerms, 4000),
+    extraCharges: (Array.isArray(batch.extraCharges) ? batch.extraCharges : []).slice(0, 10)
+      .map(c => ({ label: cleanText(c && c.label, 60).trim() || 'Special costs', amount: Math.max(0, Math.min(100000, Number(c && c.amount) || 0)) })),
+    ownerEditedAt: cleanIso(batch.ownerEditedAt),
     specialOrderCost: Number.isFinite(Number(batch.specialOrderCost)) && batch.specialOrderCost !== null && batch.specialOrderCost !== '' && Number(batch.specialOrderCost) >= 0
       ? Math.min(Number(batch.specialOrderCost), 1000) : null,
     items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
@@ -1900,7 +1909,8 @@ function renderMyJobsTab() {
             </div>
           </div>`;
         }).join('')}
-        ${total!==null && specialOrderCost(b) ? `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="sub-item-name">Special order roll (1 kg)</div><div class="sub-item-price">$${specialOrderCost(b).toFixed(2)}</div></div></div>` : ''}
+        ${total!==null && specialOrderCost(b) ? `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="sub-item-name">Special order roll (${fmtRoll(currentRules().rollGrams)})</div><div class="sub-item-price">$${specialOrderCost(b).toFixed(2)}</div></div></div>` : ''}
+        ${total!==null ? extraCharges(b).map(c => `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="sub-item-name">${esc(c.label)}</div><div class="sub-item-price">$${c.amount.toFixed(2)}</div></div></div>`).join('') : ''}
         ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
         ${renderCustomerOrderExtras(b)}
       </div>`;
@@ -2347,8 +2357,11 @@ function renderOwnerBatch(b) {
       </div>
     </div>
     <div class="job-divider"></div>
+    ${state.ownerEdit && state.ownerEdit.id === b.id ? renderOwnerEditForm(b) : `
+    ${phase === 'estimate' ? `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit request</button>` : `<div class="field-help">To change this request, use Edit Quotes below first.</div>`}
     ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
-    ${phase === 'estimate' ? `
+    ${renderOwnerCharges(b)}`}
+    ${state.ownerEdit && state.ownerEdit.id === b.id ? '' : phase === 'estimate' ? `
       ${hasSpecial ? `
         <div class="field special-order">
           <label for="special-cost-${b.id}">Special order roll cost ($)</label>
@@ -2364,7 +2377,7 @@ function renderOwnerBatch(b) {
       </button>
     ` : `
       <div class="total-box">
-        <span class="total-label">Total quoted${specialOrderCost(b) ? ` (includes $${specialOrderCost(b).toFixed(2)} special order roll)` : ''}</span>
+        <span class="total-label">Total quoted${specialOrderCost(b) ? ` (includes $${specialOrderCost(b).toFixed(2)} special order roll)` : ''}${extraChargesTotal(b) ? ` (includes $${extraChargesTotal(b).toFixed(2)} in added charges)` : ''}</span>
         <span class="total-price">$${total!==null?total.toFixed(2):'—'}</span>
       </div>
       ${phase === 'delivered' ? `
@@ -2406,7 +2419,7 @@ function renderOwnerItem(batchId, it, i) {
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
-          <span style="font-size:12px;color:var(--muted);">${priced.setPrice ? `Set price $${priced.setPrice.toFixed(2)} each (from ${esc(GALLERY_NAME)}); time and grams optional` : `$${itemRate(it, rules).toFixed(3)}/g`}</span>
+          <span style="font-size:12px;color:var(--muted);">${typeof it.ownerPrice === 'number' ? `Your price $${it.ownerPrice.toFixed(2)} each (set with Edit request); time and grams optional` : priced.setPrice ? `Set price $${priced.setPrice.toFixed(2)} each (from ${esc(GALLERY_NAME)}); time and grams optional` : `$${itemRate(it, rules).toFixed(3)}/g`}</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
@@ -4232,6 +4245,13 @@ function previewOwnerItem(batchId, i) {
   if (!pEl) return;
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
   const rules = rulesFor(batch);
+  const fixed = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
+  if (fixed !== null) {
+    document.getElementById(`opval-${batchId}-${i}`).textContent = `$${(fixed * it.qty).toFixed(2)}${it.qty > 1 ? ' total' : ''}`;
+    document.getElementById(`opsub-${batchId}-${i}`).textContent = 'Fixed price per print; time and grams are just for your records.';
+    pEl.style.display = 'block';
+    return;
+  }
   const pp  = calcPerPrint(mins, grams, it, rules);
   const tot = pp * it.qty;
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
@@ -4429,12 +4449,12 @@ async function approveBatch(batchId) {
     const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
     // A past-work design's set price comes from the gallery, never from what the customer's browser sent.
     it.setPrice = ownerSetPrice(it);
-    if ((!mins || !grams) && !it.setPrice) allValid = false;
+    if ((!mins || !grams) && fixedPrice(it) === null) allValid = false;
     it.minutes = mins  || null;
     it.grams   = grams || it.grams;
     if (mins && grams) saveKnownEstimate(it);
   });
-  if (!allValid) { showAlert(`batch-err-${batchId}`, 'Please fill in print time and grams for every item.', 'error'); return; }
+  if (!allValid) { showAlert(`batch-err-${batchId}`, 'Please fill in print time and grams (or your own price, with Edit request) for every item.', 'error'); return; }
   const costInput = document.getElementById(`special-cost-${batchId}`);
   const termsBox = document.getElementById(`terms-${batchId}`);
   batch.designTerms = (termsBox ? termsBox.checked : hasCustomDesign(batch)) ? designTermsText() : '';

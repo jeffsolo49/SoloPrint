@@ -51,7 +51,13 @@ async function mockBackend(page, db) {
       const { email } = JSON.parse(req.postData());
       return route.fulfill({ json: Object.values(db.jobs).filter(j => j.clientEmail === email) });
     }
-    if (rest.startsWith('/rpc/submit_job')) { const { job } = JSON.parse(req.postData()); db.jobs[job.id] = job; return route.fulfill({ status: 204, body: '' }); }
+    if (rest.startsWith('/rpc/submit_job')) {
+      // Like supabase/security.sql: prices, charges and order records are the owner's to set.
+      const { job } = JSON.parse(req.postData());
+      ['extraCharges', 'rates', 'specialOrderCost', 'designTerms', 'stockTaken', 'paidAt', 'finishedPhotos', 'ownerEditedAt'].forEach(k => delete job[k]);
+      job.items = job.items.map(it => { const { ownerPrice, ...rest } = it; return rest; });
+      db.jobs[job.id] = job; return route.fulfill({ status: 204, body: '' });
+    }
     if (rest.startsWith('/rpc/customer_approve_quote')) { const { job_id } = JSON.parse(req.postData()); db.jobs[job_id].customerApprovedAt = new Date().toISOString(); return route.fulfill({ status: 204, body: '' }); }
     if (rest.startsWith('/jobs')) {
       if (!owner) return route.fulfill({ status: 401, json: {} });
@@ -167,6 +173,7 @@ const STATES = {
   'owner emails': asOwner('emails'),
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
+  'owner editing a request': "(async () => { await " + asOwner('dashboard') + "; startOwnerEdit('3'); })()",
   'leftover rolls and a review form': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.batches[1].phase = 'delivered'; state.clientTab = 'jobs'; state.reviewFor = { id: '2', email: 'jane@example.com' }; render(); })()",
   'home in vacation mode': "(() => { state.settings.vacation = { on: true, until: 'Nov 3' }; render(); })()"
 };
@@ -928,6 +935,65 @@ const STATES = {
     assert(db.jobs[job.id].phase === 'quote_sent' && db.jobs[job.id].items[0].setPrice === 12, `quote ${JSON.stringify(db.jobs[job.id].items[0])}`);
     assert(await quoting.evaluate(id => batchTotal(state.batches.find(b => b.id === id)), job.id) === 12, 'quote total should be the set price');
     await quoting.close();
+  });
+  await check('owner can edit a request: items, colors, special orders, own prices and added charges', async () => {
+    const db = fixtures();
+    db.jobs.e1 = { id: 'e1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', paymentStatus: 'unpaid',
+      items: [{ name: 'Bracket', mode: 'idea', notes: 'Can it be red TPU?', qty: 1, filType: 'color', colorId: 'black', color: 'Black' }] };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    await owner.click('#edit-request-e1');
+    await owner.fill('#oe-name-0', 'Wall bracket');
+    await owner.fill('#oe-notes-0', 'Red TPU, thicker arm');
+    await owner.fill('#oe-qty-0', '3');
+    await owner.selectOption('#oe-color-0', 'special_order');
+    await owner.fill('#oe-special-0', 'Red TPU');
+    await owner.selectOption('#oe-extra-0', 'silk');
+    await owner.fill('#oe-price-0', '7.5');
+    await owner.click('text=+ Add an item');
+    await owner.fill('#oe-name-1', 'Spare');
+    await owner.click('text=+ Add a charge');
+    await owner.fill('#oe-charge-amount-0', '15');
+    await owner.click('#owner-edit-save');
+    await owner.waitForSelector('#edit-request-e1');
+    const saved = db.jobs.e1;
+    const it = saved.items[0];
+    assert(it.name === 'Wall bracket' && it.notes === 'Red TPU, thicker arm' && it.qty === 3 && it.filType === 'special_order' && it.specialColor === 'Red TPU'
+      && it.ownerPrice === 7.5 && it.extraColors.map(p => p.name).join() === 'Silk Gold' && saved.items.length === 2, JSON.stringify(saved.items));
+    assert(JSON.stringify(saved.extraCharges) === '[{"label":"Special costs","amount":15}]', JSON.stringify(saved.extraCharges));
+    assert(/Your price \$7\.50 each/.test(await owner.textContent('#order-e1')), 'owner card does not show your price');
+    // Cancel throws changes away.
+    await owner.click('#edit-request-e1');
+    await owner.fill('#oe-client-name', 'Nobody');
+    await owner.click('#order-e1 >> text=Cancel');
+    assert(db.jobs.e1.clientName === 'Pat' && /Pat/.test(await owner.textContent('#order-e1')), 'cancel kept the changes');
+    // Remove the spare item, then quote it: your price x 3 + roll + your charge.
+    await owner.click('#edit-request-e1');
+    await owner.click('text=Remove item 2');
+    await owner.click('#owner-edit-save');
+    await owner.waitForSelector('#edit-request-e1');
+    await owner.fill('#special-cost-e1', '20');
+    await owner.click('#approve-btn-e1');
+    await owner.waitForTimeout(300);
+    assert(db.jobs.e1.phase === 'quote_sent' && db.jobs.e1.items.length === 1, JSON.stringify(db.jobs.e1));
+    assert(await owner.evaluate(() => batchTotal(state.batches.find(b => b.id === 'e1'))) === 57.5, 'total should be 3 x 7.50 + 20 roll + 15 charge');
+    await owner.close();
+    const page = await open(db);
+    await page.evaluate(async () => { state.historyEmail = 'pat@example.com'; await loadBatches('pat@example.com'); state.clientTab = 'jobs'; render(); });
+    const card = await page.textContent('#order-e1');
+    assert(/Special costs/.test(card) && /\$15\.00/.test(card) && /\$57\.50/.test(card) && !/added by you|Your price/.test(card), card);
+    // A customer can't send their own price or charges.
+    await page.evaluate(() => setTab('submit'));
+    await page.fill('#client-name', 'Pat');
+    await page.fill('#client-email', 'pat@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'Another one');
+    await page.evaluate(() => { state.draftItems[0].ownerPrice = 0; });
+    await page.click('#submit-btn');
+    await requestSent(page);
+    const sent = Object.values(db.jobs).find(j => j.id !== 'e1' && j.clientEmail === 'pat@example.com');
+    assert(sent && sent.items[0].ownerPrice == null && !(sent.extraCharges || []).length, JSON.stringify(sent));
+    await page.close();
   });
   await check('each design has its own link, with the gallery still visible above it', async () => {
     const page = await open(fixtures(), { suffix: '?design=g2' });

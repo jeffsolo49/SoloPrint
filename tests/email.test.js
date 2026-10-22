@@ -63,6 +63,14 @@ check('multi-color print with a leftover roll', () => {
   assert(mail.subject === 'Your SoloPrint quote: $3.80', mail.subject);   // 2 + 1.44 + 15 g x 0.024, no roll charge
   assert(mail.body.includes('Also: Red TPU (leftover roll)'), mail.body);
 });
+check('your own item price and added charges are in the quote, with only their label', () => {
+  const rec = at({ phase: 'quote_sent', items: [{ ...base.items[0], ownerPrice: 5 }], extraCharges: [{ label: 'Special costs', amount: 15 }] });
+  const [mail] = emailsFor('UPDATE', rec, at({}));
+  assert(mail.subject === 'Your SoloPrint quote: $25.00', mail.subject);   // 2 x $5 + $15
+  assert(mail.body.includes('Special costs: $15.00') && !/added by you|owner/i.test(mail.body), mail.body);
+  const free = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ ...base.items[0], ownerPrice: 0 }] }), at({}))[0];
+  assert(free.subject === 'Your SoloPrint quote: $0.00', `a price of 0 is still your price: ${free.subject}`);
+});
 check('owner-edited email text is used, blanks fall back to the default', () => {
   const custom = { quote: { subject: 'Quote for {title}: ${total}', body: '' }, footer: { body: 'Cheers,\nJeff' } };
   const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), custom);

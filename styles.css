@@ -713,3 +713,11 @@ textarea { resize: vertical; min-height: 70px; }
 
 /* Order queue */
 .queue-note { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: rgba(var(--accent-rgb),0.07); border: 1px solid var(--border); font-size: 13px; line-height: 1.5; color: var(--text); }
+
+/* Owner: edit a request */
+.owner-edit { margin: 10px 0; }
+.owner-edit-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 0 0 12px; min-width: 0; }
+.owner-edit-item legend { font-weight: 700; padding: 0 6px; }
+.owner-edit-extras { list-style: none; margin: 4px 0 8px; padding: 0; }
+.owner-edit-extras li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.owner-edit-charge { align-items: end; }
