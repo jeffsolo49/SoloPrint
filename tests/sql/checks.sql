@@ -96,4 +96,57 @@ end $$;
 reset role;
 do $$ begin if (select count(*) from net.calls) <> (select n from calls_before) then raise exception 'marking a reminder should not send an order email'; end if; end $$;
 
+-- Private owner data: only the owner can read or write it.
+set role anon;
+select pg_temp.expect_denied('select count(*) from public.owner_private', 'anon reading private owner data');
+select pg_temp.expect_denied($q$insert into public.owner_private (key, data) values ('notes', '{}')$q$, 'anon writing private owner data');
+select pg_temp.expect_denied('select count(*) from public.customer_reviews', 'anon reading unapproved reviews');
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"email":"stranger@example.com"}';
+do $$ begin if (select count(*) from public.owner_private) <> 0 then raise exception 'unreachable'; end if; end $$;
+select pg_temp.expect_denied($q$insert into public.owner_private (key, data) values ('notes', '{}')$q$, 'a stranger writing private owner data');
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"email":"jeffsolo49@gmail.com"}';
+insert into public.owner_private (key, data) values ('notes', '{"100":"secret note"}') on conflict (key) do update set data = excluded.data;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"email":"stranger@example.com"}';
+do $$ begin if (select count(*) from public.owner_private) <> 0 then raise exception 'a stranger account can read private owner data'; end if; end $$;
+reset role;
+do $$ begin if exists (select 1 from public.customer_jobs('jane@example.com') d where d::text like '%secret note%') then raise exception 'private notes leaked into customer orders'; end if; end $$;
+
+-- Reviews: only for the customer's own delivered order; reviewing doesn't touch the order.
+insert into public.jobs (id, data) values
+  ('d-1', jsonb_build_object('id','d-1','clientEmail','dee@example.com','phase','delivered','phaseHistory', jsonb_build_object('delivered', (now() - interval '8 days')::text))),
+  ('d-2', jsonb_build_object('id','d-2','clientEmail','dee@example.com','phase','delivered','phaseHistory', jsonb_build_object('delivered', (now() - interval '2 days')::text))),
+  ('d-3', jsonb_build_object('id','d-3','clientEmail','old@example.com','phase','delivered','phaseHistory', jsonb_build_object('delivered', (now() - interval '90 days')::text)));
+create temp table calls_before_reviews as select count(*) as n from net.calls;
+grant select on calls_before_reviews to anon;
+set role anon;
+select pg_temp.expect_denied($q$select public.submit_review('d-1', 'someone@example.com', 'X', 'Great print', 5)$q$, 'reviewing someone else''s order');
+select pg_temp.expect_denied($q$select public.submit_review('100', 'jane@example.com', 'Jane', 'Great print', 5)$q$, 'reviewing an order that is not delivered');
+select pg_temp.expect_denied($q$select public.submit_review('d-1', 'dee@example.com', 'Dee', 'x', 9)$q$, 'an invalid review');
+select public.submit_review('d-2', 'DEE@example.com', 'Dee', 'Came out great', 5);
+select pg_temp.expect_denied($q$select public.due_review_requests('wrong-secret')$q$, 'review requests with a wrong secret');
+select pg_temp.expect_denied($q$select public.owner_report_data('wrong-secret')$q$, 'report data with a wrong secret');
+do $$ declare ids text; begin
+  select string_agg(d->>'id', ',' order by d->>'id') into ids from public.due_review_requests('0123456789abcdef0123456789abcdef') d;
+  if ids is distinct from 'd-1' then raise exception 'review requests should return only d-1 (d-2 is too recent and reviewed, d-3 too old), got %', ids; end if;
+  if (select count(*) from public.due_review_requests('0123456789abcdef0123456789abcdef')) <> 0 then raise exception 'a customer was asked for a review twice'; end if;
+  if (public.owner_report_data('0123456789abcdef0123456789abcdef')->'private'->>'notes') is null then raise exception 'report data is missing private data'; end if;
+  if (public.owner_report_data('0123456789abcdef0123456789abcdef')->>'new_reviews')::int <> 1 then raise exception 'report data should count 1 new review'; end if;
+end $$;
+reset role;
+do $$ begin
+  if (select count(*) from net.calls) <> (select n from calls_before_reviews) then raise exception 'review requests should not send order emails'; end if;
+  if (select text from public.customer_reviews where job_id = 'd-2') <> 'Came out great' then raise exception 'review not saved'; end if;
+end $$;
+update public.customer_reviews set status = 'approved' where job_id = 'd-2';
+set role anon;
+select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Changed my mind', 1);
+reset role;
+do $$ begin if (select text from public.customer_reviews where job_id = 'd-2') <> 'Came out great' then raise exception 'an approved review was rewritten'; end if; end $$;
+
 \echo 'All SQL checks passed.'

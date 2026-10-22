@@ -29,10 +29,11 @@ function fixtures() {
       g3: { id: 'g3', published: false, sort_order: 2, data: { title: 'Hidden prototype', photos: [] } }
     },
     library: { 'name:planter': { name: 'Planter', minutes: 200, grams: 110, filType: 'black' } },
-    settings: { about: { text: 'I am a veteran spouse who prints on the side.', replyTime: 'I usually reply within a day.' },
+    settings: { about: { text: 'I print custom designs in my spare time.', replyTime: 'I usually reply within a day.' },
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
       reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
+    private: {}, reviews: {}, uploads: [],
     log: []
   };
 }
@@ -74,6 +75,29 @@ async function mockBackend(page, db) {
       if (!owner) return route.fulfill({ status: 401, json: {} });
       if (method === 'POST') { JSON.parse(req.postData()).forEach(r => { db.library[r.key] = r.data; }); return route.fulfill({ status: 201, body: '' }); }
       if (method === 'DELETE') { delete db.library[decodeURIComponent(url.split('key=eq.')[1])]; return route.fulfill({ status: 204, body: '' }); }
+    }
+    if (rest.startsWith('/rpc/submit_review')) {
+      const r = JSON.parse(req.postData());
+      const job = db.jobs[r.p_job_id];
+      if (!job || job.phase !== 'delivered' || String(job.clientEmail).toLowerCase() !== String(r.p_email).toLowerCase()) return route.fulfill({ status: 400, json: { message: 'order not found' } });
+      db.reviews[r.p_job_id] = { job_id: r.p_job_id, name: r.p_name, text: r.p_text, rating: r.p_rating, status: 'new' };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (rest.startsWith('/owner_private')) {
+      if (!owner) return route.fulfill({ status: 401, json: {} });
+      if (method === 'GET') return route.fulfill({ json: Object.entries(db.private).map(([key, data]) => ({ key, data })) });
+      if (method === 'POST') { const row = JSON.parse(req.postData()); db.private[row.key] = row.data; return route.fulfill({ status: 201, body: '' }); }
+    }
+    if (rest.startsWith('/customer_reviews')) {
+      if (!owner) return route.fulfill({ status: 401, json: {} });
+      if (method === 'GET') return route.fulfill({ json: Object.values(db.reviews).filter(r => r.status === 'new') });
+      if (method === 'PATCH') { db.reviews[decodeURIComponent(url.split('job_id=eq.')[1])].status = JSON.parse(req.postData()).status; return route.fulfill({ status: 204, body: '' }); }
+    }
+    if (url.includes('/storage/v1/object/public/')) return route.fulfill({ body: PNG, contentType: 'image/png' });
+    if (url.includes('/storage/v1/object/')) {
+      if (!owner) return route.fulfill({ status: 401, json: {} });
+      db.uploads.push(url.split('/storage/v1/object/')[1]);
+      return route.fulfill({ json: { Key: 'ok' } });
     }
     if (url.includes('/auth/v1/token')) {
       const body = JSON.parse(req.postData());
@@ -117,7 +141,11 @@ const STATES = {
   'owner saved models': asOwner('library'),
   'owner sales data': asOwner('analytics'),
   'owner site settings': asOwner('settings'),
-  'owner emails': asOwner('emails')
+  'owner emails': asOwner('emails'),
+  'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
+  'owner money': asOwner('money'),
+  'leftover rolls and a review form': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.batches[1].phase = 'delivered'; state.clientTab = 'jobs'; state.reviewFor = { id: '2', email: 'jane@example.com' }; render(); })()",
+  'home in vacation mode': "(() => { state.settings.vacation = { on: true, until: 'Nov 3' }; render(); })()"
 };
 
 (async () => {
@@ -140,7 +168,7 @@ const STATES = {
 
   console.log('\nNo sideways scrolling:');
   for (const width of [320, 390, 900]) {
-    for (const view of ['home', 'my requests', 'owner dashboard', 'owner gallery', 'owner emails']) {
+    for (const view of ['home', 'my requests', 'owner dashboard', 'owner gallery', 'owner emails', 'owner filament', 'owner money', 'leftover rolls and a review form']) {
       await check(`${view} at ${width}px`, async () => {
         const page = await open(fixtures(), { width, height: 800 });
         await page.evaluate(STATES[view]);
@@ -258,7 +286,7 @@ const STATES = {
   await check('home page shows about, how it works, reviews and Message me', async () => {
     const page = await open(fixtures());
     const text = await page.textContent('main');
-    assert(text.includes('veteran spouse') && text.includes('How it works') && text.includes('Came out perfect'), 'a home section is missing');
+    assert(text.includes('spare time') && text.includes('How it works') && text.includes('Came out perfect'), 'a home section is missing');
     assert(await page.locator('a.btn-contact[href="https://m.me/soloprint"]').count() === 1, 'Message me button missing');
     await page.close();
   });
@@ -474,7 +502,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('emails'));
     const cards = await page.$$eval('.email-card', els => els.length);
-    assert(cards === 11, `${cards} email cards`);
+    assert(cards === 14, `${cards} email cards`);
     assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
     await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
@@ -483,13 +511,13 @@ const STATES = {
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-payment,Emails to you,email-owner_new,email-owner_approved', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-payment,email-review_request,email-roll_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
     assert(db.settings.emails.quote.subject === 'Quote for {title}: ${total}' && !db.settings.emails.quote.body, `saved ${JSON.stringify(db.settings.emails)}`);
     assert(db.settings.emails.footer.body === 'Thanks!\nJeff', 'footer not saved');
-    assert(db.settings.about.text.includes('veteran spouse'), 'other settings should be kept');
+    assert(db.settings.about.text.includes('spare time'), 'other settings should be kept');
     await page.click('#email-quote button:has-text("Reset to default")');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
@@ -523,6 +551,153 @@ const STATES = {
     await page.waitForTimeout(300);
     assert(!db.gallery[added.id], 'design not deleted');
     await page.close();
+  });
+
+  console.log('\nNew features:');
+  await check('vacation mode shows a notice on the home page', async () => {
+    const db = fixtures();
+    db.settings.vacation = { on: true, until: 'Monday, Nov 3' };
+    const page = await open(db);
+    assert(/Away for now\.\s+I'm away until Monday, Nov 3\. I'll review your request when I'm back\./.test(await page.textContent('.vacation-banner')), 'banner missing');
+    await page.evaluate(asOwner('settings'));
+    await page.waitForTimeout(200);
+    await page.uncheck('#vacation-on');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.vacation.on === false && db.settings.vacation.until === 'Monday, Nov 3', `saved ${JSON.stringify(db.settings.vacation)}`);
+    await page.close();
+  });
+  await check('order again fills the request form from a past order', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(STATES['my requests']);
+    await page.click('#order-1 >> text=Order again');
+    await page.waitForTimeout(200);
+    const draft = await page.evaluate(() => ({ tab: state.clientTab, items: state.draftItems.map(it => [it.name, it.qty, it.printHours, it.printMinutes]) }));
+    assert(draft.tab === 'submit' && JSON.stringify(draft.items) === JSON.stringify([['Benchy', 2, '1', '30']]), JSON.stringify(draft));
+    assert(/past order is filled in/.test(await page.textContent('#submit-ok')), 'no message');
+    await page.close();
+  });
+  await check('customers see their leftover rolls and can start a request with one', async () => {
+    const db = withRolls(fixtures());
+    const page = await open(db);
+    await page.evaluate(async () => { state.historyEmail = 'lee@example.com'; await loadBatches('lee@example.com'); state.clientTab = 'jobs'; render(); });
+    const card = await page.textContent('.rolls-card');
+    assert(/Red TPU: about 500 g left, until/.test(card) && !/Blue PLA|Green PETG/.test(card), card);
+    await page.click('.rolls-card >> text=Use it in a new request');
+    const it = await page.evaluate(() => state.draftItems[state.draftItems.length - 1]);
+    assert(it.filType === 'special_order' && it.useLeftover && it.leftoverFrom === 'r1' && it.specialColor === 'Red TPU', JSON.stringify(it));
+    assert(await page.inputValue('#special-color-0') === 'Red TPU', 'form not showing the roll');
+    await page.close();
+  });
+  await check('private notes save for the owner only', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.fill('#owner-note-1', 'Pickup Saturday');
+    await page.waitForTimeout(1000);
+    assert(db.private.notes && db.private.notes['1'] === 'Pickup Saturday', `notes ${JSON.stringify(db.private.notes)}`);
+    assert(!JSON.stringify(db.jobs['1']).includes('Pickup Saturday'), 'note stored on the order, which customers can read');
+    await page.close();
+  });
+  await check('finished-print photo: upload, customer sees it, add to gallery', async () => {
+    const db = fixtures();
+    db.jobs['2'].phase = 'delivered';
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.setInputFiles('#finished-2', { name: 'done.png', mimeType: 'image/png', buffer: PNG });
+    await page.waitForFunction(() => (state.batches.find(b => b.id === '2').finishedPhotos || []).length === 1);
+    assert(db.uploads.some(u => u.startsWith('gallery/orders/2-')) && db.jobs['2'].finishedPhotos[0].includes('/storage/v1/object/public/gallery/orders/2-'), JSON.stringify(db.jobs['2'].finishedPhotos));
+    await page.click('#order-2 >> text=Add to gallery');
+    await page.waitForTimeout(400);
+    const g = Object.values(db.gallery).find(x => x.data.title === 'Hook');
+    assert(g && g.published === false && g.data.photos.length === 1, `gallery ${JSON.stringify(g)}`);
+    await page.close();
+    const customer = await open(db);
+    await customer.evaluate(STATES['my requests']);
+    assert(await customer.$('#order-2 .finished-photos img'), 'customer does not see the photo');
+    await customer.close();
+  });
+  await check('reviews: the email link opens a form, the owner approves before it shows', async () => {
+    const db = fixtures();
+    db.jobs['2'].phase = 'delivered';
+    db.jobs['2'].clientName = 'Jane Doe';
+    const page = await open(db, { suffix: '?requests=jane%40example.com&review=2#order-2' });
+    await page.waitForSelector('#review-card');
+    assert(await page.inputValue('#review-name') === 'Jane D.', 'name should default to first name and initial');
+    await page.click('.review-stars button[aria-label="5 stars"]');
+    await page.fill('#review-text', 'Sturdy hook, holds my bag.');
+    await page.click('#review-send');
+    await page.waitForSelector('text=Thank you for the review');
+    assert(db.reviews['2'] && db.reviews['2'].rating === 5 && db.reviews['2'].status === 'new', JSON.stringify(db.reviews));
+    assert(!db.settings.reviews.some(r => r.text.includes('Sturdy')), 'review shown before approval');
+    await page.close();
+    const owner = await open(db);
+    await owner.evaluate(async () => { await loadCustomerReviews(); });
+    await owner.evaluate(asOwner('settings'));
+    await owner.evaluate(() => loadCustomerReviews().then(render));
+    await owner.waitForSelector('text=Approve and show');
+    await owner.click('text=Approve and show');
+    await owner.waitForTimeout(300);
+    assert(db.reviews['2'].status === 'approved' && db.settings.reviews[0].text === 'Sturdy hook, holds my bag.' && db.settings.reviews[0].name === 'Jane D.', JSON.stringify(db.settings.reviews));
+    await owner.close();
+  });
+  await check('filament stock: grams come off at Printing, out-of-stock colors hide from customers', async () => {
+    const db = fixtures();
+    db.private.inventory = { black: { grams: 120, low: 200 } };
+    db.jobs['1'].phase = 'order_received';
+    db.jobs['1'].items[0] = { ...db.jobs['1'].items[0], color: 'Black', colorId: 'black', filType: 'color', grams: 50 };   // 2 x 50 g
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    assert(/Running low:\s+Black \(120 g\)/.test(await page.textContent('.stock-alert')), 'no low stock warning');
+    await page.evaluate(() => updateBatchPhase('1', 'production'));
+    await page.waitForTimeout(300);
+    assert(db.private.inventory.black.grams === 20 && db.jobs['1'].stockTaken === true, `stock ${JSON.stringify(db.private.inventory)}`);
+    await page.evaluate(() => setStock('black', '0'));
+    await page.waitForTimeout(300);
+    assert(db.settings.colors.find(c => c.id === 'black').outOfStock === true, 'black should be marked out of stock');
+    await page.close();
+    const customer = await open(db);
+    await customer.click('text=I have an idea');
+    const pills = await customer.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
+    assert(!pills.some(p => /^Black/.test(p)) && pills.some(p => /^Red/.test(p)), `customer colors ${pills}`);
+    await customer.close();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('filament'));
+    await owner.click('button[aria-label="Add a 1 kg roll of Black"]');
+    await owner.waitForTimeout(300);
+    assert(db.private.inventory.black.grams === 1000 && !db.settings.colors.find(c => c.id === 'black').outOfStock, 'restocking should show black again');
+    await owner.close();
+  });
+  await check('money: sales, material and expenses by month, and a tax export', async () => {
+    const db = fixtures();
+    const year = new Date().getFullYear();
+    db.private.money = { costPerKg: 20, expenses: [{ id: 'e1', date: `${year}-01-15`, what: 'Black PLA x3', amount: 60 }] };
+    db.jobs['2'].paymentStatus = 'payment_recieved';
+    db.jobs['2'].paidAt = `${year}-01-20T12:00:00.000Z`;
+    const page = await open(db, { init: () => { window.__sheets = []; window.XLSX = { utils: { book_new: () => ({}), aoa_to_sheet: rows => rows, book_append_sheet: (wb, rows, name) => window.__sheets.push([name, rows]) }, writeFile: (wb, name) => { window.__file = name; } }; } });
+    await page.evaluate(asOwner('money'));
+    await page.waitForTimeout(400);
+    const stats = await page.$$eval('.money-stats .stat-val', els => els.map(e => e.textContent));
+    // Hook: 2 + 40 x 0.024 + 12 x 0.024 = 3.25 sale; 12 g x $0.02 = 0.24 material
+    assert(JSON.stringify(stats) === JSON.stringify(['$3.25', '$0.24', '$3.01', '$60.00', '-$56.75']), `stats ${stats}`);
+    await page.fill('#exp-what', 'Nozzles');
+    await page.fill('#exp-amount', '12.5');
+    await page.fill('#exp-date', `${year}-02-01`);
+    await page.click('text=Add expense');
+    await page.waitForTimeout(300);
+    assert(db.private.money.expenses.length === 2 && db.private.money.expenses[1].amount === 12.5, JSON.stringify(db.private.money));
+    await page.click(`text=Download ${year} for taxes (Excel)`);
+    const out = await page.evaluate(() => ({ file: window.__file, sheets: window.__sheets.map(s => s[0]), jan: window.__sheets[0][1][1] }));
+    assert(out.file === `soloprint-${year}-taxes.xlsx` && out.sheets.join() === 'Summary,Paid orders,Expenses' && out.jan.join() === 'January,1,3.25,0.24,3.01,60', JSON.stringify(out));
+    await page.close();
+  });
+  await check('installable as an app: manifest and icons', async () => {
+    const root = path.resolve(__dirname, '..');
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+    assert(manifest.display === 'standalone' && manifest.icons.length === 2 && manifest.icons.every(i => fs.existsSync(path.join(root, i.src))), 'manifest or icons missing');
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    assert(html.includes('rel="manifest"') && html.includes('apple-touch-icon') && fs.existsSync(path.join(root, 'icons/apple-touch-icon.png')), 'index.html is missing the app tags');
   });
 
   await browser.close();

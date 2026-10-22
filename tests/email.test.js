@@ -148,6 +148,66 @@ check('emails the owner when a backup fails', () => {
   assert(r.error && r.mails.includes('SoloPrint backup failed'), JSON.stringify(r.mails));
 });
 
+console.log('\nDaily and weekly emails:');
+const ctxD = load();
+const DAY = 864e5, NOW = new Date('2026-10-22T15:00:00Z');
+const daysAgo = n => new Date(NOW - n * DAY).toISOString();
+check('vacation note goes in the request-received email only while on', () => {
+  const on = emailsFor('INSERT', at({}), null, {}, { vacation: { on: true, until: 'Nov 3' } })[1].body;
+  assert(on.includes("I'm away until Nov 3. I'll review your request when I'm back."), on);
+  const off = emailsFor('INSERT', at({}), null, {}, { vacation: { on: false, until: 'Nov 3' } })[1].body;
+  assert(!off.includes('away'), off);
+});
+check('order-complete email links the finished-print photo', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'delivered', finishedPhotos: ['https://img.test/done.jpg'] }), at({ phase: 'production' }))[0].body;
+  assert(body.includes("Here's a photo of your print: https://img.test/done.jpg"), body);
+  const none = emailsFor('UPDATE', at({ phase: 'delivered' }), at({ phase: 'production' }))[0].body;
+  assert(!none.includes('photo'), none);
+});
+check('review request links to the review form', () => {
+  const [m] = ctxD.reviewRequestEmails([at({ phase: 'delivered' })], {}, {});
+  assert(m.to === 'jane@example.com' && m.subject === 'How did your SoloPrint order turn out?', m.subject);
+  assert(m.body.includes('https://soloprint.vercel.app/?requests=jane%40example.com&review=1729#order-1729'), m.body);
+});
+check('leftover roll reminder: about 2 weeks before it expires, once per roll', () => {
+  const roll = (id, boughtDaysAgo, grams) => ({ id, clientName: 'Lee', clientEmail: 'lee@example.com', phase: 'delivered', createdAt: daysAgo(boughtDaysAgo + 1),
+    phaseHistory: { order_received: daysAgo(boughtDaysAgo) }, items: [{ name: 'Case', qty: 1, filType: 'special_order', specialColor: 'Red TPU', grams }] });
+  const jobs = [roll('soon', 50, 300), roll('later', 20, 300), roll('used-up', 50, 980)];
+  const first = ctxD.rollReminderEmails(jobs, {}, {}, NOW, {});
+  assert(first.emails.length === 1 && first.emails[0].subject.startsWith('Your Red TPU roll is yours until') && /about 700 g left/.test(first.emails[0].body), JSON.stringify(first.emails.map(m => m.subject)));
+  const again = ctxD.rollReminderEmails(jobs, {}, {}, NOW, first.sent);
+  assert(again.emails.length === 0, 'reminded twice');
+});
+check('weekly summary counts what needs attention', () => {
+  const jobs = [at({ id: 'a' }), at({ id: 'b', phase: 'quote_sent' }), at({ id: 'c', phase: 'production', paymentStatus: 'payment_requested' }),
+    at({ id: 'd', phase: 'delivered', paymentStatus: 'payment_recieved', paidAt: daysAgo(2) }), at({ id: 'e', phase: 'delivered', paymentStatus: 'payment_recieved', paidAt: daysAgo(30) })];
+  const site = { colors: [{ id: 'black', name: 'Black' }, { id: 'red', name: 'Red' }] };
+  const m = ctxD.weeklySummaryEmail({ jobs, private: { inventory: { black: { grams: 150 }, red: { grams: 800 } } }, new_reviews: 2 }, {}, site, NOW);
+  assert(m.to === 'jeffsolo49@gmail.com' && m.subject === 'SoloPrint this week: $9.28 in sales', m.subject);
+  for (const line of ['Waiting for a quote from you: 1', 'Quotes waiting on the customer: 1', 'Confirmed but not paid yet: 1', 'Printing now: 1', 'New reviews to approve: 2', 'Running low on: Black (150 g)']) {
+    assert(m.body.includes(line), `missing "${line}" in\n${m.body}`);
+  }
+});
+check('daily run: one failing part does not stop the others', () => {
+  const mails = [];
+  const props = { SECRET: '0123456789abcdef0123456789abcdef' };
+  const ctx = load({
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, getProperties: () => ({ ...props }), setProperty: (k, v) => { props[k] = v; } }) },
+    MailApp: { sendEmail: m => mails.push(m.subject) },
+    UrlFetchApp: { fetch: url => {
+      const fn = url.split('/rpc/')[1] || '';
+      const reply = fn === 'due_quote_reminders' ? [200, JSON.stringify([at({ phase: 'quote_sent' })])]
+        : fn === 'due_review_requests' ? [404, '{"message":"Could not find the function"}']
+        : fn === 'owner_report_data' ? [200, JSON.stringify({ jobs: [], private: {}, new_reviews: 0 })] : [200, '[]'];
+      return { getResponseCode: () => reply[0], getContentText: () => reply[1] };
+    } }
+  });
+  let error = '';
+  try { ctx.sendQuoteReminders(); } catch (e) { error = e.message; }
+  assert(mails.includes('Still interested? Your SoloPrint quote is waiting'), 'quote reminder not sent');
+  assert(/Review requests: due_review_requests isn't set up yet: run supabase\/owner-tools\.sql/.test(error), error);
+});
+
 console.log('\nLoader (email/Loader.gs):');
 const zlib = require('zlib');
 const LOADER = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Loader.gs'), 'utf8');

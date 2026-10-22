@@ -589,3 +589,46 @@ textarea { resize: vertical; min-height: 70px; }
 .email-group-title { font-family: var(--pixel); font-size: 15px; color: var(--accent); margin: 1.75rem 0 0.75rem; }
 .email-to { display: inline-block; vertical-align: middle; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); margin-left: 6px; }
 .email-to.to-you { background: rgba(var(--accent-rgb),0.12); border-color: var(--accent); }
+
+/* Vacation, order extras, rolls, finished photos, reviews (features.js) */
+.vacation-banner { background: var(--surface); border: 3px solid var(--accent); border-radius: 14px; padding: 12px 16px; margin-bottom: 1.25rem; color: var(--text); line-height: 1.5; }
+.order-extras { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.rolls-card .roll-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.finished-photos { margin: 12px 0; }
+.finished-photo-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 8px; }
+.finished-photo-row img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.finished-thumb { position: relative; display: inline-block; }
+.finished-thumb .btn-sm { position: absolute; top: 4px; right: 4px; padding: 2px 7px; }
+.owner-extras { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
+.review-stars { display: flex; gap: 4px; }
+.review-stars button { font-size: 28px; line-height: 1; background: none; border: none; cursor: pointer; color: var(--border-hover); padding: 2px 4px; }
+.review-stars button.on { color: var(--amber); }
+.field-label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 6px; }
+.review-approvals { margin: 0 0 14px; }
+.review-approval { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin-top: 8px; border: 2px solid var(--accent); border-radius: 12px; background: var(--surface2); }
+
+/* Filament and Money tabs */
+.stock-alert { margin-bottom: 1rem; }
+.stock-alert .btn-sm { margin-left: 8px; }
+.stock-table { display: grid; gap: 0; }
+.stock-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(220px, 1.6fr) minmax(120px, 0.8fr); gap: 12px; align-items: end; padding: 12px 0; border-top: 1px solid var(--border); }
+.stock-row:first-child { border-top: none; }
+.stock-name { font-weight: 700; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; align-self: center; }
+.stock-row .swatch { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); flex-shrink: 0; }
+.stock-field label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 6px; }
+.stock-amount { display: flex; gap: 8px; align-items: center; }
+.stock-amount input { min-width: 0; }
+.stock-status { font-size: 12px; font-weight: 700; color: var(--muted); }
+.stock-status.ok { color: var(--green); }
+.stock-status.bad { color: var(--amber); }
+@media (max-width: 700px) { .stock-row { grid-template-columns: 1fr; gap: 8px; } }
+.money-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 1rem; }
+.money-stats { margin: 1rem 0; }
+.table-scroll { overflow-x: auto; }
+.money-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.money-table th, .money-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.money-table thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+.money-table tfoot th, .money-table tfoot td { font-weight: 700; border-bottom: none; }
+.expense-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.expense-form .field { flex: 1; min-width: 130px; margin-bottom: 0; }
+.money-stats { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }

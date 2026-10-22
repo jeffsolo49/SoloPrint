@@ -18,7 +18,14 @@ Live at https://soloprint.vercel.app/
   color picker fills in) and reviews, stored by `supabase/site-settings.sql`.
 - **Emails** (owner tab): read and edit every automated email. Defaults are in `email-templates.js`,
   which `email/Code.gs` carries an exact copy of (a test checks); your edits are saved in site settings.
-- **Scheduled jobs** (Apps Script `setupSchedules`): weekly Drive backup and daily quote reminders.
+- **More owner tools** (`features.js`, data in `supabase/owner-tools.sql`): private order notes, finished-print
+  photos (shown to the customer, one tap to the gallery), customer reviews you approve, filament stock that
+  hides colors at 0 g (Filament tab), and sales, material and expenses with a yearly tax export (Money tab).
+- **For customers:** vacation notice, "Order again", leftover-roll balances on My Requests, and a review form.
+- **Install as an app:** `manifest.webmanifest`, `sw.js` and `icons/`. On iPhone: Safari → Share → Add to Home Screen.
+- **Scheduled jobs** (Apps Script `setupSchedules`): weekly Drive backup; daily quote reminders, review requests
+  (a week after delivery) and leftover-roll reminders (2 weeks before a roll expires); a Monday summary email to you;
+  and a check every 6 hours.
 - **Link previews:** `og-image.png` is the picture shown when the site's link is texted or shared.
 
 ## Automatic checks

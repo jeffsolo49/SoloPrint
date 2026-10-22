@@ -1,0 +1,14 @@
+{
+  "name": "SoloPrint",
+  "short_name": "SoloPrint",
+  "description": "Custom 3D printing and design. Request a quote, see past work, and track your order.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#9a55ee",
+  "theme_color": "#a64fe8",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
