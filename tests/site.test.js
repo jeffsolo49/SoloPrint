@@ -111,6 +111,9 @@ async function mockBackend(page, db) {
   });
 }
 
+// Waits for the "we received your request" message instead of a fixed time (CI machines can be slow).
+const requestSent = page => page.waitForFunction(() => /received your request/.test((document.getElementById('submit-ok') || {}).textContent || ''), null, { timeout: 15000 });
+
 let browser;
 async function open(db, { width = 1100, height = 900, suffix = '', init } = {}) {
   const page = await browser.newPage({ viewport: { width, height } });
@@ -231,7 +234,7 @@ const STATES = {
     await page.fill('#notes-0', 'A stand for my phone on the desk');
     await page.click('.swatch-pill:has-text("Red")');
     await page.click('#submit-btn');
-    await page.waitForTimeout(400);
+    await requestSent(page);
     const job = Object.values(db.jobs).find(j => j.clientName === 'Sam');
     assert(job, 'request was not saved');
     assert(job.phase === 'estimate', `new request phase is ${job.phase}`);
@@ -256,7 +259,7 @@ const STATES = {
     assert(!Object.values(db.jobs).some(j => j.clientName === 'Lee'), 'sent without a special color name');
     await page.fill('#special-color-0', 'Red TPU');
     await page.click('#submit-btn');
-    await page.waitForTimeout(400);
+    await requestSent(page);
     const job = Object.values(db.jobs).find(j => j.clientName === 'Lee');
     assert(job && job.items[0].specialColor === 'Red TPU' && job.items[0].filType === 'special_order', `saved ${JSON.stringify(job && job.items[0])}`);
     await page.close();
@@ -301,7 +304,7 @@ const STATES = {
     assert(await page.inputValue('#client-name') === 'Dana' && await page.inputValue('#notes-0') === 'A name sign', 'draft was not restored');
     await page.fill('#client-email', 'dana@example.com');
     await page.click('#submit-btn');
-    await page.waitForTimeout(500);
+    await requestSent(page);
     assert(!(await page.evaluate(() => localStorage.getItem('soloprint_request_draft_v1'))), 'draft not cleared after sending');
     await page.close();
   });
@@ -374,7 +377,7 @@ const STATES = {
     assert(/500 g left/.test(await page.textContent('#submit-err')), 'over-limit request should be stopped');
     await page.evaluate(() => updateDraft(0, 'grams', 400));
     await page.click('#submit-btn');
-    await page.waitForTimeout(400);
+    await requestSent(page);
     const job = Object.values(db.jobs).find(j => j.items[0] && j.items[0].notes === 'Another case');
     assert(job && job.items[0].useLeftover === true && job.items[0].leftoverFrom === 'r1', `saved ${JSON.stringify(job && job.items[0])}`);
     await page.close();
@@ -402,7 +405,7 @@ const STATES = {
     const rate = await page.evaluate(() => itemRate(state.draftItems[0]));
     assert(Math.abs(rate - 0.016) < 1e-9, `rate ${rate} (Black and Red at 0.024, roll at 0)`);
     await page.click('#submit-btn');
-    await page.waitForTimeout(400);
+    await requestSent(page);
     const job = Object.values(db.jobs).find(j => j.items[0] && j.items[0].notes === 'Two-tone case');
     const it = job && job.items[0];
     assert(it && it.color === 'Black' && it.extraColors.map(p => p.name).join(',') === 'Red,Red TPU'
