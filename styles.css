@@ -653,3 +653,35 @@ textarea { resize: vertical; min-height: 70px; }
 .color-info { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); font-size: 13px; line-height: 1.5; display: grid; gap: 6px; }
 .color-info .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
 .color-info a { color: var(--accent); font-weight: 600; white-space: nowrap; }
+
+/* Compact request form: spaced like "How it works" so it's quick to scroll past. */
+.request-card { padding: 1rem 1.1rem; }
+.request-card .card-title { margin-bottom: 0.75rem; }
+.request-card .field { margin-bottom: 0.7rem; }
+.request-card .field label { margin-bottom: 4px; }
+.request-card .field-help { margin-top: 3px; }
+.request-card .item-block { padding: 0.85rem; }
+.request-card .item-block-header { margin-bottom: 0.6rem; }
+.request-card .mode-question { font-size: 14px; margin-bottom: 8px; }
+.request-card .mode-options { gap: 8px; }
+.request-card .mode-option { flex-direction: row; align-items: center; gap: 10px; padding: 9px 12px; border-width: 2px; border-radius: 12px; }
+.request-card .mode-option:hover { transform: none; }
+.request-card .mode-icon { flex: 0 0 32px; width: 32px; height: 32px; }
+.request-card .mode-icon svg { width: 17px; height: 17px; }
+.request-card .mode-title { font-size: 14px; }
+.request-card .mode-sub { font-size: 12px; margin-top: 1px; line-height: 1.35; }
+.request-card .mode-option.selected::after { top: 4px; right: 8px; }
+.request-card .mode-form { margin-top: 10px; padding-top: 10px; }
+.request-card .next-link-row { padding-top: 10px; padding-bottom: 10px; }
+
+/* Phones: small photos only in the galleries. */
+@media (max-width: 640px) {
+  .home-gallery, .home-gallery.compact { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .home-gallery .work-tile.featured { grid-column: auto; grid-row: auto; }
+  .home-gallery .work-tile.featured span { font-size: 11px; padding: 14px 8px 6px; }
+  .gallery-grid { grid-template-columns: 1fr; gap: 10px; }
+  .gallery-card { flex-direction: row; align-items: stretch; }
+  .gallery-card .gallery-photo { flex: 0 0 96px; width: 96px; aspect-ratio: 1; align-self: flex-start; margin: 10px 0 10px 10px; border-radius: 10px; overflow: hidden; }
+  .gallery-card .gallery-thumbs { display: none; }
+  .gallery-card .gallery-body { padding: 10px 12px; min-width: 0; }
+}

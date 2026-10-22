@@ -1275,7 +1275,7 @@ function renderSubmitTab() {
     </div>
     ${state.resumedDraft ? `<div class="alert success" id="resume-note" style="display:block;margin:0 0 1rem;" role="status">Welcome back! Your request is filled in below, just as you left it. Finish it whenever you like.</div>` : ''}
 
-    <div class="card">
+    <div class="card request-card">
       <h3 class="card-title">Your info</h3>
       <div class="row2">
         <div class="field">
@@ -1294,7 +1294,7 @@ function renderSubmitTab() {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card request-card">
       <h3 class="card-title">Items to print (${items.length}/${MAX_ITEMS})</h3>
       ${items.map((item, i) => renderItemBlock(item, i)).join('')}
       ${items.length < MAX_ITEMS ? `
@@ -1539,11 +1539,12 @@ function renderCustomerPricePreview(item) {
   </div>`;
 }
 
+// A new, empty item starts on "Something from my past work" (the first choice).
 function inferMode(item) {
   if (item.mode) return item.mode;
   if (item.link && isWebUrl(item.link)) return 'link';
   if (item.link || item.notes || item.name) return 'idea';
-  return '';
+  return 'gallery';
 }
 
 // Picking one of the three choices shows its form below the choices. Switching keeps what was typed under
