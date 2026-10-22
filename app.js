@@ -1421,10 +1421,11 @@ function renderFilamentPills(i, current) {
     return `<div class="filament-pills" role="group" aria-label="Color">
       ${colors.map(c => `
         <button type="button" class="fil-pill swatch-pill ${item.colorId === c.id ? 'active-color' : ''}" aria-pressed="${item.colorId === c.id}" onclick="pickColor(${i}, '${esc(c.id)}')">
-          <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}
+          <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}${c.description || c.link ? ' <span class="info-mark" aria-hidden="true">ⓘ</span><span class="sr-only"> (has more info)</span>' : ''}
         </button>`).join('')}
       <button type="button" class="fil-pill ${isSpecialOrder(item) ? 'active-special' : ''}" aria-pressed="${isSpecialOrder(item)}" onclick="pickColor(${i}, '')">Special order (color or material I don't carry)</button>
     </div>
+    ${renderColorInfo(item)}
     ${renderSpecialOrderBox(item, i)}
     ${renderExtraColors(item, i)}`;
   }
@@ -1437,6 +1438,18 @@ function renderFilamentPills(i, current) {
   </div>
   ${renderSpecialOrderBox(item, i)}
   ${renderExtraColors(item, i)}`;
+}
+
+// The owner's description and link for each picked color that has one.
+function renderColorInfo(item) {
+  const ids = itemParts(item).map(p => p.colorId).filter(Boolean);
+  const shown = customerColors().filter(c => ids.includes(c.id) && (c.description || c.link));
+  if (!shown.length) return '';
+  return `<div class="color-info">${shown.map(c => `<div>
+    <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>
+    <strong>${esc(c.name)}</strong>${c.description ? `: ${esc(c.description)}` : ''}
+    ${c.link ? ` <a href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">See this filament ↗</a>` : ''}
+  </div>`).join('')}</div>`;
 }
 
 // Colors a customer can add to a multi-color print: stocked colors, plus their leftover rolls.
@@ -1621,9 +1634,9 @@ function renderModeChooser(i, current) {
   return `<div class="field" style="margin-bottom:4px;">
     <div class="mode-question" id="mode-question-${i}">What would you like printed?</div>
     <div class="mode-options">
+      ${opt('gallery', 'Something from my past work', 'Pick a design I have made before', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
       ${opt('link', 'I have a link', 'A model on MakerWorld, Printables or Thingiverse', '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>')}
       ${opt('idea', 'I have an idea', 'Something custom: describe it and I can design it', '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>')}
-      ${opt('gallery', 'Something from my past work', 'Pick a design I have made before', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
     </div>
   </div>`;
 }
@@ -2552,7 +2565,9 @@ function cleanSettings(raw) {
       name: cleanText(c && c.name, 40).trim(),
       hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) ? c.hex : '#888888',
       special: !!(c && c.special),
-      outOfStock: !!(c && c.outOfStock)
+      outOfStock: !!(c && c.outOfStock),
+      link: safeLink(c && c.link),
+      description: cleanText(c && c.description, 300).trim()
     })).filter(c => c.id && c.name).sort(byName),
     reviews: (Array.isArray(d.reviews) ? d.reviews : []).slice(0, 40).map(r => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(r && r.id)) ? r.id : '',
@@ -2849,11 +2864,19 @@ function renderOwnerSettingsPage() {
       <h3 class="card-title">Filament colors</h3>
       <div class="field-help">Type a color name and the color picker fills in to match; tap the swatch to adjust it. The colors customers can pick. Tick "Special" for special colors and materials you carry (like Red or White TPU); they use the special rate. Anything you don't carry, customers request as a special order. With no colors listed, customers see Black, White and Special Request.</div>
       ${d.colors.map((c, n) => `
+        <div class="color-row">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
           <input type="color" id="color-hex-${n}" value="${esc(c.hex)}" aria-label="Color for ${esc(c.name || 'new color')}" oninput="state.settingsDraft.colors[${n}].hex = this.value; state.settingsDraft.colors[${n}].hexManual = true" style="width:46px;height:40px;padding:2px;" />
           <input type="text" value="${esc(c.name)}" aria-label="Color name" placeholder="e.g. Red" oninput="onColorNameInput(${n}, this.value)" onchange="sortSettingsColors()" style="flex:1;min-width:140px;" />
           <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${c.special ? 'checked' : ''} onchange="state.settingsDraft.colors[${n}].special = this.checked" style="width:auto;" /> Special</label>
           <button class="btn-sm danger" type="button" onclick="state.settingsDraft.colors.splice(${n}, 1); render();" aria-label="Remove ${esc(c.name || 'color')}">Remove</button>
+        </div>
+        <div class="row2 color-extra">
+          <div class="field"><label for="color-desc-${n}">Description (optional)</label>
+            <input type="text" id="color-desc-${n}" value="${esc(c.description || '')}" maxlength="300" placeholder="e.g. Shimmery gold that shifts in the light" oninput="state.settingsDraft.colors[${n}].description = this.value" /></div>
+          <div class="field"><label for="color-link-${n}">Link to this filament (optional)</label>
+            <input type="url" id="color-link-${n}" value="${esc(c.link || '')}" maxlength="300" placeholder="https://..." oninput="state.settingsDraft.colors[${n}].link = this.value" /></div>
+        </div>
         </div>`).join('')}
       <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
       ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
