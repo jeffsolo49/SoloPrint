@@ -90,6 +90,7 @@ for new tables. `STATES` lists the pages checked for accessibility and sideways 
 3. Open a PR and turn on auto-merge for it (GitHub MCP `enable_pr_auto_merge`, merge method "merge"), then
    stop: a ruleset on `main` requires the `site-and-email` and `database` checks, and GitHub merges by itself
    once they pass. No need to poll CI. If a check fails, the PR stays open; fix and push to the same branch.
+   Branches are only checked through their PR, so open the PR right after the first push.
 4. Vercel publishes `main` (project "project-jfaha", https://soloprint.vercel.app; `claude/*` branches don't
    build). Confirm production is the new commit:
    `curl -s "https://api.github.com/repos/jeffsolo49/soloprint/deployments?environment=Production&per_page=1"`.

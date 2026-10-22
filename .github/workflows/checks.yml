@@ -1,15 +1,18 @@
 # Automatic checks on every change: site (pages, accessibility, layout, security, pricing, owner
 # tools), the Google Apps Script logic, and the Supabase database rules.
+# Branches are checked through their pull request (once per commit); main is checked after each merge.
+# main requires site-and-email and database to pass before a pull request can merge.
 name: Checks
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [main]
   pull_request:
 
 jobs:
   site-and-email:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: tests
@@ -24,6 +27,7 @@ jobs:
 
   database:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16
