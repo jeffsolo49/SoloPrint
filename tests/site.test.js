@@ -891,6 +891,38 @@ const STATES = {
     assert(/each · automated estimate/.test(detail) && /made to your custom specifications/.test(detail), 'design page is missing the notes');
     await page.close();
   });
+  await check('past work set price: replaces the estimate, no calculation shown, used in the quote', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    await owner.fill('#gallery-price', '12');
+    assert(/\$12\.00/.test(await owner.textContent('#gallery-form-price')) && !/print time|g Black/.test(await owner.textContent('#gallery-form-price')), 'owner preview should show only the set price');
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    assert(db.gallery.g1.data.price === 12, `saved ${JSON.stringify(db.gallery.g1.data)}`);
+    await owner.close();
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); openWork('g1'); });
+    const detail = await page.textContent('main');
+    assert(/\$12\.00 each/.test(detail) && !/automated estimate/.test(detail) && !/to print/.test(detail), 'design page still shows the estimate or calculation');
+    await page.evaluate(() => { setTab('submit'); pickGalleryForItem(0, 'g1'); });
+    const preview = await page.textContent('#customer-price-preview-0');
+    assert(/\$12\.00/.test(preview) && !(await page.$('#customer-price-preview-0 .price-breakdown')) && !(await page.$('.time-toggle')), 'request form shows a calculation for a set price');
+    await page.fill('#client-name', 'Ann'); await page.fill('#client-email', 'ann@example.com');
+    await page.evaluate(() => { state.draftItems[0].setPrice = 1; });   // a tampered price
+    await page.click('#submit-btn');
+    await requestSent(page);
+    await page.close();
+    const job = Object.values(db.jobs).find(j => j.clientName === 'Ann');
+    const quoting = await open(db);
+    await quoting.evaluate(asOwner('dashboard'));
+    await quoting.click(`#approve-btn-${job.id}`);
+    await quoting.waitForTimeout(300);
+    assert(db.jobs[job.id].phase === 'quote_sent' && db.jobs[job.id].items[0].setPrice === 12, `quote ${JSON.stringify(db.jobs[job.id].items[0])}`);
+    assert(await quoting.evaluate(id => batchTotal(state.batches.find(b => b.id === id)), job.id) === 12, 'quote total should be the set price');
+    await quoting.close();
+  });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));

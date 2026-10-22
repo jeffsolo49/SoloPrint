@@ -178,6 +178,7 @@ function rulesFor(batch) { return orderRules(batch, state.settings); }
 
 // Pass an item to price all of its colors, or a filament type for a single-color price.
 function calcPerPrint(mins, grams, filType, rules = currentRules()) {
+  if (setPriceOf(filType)) return setPriceOf(filType);
   if (!mins || !grams) return null;
   return printPrice(mins, grams, filType, rules);
 }
@@ -388,7 +389,7 @@ function canAdvancePayment(currentStatus, nextStatus) {
 }
 
 function isBatchQuoteReady(batch) {
-  return !!(batch && Array.isArray(batch.items) && batch.items.length && batch.items.every(it => it.minutes && it.grams));
+  return !!(batch && Array.isArray(batch.items) && batch.items.length && batch.items.every(itemPriced));
 }
 
 // Orders come from a shared database, so coerce every field to the shape the UI
@@ -462,6 +463,7 @@ function cleanItem(it) {
       leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(p && p.leftoverFrom)) ? p.leftoverFrom : ''
     })).filter(p => p.name),
     galleryId: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.galleryId)) ? it.galleryId : '',
+    setPrice: cleanNumber(it.setPrice),
     modeDrafts: cleanModeDrafts(it.modeDrafts)
   };
 }
@@ -469,7 +471,7 @@ function cleanItem(it) {
 // What a customer typed under each of the three choices, kept when they switch to another choice so
 // switching back brings it back (and it's part of their saved draft).
 const MODE_FIELDS = ['link', 'name', 'notes', 'imageLinks', 'previewImage', 'grams', 'printHours', 'printMinutes',
-  'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'estimateSource', 'estimateNote', 'showTime', 'galleryId'];
+  'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'estimateSource', 'estimateNote', 'showTime', 'galleryId', 'setPrice'];
 function cleanModeDrafts(raw) {
   const out = {};
   ['link', 'idea', 'gallery'].forEach(mode => {
@@ -1531,6 +1533,13 @@ function pickColor(i, colorId) {
 }
 
 function renderCustomerPricePreview(item) {
+  if (setPriceOf(item)) {
+    const qty = Math.max(1, Number(item.qty) || 1);
+    return `<div class="price-preview-box" style="margin-top:12px;">
+      <div class="price-big">$${(setPriceOf(item) * qty).toFixed(2)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${setPriceOf(item).toFixed(2)} each${qty > 1 ? ` · quantity ${qty}` : ''}. I'll confirm your order after reviewing your request.</div>
+    </div>`;
+  }
   const minutes = item.knownFromLibrary ? item.knownMinutes : totalPrintMinutes(item.printHours, item.printMinutes);
   const grams = Number(item.grams);
   const qty = Math.max(1, Number(item.qty) || 1);
@@ -1608,8 +1617,8 @@ function renderGalleryPicker(i) {
 function galleryItemFields(g) {
   return {
     name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
-    knownFromLibrary: !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
-    estimateSource: `the ${GALLERY_NAME} gallery`
+    knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
+    estimateSource: `the ${GALLERY_NAME} gallery`, setPrice: g.price > 0 ? g.price : null
   };
 }
 
@@ -1626,7 +1635,7 @@ function changeGalleryPick(i) {
   const item = state.draftItems[i];
   if (!item) return;
   const blank = blankItem();
-  ['name', 'galleryId', 'grams', 'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'previewImage', 'estimateSource'].forEach(f => { item[f] = blank[f]; });
+  ['name', 'galleryId', 'grams', 'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'previewImage', 'estimateSource', 'setPrice'].forEach(f => { item[f] = blank[f]; });
   render();
 }
 
@@ -1771,7 +1780,7 @@ function renderItemBlock(item, i) {
           <div class="card-title" style="margin-bottom:6px;">Saved Estimate</div>
           <div style="font-size:12px;color:var(--muted);">Filled in from a previous print: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. I'll still review your request before sending a quote.</div>
         </div>` : ``}
-        <div id="time-${i}">${renderTimeSection(item, i)}</div>
+        <div id="time-${i}">${setPriceOf(item) ? '' : renderTimeSection(item, i)}</div>
         <div id="customer-price-preview-${i}">${renderCustomerPricePreview(item)}</div>` : ''}
       ${mode ? `</div>` : ''}
     </div>`;
@@ -1849,7 +1858,7 @@ function renderMyJobsTab() {
     ${renderRollsCard()}
     ${[...state.batches].reverse().map(b => {
       const phase = b.phase || 'estimate';
-      const allDone = b.items.every(it => it.minutes && it.grams);
+      const allDone = b.items.every(itemPriced);
       const total = phase !== 'estimate' && allDone ? orderSum(b) : null;
       return `<div class="job-card ${phase}" id="order-${b.id}">
         <div class="job-header">
@@ -2251,7 +2260,7 @@ function renderOwnerAnalyticsPage() {
 
 function renderOwnerBatch(b) {
   const phase = b.phase || 'estimate';
-  const allDone = b.items.every(it => it.minutes && it.grams);
+  const allDone = b.items.every(itemPriced);
   const total = allDone ? orderSum(b) : null;
   const hasSpecial = b.items.some(usesRolls);
   const checks = b.items.some(it => rollParts(it).length) ? leftoverChecks(b) : [];
@@ -2380,7 +2389,8 @@ function renderOwnerBatch(b) {
 
 function renderOwnerItem(batchId, it, i) {
   const rules = rulesFor(state.batches.find(b => b.id === batchId) || {});
-  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it, rules) : null;
+  const priced = { ...it, setPrice: ownerSetPrice(it) };   // the design's set price, from the gallery
+  const pp  = itemPriced(priced) ? calcPerPrint(it.minutes, it.grams, priced, rules) : null;
   const tot = pp !== null ? pp * it.qty : null;
   const known = getKnownEstimate(it);
   const canUseKnown = known && (!it.minutes || !it.grams);
@@ -2390,7 +2400,7 @@ function renderOwnerItem(batchId, it, i) {
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
-          <span style="font-size:12px;color:var(--muted);">$${itemRate(it, rules).toFixed(3)}/g</span>
+          <span style="font-size:12px;color:var(--muted);">${priced.setPrice ? `Set price $${priced.setPrice.toFixed(2)} each (from ${esc(GALLERY_NAME)}); time and grams optional` : `$${itemRate(it, rules).toFixed(3)}/g`}</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
@@ -2983,7 +2993,8 @@ function cleanGalleryItem(row) {
     photos: cleanImageLinks(data.photos),
     filType: cleanFilType(data.filType),
     minutes: cleanNumber(data.minutes),
-    grams: cleanNumber(data.grams)
+    grams: cleanNumber(data.grams),
+    price: cleanNumber(data.price)   // set price that replaces the calculated estimate
   };
 }
 
@@ -3049,12 +3060,12 @@ function renderWorkDetail(g) {
         <div class="job-divider" style="margin:6px 0 14px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
-            <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each · automated estimate</span></div>
-            <div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>
+            <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
+            ${g.price > 0 ? '' : `<div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
           <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>
         </div>
-        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} The price is an automated estimate per item; I'll confirm your quote after reviewing your request. ${esc(materialNote())}</div>` : `
+        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>` : `
         <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
     </div>
     ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
@@ -3068,8 +3079,9 @@ function showWorkPhoto(id, n) {
 }
 
 function galleryPrice(g) {
-  return calcPerPrint(g.minutes, g.grams, g.filType);
+  return g.price > 0 ? g.price : calcPerPrint(g.minutes, g.grams, g.filType);
 }
+function galleryPriceLabel(g) { return g.price > 0 ? 'each' : 'each · automated estimate'; }
 
 async function loadGallery() {
   try {
@@ -3135,7 +3147,7 @@ function renderGalleryTab() {
         <div class="gallery-body">
           <div class="gallery-title">${esc(g.title || 'Untitled')}</div>
           <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
-          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each · automated estimate</span></div>` : ''}
+          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
             ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>` : ''}
@@ -3143,7 +3155,7 @@ function renderGalleryTab() {
         </div>
       </div>`;
     }).join('')}</div>
-    <div class="field-help" style="margin-top:14px;">Prices are automated estimates per item. ${esc(galleryNote())} I'll review every request and confirm the price before asking for payment.</div>`;
+    <div class="field-help" style="margin-top:14px;">Prices are per item; ones marked "automated estimate" are estimates. ${esc(galleryNote())} I'll review every request and confirm the price before asking for payment.</div>`;
 }
 
 // Add a gallery piece to the customer's request form with its known print time and grams.
@@ -3162,11 +3174,13 @@ function requestGalleryItem(id) {
 }
 
 function blankGalleryForm() {
-  return { id: `g${Date.now()}`, title: '', description: '', photos: '', filType: 'black', hours: '', minutes: '', grams: '', published: true };
+  return { id: `g${Date.now()}`, title: '', description: '', photos: '', filType: 'black', hours: '', minutes: '', grams: '', price: '', published: true };
 }
 
 function renderGalleryFormPrice() {
   const f = state.galleryForm || blankGalleryForm();
+  const set = parseFloat(f.price);
+  if (set > 0) return `<div class="price-big">$${set.toFixed(2)}</div><div class="field-help">Your set price per item. Customers see just this price, with no calculation and no "automated estimate" label.</div>`;
   const minutes = totalPrintMinutes(f.hours, f.minutes);
   const price = calcPerPrint(minutes, parseFloat(f.grams), f.filType);
   return price !== null
@@ -3226,6 +3240,11 @@ function renderOwnerGalleryPage() {
         <div class="field"><label>Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
         <div class="field"><label>Filament (g)</label><input type="number" id="gallery-grams" min="0" step="0.1" value="${esc(f.grams)}" placeholder="85.4" oninput="updateGalleryForm('grams', this.value)" /></div>
       </div>
+      <div class="field" style="max-width:260px;margin-top:12px;">
+        <label for="gallery-price">Set price, $ each (optional)</label>
+        <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
+        <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
+      </div>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(GALLERY_NAME)} tab
       </label>
@@ -3259,7 +3278,7 @@ function editGalleryItem(id) {
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
-    grams: g.grams ? String(g.grams) : '', published: g.published
+    grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3273,7 +3292,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams, price: g.price || null }
     })
   });
 }
@@ -3287,7 +3306,7 @@ async function saveGalleryItem() {
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
     data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(f.photos), filType: f.filType,
-      minutes: totalPrintMinutes(f.hours, f.minutes), grams: parseFloat(f.grams) }
+      minutes: totalPrintMinutes(f.hours, f.minutes), grams: parseFloat(f.grams), price: parseFloat(f.price) || null }
   });
   const btn = document.getElementById('gallery-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
@@ -4308,14 +4327,22 @@ async function saveDeliveryInfo(batchId) {
   render();
 }
 
+function ownerSetPrice(it) {
+  const g = it.galleryId && state.gallery.find(x => x.id === it.galleryId);
+  return g && g.price > 0 ? g.price : null;
+}
+
 async function approveBatch(batchId) {
   const batch = state.batches.find(b => b.id === batchId);
   if (!batch) return;
   let allValid = true;
+  if (batch.items.some(it => it.galleryId) && !state.galleryLoaded) await loadGallery();
   batch.items.forEach((it, i) => {
     const mins  = parseFloat((document.getElementById(`mins-${batchId}-${i}`)   || {value:''}).value);
     const grams = parseFloat((document.getElementById(`ograms-${batchId}-${i}`) || {value:''}).value);
-    if (!mins || !grams) allValid = false;
+    // A past-work design's set price comes from the gallery, never from what the customer's browser sent.
+    it.setPrice = ownerSetPrice(it);
+    if ((!mins || !grams) && !it.setPrice) allValid = false;
     it.minutes = mins  || null;
     it.grams   = grams || it.grams;
     if (mins && grams) saveKnownEstimate(it);

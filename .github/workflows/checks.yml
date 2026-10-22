@@ -22,7 +22,11 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npx playwright install --with-deps chromium
+      # Use the Chrome already on GitHub's machines; downloading a browser here sometimes hung for 20 minutes.
+      - name: Find a browser
+        run: |
+          if command -v google-chrome >/dev/null; then echo "CHROMIUM_PATH=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else npx playwright install --with-deps chromium; fi
       - run: npm test
 
   database:
