@@ -3,6 +3,8 @@
 // every link would show the general SoloPrint card. vercel.json sends "/?design=<id>" here; this returns
 // the normal index.html with the design's name, description and first photo in the preview tags. The
 // address doesn't change, and the page itself opens the design as usual.
+const fs = require('fs');
+const path = require('path');
 const SUPA_URL = 'https://xpssamjjyarajtwtrwqx.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
 
@@ -71,26 +73,45 @@ async function loadDesign(ref) {
   return { title: d.title, description: d.description, photo };
 }
 
-module.exports = async function handler(req, res) {
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const id = String((req.query && req.query.design) || '');
-  const pageUrl = `https://${host}/?design=${encodeURIComponent(id)}`;
+// The page itself: the copy bundled with this function (vercel.json includeFiles), else fetched from the site.
+async function loadIndex(host) {
+  for (const file of [path.join(__dirname, '..', 'index.html'), path.join(process.cwd(), 'index.html')]) {
+    try { return fs.readFileSync(file, 'utf8'); } catch (err) { /* try the next place */ }
+  }
   try {
     const page = await fetch(`https://${host}/index.html`);
-    if (!page.ok) throw new Error(`index.html ${page.status}`);
-    let html = await page.text();
-    if (/^[A-Za-z0-9_-]{1,80}$/.test(id)) {
-      const design = await loadDesign(id).catch(() => null);
-      if (design) html = designHtml(html, design, pageUrl);
-    }
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400');
-    res.status(200).send(html);
+    return page.ok ? await page.text() : null;
   } catch (err) {
-    // Never leave a customer on an error page: send them to the plain page, which opens the design itself.
-    res.setHeader('Location', `/index.html?design=${encodeURIComponent(id)}`);
-    res.status(307).end();
+    return null;
   }
+}
+
+// Last resort when the page can't be read: just the preview tags, then straight on to the normal page.
+function previewOnlyHtml(design, pageUrl, ref) {
+  const target = `/index.html?design=${encodeURIComponent(ref)}`;
+  const shell = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><title>SoloPrint</title>
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="SoloPrint" />
+<meta http-equiv="refresh" content="0;url=${attr(target)}" />
+</head><body><a href="${attr(target)}">Open this design on SoloPrint</a><script>location.replace(${JSON.stringify(target)});</script></body></html>`;
+  return designHtml(shell, design, pageUrl);
+}
+
+module.exports = async function handler(req, res) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'soloprint.vercel.app';
+  const ref = String((req.query && req.query.design) || new URL(req.url || '/', `https://${host}`).searchParams.get('design') || '');
+  const pageUrl = `https://${host}/?design=${encodeURIComponent(ref)}`;
+  const [html, design] = await Promise.all([
+    loadIndex(host),
+    /^[A-Za-z0-9_-]{1,80}$/.test(ref) ? loadDesign(ref).catch(() => null) : null
+  ]);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400');
+  if (html) { res.status(200).send(design ? designHtml(html, design, pageUrl) : html); return; }
+  if (design) { res.status(200).send(previewOnlyHtml(design, pageUrl, ref)); return; }
+  // Nothing to add: send them to the plain page, which opens the design itself.
+  res.setHeader('Location', `/index.html?design=${encodeURIComponent(ref)}`);
+  res.status(307).end();
 };
 module.exports.designHtml = designHtml;
 module.exports.summary = summary;

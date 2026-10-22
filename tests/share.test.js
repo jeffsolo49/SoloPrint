@@ -29,21 +29,34 @@ await check('a design without photos keeps the general image', () => {
 });
 await check('vercel.json sends design links to the function', () => {
   const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'vercel.json'), 'utf8'));
-  const r = (cfg.rewrites || []).find(x => x.destination === '/api/design');
-  assert(r && r.source === '/' && r.has[0].key === 'design', JSON.stringify(cfg.rewrites));
+  // "routes" (not "rewrites"): rewrites lose to the index.html file, so the function never ran.
+  const r = (cfg.routes || []).find(x => x.dest === '/api/design');
+  assert(r && r.src === '/' && r.has[0].key === 'design' && !cfg.rewrites, JSON.stringify(cfg));
+  assert(cfg.functions['api/design.js'].includeFiles === 'index.html', 'index.html not bundled with the function');
 });
-await check('the function falls back to the plain page if anything fails', async () => {
-  const saved = global.fetch;
+await check('the function falls back to the plain page if the design and page are both unavailable', async () => {
+  const saved = global.fetch, savedRead = fs.readFileSync;
   global.fetch = async () => { throw new Error('offline'); };
+  fs.readFileSync = () => { throw new Error('missing'); };
   const res = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, end() {}, send() {} };
   await api({ headers: { host: 'soloprint.vercel.app' }, query: { design: 'g1' } }, res);
-  global.fetch = saved;
+  global.fetch = saved; fs.readFileSync = savedRead;
   assert(res.code === 307 && res.headers.Location === '/index.html?design=g1', JSON.stringify(res));
 });
-await check('the function serves the page with the design filled in', async () => {
+await check('if the page copy is missing, it still sends the preview tags and forwards to the page', async () => {
+  const saved = global.fetch, savedRead = fs.readFileSync;
+  fs.readFileSync = () => { throw new Error('missing'); };
+  global.fetch = async u => String(u).endsWith('/index.html') ? { ok: false } : { ok: true, json: async () => [{ id: 'g7', data: { title: 'Name Sign', photos: ['https://img.test/s.png'] } }] };
+  let body = '';
+  const res = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, send(b) { body = b; }, end() {} };
+  await api({ headers: { host: 'soloprint.vercel.app' }, query: { design: 'name-sign' } }, res);
+  global.fetch = saved; fs.readFileSync = savedRead;
+  assert(res.code === 200 && body.includes('<meta property="og:image" content="https://img.test/s.png" />') && body.includes('og:url') && body.includes("location.replace(\"/index.html?design=name-sign\")"), body);
+});
+await check('the function serves the page (its bundled copy) with the design filled in', async () => {
   const saved = global.fetch;
   global.fetch = async u => String(u).endsWith('/index.html')
-    ? { ok: true, text: async () => html }
+    ? { ok: false }
     : { ok: true, json: async () => [{ id: 'g7', created_at: '2026-01-01', data: { title: 'Name Sign', photos: ['https://img.test/s.png'] } }, { id: 'g8', data: { title: 'Other', photos: ['https://img.test/o.png'] } }] };
   let body = '';
   const res = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, send(b) { body = b; }, end() {} };
