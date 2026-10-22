@@ -1115,6 +1115,7 @@ async function init() {
   restoreDraft();
   const linkedOrder = handleRequestsLink();
   const resumeId = handleResumeLink();
+  handleDesignLink();
   state.ownerUnlocked = hasValidOwnerSession();
   handleAuthRedirect();
   await Promise.all([
@@ -2454,12 +2455,13 @@ function renderOwnerItem(batchId, it, i) {
 
 function setTab(tab) {
   state.clientTab = tab;
-  if (tab === 'gallery') state.galleryOpen = '';
+  if (tab === 'gallery' || state.galleryOpen) { state.galleryOpen = ''; setDesignUrl(''); }
   render();
   if (tab === 'gallery') loadGallery().then(render);
 }
 function goHome() {
   state.clientTab = 'submit';
+  if (state.galleryOpen) { state.galleryOpen = ''; setDesignUrl(''); }
   if (state.view === 'owner') { showClientView(); return; }
   render();
 }
@@ -3007,11 +3009,53 @@ function writeupExcerpt(text, max = 160) {
   return t.length > max ? t.slice(0, max).replace(/\s+\S*$/, '') + '…' : t;
 }
 
+// Each design has its own address (?design=<id>), so it can be linked to and the back button works.
+function designLink(id) { return `${location.origin}${location.pathname}?design=${encodeURIComponent(id)}`; }
+function setDesignUrl(id) {
+  const params = new URLSearchParams(location.search);
+  if (id) params.set('design', id); else params.delete('design');
+  const url = location.pathname + (params.toString() ? `?${params}` : '');
+  if (url !== location.pathname + location.search) history.pushState({ design: id || '' }, '', url);
+}
 function openWork(id) {
   state.galleryOpen = id;
   state.clientTab = 'gallery';
+  state.view = 'client';
+  setDesignUrl(id);
   render();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('work-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function closeWork() {
+  state.galleryOpen = '';
+  setDesignUrl('');
+  render();
+}
+function handleDesignLink() {
+  const id = String(new URLSearchParams(location.search).get('design') || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return '';
+  state.view = 'client';
+  state.clientTab = 'gallery';
+  state.galleryOpen = id;
+  return id;
+}
+window.addEventListener('popstate', () => {
+  if (state.view !== 'client') return;
+  const id = handleDesignLink();
+  if (!id && state.clientTab === 'gallery') state.galleryOpen = '';
+  render();
+});
+
+async function copyDesignLink(id, btn) {
+  const url = designLink(id);
+  const g = state.gallery.find(x => x.id === id);
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: g ? g.title : 'SoloPrint', url }); return; }
+    await navigator.clipboard.writeText(url);
+    if (btn) { btn.textContent = 'Link copied'; setTimeout(() => { btn.textContent = 'Copy link'; }, 2000); }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    prompt('Copy this link:', url);
+  }
 }
 
 // Photo strip of recent work for the Request a Quote page.
@@ -3050,8 +3094,13 @@ function renderRecentWork() {
 function renderWorkDetail(g) {
   const price = galleryPrice(g);
   return `
-    <button class="btn-link" type="button" onclick="state.galleryOpen=''; render();" style="margin-bottom:14px;">← All ${esc(GALLERY_NAME)}</button>
-    <div class="section-header" style="margin-bottom:1rem;"><div><h2 class="section-title">${esc(g.title || 'Untitled')}</h2></div></div>
+    <div id="work-detail" class="work-detail-head">
+      <h2 class="section-title">${esc(g.title || 'Untitled')}</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-sm" type="button" onclick="copyDesignLink('${esc(g.id)}', this)">Copy link</button>
+        <button class="btn-sm" type="button" onclick="closeWork()">Close</button>
+      </div>
+    </div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
     ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
     <div class="card">
@@ -3126,7 +3175,6 @@ function showGalleryPhoto(id, n) {
 function renderGalleryTab() {
   const items = state.gallery.filter(g => g.published);
   const open = state.galleryOpen && items.find(g => g.id === state.galleryOpen);
-  if (open) return renderWorkDetail(open);
   const header = `
     <div class="section-header">
       <div class="section-icon">
@@ -3139,7 +3187,16 @@ function renderGalleryTab() {
     </div>`;
   if (!state.galleryLoaded) return `${header}<div class="empty-state"><div class="empty-state-text">Loading...</div></div>`;
   if (!items.length) return `${header}<div class="empty-state"><div class="empty-state-icon">🖼️</div><div class="empty-state-text">Nothing here yet</div><div class="empty-state-sub">Check back soon, or request a custom print.</div></div>`;
-  return `${header}
+  // A design is open: keep every design visible as small tiles above it.
+  if (open) return `${header}
+    <nav class="work-grid gallery-strip" aria-label="All designs">${items.map(g => `
+      <button class="work-card ${g.id === open.id ? 'current' : ''}" type="button" onclick="openWork('${esc(g.id)}')" ${g.id === open.id ? 'aria-current="true"' : ''}>
+        <span class="work-card-photo">${g.photos[0] ? thumbImg(g.photos[0], '', 'text') : ''}</span>
+        <span class="work-card-name">${esc(g.title || 'Untitled')}</span>
+      </button>`).join('')}</nav>
+    ${renderWorkDetail(open)}`;
+  const missing = state.galleryOpen ? `<div class="alert error" style="display:block;margin-bottom:1rem;">That design isn't available any more. Here's everything else.</div>` : '';
+  return `${header}${missing}
     <div class="gallery-grid">${items.map(g => {
       const price = galleryPrice(g);
       return `<div class="gallery-card">
@@ -3163,6 +3220,8 @@ function requestGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!g) return;
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
+  state.galleryOpen = '';
+  setDesignUrl('');
   const first = state.draftItems[0];
   const firstIsEmpty = state.draftItems.length === 1 && first && !first.name && !first.link && !first.notes;
   if (firstIsEmpty) state.draftItems[0] = item;
@@ -3264,6 +3323,7 @@ function renderOwnerGalleryPage() {
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
+            ${g.published ? `<button class="btn-sm" type="button" onclick="copyDesignLink('${esc(g.id)}', this)">Copy link</button>` : ''}
             <button class="btn-sm" type="button" onclick="toggleGalleryItem('${esc(g.id)}')">${g.published ? 'Hide' : 'Show'}</button>
             <button class="btn-sm danger" type="button" onclick="deleteGalleryItem('${esc(g.id)}')">Delete</button>
           </div>
