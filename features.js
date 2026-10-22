@@ -49,6 +49,7 @@ const RULE_FIELDS = [
     ['quoteReminderDays', 'Quote reminder after (days with no answer)', 1],
     ['reviewRequestDays', 'Ask for a review (days after delivery)', 1],
     ['rollReminderDays', 'Leftover roll reminder (days before it expires)', 1],
+    ['draftReminderDays', 'Unfinished request reminder (days after they stop)', 1],
     ['lowStockGrams', 'Warn when a color is down to (g)', 50]
   ]]
 ];
@@ -143,6 +144,52 @@ function renderCustomerOrderExtras(b) {
     <button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>
     ${delivered ? `<button type="button" class="btn-sm" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
+}
+
+// ── SAVED DRAFTS ──────────────────────────────────────────────────────────
+// Once a customer has typed an email, their unsent request is saved (request_drafts, see
+// supabase/drafts.sql). If they don't send a request, the daily email job sends one reminder with a
+// link back (?resume=<id>) after the number of days set in Prices and rules.
+let serverDraftTimer = null;
+function draftHasContent(items) {
+  return (items || []).some(it => hasModeContent(it) || Object.keys(it.modeDrafts || {}).length);
+}
+function queueServerDraft(items) {
+  const email = String(state.clientEmail || '').trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !draftHasContent(items)) return;
+  clearTimeout(serverDraftTimer);
+  serverDraftTimer = setTimeout(() => {
+    const data = { items: items.map(it => ({ ...cleanItem(it), mode: it.mode, printHours: cleanText(it.printHours, 6), printMinutes: cleanText(it.printMinutes, 6) })) };
+    supaFetch('/rpc/save_request_draft', { method: 'POST', body: JSON.stringify({ p_email: email, p_name: String(state.clientName || '').trim().slice(0, 120), p_data: data }) })
+      .catch(() => {});   // the browser copy is still saved; this one is only for the reminder email
+  }, 3000);
+}
+function clearServerDraft(email) {
+  clearTimeout(serverDraftTimer);
+  supaFetch('/rpc/clear_request_draft', { method: 'POST', body: JSON.stringify({ p_email: email }) }).catch(() => {});
+}
+function handleResumeLink() {
+  const params = new URLSearchParams(location.search);
+  const id = String(params.get('resume') || '');
+  if (!id) return '';
+  params.delete('resume');
+  history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : '') + location.hash);
+  state.view = 'client';
+  state.clientTab = 'submit';
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : '';
+}
+async function loadServerDraft(id) {
+  try {
+    const d = await supaFetch('/rpc/get_request_draft', { method: 'POST', body: JSON.stringify({ p_id: id }) });
+    const items = (d && d.data && Array.isArray(d.data.items) ? d.data.items : []).slice(0, MAX_ITEMS)
+      .map(it => ({ ...cleanItem(it), mode: ['link', 'idea', 'gallery'].includes(it.mode) ? it.mode : '', printHours: cleanText(it.printHours, 6), printMinutes: cleanText(it.printMinutes, 6) }));
+    if (!items.length) return;
+    state.draftItems = items;
+    state.clientName = cleanText(d.name, 120);
+    state.clientEmail = cleanText(d.email, 200);
+    state.resumedDraft = true;
+    saveDraft();
+  } catch (e) { /* link expired or drafts not set up: start fresh */ }
 }
 
 // ── LEFTOVER ROLL BALANCES (customer) ─────────────────────────────────────

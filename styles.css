@@ -572,7 +572,7 @@ textarea { resize: vertical; min-height: 70px; }
 .roll-check.bad { color: var(--amber); font-weight: 700; }
 .extra-colors { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
 .extra-colors .btn-sm { margin: 6px 6px 0 0; }
-.extra-colors-open { margin-top: 8px; }
+.extra-colors-open { margin-top: 8px; white-space: normal; max-width: 100%; text-align: left; }
 .email-card-head { margin-bottom: 12px; }
 .email-card-title { font-size: 16px; font-weight: 700; margin: 0; }
 .email-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -634,3 +634,14 @@ textarea { resize: vertical; min-height: 70px; }
 .money-stats { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; }
 #rules-example { font-size: 13px; color: var(--text); }
+
+/* Request form: the chosen option stays highlighted; its form appears below the three choices. */
+.mode-option.selected { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); box-shadow: inset 0 0 0 1px var(--accent); position: relative; }
+.mode-option.selected::after { content: '✓'; position: absolute; top: 8px; right: 12px; font-weight: 700; color: var(--accent); }
+.mode-form { margin-top: 16px; padding-top: 16px; border-top: 2px dashed var(--border); }
+.draft-restored { margin: 0 0 10px; font-weight: 600; color: var(--text); }
+.time-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 13px; white-space: normal; text-align: left; }
+.gallery-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 6px; }
+.gallery-pick-tile { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 12px; border: 2px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; text-align: left; }
+.gallery-pick-tile:hover { border-color: var(--accent); }
+.gallery-pick-tile img, .gallery-pick-blank { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; background: var(--surface2); }

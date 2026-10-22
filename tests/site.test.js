@@ -33,7 +33,7 @@ function fixtures() {
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
       reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
-    private: {}, reviews: {}, uploads: [],
+    private: {}, reviews: {}, uploads: [], drafts: {},
     log: []
   };
 }
@@ -82,6 +82,17 @@ async function mockBackend(page, db) {
       if (!job || job.phase !== 'delivered' || String(job.clientEmail).toLowerCase() !== String(r.p_email).toLowerCase()) return route.fulfill({ status: 400, json: { message: 'order not found' } });
       db.reviews[r.p_job_id] = { job_id: r.p_job_id, name: r.p_name, text: r.p_text, rating: r.p_rating, status: 'new' };
       return route.fulfill({ status: 204, body: '' });
+    }
+    if (rest.startsWith('/rpc/save_request_draft')) {
+      const d = JSON.parse(req.postData());
+      db.drafts[d.p_email.toLowerCase()] = { id: '11111111-2222-3333-4444-555555555555', email: d.p_email, name: d.p_name, data: d.p_data };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (rest.startsWith('/rpc/clear_request_draft')) { delete db.drafts[JSON.parse(req.postData()).p_email.toLowerCase()]; return route.fulfill({ status: 204, body: '' }); }
+    if (rest.startsWith('/rpc/get_request_draft')) {
+      const id = JSON.parse(req.postData()).p_id;
+      const d = Object.values(db.drafts).find(x => x.id === id);
+      return route.fulfill({ json: d ? { name: d.name, email: d.email, data: d.data } : null });
     }
     if (rest.startsWith('/owner_private')) {
       if (!owner) return route.fulfill({ status: 401, json: {} });
@@ -133,6 +144,7 @@ const STATES = {
   'home': '0',
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
   'home with a multi-color print': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); })()",
+  'home picking past work': "(async () => { await loadGallery(); setItemMode(0, 'gallery'); })()",
   'home with a special order color': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A vase'); pickColor(0, ''); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
   'design page': "(async () => { await loadGallery(); openWork('g1'); })()",
@@ -505,7 +517,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('emails'));
     const cards = await page.$$eval('.email-card', els => els.length);
-    assert(cards === 14, `${cards} email cards`);
+    assert(cards === 15, `${cards} email cards`);
     assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
     await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
@@ -514,7 +526,7 @@ const STATES = {
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-payment,email-review_request,email-roll_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
@@ -725,6 +737,59 @@ const STATES = {
     await customer.evaluate(() => { updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 10); });
     assert(/\$3\.00 flat/.test(await customer.textContent('.price-breakdown')), 'estimate does not use the new base fee');
     await customer.close();
+  });
+  await check('request form: choices stay on top, the chosen form appears below, switching keeps what was typed', async () => {
+    const page = await open(fixtures());
+    await page.click('text=I have an idea');
+    assert(await page.$('.mode-option.selected[aria-pressed="true"]:has-text("I have an idea")') && await page.$('#mode-form-0 #notes-0'), 'idea form not shown below the choices');
+    assert(!(await page.$('text=Change')), 'the old Change link is still there');
+    assert(await page.$eval('.time-toggle', el => el.tagName) === 'BUTTON', 'print time is not a button');
+    await page.fill('#notes-0', 'A hook for my bike helmet');
+    await page.click('text=I have a link');
+    assert(await page.inputValue('#link-0') === '' && (await page.$$('.mode-option')).length === 3, 'link form should start empty with the choices still shown');
+    await page.click('text=I have an idea');
+    assert(await page.inputValue('#notes-0') === 'A hook for my bike helmet', 'the idea typed earlier was lost');
+    assert(/what you started earlier/.test(await page.textContent('.draft-restored')), 'no note that the draft came back');
+    await page.close();
+  });
+  await check('past work: pick a design right in the form, with a way back', async () => {
+    const page = await open(fixtures());
+    await page.click('text=Something from my past work');
+    await page.waitForSelector('.gallery-pick-tile');
+    const tiles = await page.$$eval('.gallery-pick-tile', ts => ts.map(t => t.textContent.trim()));
+    assert(tiles.join() === 'Dragon Organizer,Name Sign', `tiles ${tiles}`);
+    await page.click('.gallery-pick-tile:has-text("Dragon Organizer")');
+    assert(await page.inputValue('#name-0') === 'Dragon Organizer' && await page.evaluate(() => state.draftItems[0].galleryId) === 'g1', 'design not picked');
+    await page.click('text=Pick a different design');
+    assert(await page.$('.gallery-pick-tile'), 'no way back to the designs');
+    await page.click('text=I have an idea');
+    assert(await page.$('#notes-0'), 'could not switch away from past work');
+    await page.close();
+  });
+  await check('unsent requests are saved for the reminder email, and cleared once sent', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.fill('#client-name', 'Kim');
+    await page.fill('#client-email', 'kim@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'A phone stand');
+    for (let t = 0; t < 60 && !db.drafts['kim@example.com']; t++) await page.waitForTimeout(100);
+    assert(db.drafts['kim@example.com'] && db.drafts['kim@example.com'].data.items[0].notes === 'A phone stand', `draft ${JSON.stringify(db.drafts)}`);
+    await page.click('#submit-btn');
+    await requestSent(page);
+    for (let t = 0; t < 30 && db.drafts['kim@example.com']; t++) await page.waitForTimeout(100);
+    assert(!db.drafts['kim@example.com'], 'draft not cleared after sending');
+    await page.close();
+  });
+  await check('the reminder link reopens the saved request', async () => {
+    const db = fixtures();
+    db.drafts['kim@example.com'] = { id: '11111111-2222-3333-4444-555555555555', email: 'kim@example.com', name: 'Kim',
+      data: { items: [{ mode: 'idea', notes: 'A phone stand', qty: 2 }] } };
+    const page = await open(db, { suffix: '?resume=11111111-2222-3333-4444-555555555555' });
+    assert(await page.inputValue('#client-email') === 'kim@example.com' && await page.inputValue('#notes-0') === 'A phone stand' && await page.inputValue('#qty-0') === '2', 'draft not restored');
+    assert(/Welcome back/.test(await page.textContent('#resume-note')), 'no welcome back message');
+    assert(!(await page.evaluate(() => location.search.includes('resume'))), 'resume id left in the address bar');
+    await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
