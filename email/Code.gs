@@ -390,6 +390,10 @@ function loadCustomEmails() {
 // (no estimate yet, already paid, no delivery details) is left out of the email.
 
 const EMAIL_TEMPLATES = {
+  footer: {
+    label: 'Footer', to: 'Customer', when: 'The ending of customer emails (wherever {footer} appears). Change it here once and every email uses it.',
+    body: 'Track your order any time: {orderLink}\nQuestions? Just reply to this email.\n\nThanks,\nSoloPrint'
+  },
   owner_new: {
     label: 'New request', to: 'You', when: 'A customer sends a request.',
     subject: 'New SoloPrint request from {customerName}',
@@ -408,7 +412,7 @@ const EMAIL_TEMPLATES = {
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
     subject: 'Still interested? Your SoloPrint quote is waiting',
-    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until we\'ve both confirmed the order.\n\nThanks,\nSoloPrint'
+    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until we\'ve both confirmed the order.\n\n{footer}'
   },
   owner_approved: {
     label: 'Quote approved', to: 'You', when: 'The customer taps "Looks good" on their quote.',
@@ -439,10 +443,6 @@ const EMAIL_TEMPLATES = {
     label: 'Payment received', to: 'Customer', when: 'You mark the payment received.',
     subject: 'Payment received, thank you!',
     body: 'Hi {name},\n\nWe received your payment for {title}. Thank you!\n\n{footer}'
-  },
-  footer: {
-    label: 'Sign-off', to: 'Customer', when: 'Added wherever {footer} appears in a customer email.',
-    body: 'Track your order any time: {orderLink}\nQuestions? Just reply to this email.\n\nThanks,\nSoloPrint'
   }
 };
 
@@ -461,7 +461,7 @@ const EMAIL_PLACEHOLDERS = {
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
   delivery: 'Delivery date, tracking or pickup, and notes',
-  footer: 'The Sign-off email below'
+  footer: 'The Footer, edited at the top of this page'
 };
 
 // The owner's version of an email, falling back to the default for any part left blank.
