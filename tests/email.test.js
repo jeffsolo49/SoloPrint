@@ -89,6 +89,15 @@ check('a past-work set price is used as is in the quote email', () => {
   const [m] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ name: 'Sign', qty: 2, filType: 'black', setPrice: 12 }] }), at({}));
   assert(m.subject === 'Your SoloPrint quote: $24.00' && m.body.includes('Price: $24.00 ($12.00 each)'), m.subject + '\n' + m.body);
 });
+check('quote and confirmed emails say how far back in line the order is', () => {
+  const queue = [{ at: '2026-10-01T00:00:00Z', printing: true, custom: false }, { at: '2026-10-02T00:00:00Z', printing: false, custom: true }];
+  const quote = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue })[0].body;
+  assert(quote.includes('Right now there are 2 orders ahead, so once you approve, expect it to be printed in about 9-13 days.'), quote);
+  const confirmed = emailsFor('UPDATE', at({ phase: 'order_received', phaseHistory: { order_received: '2026-10-03T00:00:00Z' } }), at({ phase: 'quote_sent' }), {}, { queue: queue.concat({ at: '2026-10-03T00:00:00Z', printing: false, custom: false }) })[0].body;
+  assert(confirmed.includes("You're number 3 in line, so expect it to be printed in about 9-13 days."), confirmed);
+  const none = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
+  assert(!none.includes('in line') && !none.includes('ahead'), 'queue line without queue data');
+});
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);

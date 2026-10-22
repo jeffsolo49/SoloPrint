@@ -24,7 +24,7 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
@@ -39,7 +39,7 @@ const EMAIL_TEMPLATES = {
   confirmed: {
     label: 'Order confirmed', to: 'Customer', when: 'You move the order to Confirmed.',
     subject: 'Your SoloPrint order is confirmed',
-    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n\nTotal: ${amountDue}\nPay with Venmo: {venmoLink} (the link fills in the amount and your order number)\n\n{footer}'
+    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nPay with Venmo: {venmoLink} (the link fills in the amount and your order number)\n\n{footer}'
   },
   printing: {
     label: 'Printing', to: 'Customer', when: 'You move the order to Printing.',
@@ -100,6 +100,7 @@ const EMAIL_PLACEHOLDERS = {
   delivery: 'Delivery date, tracking or pickup, and notes',
   materialNote: 'Your material note from Site Settings (e.g. "All prints are PLA...")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
+  queueNote: 'Quote and confirmed emails: how many orders are ahead and about how many days until it\'s printed',
   photo: 'Link to the first finished-print photo you added',
   vacationNote: 'Your vacation message, only while vacation mode is on',
   reviewLink: 'Link where the customer writes their review',
@@ -159,6 +160,9 @@ const RULE_DEFAULTS = {
   reviewRequestDays: 7,    // days after delivery before asking for a review
   rollReminderDays: 14,    // days before a leftover roll expires to remind the customer
   draftReminderDays: 7,    // days after someone leaves a request unsent before the "finish your request" email
+  printDaysMin: 1,         // order queue: days to print an existing design, at least...
+  printDaysMax: 2,         // ...and at most
+  customDesignDays: 7,     // order queue: extra days to design a custom order (at least)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
 };
@@ -241,6 +245,32 @@ function rollCharge(order, rules) {
   if (set !== null && set !== undefined && set !== '' && isFinite(Number(set)) && Number(set) >= 0) return Number(set);
   return items.some(usesSpecialSpool) ? rules.rollCost : 0;
 }
+// ── Order queue ───────────────────────────────────────────────────────────
+// `queue` is supabase order_queue(): confirmed/printing orders, oldest first ({ at, printing, custom }).
+function orderDays(custom, rules) {
+  const design = custom ? rules.customDesignDays : 0;
+  return [design + rules.printDaysMin, design + rules.printDaysMax];
+}
+// Wait for one order. `at` is when it was confirmed; leave it blank for an order not confirmed yet, which
+// joins the end of the line. Orders printing now count as up to one print's worth of days.
+function queueEstimate(queue, rules, at, custom) {
+  const ahead = (queue || []).filter(e => e.printing || !at || String(e.at) < String(at));
+  let min = 0, max = 0;
+  ahead.forEach(e => {
+    const d = e.printing ? [0, rules.printDaysMax] : orderDays(e.custom, rules);
+    min += d[0]; max += d[1];
+  });
+  const own = orderDays(custom, rules);
+  return { ahead: ahead.length, minDays: min + own[0], maxDays: max + own[1] };
+}
+function orderIsCustom(order) {
+  return !!(order && (order.designTerms || (order.items || []).some(it => it.mode === 'idea')));
+}
+function daysText(min, max) {
+  return min === max ? 'about ' + min + ' day' + (min === 1 ? '' : 's') : 'about ' + min + '-' + max + ' days';
+}
+function aheadText(n) { return n === 0 ? 'no orders ahead of yours' : n + ' order' + (n === 1 ? '' : 's') + ' ahead of yours'; }
+
 function fmtRoll(grams) { return grams % 1000 === 0 ? (grams / 1000) + ' kg' : grams + ' g'; }
 function specialOrderPolicy(rules) {
   const months = rules.rollMonths === 1 ? '1 month' : rules.rollMonths + ' months';

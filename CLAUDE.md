@@ -31,7 +31,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `sw.js`, `manifest.webmanifest`, `icons/` | Install as an app. The service worker is network-first. |
 | `email/Code.gs` | The Apps Script: order emails (`emailsFor`), daily jobs (`sendQuoteReminders` runs quote reminders, review requests, roll reminders, Monday summary), weekly Drive backup, MakerWorld lookups, `healthCheck`. Contains an exact copy of `email-templates.js` between the `SHARED EMAIL TEMPLATES` markers. |
 | `email/Loader.gs` | The only code pasted into Apps Script. Runs the latest `email/Code.gs` from GitHub `main` (checked every 15 min), keeps a saved copy, emails the owner on problems. |
-| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`. All must stay safe to re-run. |
+| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`, `queue`. All must stay safe to re-run. |
 
 ## Data
 
@@ -42,6 +42,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
   (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads). Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
+- Order queue: `order_queue()` (supabase/queue.sql) lists confirmed/printing orders as { at, printing, custom } only;
+  `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,

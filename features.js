@@ -51,6 +51,11 @@ const RULE_FIELDS = [
     ['rollReminderDays', 'Leftover roll reminder (days before it expires)', 1],
     ['draftReminderDays', 'Unfinished request reminder (days after they stop)', 1],
     ['lowStockGrams', 'Warn when a color is down to (g)', 50]
+  ]],
+  ['Order queue (the wait customers are told)', [
+    ['printDaysMin', 'Days to print an existing design, at least', 1],
+    ['printDaysMax', 'Days to print an existing design, at most', 1],
+    ['customDesignDays', 'Extra days to design a custom order', 1]
   ]]
 ];
 
@@ -224,6 +229,61 @@ async function syncTopWork() {
     if (JSON.stringify(ids) === JSON.stringify(state.settings.topWork || [])) return;
     await saveSettings({ ...state.settings, topWork: ids });
   } catch (e) { /* the home page falls back to the newest designs */ }
+}
+
+// ── ORDER QUEUE ───────────────────────────────────────────────────────────
+// How far back in line an order is and about how many days until it's printed. Customers get the line
+// from supabase order_queue() (no details of other orders); the owner builds it from their own orders.
+async function loadQueue() {
+  try {
+    const q = await supaFetch('/rpc/order_queue', { method: 'POST', body: '{}' });
+    state.queue = Array.isArray(q) ? q : null;
+  } catch (e) {
+    state.queue = null;   // queue.sql not run yet: the queue just isn't shown
+  }
+}
+function confirmedAt(b) { return (b.phaseHistory || {}).order_received || b.createdAt; }
+function queueFromOrders(batches) {
+  return batches.filter(b => ['order_received', 'production'].includes(b.phase))
+    .map(b => ({ at: confirmedAt(b), printing: b.phase === 'production', custom: orderIsCustom(b) }))
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+function draftIsCustom() { return state.draftItems.some(it => inferMode(it) === 'idea' && hasModeContent(it)); }
+
+function renderQueueNotice() {
+  if (!Array.isArray(state.queue)) return '';
+  const rules = currentRules(), custom = draftIsCustom();
+  const q = queueEstimate(state.queue, rules, '', custom);
+  return `<div class="queue-note" id="queue-note" role="status">
+    <strong>Current wait:</strong> ${aheadText(q.ahead)}. Once your quote is approved, expect your order to be printed in ${daysText(q.minDays, q.maxDays)}.
+    ${custom ? `Custom designs take at least ${rules.customDesignDays} days to design, and that's included.` : `Custom designs add at least ${rules.customDesignDays} days for design.`}
+  </div>`;
+}
+
+function renderOrderQueue(b) {
+  if (!Array.isArray(state.queue)) return '';
+  const rules = currentRules(), custom = orderIsCustom(b);
+  if (b.phase === 'order_received') {
+    const q = queueEstimate(state.queue, rules, confirmedAt(b), custom);
+    return `<div class="queue-note"><strong>You're #${q.ahead + 1} in line.</strong> Expect it to be printed in ${daysText(q.minDays, q.maxDays)}.</div>`;
+  }
+  if (b.phase === 'estimate' || (b.phase === 'quote_sent' && !b.customerApprovedAt)) {
+    const q = queueEstimate(state.queue, rules, '', custom);
+    return `<div class="queue-note"><strong>Current wait:</strong> ${aheadText(q.ahead)}. If you go ahead now, expect it to be printed in ${daysText(q.minDays, q.maxDays)}.</div>`;
+  }
+  return '';
+}
+
+function ownerQueuePosition(b) {
+  return queueFromOrders(state.batches).filter(e => e.printing || String(e.at) < String(confirmedAt(b))).length + 1;
+}
+function renderOwnerQueue() {
+  const queue = queueFromOrders(state.batches);
+  if (!queue.length) return '';
+  const rules = currentRules();
+  let min = 0, max = 0;
+  queue.forEach(e => { const d = e.printing ? [0, rules.printDaysMax] : orderDays(e.custom, rules); min += d[0]; max += d[1]; });
+  return `<div class="queue-note" style="margin-bottom:1rem;"><strong>Queue:</strong> ${queue.length} confirmed order${queue.length === 1 ? '' : 's'} (${queue.filter(e => e.custom).length} custom), ${daysText(min, max)} of work. New customers are told they're behind these.</div>`;
 }
 
 // ── LEFTOVER ROLL BALANCES (customer) ─────────────────────────────────────

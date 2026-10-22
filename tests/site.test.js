@@ -83,6 +83,12 @@ async function mockBackend(page, db) {
       db.reviews[r.p_job_id] = { job_id: r.p_job_id, name: r.p_name, text: r.p_text, rating: r.p_rating, status: 'new' };
       return route.fulfill({ status: 204, body: '' });
     }
+    if (rest.startsWith('/rpc/order_queue')) {
+      const q = Object.values(db.jobs).filter(j => ['order_received', 'production'].includes(j.phase))
+        .map(j => ({ at: (j.phaseHistory || {}).order_received || j.createdAt, printing: j.phase === 'production', custom: !!j.designTerms || (j.items || []).some(it => it.mode === 'idea') }))
+        .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+      return route.fulfill({ json: q });
+    }
     if (rest.startsWith('/rpc/save_request_draft')) {
       const d = JSON.parse(req.postData());
       db.drafts[d.p_email.toLowerCase()] = { id: '11111111-2222-3333-4444-555555555555', email: d.p_email, name: d.p_name, data: d.p_data };
@@ -939,6 +945,31 @@ const STATES = {
     await page.click('#work-detail >> text=Close');
     assert(!(await page.evaluate(() => location.search.includes('design'))) && await page.$('.gallery-grid'), 'closing did not go back to the full gallery');
     await page.close();
+  });
+  await check('order queue: customers see how many orders are ahead and about how many days', async () => {
+    const db = fixtures();   // order 2 is printing
+    db.jobs['q1'] = { id: 'q1', clientName: 'Bo', clientEmail: 'bo@example.com', createdAt: ago(300), phase: 'order_received', phaseHistory: { order_received: ago(200) },
+      items: [{ name: 'Vase', mode: 'idea', notes: 'tall', qty: 1, minutes: 60, grams: 20 }], designTerms: 'terms' };
+    const page = await open(db);
+    let note = await page.textContent('#queue-note');
+    // printing order: 0-2 days; custom order: 8-9 days; this request: 1-2 days
+    assert(/2 orders ahead of yours/.test(note) && /about 9-13 days/.test(note) && /add at least 7 days for design/.test(note), note);
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'A tiny dragon');
+    note = await page.textContent('#queue-note');
+    assert(/about 16-20 days/.test(note) && /at least 7 days to design, and that's included/.test(note), note);
+    await page.evaluate(STATES['my requests']);
+    assert(/If you go ahead now, expect it to be printed in about 9-13 days/.test(await page.textContent('#order-1')), 'quote has no wait estimate');
+    await page.close();
+    db.jobs['1'].phase = 'order_received'; db.jobs['1'].phaseHistory = { order_received: ago(10) };
+    const later = await open(db);
+    await later.evaluate(STATES['my requests']);
+    assert(/You're #3 in line/.test(await later.textContent('#order-1')), await later.textContent('#order-1'));
+    await later.close();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /#2 in line/.test(await owner.textContent('#order-q1')), 'owner queue missing');
+    await owner.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');

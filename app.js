@@ -361,6 +361,7 @@ function renderOrderTracker(batch) {
   ].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
     <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    ${renderOrderQueue(batch)}
     ${renderCustomerOrderAction(batch)}`;
 }
 
@@ -1120,6 +1121,7 @@ async function init() {
   handleAuthRedirect();
   await Promise.all([
     resumeId ? loadServerDraft(resumeId) : null,
+    loadQueue(),
     loadSettings(),
     loadRemoteLibrary(),
     // The customer view only ever loads the looked-up customer's orders, even on the owner's device.
@@ -1317,6 +1319,7 @@ function renderSubmitTab() {
         : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
     </div>
 
+    ${renderQueueNotice()}
     <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Send My Request</button>
     ${state.settings.links.messenger ? `<div class="field-help" style="text-align:center;margin-top:8px;">Questions first? <a class="btn-link" href="${esc(state.settings.links.messenger)}" target="_blank" rel="noopener noreferrer">Message me</a></div>` : ''}
     <div class="field-help" style="text-align:center;margin-top:8px;">Free to ask. I'll review it and email you a quote${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
@@ -1973,6 +1976,7 @@ function renderOwnerDashboard() {
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
       ${renderStockAlerts()}
+      ${renderOwnerQueue()}
       <div class="stats-row">
         <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
         <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
@@ -2281,6 +2285,7 @@ function renderOwnerBatch(b) {
         <span class="status ${phase}">${phaseLabel(phase)}</span>
         <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
         ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
+        ${phase === 'order_received' ? `<span class="status quoted">#${ownerQueuePosition(b)} in line</span>` : ''}
         ${b.designTerms && phase !== 'estimate' ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
         <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
       </div>
@@ -3855,6 +3860,8 @@ function logoutOwner() {
 function updateDraft(i, field, value) {
   if (!state.draftItems[i]) return;
   state.draftItems[i][field] = value;
+  const note = document.getElementById('queue-note');
+  if (note && (field === 'notes' || field === 'name' || field === 'link')) note.outerHTML = renderQueueNotice();
   if (field === 'name' || field === 'link') maybeOfferKnownEstimate(i);
   if (field === 'grams' || field === 'qty' || field === 'filType') updateCustomerPricePreview(i);
 }
