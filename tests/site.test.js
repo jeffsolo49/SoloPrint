@@ -839,6 +839,16 @@ const STATES = {
     assert(!(await customer.$('.color-info a')), 'an unsafe link was shown');
     await customer.close();
   });
+  await check('design terms include the 50% deposit, 60-day balance and unclaimed print rules', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    const terms = await page.evaluate(() => designTermsText());
+    assert(/50% deposit/.test(terms) && /within 60 days after I tell you the design is done, I keep the deposit/.test(terms) && /may throw the print away/.test(terms), terms);
+    // A saved copy of the old default terms picks up the new ones; edited terms are kept.
+    assert(await page.evaluate(() => { state.settings.designTerms = PREVIOUS_DESIGN_TERMS; return designTermsText() === DEFAULT_DESIGN_TERMS; }), 'old default terms were not updated');
+    assert(await page.evaluate(() => { state.settings.designTerms = 'My own terms'; return designTermsText() === 'My own terms'; }), 'edited terms were replaced');
+    await page.close();
+  });
   await check('custom designs: the customer must agree to the design terms before approving', async () => {
     const db = fixtures();
     db.jobs['c1'] = { id: 'c1', clientName: 'Jane', clientEmail: 'jane@example.com', createdAt: ago(60), phase: 'estimate',

@@ -733,10 +733,13 @@ const DEFAULT_DESIGN_TERMS = [
   'Custom design terms',
   '',
   '1. Free design work. I design your item without charging for the design time. You pay only for the print (print time, material and any special order roll), as quoted.',
-  '2. Who owns what. I own the design and its files, including any changes I make to it later. You own the printed item(s) you buy.',
-  '3. My right to sell it. In exchange for the free design work, I may make, sell and share prints of the design, and keep changing and improving it, now and in the future. Personal details you give me (like a name added to your print) are not included in anything I sell.',
-  '4. How the item is used. You are responsible for how the item is used. 3D prints are not tested or certified for safety, food contact, heavy loads, medical use or use by young children. To the extent the law allows, I am not responsible for any injury, damage or loss caused by how the item is used.',
-  '5. Agreeing. Approving your quote means you agree to these terms for this order.'
+  '2. 50% deposit. Before I start designing, you pay a deposit of half of your estimate. The rest is due when the design is done.',
+  '3. Unpaid balance. If the rest isn\'t paid within 60 days after I tell you the design is done, I keep the deposit as payment for the work so far, the deposit is not refunded, and I do no further work on the order.',
+  '4. Unclaimed prints. If your print is finished and you don\'t arrange shipping or pickup, or don\'t pay the rest, within 60 days after I tell you it\'s ready, I may throw the print away, and any money paid is not refunded.',
+  '5. Who owns what. I own the design and its files, including any changes I make to it later. You own the printed item(s) you buy.',
+  '6. My right to sell it. In exchange for the free design work, I may make, sell and share prints of the design, and keep changing and improving it, now and in the future. Personal details you give me (like a name added to your print) are not included in anything I sell.',
+  '7. How the item is used. You are responsible for how the item is used. 3D prints are not tested or certified for safety, food contact, heavy loads, medical use or use by young children. To the extent the law allows, I am not responsible for any injury, damage or loss caused by how the item is used.',
+  '8. Agreeing. Approving your quote means you agree to these terms for this order.'
 ].join('\n');
 
 // Keeps only valid values: numbers from 0 to 100000, and a Venmo username of letters, numbers, - or _.

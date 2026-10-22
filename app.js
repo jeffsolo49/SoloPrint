@@ -1258,7 +1258,19 @@ const DEFAULT_HOW_IT_WORKS = [
 function materialNote() { return state.settings.materialNote || DEFAULT_MATERIAL_NOTE; }
 const DEFAULT_GALLERY_NOTE = 'Every order is made to your custom specifications.';
 function galleryNote() { return state.settings.galleryNote || DEFAULT_GALLERY_NOTE; }
-function designTermsText() { return state.settings.designTerms || DEFAULT_DESIGN_TERMS; }
+// The default terms before the deposit rules were added. A saved, unchanged copy of them follows the
+// current default instead, so the owner's site picks up the new terms.
+const PREVIOUS_DESIGN_TERMS = [
+  'Custom design terms',
+  '',
+  '1. Free design work. I design your item without charging for the design time. You pay only for the print (print time, material and any special order roll), as quoted.',
+  '2. Who owns what. I own the design and its files, including any changes I make to it later. You own the printed item(s) you buy.',
+  '3. My right to sell it. In exchange for the free design work, I may make, sell and share prints of the design, and keep changing and improving it, now and in the future. Personal details you give me (like a name added to your print) are not included in anything I sell.',
+  '4. How the item is used. You are responsible for how the item is used. 3D prints are not tested or certified for safety, food contact, heavy loads, medical use or use by young children. To the extent the law allows, I am not responsible for any injury, damage or loss caused by how the item is used.',
+  '5. Agreeing. Approving your quote means you agree to these terms for this order.'
+].join('\n');
+function savedDesignTerms(text) { return text && text !== PREVIOUS_DESIGN_TERMS ? text : ''; }
+function designTermsText() { return savedDesignTerms(state.settings.designTerms) || DEFAULT_DESIGN_TERMS; }
 function hasCustomDesign(b) { return b.items.some(it => inferMode(it) === 'idea'); }
 
 function renderHowItWorks() {

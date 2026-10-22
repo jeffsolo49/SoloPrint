@@ -120,7 +120,7 @@ function renderWordingSettings(d) {
     <div class="field" style="margin-top:14px;">
       <label for="design-terms">Custom design terms</label>
       <div class="field-help">Shown when a customer approves a quote that includes a custom design; they must tick "I agree" first. Each quote keeps the wording it was sent with.</div>
-      <textarea id="design-terms" rows="10" maxlength="4000" oninput="state.settingsDraft.designTerms = this.value">${esc(d.designTerms || DEFAULT_DESIGN_TERMS)}</textarea>
+      <textarea id="design-terms" rows="10" maxlength="4000" oninput="state.settingsDraft.designTerms = this.value">${esc(savedDesignTerms(d.designTerms) || DEFAULT_DESIGN_TERMS)}</textarea>
       <button type="button" class="btn-sm" onclick="state.settingsDraft.designTerms = ''; render();">Reset terms to default</button>
     </div>
   </div>`;
