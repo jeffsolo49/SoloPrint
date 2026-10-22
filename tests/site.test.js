@@ -854,6 +854,33 @@ const STATES = {
     assert(/Agreed to design terms/.test(await after.textContent('#order-c1')), 'owner does not see the agreement');
     await after.close();
   });
+  await check('home page My Work: best sellers first, newest to fill, names under the photos, then SEE MORE', async () => {
+    const db = fixtures();
+    db.gallery.g4 = { id: 'g4', published: true, sort_order: 3, created_at: '2026-10-01T00:00:00Z', data: { title: 'Newest', photos: ['https://img.test/n.png'] } };
+    db.gallery.g1.created_at = '2026-01-01T00:00:00Z'; db.gallery.g2.created_at = '2026-02-01T00:00:00Z';
+    db.jobs['b1'] = { id: 'b1', clientName: 'A', clientEmail: 'a@example.com', createdAt: ago(100), phase: 'delivered', items: [{ name: 'Name Sign', mode: 'gallery', galleryId: 'g2', qty: 3, grams: 5 }] };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    await owner.waitForTimeout(300);
+    assert(JSON.stringify(db.settings.topWork) === '["g2"]', `best sellers ${JSON.stringify(db.settings.topWork)}`);
+    await owner.close();
+    const page = await open(db);
+    const names = await page.$$eval('.work-grid .work-card-name', els => els.map(e => e.textContent.trim()));
+    assert(names.join('|') === 'Name Sign|Newest|Dragon Organizer|', `tiles ${names.join('|')}`);
+    const covered = await page.$$eval('.work-grid .work-card', cards => cards.some(c => { const img = c.querySelector('img'), name = c.querySelector('.work-card-name'); return img && name && name.getBoundingClientRect().top < img.getBoundingClientRect().bottom - 1; }));
+    assert(!covered, 'a name covers its photo');
+    await page.click('.work-more');
+    assert(await page.evaluate(() => state.clientTab) === 'gallery', 'SEE MORE does not open Past Work');
+    await page.close();
+  });
+  await check('your name and email: one label, short one-line note', async () => {
+    const page = await open(fixtures(), { width: 390 });
+    assert(/Your name and email/i.test(await page.textContent('#client-label')) && await page.getAttribute('#client-name', 'placeholder') === 'Jane Smith', 'label or placeholder wrong');
+    assert(!(await page.$('text=Your email *')), 'the separate Your email label is still there');
+    const lines = await page.$eval('#client-label ~ .field-help', el => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+    assert(lines === 1, `the saved note takes ${lines} lines on a phone`);
+    await page.close();
+  });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));

@@ -198,6 +198,30 @@ async function loadServerDraft(id) {
   } catch (e) { /* link expired or drafts not set up: start fresh */ }
 }
 
+// ── BEST SELLERS FOR THE HOME PAGE ────────────────────────────────────────
+// Customers can't see orders, so when the owner's dashboard loads, the site counts how many of each past
+// design were sold (confirmed orders) and saves the top 5 design ids in site settings (topWork).
+function galleryBestSellers(batches, gallery) {
+  const sold = {};
+  batches.filter(b => isSoldPhase(b.phase)).forEach(b => b.items.forEach(it => {
+    const g = gallery.find(x => x.id === it.galleryId) || (it.mode === 'gallery' && gallery.find(x => x.title && x.title === it.name));
+    if (g) sold[g.id] = (sold[g.id] || 0) + (Number(it.qty) || 1);
+  }));
+  return Object.keys(sold).sort((a, b) => sold[b] - sold[a]).slice(0, 5);
+}
+
+async function syncTopWork() {
+  try {
+    if (!state.ownerUnlocked || !getOwnerToken()) return;
+    if (!state.settingsLoaded) await loadSettings();
+    if (!state.settingsLoaded) return;
+    if (!state.galleryLoaded) await loadGallery();
+    const ids = galleryBestSellers(state.batches, state.gallery.filter(g => g.published));
+    if (JSON.stringify(ids) === JSON.stringify(state.settings.topWork || [])) return;
+    await saveSettings({ ...state.settings, topWork: ids });
+  } catch (e) { /* the home page falls back to the newest designs */ }
+}
+
 // ── LEFTOVER ROLL BALANCES (customer) ─────────────────────────────────────
 function customerRolls() {
   const email = colorKey(state.historyEmail);
