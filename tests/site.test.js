@@ -923,6 +923,23 @@ const STATES = {
     assert(await quoting.evaluate(id => batchTotal(state.batches.find(b => b.id === id)), job.id) === 12, 'quote total should be the set price');
     await quoting.close();
   });
+  await check('each design has its own link, with the gallery still visible above it', async () => {
+    const page = await open(fixtures(), { suffix: '?design=g2' });
+    await page.waitForSelector('#work-detail');
+    assert(/Name Sign/.test(await page.textContent('#work-detail')), 'direct link did not open the design');
+    const tiles = await page.$$eval('.gallery-strip .work-card-name', els => els.map(e => e.textContent.trim()));
+    assert(tiles.join() === 'Dragon Organizer,Name Sign' && await page.$('.gallery-strip .work-card.current:has-text("Name Sign")'), `gallery above the design: ${tiles}`);
+    await page.click('.gallery-strip .work-card:has-text("Dragon Organizer")');
+    assert(await page.evaluate(() => new URLSearchParams(location.search).get('design')) === 'g1' && /Dragon Organizer/.test(await page.textContent('#work-detail')), 'switching designs did not update the address');
+    await page.goBack();
+    await page.waitForTimeout(200);
+    assert(/Name Sign/.test(await page.textContent('#work-detail')), 'back button did not return to the previous design');
+    const link = await page.evaluate(() => designLink('g2'));
+    assert(/\?design=g2$/.test(link), link);
+    await page.click('#work-detail >> text=Close');
+    assert(!(await page.evaluate(() => location.search.includes('design'))) && await page.$('.gallery-grid'), 'closing did not go back to the full gallery');
+    await page.close();
+  });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));

@@ -704,3 +704,9 @@ textarea { resize: vertical; min-height: 70px; }
 @media (max-width: 640px) { .info-inputs { grid-template-columns: 1fr; gap: 6px; } }
 @media (max-width: 640px) { .gallery-pick { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } .gallery-pick-tile { font-size: 12px; padding: 4px; } }
 .request-card .field-help:last-child { margin-bottom: 0; }
+
+/* Design pages: all designs stay visible as small tiles above the open one. */
+.gallery-strip { margin-bottom: 1.25rem; }
+.work-card.current .work-card-photo { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.work-card.current .work-card-name { color: var(--accent); }
+.work-detail-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 1rem; scroll-margin-top: 80px; }
