@@ -144,6 +144,7 @@ const STATES = {
   'home': '0',
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
   'home with a multi-color print': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); })()",
+  'home with color info': "(() => { state.settings.colors[2].description = 'Shimmery gold'; state.settings.colors[2].link = 'https://example.com/silk'; state.draftItems[0].mode = 'idea'; pickColor(0, 'silk'); render(); })()",
   'home picking past work': "(async () => { await loadGallery(); setItemMode(0, 'gallery'); })()",
   'home with a special order color': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A vase'); pickColor(0, ''); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
@@ -790,6 +791,31 @@ const STATES = {
     assert(/Welcome back/.test(await page.textContent('#resume-note')), 'no welcome back message');
     assert(!(await page.evaluate(() => location.search.includes('resume'))), 'resume id left in the address bar');
     await page.close();
+  });
+  await check('colors can have a description and a link that customers see when they pick them', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('settings'));
+    await page.waitForTimeout(200);
+    const n = await page.evaluate(() => state.settingsDraft.colors.findIndex(c => c.id === 'silk'));
+    await page.fill(`#color-desc-${n}`, 'Shimmery gold that shifts in the light');
+    await page.fill(`#color-link-${n}`, 'https://example.com/silk-gold');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    const silk = db.settings.colors.find(c => c.id === 'silk');
+    assert(silk.description === 'Shimmery gold that shifts in the light' && silk.link === 'https://example.com/silk-gold', JSON.stringify(silk));
+    await page.close();
+    db.settings.colors.find(c => c.id === 'red').link = 'javascript:alert(1)';
+    const customer = await open(db);
+    await customer.click('text=I have an idea');
+    assert(await customer.$('.swatch-pill:has-text("Silk Gold") .info-mark'), 'no info mark on the color');
+    assert(!(await customer.$('.color-info')), 'info shown before the color is picked');
+    await customer.click('.swatch-pill:has-text("Silk Gold")');
+    const info = await customer.textContent('.color-info');
+    assert(/Silk Gold: Shimmery gold that shifts in the light/.test(info) && await customer.getAttribute('.color-info a', 'href') === 'https://example.com/silk-gold', info);
+    await customer.click('.swatch-pill:has-text("Red")');
+    assert(!(await customer.$('.color-info a')), 'an unsafe link was shown');
+    await customer.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
