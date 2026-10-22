@@ -3996,7 +3996,8 @@ function queueDraftSave() {
 }
 function saveDraft() {
   const items = state.draftItems.map(it => ({ ...it, fetching: false, previewLoading: false }));
-  const empty = items.every(it => !it.name && !it.link && !it.notes && !it.mode);
+  // Only a choice tapped with nothing typed isn't worth keeping: the item starts on past work again.
+  const empty = items.every(it => !hasModeContent(it) && !Object.keys(it.modeDrafts || {}).length);
   queueServerDraft(items);
   try {
     if (empty) localStorage.removeItem(DRAFT_KEY);
@@ -4009,7 +4010,8 @@ function restoreDraft() {
     if (!d || Date.now() - d.savedAt > 30 * 864e5) return;
     state.clientName = cleanText(d.clientName, 120);
     state.clientEmail = cleanText(d.clientEmail, 200);
-    const items = (Array.isArray(d.items) ? d.items : []).slice(0, MAX_ITEMS).map(it => ({ ...cleanItem(it), showTime: !!it.showTime }));
+    const items = (Array.isArray(d.items) ? d.items : []).slice(0, MAX_ITEMS).map(it => ({ ...cleanItem(it), showTime: !!it.showTime }))
+      .map(it => (hasModeContent(it) || Object.keys(it.modeDrafts).length ? it : { ...it, mode: '' }));
     if (items.length) state.draftItems = items;
   } catch (e) {}
 }
