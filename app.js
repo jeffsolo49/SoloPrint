@@ -3014,8 +3014,30 @@ function cleanGalleryItem(row) {
     filType: cleanFilType(data.filType),
     minutes: cleanNumber(data.minutes),
     grams: cleanNumber(data.grams),
-    price: cleanNumber(data.price)   // set price that replaces the calculated estimate
+    price: cleanNumber(data.price),   // set price that replaces the calculated estimate
+    videos: cleanVideoIds(data.videos)
   };
+}
+
+// YouTube videos on a design page. Stored as video ids; shown only as players on the design's own page,
+// never as a thumbnail, card photo or link-preview image (those use photos only).
+function youtubeId(text) {
+  const t = String(text || '').trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(t)) return t;
+  const m = t.match(/^(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/|v\/)|youtube-nocookie\.com\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})(?:[?&#\/].*)?$/i);
+  return m ? m[1] : '';
+}
+function isYoutubeLink(text) { return !!youtubeId(text) && /youtu/i.test(String(text)); }
+function cleanVideoIds(list) {
+  return [...new Set((Array.isArray(list) ? list : []).map(youtubeId).filter(Boolean))].slice(0, 5);
+}
+function parseVideoLinks(text) { return cleanVideoIds(String(text || '').split(/[\s,]+/)); }
+function renderVideos(g) {
+  if (!g.videos || !g.videos.length) return '';
+  return `<div class="work-videos">${g.videos.map((id, n) => `<div class="video-frame">
+    <iframe src="https://www.youtube-nocookie.com/embed/${esc(id)}?rel=0" title="${esc(g.title || 'Design')} video${g.videos.length > 1 ? ` ${n + 1}` : ''}"
+      loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`).join('')}</div>`;
 }
 
 function renderWriteup(text) {
@@ -3141,6 +3163,7 @@ function renderWorkDetail(g) {
     </div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
     ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
+    ${renderVideos(g)}
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       ${price !== null ? `
@@ -3271,7 +3294,7 @@ function requestGalleryItem(id) {
 }
 
 function blankGalleryForm() {
-  return { id: `g${Date.now()}`, title: '', description: '', photos: '', filType: 'black', hours: '', minutes: '', grams: '', price: '', published: true };
+  return { id: `g${Date.now()}`, title: '', description: '', photos: '', videos: '', filType: 'black', hours: '', minutes: '', grams: '', price: '', published: true };
 }
 
 function renderGalleryFormPrice() {
@@ -3327,6 +3350,10 @@ function renderOwnerGalleryPage() {
         <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
         <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
       </div>
+      <div class="field"><label for="gallery-videos">YouTube videos (optional)</label>
+        <div class="field-help">Paste YouTube links, one per line (up to 5; "Unlisted" videos work). They play on this design's page, under the photos. They're never used as the design's picture: tiles, cards and shared links always use your photos.</div>
+        <textarea id="gallery-videos" placeholder="https://youtu.be/..." style="min-height:52px;" oninput="updateGalleryForm('videos', this.value)">${esc(f.videos || '')}</textarea>
+      </div>
       <div class="gallery-form-grid">
         <div class="field"><label>Filament</label>
           <select id="gallery-fil" onchange="updateGalleryForm('filType', this.value)">
@@ -3376,7 +3403,8 @@ function editGalleryItem(id) {
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
-    grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published
+    grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
+    videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n')
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3390,7 +3418,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams, price: g.price || null }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [] }
     })
   });
 }
@@ -3399,11 +3427,16 @@ async function saveGalleryItem() {
   const f = state.galleryForm || blankGalleryForm();
   if (!f.title.trim()) { showAlert('gallery-err', 'Please add a title.', 'error'); return; }
   const existing = state.gallery.find(x => x.id === f.id);
+  // A YouTube link pasted with the photos is a video, not a photo.
+  const photoLines = String(f.photos || '').split(/[\s,]+/);
+  const videos = parseVideoLinks([f.videos || '', ...photoLines.filter(isYoutubeLink)].join('\n'));
+  const badVideos = String(f.videos || '').split(/[\s,]+/).filter(t => t && !youtubeId(t));
+  if (badVideos.length) { showAlert('gallery-err', `This isn't a YouTube link: ${badVideos[0]}`, 'error'); return; }
   const item = cleanGalleryItem({
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(f.photos), filType: f.filType,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, filType: f.filType,
       minutes: totalPrintMinutes(f.hours, f.minutes), grams: parseFloat(f.grams), price: parseFloat(f.price) || null }
   });
   const btn = document.getElementById('gallery-save');

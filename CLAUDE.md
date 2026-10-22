@@ -56,7 +56,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `filType` black/white/color/special/special_order; `colorId`/`color`; `specialColor`,
   `useLeftover`, `leftoverFrom`; `extraColors` (multi-color prints); `galleryId` and `setPrice` (a past-work design's set
   price, which replaces the calculation; re-read from the gallery when the owner quotes, never trusted from the customer).
-- Gallery items (`gallery_items.data`): title, description, photos, filType, minutes, grams, `price` (optional set price).
+- Gallery items (`gallery_items.data`): title, description, photos, filType, minutes, grams, `price` (optional set price),
+  `videos` (YouTube ids, `youtubeId`; played only on the design page by `renderVideos`, never thumbnails or preview images).
 
 ## Rules that are easy to break
 
