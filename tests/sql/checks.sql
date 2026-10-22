@@ -190,4 +190,14 @@ do $$ declare q jsonb; begin
 end $$;
 reset role;
 
+
+-- submit_job drops prices and charges only the owner sets
+set role anon;
+select public.submit_job('{"id":"303","clientEmail":"cut@example.com","extraCharges":[{"label":"Discount","amount":5}],"rates":{"baseFee":0},"specialOrderCost":0,"items":[{"name":"A","ownerPrice":0},{"name":"B"}]}');
+do $$ declare d jsonb := (select d from public.customer_jobs('cut@example.com') d); begin
+  if d ? 'extraCharges' or d ? 'rates' or d ? 'specialOrderCost' then raise exception 'submit_job kept owner-only fields'; end if;
+  if d->'items'->0 ? 'ownerPrice' or d->'items'->0->>'name' <> 'A' or d->'items'->1->>'name' <> 'B' then raise exception 'submit_job kept an item price or lost item order: %', d->'items'; end if;
+end $$;
+reset role;
+
 \echo 'All SQL checks passed.'

@@ -24,7 +24,7 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
@@ -99,6 +99,7 @@ const EMAIL_PLACEHOLDERS = {
   orderLink: "Link to the customer's order on the site",
   delivery: 'Delivery date, tracking or pickup, and notes',
   materialNote: 'Your material note from Site Settings (e.g. "All prints are PLA...")',
+  extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
   queueNote: 'Quote and confirmed emails: how many orders are ahead and about how many days until it\'s printed',
   photo: 'Link to the first finished-print photo you added',
@@ -223,16 +224,28 @@ function colorsRate(item, rules) {
   const parts = itemParts(item);
   return parts.reduce((s, p) => s + filamentRate(p.filType, rules), 0) / parts.length;
 }
-// A past-work design the owner gave a set price: that price per print, no calculation.
-function setPriceOf(item) {
-  const n = Number(item && typeof item === 'object' ? item.setPrice : NaN);
-  return isFinite(n) && n > 0 ? n : 0;
+// A fixed price per print instead of the calculation: the owner's own price for this item (ownerPrice,
+// set when editing a request; can be 0), else a past-work design's set price (setPrice).
+function fixedPrice(item) {
+  if (!item || typeof item !== 'object') return null;
+  const own = item.ownerPrice;
+  if (own !== null && own !== undefined && own !== '' && isFinite(Number(own)) && Number(own) >= 0) return Number(own);
+  const set = Number(item.setPrice);
+  return isFinite(set) && set > 0 ? set : null;
 }
-// Ready to price: a set price, or print time and grams.
-function itemPriced(item) { return setPriceOf(item) > 0 || !!(item && item.minutes && item.grams); }
+function setPriceOf(item) { const f = fixedPrice(item); return f === null ? 0 : f; }
+// Ready to price: a fixed price, or print time and grams.
+function itemPriced(item) { return fixedPrice(item) !== null || !!(item && item.minutes && item.grams); }
+// Charges the owner adds to an order, each with their own label (e.g. "Special costs").
+function extraCharges(order) {
+  return ((order && order.extraCharges) || []).filter(c => c && isFinite(Number(c.amount)) && Number(c.amount) > 0)
+    .map(c => ({ label: String(c.label || '').trim() || 'Special costs', amount: Number(c.amount) }));
+}
+function extraChargesTotal(order) { return extraCharges(order).reduce((s, c) => s + c.amount, 0); }
 // Price of one print. `colors` is an item (all its colors) or a single filament type.
 function printPrice(minutes, grams, colors, rules) {
-  if (setPriceOf(colors)) return setPriceOf(colors);
+  const fixed = colors && typeof colors === 'object' ? fixedPrice(colors) : null;
+  if (fixed !== null) return fixed;
   const rate = colors && typeof colors === 'object' ? colorsRate(colors, rules) : filamentRate(colors, rules);
   return rules.baseFee + Number(minutes) * rules.minuteRate + Number(grams) * rate;
 }

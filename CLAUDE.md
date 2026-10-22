@@ -51,8 +51,9 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `due_review_requests`, `due_draft_reminders`, `owner_report_data`.
 - Order fields worth knowing: `phase` (estimate → quote_sent → order_received → production → delivered),
   `paymentStatus` (unpaid → payment_requested → payment_recieved, spelling is historical), `rates` (prices
-  saved when the quote was sent), `designTerms` (custom design terms text the customer must agree to before approving), `specialOrderCost`, `finishedPhotos`, `stockTaken`, `paidAt`.
-- Items: `filType` black/white/color/special/special_order; `colorId`/`color`; `specialColor`,
+  saved when the quote was sent), `designTerms` (custom design terms text the customer must agree to before approving), `specialOrderCost`, `extraCharges` ([{label, amount}], the owner's added charges; customers see label and amount), `ownerEditedAt`, `finishedPhotos`, `stockTaken`, `paidAt`. The owner edits a request in the estimate phase with "Edit request" (`renderOwnerEditForm` in features.js); `submit_job` strips owner-only fields.
+- Items: `ownerPrice` (owner's own price per print, beats everything; 0 allowed), `setPrice` (past-work set price), see `fixedPrice`;
+  `filType` black/white/color/special/special_order; `colorId`/`color`; `specialColor`,
   `useLeftover`, `leftoverFrom`; `extraColors` (multi-color prints); `galleryId` and `setPrice` (a past-work design's set
   price, which replaces the calculation; re-read from the gallery when the owner quotes, never trusted from the customer).
 - Gallery items (`gallery_items.data`): title, description, photos, filType, minutes, grams, `price` (optional set price).
