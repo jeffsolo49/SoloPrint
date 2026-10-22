@@ -149,4 +149,32 @@ select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Changed my mind', 
 reset role;
 do $$ begin if (select text from public.customer_reviews where job_id = 'd-2') <> 'Came out great' then raise exception 'an approved review was rewritten'; end if; end $$;
 
+-- Drafts: customers save and clear through the functions only; reminders once, and not after a request.
+set role anon;
+select pg_temp.expect_denied('select count(*) from public.request_drafts', 'anon reading drafts');
+select pg_temp.expect_denied($q$select public.save_request_draft('not-an-email', 'X', '{}')$q$, 'a draft without a valid email');
+select public.save_request_draft('kim@example.com', 'Kim', '{"items":[{"notes":"phone stand"}]}');
+select public.save_request_draft('KIM@example.com', 'Kim', '{"items":[{"notes":"phone stand, blue"}]}');
+select public.save_request_draft('lou@example.com', 'Lou', '{"items":[{"notes":"hook"}]}');
+reset role;
+do $$ begin
+  if (select count(*) from public.request_drafts) <> 2 then raise exception 'one draft per email expected'; end if;
+  if (select data->'items'->0->>'notes' from public.request_drafts where lower(email) = 'kim@example.com') <> 'phone stand, blue' then raise exception 'draft not updated'; end if;
+end $$;
+update public.request_drafts set updated_at = now() - interval '8 days';
+insert into public.jobs (id, data, created_at) values ('lou-1', '{"id":"lou-1","clientEmail":"lou@example.com","phase":"estimate","items":[]}', now() - interval '2 days');
+create temp table draft_ids as select id from public.request_drafts where lower(email) = 'kim@example.com';
+grant select on draft_ids to anon;
+set role anon;
+select pg_temp.expect_denied($q$select public.due_draft_reminders('wrong-secret')$q$, 'draft reminders with a wrong secret');
+do $$ declare got text; begin
+  select string_agg(d->>'clientEmail', ',') into got from public.due_draft_reminders('0123456789abcdef0123456789abcdef', 7) d;
+  if got is distinct from 'KIM@example.com' and got is distinct from 'kim@example.com' then raise exception 'only Kim should be reminded (Lou sent a request), got %', got; end if;
+  if (select count(*) from public.due_draft_reminders('0123456789abcdef0123456789abcdef', 7)) <> 0 then raise exception 'a draft was reminded twice'; end if;
+  if (public.get_request_draft((select id from draft_ids)))->>'name' <> 'Kim' then raise exception 'resume link does not open the draft'; end if;
+end $$;
+select public.clear_request_draft('Kim@Example.com');
+do $$ begin if public.get_request_draft((select id from draft_ids)) is not null then raise exception 'draft not cleared after sending'; end if; end $$;
+reset role;
+
 \echo 'All SQL checks passed.'

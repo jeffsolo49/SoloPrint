@@ -71,6 +71,11 @@ const EMAIL_TEMPLATES = {
     subject: 'Your {rollColor} roll is yours until {rollExpires}',
     body: "Hi {name},\n\nYou have about {rollGrams} g left on the {rollColor} roll I ordered for you. It's yours to use until {rollExpires}, and the material is free in another order. After that, I keep any leftover.\n\nWant to use it? Start a request and choose \"Use my leftover roll\": {siteLink}\n\n{footer}"
   },
+  draft_reminder: {
+    label: 'Unfinished request', to: 'Customer', when: "A week after someone starts a request but doesn't send it (sent once; the days are in Prices and rules).",
+    subject: 'Want to finish your SoloPrint request?',
+    body: "Hi {name},\n\nYou started a request for {draftSummary} but didn't send it. It's saved, so you can pick up right where you left off: {resumeLink}\n\nIf you've changed your mind, no problem: just ignore this email.\n\nThanks,\nSoloPrint"
+  },
   weekly_summary: {
     label: 'Weekly summary', to: 'You', when: 'Monday mornings.',
     subject: 'SoloPrint this week: ${weekSales} in sales',
@@ -101,6 +106,8 @@ const EMAIL_PLACEHOLDERS = {
   rollGrams: 'Grams left on the roll',
   rollExpires: 'Date the roll is theirs until',
   siteLink: "Your site's address",
+  draftSummary: 'Unfinished request: what they started, e.g. "a phone stand"',
+  resumeLink: 'Unfinished request: link that reopens their saved request',
   weekSales: 'Weekly summary: paid sales in the last 7 days',
   waitingQuote: 'Weekly summary: requests waiting for your quote',
   waitingApproval: 'Weekly summary: quotes waiting on the customer',
@@ -150,6 +157,7 @@ const RULE_DEFAULTS = {
   quoteReminderDays: 3,    // days after a quote with no answer before the reminder email
   reviewRequestDays: 7,    // days after delivery before asking for a review
   rollReminderDays: 14,    // days before a leftover roll expires to remind the customer
+  draftReminderDays: 7,    // days after someone leaves a request unsent before the "finish your request" email
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
 };

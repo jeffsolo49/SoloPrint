@@ -71,7 +71,8 @@ function blankItem() {
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
-    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, leftoverFrom: '', extraColors: [], showTime: false
+    imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, leftoverFrom: '', extraColors: [], showTime: false,
+    galleryId: '', modeDrafts: {}
   };
 }
 
@@ -448,9 +449,29 @@ function cleanItem(it) {
       filType: ['black', 'white', 'color', 'special', 'leftover'].includes(p && p.filType) ? p.filType : 'color',
       colorId: /^[a-z0-9-]{1,40}$/.test(String(p && p.colorId)) ? p.colorId : '',
       leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(p && p.leftoverFrom)) ? p.leftoverFrom : ''
-    })).filter(p => p.name)
+    })).filter(p => p.name),
+    galleryId: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.galleryId)) ? it.galleryId : '',
+    modeDrafts: cleanModeDrafts(it.modeDrafts)
   };
 }
+
+// What a customer typed under each of the three choices, kept when they switch to another choice so
+// switching back brings it back (and it's part of their saved draft).
+const MODE_FIELDS = ['link', 'name', 'notes', 'imageLinks', 'previewImage', 'grams', 'printHours', 'printMinutes',
+  'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'estimateSource', 'estimateNote', 'showTime', 'galleryId'];
+function cleanModeDrafts(raw) {
+  const out = {};
+  ['link', 'idea', 'gallery'].forEach(mode => {
+    const d = raw && typeof raw === 'object' && raw[mode];
+    if (!d || typeof d !== 'object') return;
+    const c = cleanItem({ ...d, modeDrafts: null });
+    const kept = {};
+    MODE_FIELDS.forEach(f => { kept[f] = f === 'printHours' || f === 'printMinutes' ? cleanText(d[f], 6) : c[f]; });
+    if (hasModeContent(kept)) out[mode] = kept;
+  });
+  return out;
+}
+function hasModeContent(f) { return !!String(f.link || f.name || f.notes || '').trim() || !!(f.imageLinks && f.imageLinks.length); }
 
 function normalizeBatch(batch) {
   if (!batch || typeof batch !== 'object') return null;
@@ -1079,9 +1100,11 @@ async function init() {
   loadClientHistoryEmail();
   restoreDraft();
   const linkedOrder = handleRequestsLink();
+  const resumeId = handleResumeLink();
   state.ownerUnlocked = hasValidOwnerSession();
   handleAuthRedirect();
   await Promise.all([
+    resumeId ? loadServerDraft(resumeId) : null,
     loadSettings(),
     loadRemoteLibrary(),
     // The customer view only ever loads the looked-up customer's orders, even on the owner's device.
@@ -1090,6 +1113,7 @@ async function init() {
   state.loading = false;
   render();
   if (linkedOrder) document.getElementById(`order-${linkedOrder}`)?.scrollIntoView({ block: 'start' });
+  if (state.resumedDraft) document.getElementById('resume-note')?.scrollIntoView({ block: 'start' });
   loadGallery().then(() => {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
     if (state.view === 'client' && !typing) render();
@@ -1249,6 +1273,7 @@ function renderSubmitTab() {
         <div class="section-sub">Tell me what you'd like printed. Nothing is charged until you approve a quote.</div>
       </div>
     </div>
+    ${state.resumedDraft ? `<div class="alert success" id="resume-note" style="display:block;margin:0 0 1rem;" role="status">Welcome back! Your request is filled in below, just as you left it. Finish it whenever you like.</div>` : ''}
 
     <div class="card">
       <h3 class="card-title">Your info</h3>
@@ -1264,6 +1289,7 @@ function renderSubmitTab() {
           <input type="email" id="client-email" value="${esc(state.clientEmail)}" placeholder="you@email.com"
             oninput="state.clientEmail=this.value; clearErr(this,'err-email')" />
           <div class="field-err" id="err-email">Please enter a valid email</div>
+          <div class="field-help">Your request is saved as you go, so you can come back and finish it later.</div>
         </div>
       </div>
     </div>
@@ -1507,14 +1533,75 @@ function inferMode(item) {
   return '';
 }
 
+// Picking one of the three choices shows its form below the choices. Switching keeps what was typed under
+// the old choice (item.modeDrafts) and brings back anything typed under the new one.
 function setItemMode(i, mode) {
   const item = state.draftItems[i];
   if (!item) return;
-  if (mode === 'gallery') { setTab('gallery'); return; }
+  const current = inferMode(item);
+  if (current === mode) return;
+  item.modeDrafts = { ...(item.modeDrafts || {}) };
+  if (current) {
+    const saved = {};
+    MODE_FIELDS.forEach(f => { saved[f] = item[f]; });
+    if (hasModeContent(saved)) item.modeDrafts[current] = saved; else delete item.modeDrafts[current];
+  }
+  const blank = blankItem();
+  const restore = item.modeDrafts[mode];
+  MODE_FIELDS.forEach(f => { item[f] = restore && f in restore ? restore[f] : blank[f]; });
+  delete item.modeDrafts[mode];
   item.mode = mode;
+  item.restoredDraft = !!restore;
+  if (mode === 'gallery' && !state.galleryLoaded) loadGallery().then(render);
   render();
-  const focusId = mode === 'link' ? `link-${i}` : `notes-${i}`;
-  setTimeout(() => document.getElementById(focusId)?.focus(), 0);
+  queueDraftSave();
+  const focusId = mode === 'link' ? `link-${i}` : mode === 'idea' ? `notes-${i}` : '';
+  setTimeout(() => {
+    const target = document.getElementById(`mode-form-${i}`);
+    if (target && target.getBoundingClientRect().top > window.innerHeight * 0.8) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+  }, 0);
+}
+
+// Inline picker for "Something from my past work".
+function renderGalleryPicker(i) {
+  const designs = state.gallery.filter(g => g.published);
+  if (!state.galleryLoaded) return `<div class="field-help">Loading designs...</div>`;
+  if (!designs.length) return `<div class="field-help">No past designs to pick from yet. Choose "I have a link" or "I have an idea" instead.</div>`;
+  return `<div class="field" style="margin-bottom:8px;">
+    <span class="field-label" id="gallery-pick-label-${i}">Pick a design</span>
+    <div class="gallery-pick" role="group" aria-labelledby="gallery-pick-label-${i}">
+      ${designs.map(g => `<button type="button" class="gallery-pick-tile" onclick="pickGalleryForItem(${i}, '${esc(g.id)}')">
+        ${g.photos[0] ? thumbImg(g.photos[0], '') : '<span class="gallery-pick-blank" aria-hidden="true"></span>'}
+        <span>${esc(g.title)}</span>
+      </button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function galleryItemFields(g) {
+  return {
+    name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
+    knownFromLibrary: !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
+    estimateSource: `the ${GALLERY_NAME} gallery`
+  };
+}
+
+function pickGalleryForItem(i, id) {
+  const item = state.draftItems[i];
+  const g = state.gallery.find(x => x.id === id && x.published);
+  if (!item || !g) return;
+  Object.assign(item, galleryItemFields(g), { mode: 'gallery' });
+  render();
+  queueDraftSave();
+}
+
+function changeGalleryPick(i) {
+  const item = state.draftItems[i];
+  if (!item) return;
+  const blank = blankItem();
+  ['name', 'galleryId', 'grams', 'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'previewImage', 'estimateSource'].forEach(f => { item[f] = blank[f]; });
+  render();
 }
 
 function toggleItemTime(i) {
@@ -1525,14 +1612,14 @@ function toggleItemTime(i) {
   if (item.showTime) setTimeout(() => document.getElementById(`hours-${i}`)?.focus(), 0);
 }
 
-function renderModeChooser(i) {
+function renderModeChooser(i, current) {
   const opt = (mode, title, sub, icon) => `
-    <button type="button" class="mode-option" onclick="setItemMode(${i}, '${mode}')">
+    <button type="button" class="mode-option ${current === mode ? 'selected' : ''}" aria-pressed="${current === mode}" onclick="setItemMode(${i}, '${mode}')">
       <span class="mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg></span>
       <span><span class="mode-title">${title}</span><span class="mode-sub">${sub}</span></span>
     </button>`;
   return `<div class="field" style="margin-bottom:4px;">
-    <div class="mode-question">What would you like printed?</div>
+    <div class="mode-question" id="mode-question-${i}">What would you like printed?</div>
     <div class="mode-options">
       ${opt('link', 'I have a link', 'A model on MakerWorld, Printables or Thingiverse', '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>')}
       ${opt('idea', 'I have an idea', 'Something custom: describe it and I can design it', '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>')}
@@ -1555,7 +1642,10 @@ function renderPhotoField(item, i) {
 function renderTimeSection(item, i) {
   const hasTime = !!(item.printHours || item.printMinutes || item.grams || item.knownFromLibrary);
   if (!(item.showTime || hasTime)) return `
-          <button class="btn-link" type="button" onclick="toggleItemTime(${i})">I know the print time and weight (optional)</button>`;
+          <button class="btn-sm time-toggle" type="button" onclick="toggleItemTime(${i})" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            I know the print time and weight (optional)
+          </button>`;
   return `
           <div class="row3">
             <div class="field" style="margin-bottom:0;">
@@ -1589,11 +1679,12 @@ function renderItemBlock(item, i) {
         <span class="item-num-badge">Item ${i + 1}${modeLabel ? ` · ${modeLabel}` : ''}</span>
         <div style="display:flex;gap:8px;align-items:center;">
           ${item.fetching ? `<span class="fetching-badge">Looking up...</span>` : ''}
-          ${mode && mode !== 'gallery' ? `<button class="btn-link" type="button" onclick="state.draftItems[${i}].mode=''; render();">Change</button>` : ''}
           ${state.draftItems.length > 1 ? `<button class="btn-sm danger" type="button" onclick="removeItem(${i})">Remove</button>` : ''}
         </div>
       </div>
-      ${!mode ? renderModeChooser(i) : ''}
+      ${renderModeChooser(i, mode)}
+      ${mode ? `<div class="mode-form" id="mode-form-${i}">
+        ${item.restoredDraft ? `<div class="field-help draft-restored" role="status">Here's what you started earlier.</div>` : ''}` : ''}
       ${mode === 'link' ? `
         <div class="field" style="margin-bottom:8px;">
           <label>Model link</label>
@@ -1626,18 +1717,20 @@ function renderItemBlock(item, i) {
             oninput="updateDraft(${i},'name',this.value)" />
         </div>
         <div id="preview-${i}" hidden></div>` : ''}
-      ${mode === 'gallery' ? `
+      ${mode === 'gallery' && !item.name ? renderGalleryPicker(i) : ''}
+      ${mode === 'gallery' && item.name ? `
         <div class="field" style="margin-bottom:8px;">
-          <label>Design</label>
+          <label for="name-${i}">Design</label>
           <input type="text" id="name-${i}" value="${esc(item.name)}" oninput="updateDraft(${i},'name',this.value)" />
           <div id="preview-${i}">${renderModelPreview(item)}</div>
+          <button type="button" class="btn-sm" style="margin-top:8px;" onclick="changeGalleryPick(${i})">Pick a different design</button>
         </div>
         <div class="field" style="margin-bottom:8px;">
           <label>Anything you'd like changed? (optional)</label>
           <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>` : ''}
-      ${mode ? `
+      ${mode && (mode !== 'gallery' || item.name) ? `
         <div class="field" style="margin-bottom:10px;">
           <label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
           <div class="field-help">${esc(materialNote())}</div>
@@ -1654,6 +1747,7 @@ function renderItemBlock(item, i) {
         </div>` : ``}
         <div id="time-${i}">${renderTimeSection(item, i)}</div>
         <div id="customer-price-preview-${i}">${renderCustomerPricePreview(item)}</div>` : ''}
+      ${mode ? `</div>` : ''}
     </div>`;
 }
 
@@ -3005,19 +3099,7 @@ function renderGalleryTab() {
 function requestGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!g) return;
-  const item = {
-    ...blankItem(),
-    name: g.title,
-    notes: '',
-    mode: 'gallery',
-    filType: g.filType,
-    grams: g.grams,
-    knownMinutes: g.minutes,
-    knownFromLibrary: !!(g.minutes && g.grams),
-    knownPrompted: true,
-    previewImage: g.photos[0] || '',
-    estimateSource: `the ${GALLERY_NAME} gallery`
-  };
+  const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
   const first = state.draftItems[0];
   const firstIsEmpty = state.draftItems.length === 1 && first && !first.name && !first.link && !first.notes;
   if (firstIsEmpty) state.draftItems[0] = item;
@@ -3873,6 +3955,7 @@ function queueDraftSave() {
 function saveDraft() {
   const items = state.draftItems.map(it => ({ ...it, fetching: false, previewLoading: false }));
   const empty = items.every(it => !it.name && !it.link && !it.notes && !it.mode);
+  queueServerDraft(items);
   try {
     if (empty) localStorage.removeItem(DRAFT_KEY);
     else localStorage.setItem(DRAFT_KEY, JSON.stringify({ clientName: state.clientName, clientEmail: state.clientEmail, items, savedAt: Date.now() }));
@@ -3947,7 +4030,9 @@ async function submitBatch() {
       ...it,
       minutes: it.knownFromLibrary ? it.knownMinutes : totalPrintMinutes(it.printHours, it.printMinutes),
       fetching: false,
-      previewLoading: false
+      previewLoading: false,
+      modeDrafts: undefined,
+      restoredDraft: undefined
     })),
     status: 'pending',
     phase: 'estimate',
@@ -3971,6 +4056,8 @@ async function submitBatch() {
   btn.disabled = false; btn.textContent = 'Submit Quote Request';
   state.draftItems = [blankItem()];
   clearDraft();
+  clearServerDraft(clientEmail);
+  state.resumedDraft = false;
   state.clientTab = 'jobs';
   setTimeout(() => render(), 1200);
 }
@@ -4282,4 +4369,6 @@ function attachAll() {
   });
 }
 
-init();
+// Start once every script on the page (email-templates.js, app.js, features.js) has loaded.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();

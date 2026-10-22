@@ -291,6 +291,7 @@ function sendQuoteReminders() {
     Logger.log('Quote reminders sent: ' + due.length);
   });
   step('Review requests', () => sendAll(reviewRequestEmails(callSupabase('due_review_requests', { p_days: rules.reviewRequestDays }), custom, site)));
+  step('Unfinished request reminders', () => sendAll(draftReminderEmails(callSupabase('due_draft_reminders', { p_days: rules.draftReminderDays }), custom)));
   step('Leftover roll reminders', () => {
     const props = PropertiesService.getScriptProperties();
     const sent = JSON.parse(props.getProperty('ROLL_REMINDERS') || '{}');
@@ -316,7 +317,7 @@ function callSupabase(fn, args) {
   });
   const code = res.getResponseCode(), text = res.getContentText();
   if (code === 404 || /Could not find the function/i.test(text)) {
-    throw new Error(fn + " isn't set up yet: run " + (/review|report/.test(fn) ? 'supabase/owner-tools.sql' : 'the files in supabase/') + ' in the Supabase SQL Editor.');
+    throw new Error(fn + " isn't set up yet: run " + (/draft/.test(fn) ? 'supabase/drafts.sql' : /review|report/.test(fn) ? 'supabase/owner-tools.sql' : 'the files in supabase/') + ' in the Supabase SQL Editor.');
   }
   if (code !== 200) throw new Error(fn + ' failed (' + code + '): ' + text.slice(0, 300));
   return JSON.parse(text || 'null');
@@ -331,6 +332,27 @@ function validEmail(text) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(text
 // Pure functions from here, so they can be tested outside Apps Script.
 function reviewRequestEmails(records, custom, site) {
   return (records || []).filter(rec => validEmail(rec.clientEmail)).map(rec => renderEmail('review_request', String(rec.clientEmail), emailVars(rec, custom, site), custom));
+}
+
+// "Want to finish your request?" for drafts left unsent (see supabase/drafts.sql).
+function draftReminderEmails(drafts, custom) {
+  return (drafts || []).filter(d => validEmail(d.clientEmail) && d.id).map(d => {
+    const items = ((d.data && d.data.items) || []).map(draftItemSummary).filter(Boolean);
+    const vars = {
+      name: String(d.clientName || '').trim() || 'there',
+      draftSummary: items.length ? items.join(', ') : 'a 3D print',
+      resumeLink: SITE_URL + '/?resume=' + encodeURIComponent(d.id),
+      siteLink: SITE_URL
+    };
+    return renderEmail('draft_reminder', String(d.clientEmail), vars, custom);
+  });
+}
+function draftItemSummary(it) {
+  if (!it) return '';
+  const text = String(it.name || '').trim() || String(it.notes || '').trim().split(/\s+/).slice(0, 6).join(' ');
+  if (text) return text.length > 60 ? text.slice(0, 57) + '...' : text;
+  const kept = Object.values(it.modeDrafts || {}).map(draftItemSummary).filter(Boolean);
+  return kept[0] || (it.link ? 'a model from a link' : '');
 }
 
 // About 2 weeks before a leftover roll expires, once per roll. `sent` remembers rolls already reminded
@@ -572,6 +594,11 @@ const EMAIL_TEMPLATES = {
     subject: 'Your {rollColor} roll is yours until {rollExpires}',
     body: "Hi {name},\n\nYou have about {rollGrams} g left on the {rollColor} roll I ordered for you. It's yours to use until {rollExpires}, and the material is free in another order. After that, I keep any leftover.\n\nWant to use it? Start a request and choose \"Use my leftover roll\": {siteLink}\n\n{footer}"
   },
+  draft_reminder: {
+    label: 'Unfinished request', to: 'Customer', when: "A week after someone starts a request but doesn't send it (sent once; the days are in Prices and rules).",
+    subject: 'Want to finish your SoloPrint request?',
+    body: "Hi {name},\n\nYou started a request for {draftSummary} but didn't send it. It's saved, so you can pick up right where you left off: {resumeLink}\n\nIf you've changed your mind, no problem: just ignore this email.\n\nThanks,\nSoloPrint"
+  },
   weekly_summary: {
     label: 'Weekly summary', to: 'You', when: 'Monday mornings.',
     subject: 'SoloPrint this week: ${weekSales} in sales',
@@ -602,6 +629,8 @@ const EMAIL_PLACEHOLDERS = {
   rollGrams: 'Grams left on the roll',
   rollExpires: 'Date the roll is theirs until',
   siteLink: "Your site's address",
+  draftSummary: 'Unfinished request: what they started, e.g. "a phone stand"',
+  resumeLink: 'Unfinished request: link that reopens their saved request',
   weekSales: 'Weekly summary: paid sales in the last 7 days',
   waitingQuote: 'Weekly summary: requests waiting for your quote',
   waitingApproval: 'Weekly summary: quotes waiting on the customer',
@@ -651,6 +680,7 @@ const RULE_DEFAULTS = {
   quoteReminderDays: 3,    // days after a quote with no answer before the reminder email
   reviewRequestDays: 7,    // days after delivery before asking for a review
   rollReminderDays: 14,    // days before a leftover roll expires to remind the customer
+  draftReminderDays: 7,    // days after someone leaves a request unsent before the "finish your request" email
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
 };

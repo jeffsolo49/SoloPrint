@@ -245,6 +245,13 @@ check('reminder timing comes from Site Settings', () => {
   assert(days.due_quote_reminders === 5 && days.due_review_requests === 10, JSON.stringify(days));
 });
 
+check('unfinished request reminder links back to the saved request', () => {
+  const [m] = ctxD.draftReminderEmails([{ id: 'abc-123', clientEmail: 'kim@example.com', clientName: 'Kim',
+    data: { items: [{ mode: 'idea', notes: 'A phone stand for my desk at work please' }, { mode: 'link', modeDrafts: { idea: { name: 'Coaster' } } }] } }], {});
+  assert(m.to === 'kim@example.com' && m.subject === 'Want to finish your SoloPrint request?', m.subject);
+  assert(m.body.includes('Hi Kim,') && m.body.includes('a request for A phone stand for my desk, Coaster') && m.body.includes('https://soloprint.vercel.app/?resume=abc-123'), m.body);
+});
+
 console.log('\nLoader (email/Loader.gs):');
 const zlib = require('zlib');
 const LOADER = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Loader.gs'), 'utf8');

@@ -31,7 +31,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `sw.js`, `manifest.webmanifest`, `icons/` | Install as an app. The service worker is network-first. |
 | `email/Code.gs` | The Apps Script: order emails (`emailsFor`), daily jobs (`sendQuoteReminders` runs quote reminders, review requests, roll reminders, Monday summary), weekly Drive backup, MakerWorld lookups, `healthCheck`. Contains an exact copy of `email-templates.js` between the `SHARED EMAIL TEMPLATES` markers. |
 | `email/Loader.gs` | The only code pasted into Apps Script. Runs the latest `email/Code.gs` from GitHub `main` (checked every 15 min), keeps a saved copy, emails the owner on problems. |
-| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`. All must stay safe to re-run. |
+| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`. All must stay safe to re-run. |
 
 ## Data
 
@@ -41,8 +41,10 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
   `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`. Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
+- `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
+  reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,
-  `due_review_requests`, `owner_report_data`.
+  `due_review_requests`, `due_draft_reminders`, `owner_report_data`.
 - Order fields worth knowing: `phase` (estimate → quote_sent → order_received → production → delivered),
   `paymentStatus` (unpaid → payment_requested → payment_recieved, spelling is historical), `rates` (prices
   saved when the quote was sent), `specialOrderCost`, `finishedPhotos`, `stockTaken`, `paidAt`.
@@ -60,6 +62,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Prices: always go through `printPrice` with `rulesFor(batch)` (an order's own prices) or `currentRules()`
   (today's, for new estimates). Never hardcode rates. An order quoted before `rates` existed uses
   `LEGACY_RATES`.
+- The site starts (`init`) on DOMContentLoaded, after all three scripts load; features.js functions can be
+  used anywhere at run time, but not in app.js top-level code.
 - Top-level `const`s in app.js are created in file order; one used in another top-level value must be
   defined above it (EMAIL_SAMPLE once broke on this).
 - New SQL: add it to a `supabase/*.sql` file, add checks in `tests/sql/checks.sql`, and add the file to
