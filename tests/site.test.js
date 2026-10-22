@@ -757,6 +757,11 @@ const STATES = {
     assert(/what you started earlier/.test(await page.textContent('.draft-restored')), 'no note that the draft came back');
     await page.close();
   });
+  await check('a choice tapped with nothing typed is not remembered: past work is picked again on return', async () => {
+    const page = await open(fixtures(), { init: () => localStorage.setItem('soloprint_request_draft_v1', JSON.stringify({ clientName: '', clientEmail: '', savedAt: Date.now(), items: [{ mode: 'link', qty: 1 }] })) });
+    assert(await page.$('.mode-option.selected:has-text("Something from my past work")'), 'an old empty "I have a link" choice was restored');
+    await page.close();
+  });
   await check('past work: pick a design right in the form, with a way back', async () => {
     const page = await open(fixtures());
     await page.click('text=Something from my past work');
