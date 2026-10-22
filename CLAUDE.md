@@ -39,7 +39,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `customer_approve_quote`, `submit_review`. Anything in an order's data is visible to that customer, so
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
-  `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`. Cleaned by
+  `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `topWork`
+  (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads). Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.

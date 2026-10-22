@@ -122,7 +122,7 @@ async function loadBatches(filterEmail = '') {
       ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!email) await loadOwnerPrivate();
+    if (!email) { await loadOwnerPrivate(); syncTopWork(); }
     state.synced = true;
   } catch(e) {
     console.error('Load error:', e);
@@ -1290,21 +1290,17 @@ function renderSubmitTab() {
     ${state.resumedDraft ? `<div class="alert success" id="resume-note" style="display:block;margin:0 0 1rem;" role="status">Welcome back! Your request is filled in below, just as you left it. Finish it whenever you like.</div>` : ''}
 
     <div class="card request-card">
-      <h3 class="card-title">Your info</h3>
-      <div class="row2">
-        <div class="field">
-          <label>Your name <span class="req">*</span></label>
-          <input type="text" id="client-name" value="${esc(state.clientName)}" placeholder="Jane Smith"
+      <div class="field" style="margin-bottom:0;">
+        <label for="client-name" id="client-label">Your name and email <span class="req">*</span></label>
+        <div class="info-inputs">
+          <input type="text" id="client-name" value="${esc(state.clientName)}" placeholder="Jane Smith" autocomplete="name"
             oninput="state.clientName=this.value; clearErr(this,'err-name')" />
-          <div class="field-err" id="err-name">Please enter your name</div>
-        </div>
-        <div class="field">
-          <label>Your email <span class="req">*</span></label>
-          <input type="email" id="client-email" value="${esc(state.clientEmail)}" placeholder="you@email.com"
+          <input type="email" id="client-email" value="${esc(state.clientEmail)}" placeholder="you@email.com" autocomplete="email" aria-label="Your email"
             oninput="state.clientEmail=this.value; clearErr(this,'err-email')" />
-          <div class="field-err" id="err-email">Please enter a valid email</div>
-          <div class="field-help">Your request is saved as you go, so you can come back and finish it later.</div>
         </div>
+        <div class="field-err" id="err-name">Please enter your name</div>
+        <div class="field-err" id="err-email">Please enter a valid email</div>
+        <div class="field-help">Saved as you go, so you can finish later.</div>
       </div>
     </div>
 
@@ -2597,6 +2593,7 @@ function cleanSettings(raw) {
     rules: cleanRules(d.rules),
     materialNote: cleanText(d.materialNote, 200).trim(),
     designTerms: cleanText(d.designTerms, 4000).trim(),
+    topWork: (Array.isArray(d.topWork) ? d.topWork : []).filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(String(id))).slice(0, 5),
     howItWorks: (Array.isArray(d.howItWorks) ? d.howItWorks : []).slice(0, 6)
       .map(s => ({ title: cleanText(s && s.title, 80).trim(), text: cleanText(s && s.text, 300).trim() })).filter(s => s.title),
     vacation: {
@@ -2613,6 +2610,7 @@ async function loadSettings() {
     const rows = await supaFetch('/site_settings?id=eq.1&select=data');
     if (rows && rows[0]) state.settings = cleanSettings(rows[0].data);
     state.settingsError = false;
+    state.settingsLoaded = true;   // saving settings before this would overwrite them with defaults
   } catch (e) {
     console.error('Settings load error:', e); // table not set up yet: defaults stay
     state.settingsError = true;
@@ -2976,6 +2974,7 @@ function cleanGalleryItem(row) {
     id,
     published: row.published !== false,
     sortOrder: parseInt(row.sort_order, 10) || 0,
+    createdAt: cleanIso(row.created_at),
     title: cleanText(data.title, 120),
     description: cleanText(data.description, 8000),
     photos: cleanImageLinks(data.photos),
@@ -3003,27 +3002,34 @@ function openWork(id) {
 
 // Photo strip of recent work for the Request a Quote page.
 // Photo gallery at the top of the home page, built from the photos of published designs.
+// Home page "My Work": up to 5 designs (best sellers first, then the newest), then a SEE MORE box.
+const HOME_WORK_COUNT = 5;
+function homeWork() {
+  const designs = state.gallery.filter(g => g.published && g.photos.length);
+  const top = (state.settings.topWork || []).map(id => designs.find(g => g.id === id)).filter(Boolean);
+  const newest = designs.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return top.concat(newest.filter(g => !top.includes(g))).slice(0, HOME_WORK_COUNT);
+}
+
 function renderRecentWork() {
-  const tiles = [];
-  state.gallery.filter(g => g.published).forEach(g => g.photos.forEach((photo, n) => tiles.push({ g, photo, n, first: n === 0 })));
-  tiles.sort((a, b) => (b.first - a.first));
-  // One featured photo (2x2) plus 4 or 8 small ones fills whole rows on both the 4- and 2-column layouts.
-  const shown = tiles.slice(0, tiles.length >= 9 ? 9 : tiles.length >= 5 ? 5 : tiles.length);
+  const shown = homeWork();
   if (!shown.length) {
     return state.ownerUnlocked
       ? `<div class="card"><h3 class="card-title">My Work</h3><div class="field-help">Your photo gallery shows here once you add designs with photos in Owner → Gallery. Customers don't see this note.</div></div>`
       : '';
   }
-  return `<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-      <h2 class="section-title" style="font-size:20px;">My Work</h2>
-      <button class="btn-link" type="button" onclick="setTab('gallery')">See all ${esc(GALLERY_NAME)} →</button>
+  return `<div class="card home-work-card">
+    <h2 class="section-title" style="font-size:20px;margin-bottom:12px;">My Work</h2>
+    <div class="work-grid">
+      ${shown.map(g => `<button class="work-card" type="button" onclick="openWork('${esc(g.id)}')">
+        <span class="work-card-photo">${thumbImg(g.photos[0], '', 'text')}</span>
+        <span class="work-card-name">${esc(g.title)}</span>
+      </button>`).join('')}
+      <button class="work-card work-more" type="button" onclick="setTab('gallery')" aria-label="See more: all ${esc(GALLERY_NAME)}">
+        <span class="work-card-photo work-more-box">SEE MORE</span>
+        <span class="work-card-name" aria-hidden="true">&nbsp;</span>
+      </button>
     </div>
-    <div class="home-gallery ${shown.length < 5 ? 'compact' : ''}" style="${shown.length < 5 ? `--cols:${shown.length}` : ''}">${shown.map((t, i) => `
-      <button class="work-tile ${i === 0 && shown.length >= 5 ? 'featured' : ''}" type="button" onclick="openWork('${esc(t.g.id)}')" aria-label="${esc(t.g.title)}${t.n ? `, photo ${t.n + 1}` : ''}">
-        ${thumbImg(t.photo, '', 'tile')}
-        ${t.first ? `<span>${esc(t.g.title)}</span>` : ''}
-      </button>`).join('')}</div>
   </div>`;
 }
 
@@ -3064,7 +3070,7 @@ function galleryPrice(g) {
 
 async function loadGallery() {
   try {
-    const rows = await supaFetch('/gallery_items?select=id,data,published,sort_order&order=sort_order.asc,created_at.desc');
+    const rows = await supaFetch('/gallery_items?select=id,data,published,sort_order,created_at&order=sort_order.asc,created_at.desc');
     state.gallery = (rows || []).map(cleanGalleryItem).filter(Boolean);
     state.galleryError = false;
   } catch (e) {
