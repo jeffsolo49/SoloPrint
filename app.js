@@ -124,6 +124,7 @@ async function loadBatches(filterEmail = '') {
       ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
+    if (!email) await loadOwnerPrivate();
     state.synced = true;
   } catch(e) {
     console.error('Load error:', e);
@@ -180,13 +181,6 @@ function calcPerPrint(mins, grams, filType) {
   return 2 + mins * 0.024 + grams * rate;
 }
 
-// Every color in a print: the main one plus any extra colors. Leftover-roll colors are filType 'leftover'.
-function itemParts(it) {
-  const main = it.filType === 'special_order'
-    ? { name: it.specialColor || '', filType: it.useLeftover ? 'leftover' : 'special_order', leftoverFrom: it.useLeftover ? it.leftoverFrom : '' }
-    : { name: it.color || FIL_LABEL[it.filType] || 'Black', filType: it.filType, colorId: it.colorId };
-  return [main, ...(Array.isArray(it.extraColors) ? it.extraColors : [])];
-}
 // Multi-color prints split the grams evenly between their colors for pricing.
 function itemRate(it) {
   const parts = itemParts(it);
@@ -468,6 +462,9 @@ function normalizeBatch(batch) {
     deliveryNotes: cleanText(batch.deliveryNotes),
     deliveryTracking: cleanText(batch.deliveryTracking, 200),
     deliveryDate: cleanText(batch.deliveryDate, 100),
+    finishedPhotos: (Array.isArray(batch.finishedPhotos) ? batch.finishedPhotos : []).map(safeImageUrl).filter(Boolean).slice(0, 6),
+    stockTaken: batch.stockTaken === true,
+    paidAt: cleanIso(batch.paidAt),
     specialOrderCost: Number.isFinite(Number(batch.specialOrderCost)) && batch.specialOrderCost !== null && batch.specialOrderCost !== '' && Number(batch.specialOrderCost) >= 0
       ? Math.min(Number(batch.specialOrderCost), 1000) : null,
     items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
@@ -1161,6 +1158,8 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Site Settings</button>
       <button class="nav-tab ${state.ownerTab==='emails'?'active':''}" onclick="setOwnerTab('emails')">Emails</button>
+      <button class="nav-tab ${state.ownerTab==='filament'?'active':''}" onclick="setOwnerTab('filament')">Filament${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money</button>
       <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
@@ -1223,6 +1222,7 @@ function renderReviews(reviews, title = 'What customers say') {
 function renderSubmitTab() {
   const items = state.draftItems;
   return `
+    ${renderVacationBanner()}
     ${renderAboutCard()}
     ${renderRecentWork()}
     ${renderHowItWorks()}
@@ -1275,51 +1275,8 @@ function renderSubmitTab() {
 // 1 kg roll for the order; the customer pays for the roll instead of per gram.
 const SPECIAL_ORDER_TYPICAL = 20;
 const SPECIAL_ORDER_POLICY = `Special orders are for a color or material I don't carry, like Red TPU. Filament only comes in full 1 kg rolls, so I order a whole roll for your print. The roll (usually about $${SPECIAL_ORDER_TYPICAL}; the exact amount is in your quote) replaces the material charge. The rest of the roll is yours for 2 months: place another order with it and the material is free. After 2 months, I keep any leftover.`;
-function isSpecialOrder(item) {
-  return item.filType === 'special_order';
-}
-// Items printed from the customer's leftover roll don't buy a new one.
-function usesSpecialSpool(item) {
-  return isSpecialOrder(item) && !item.useLeftover;
-}
 
-// Leftover rolls: a roll is bought when the owner confirms a special order. For 2 months the customer can
-// print more in that same color/material from it, up to 1000 g in all (the first order included).
-const ROLL_GRAMS = 1000;
-function colorKey(text) { return String(text || '').trim().toLowerCase().replace(/\s+/g, ' '); }
-function itemGrams(it) { return (Number(it.grams) || 0) * Math.max(1, Number(it.qty) || 1); }
-function rollExpiry(iso) { const d = new Date(iso); d.setMonth(d.getMonth() + 2); return d.toISOString(); }
-function fmtShortDate(iso) { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
-
-function leftoverRolls(batches, excludeId = '') {
-  const rolls = [];
-  batches.forEach(b => {
-    if (phaseIndex(b.phase || 'estimate') < phaseIndex('order_received')) return;
-    const boughtAt = (b.phaseHistory || {}).order_received || b.createdAt;
-    b.items.filter(usesSpecialSpool).forEach(it => {
-      const key = colorKey(it.specialColor);
-      if (!key) return;
-      let roll = rolls.find(r => r.orderId === b.id && r.key === key);
-      if (!roll) rolls.push(roll = { orderId: b.id, key, color: it.specialColor, email: colorKey(b.clientEmail), boughtAt, expiresAt: rollExpiry(boughtAt), used: 0 });
-      roll.used += partGrams(it);
-    });
-  });
-  batches.forEach(b => {
-    if (b.id === excludeId) return;
-    b.items.forEach(it => rollParts(it).forEach(p => {
-      const roll = findRoll(rolls, b.clientEmail, p);
-      if (roll) roll.used += partGrams(it);
-    }));
-  });
-  rolls.forEach(r => { r.left = Math.max(0, ROLL_GRAMS - r.used); });
-  return rolls;
-}
-function findRoll(rolls, email, part) {
-  return rolls.find(r => r.orderId === part.leftoverFrom && r.key === colorKey(part.name) && r.email === colorKey(email));
-}
-function rollParts(it) { return itemParts(it).filter(p => p.filType === 'leftover'); }
-function usesRolls(it) { return isSpecialOrder(it) || rollParts(it).length > 0; }
-function partGrams(it) { return itemGrams(it) / itemParts(it).length; }
+// Leftover-roll logic (leftoverRolls, findRoll, itemParts...) is shared with the emails: see email-templates.js.
 
 // Problems with an order's leftover-roll colors, for the owner to see before quoting: one list per item.
 function leftoverChecks(b) {
@@ -1408,7 +1365,7 @@ function renderSpecialOrderBox(item, i) {
 
 // With owner colors set up, every item has one picked: the matching Black/White, else the first color.
 function ensureItemColor(item) {
-  const colors = state.settings.colors;
+  const colors = customerColors();
   if (!colors.length || item.colorId || isSpecialOrder(item)) return;
   const c = colors.find(x => x.name.toLowerCase() === (FIL_LABEL[item.filType] || '').toLowerCase() && !x.special) || colors.find(x => !x.special) || colors[0];
   item.colorId = c.id;
@@ -1418,7 +1375,7 @@ function ensureItemColor(item) {
 
 function renderFilamentPills(i, current) {
   const item = state.draftItems[i] || {};
-  const colors = state.settings.colors;
+  const colors = customerColors();
   ensureItemColor(item);
   // An extra color that is now the main color isn't an extra any more.
   const main = itemParts(item)[0];
@@ -1447,7 +1404,7 @@ function renderFilamentPills(i, current) {
 
 // Colors a customer can add to a multi-color print: stocked colors, plus their leftover rolls.
 function stockedColors() {
-  const colors = state.settings.colors;
+  const colors = customerColors();
   return colors.length
     ? colors.map(c => ({ name: c.name, colorId: c.id, filType: c.special ? 'special' : 'color', hex: c.hex }))
     : [{ name: 'Black', colorId: '', filType: 'black', hex: '#1e1e24' }, { name: 'White', colorId: '', filType: 'white', hex: '#f4f4f4' }];
@@ -1501,7 +1458,7 @@ function toggleExtraColor(i, n) {
 function pickColor(i, colorId) {
   const item = state.draftItems[i];
   if (!item) return;
-  const c = state.settings.colors.find(x => x.id === colorId);
+  const c = customerColors().find(x => x.id === colorId);
   item.colorId = c ? c.id : '';
   item.color = c ? c.name : '';
   item.filType = c ? (c.special ? 'special' : 'color') : 'special_order';
@@ -1650,7 +1607,7 @@ function renderItemBlock(item, i) {
       ${mode === 'idea' ? `
         <div class="field" style="margin-bottom:8px;">
           <label>Describe your idea</label>
-          <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom design work is free for veterans.</div>
+          <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to.</div>
           <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
@@ -1760,6 +1717,8 @@ function renderMyJobsTab() {
       </div>
       <div class="alert error" id="history-err"></div>
     </div>
+    ${renderReviewForm()}
+    ${renderRollsCard()}
     ${[...state.batches].reverse().map(b => {
       const phase = b.phase || 'estimate';
       const allDone = b.items.every(it => it.minutes && it.grams);
@@ -1774,6 +1733,7 @@ function renderMyJobsTab() {
         </div>
         <div class="job-divider"></div>
         ${renderOrderTracker(b)}
+        ${renderFinishedPhotos(b)}
         ${b.items.map(it => {
           const ip = it.minutes ? calcTotal(it.minutes, it.grams, it, it.qty) : null;
           const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it) : null;
@@ -1801,6 +1761,7 @@ function renderMyJobsTab() {
         }).join('')}
         ${total!==null && specialOrderCost(b) ? `<div class="sub-item"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="sub-item-name">Special order roll (1 kg)</div><div class="sub-item-price">$${specialOrderCost(b).toFixed(2)}</div></div></div>` : ''}
         ${total!==null?`<div class="total-box"><span class="total-label">Total estimate</span><span class="total-price">$${total.toFixed(2)}</span></div>`:''}
+        ${renderCustomerOrderExtras(b)}
       </div>`;
     }).join('')}`;
 }
@@ -1835,12 +1796,16 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', filament: 'Filament', money: 'Money', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${state.ownerTab === 'settings'
         ? renderOwnerSettingsPage()
         : state.ownerTab === 'emails'
         ? renderOwnerEmailsPage()
+        : state.ownerTab === 'filament'
+        ? renderOwnerFilamentPage()
+        : state.ownerTab === 'money'
+        ? renderOwnerMoneyPage()
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'library'
@@ -1869,6 +1834,7 @@ function renderOwnerDashboard() {
       </div>
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
+      ${renderStockAlerts()}
       <div class="stats-row">
         <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
         <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
@@ -2280,6 +2246,7 @@ function renderOwnerBatch(b) {
       ` : ``}
       <button class="btn-secondary" onclick="resetBatch('${b.id}')" style="margin-top:0.75rem;">Edit Quotes</button>
     `}
+    ${renderOwnerExtras(b)}
   </div>`;
 }
 
@@ -2371,10 +2338,10 @@ async function showClientView() {
 }
 function setOwnerTab(tab) {
   state.ownerTab = tab;
-  if (tab === 'analytics' && !state.ownerHistoryAll) { loadAllOrders(); return; }
+  if ((tab === 'analytics' || tab === 'money') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
-  if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery()]).then(render); }
+  if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
   if (tab === 'emails') { state.emailsDraft = null; loadSettings().then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
@@ -2445,9 +2412,9 @@ async function lookupMyRequests() {
 // ── SITE SETTINGS ─────────────────────────────────────────────────────────
 // One row in site_settings (supabase/site-settings.sql): anyone can read it, only the owner edits it
 // from the Site Settings tab. Everything has a default so the site works before it's filled in.
-const DEFAULT_ABOUT = "I'm a veteran spouse who does 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life, and design work is free for veterans: I only charge for material and print time.";
+const DEFAULT_ABOUT = "I do 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life: send me a model link or describe your idea, and I'll get back to you with a quote.";
 function blankSettings() {
-  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {} };
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' } };
 }
 
 // Only the parts the owner changed are kept, so improvements to the default text still reach them.
@@ -2484,7 +2451,8 @@ function cleanSettings(raw) {
       id: /^[a-z0-9-]{1,40}$/.test(String(c && c.id)) ? c.id : '',
       name: cleanText(c && c.name, 40).trim(),
       hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) ? c.hex : '#888888',
-      special: !!(c && c.special)
+      special: !!(c && c.special),
+      outOfStock: !!(c && c.outOfStock)
     })).filter(c => c.id && c.name).sort(byName),
     reviews: (Array.isArray(d.reviews) ? d.reviews : []).slice(0, 40).map(r => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(r && r.id)) ? r.id : '',
@@ -2492,7 +2460,12 @@ function cleanSettings(raw) {
       text: cleanText(r && r.text, 600).trim(),
       designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : ''
     })).filter(r => r.id && r.text),
-    emails: cleanEmails(d.emails)
+    emails: cleanEmails(d.emails),
+    vacation: {
+      on: !!(d.vacation && d.vacation.on),
+      until: cleanText(d.vacation && d.vacation.until, 60).trim(),
+      message: cleanText(d.vacation && d.vacation.message, 300).trim()
+    }
   };
 }
 
@@ -2608,11 +2581,15 @@ const EMAIL_SAMPLE = {
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
   venmoLink: `https://venmo.com/${VENMO_USERNAME}?txn=pay&amount=15.68`,
   orderLink: 'https://soloprint.vercel.app/?requests=jane%40example.com#order-1729',
-  delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup'
+  delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup',
+  photo: `${SUPA_URL}/storage/v1/object/public/gallery/orders/1729-photo.jpg`,
+  reviewLink: 'https://soloprint.vercel.app/?requests=jane%40example.com&review=1729#order-1729',
+  rollColor: 'Red TPU', rollGrams: '500', rollExpires: 'Dec 21', siteLink: 'https://soloprint.vercel.app',
+  weekSales: '64.50', waitingQuote: '2', waitingApproval: '1', unpaid: '1', printing: '1', newReviews: '1', lowStock: 'Black (150 g)'
 };
 
 function emailPreview(key) {
-  const vars = { ...EMAIL_SAMPLE };
+  const vars = { ...EMAIL_SAMPLE, vacationNote: vacationText(state.settings.vacation) };
   vars.footer = renderEmailText(emailTemplate('footer', state.emailsDraft).body, vars);
   const t = emailTemplate(key, state.emailsDraft);
   return { subject: renderEmailText(t.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, vars) };
@@ -2776,8 +2753,10 @@ function renderOwnerSettingsPage() {
       <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
       ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
     </div>
+    ${renderVacationSettings(d)}
     <div class="card">
       <h3 class="card-title">Customer reviews</h3>
+      ${renderReviewApprovals()}
       <div class="field-help">Add real reviews customers have given you, with their permission. They show on the home page, and on a design's page if you link them to it.</div>
       ${d.reviews.map((r, n) => `
         <div class="item-block" style="margin-bottom:10px;">
@@ -3514,7 +3493,10 @@ function handleRequestsLink() {
   const email = String(params.get('requests') || '').trim().toLowerCase();
   if (!email || !email.includes('@') || email.length > 200) return '';
   const order = (String(location.hash).match(/^#order-([A-Za-z0-9_-]{1,64})$/) || [])[1] || '';
+  const review = String(params.get('review') || '');
+  if (/^[A-Za-z0-9_-]{1,64}$/.test(review)) state.reviewFor = { id: review, email, sent: false };
   params.delete('requests');
+  params.delete('review');
   history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : ''));
   state.historyEmail = email;
   persistClientHistoryEmail();
@@ -4037,6 +4019,7 @@ async function updateBatchPhase(batchId, phase) {
   b.phase = phase;
   b.status = phase === 'estimate' ? 'pending' : 'quoted';
   stampPhase(b, phase);
+  if (phase === 'production') await adjustStockForOrder(b, true);
   await upsertBatch(b);
   render();
 }
@@ -4051,6 +4034,7 @@ async function updatePaymentStatus(batchId, paymentStatus) {
     return;
   }
   b.paymentStatus = paymentStatus;
+  if (paymentStatus === 'payment_recieved' && !b.paidAt) b.paidAt = new Date().toISOString();
   await upsertBatch(b);
   render();
 }
@@ -4218,6 +4202,7 @@ async function resetBatch(batchId) {
   b.reminderSentAt = '';
   b.phaseHistory = { estimate: (b.phaseHistory || {}).estimate || b.createdAt };
   b.items.forEach(it => it.minutes = null);
+  await adjustStockForOrder(b, false);
   await upsertBatch(b);
   render();
 }

@@ -20,6 +20,7 @@ for pass in 1 2; do
   run -c "$email_sql"
   run -f ../../supabase/library-and-backups.sql
   run -f ../../supabase/site-settings.sql
+  run -f ../../supabase/owner-tools.sql
 done
 psql -q -X -v ON_ERROR_STOP=1 -o /dev/null -d "$DB" -f checks.sql
 rm -f /tmp/stubs.$$.sql
