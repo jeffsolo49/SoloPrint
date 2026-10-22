@@ -1539,11 +1539,12 @@ function renderCustomerPricePreview(item) {
   </div>`;
 }
 
+// A new, empty item starts on "Something from my past work" (the first choice).
 function inferMode(item) {
   if (item.mode) return item.mode;
   if (item.link && isWebUrl(item.link)) return 'link';
   if (item.link || item.notes || item.name) return 'idea';
-  return '';
+  return 'gallery';
 }
 
 // Picking one of the three choices shows its form below the choices. Switching keeps what was typed under

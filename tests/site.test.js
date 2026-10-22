@@ -743,6 +743,7 @@ const STATES = {
     const page = await open(fixtures());
     const order = await page.$$eval('.mode-title', ts => ts.map(t => t.textContent));
     assert(order.join() === 'Something from my past work,I have a link,I have an idea', `choice order ${order}`);
+    assert(await page.$('.mode-option.selected:has-text("Something from my past work")') && await page.$('.gallery-pick-tile'), 'past work should be picked to start with, showing the designs');
     await page.click('text=I have an idea');
     assert(await page.$('.mode-option.selected[aria-pressed="true"]:has-text("I have an idea")') && await page.$('#mode-form-0 #notes-0'), 'idea form not shown below the choices');
     assert(!(await page.$('text=Change')), 'the old Change link is still there');
