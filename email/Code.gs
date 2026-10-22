@@ -492,6 +492,7 @@ function emailVars(rec, custom, site) {
     amountDue: unpaid ? money(total) : '',
     venmoLink: unpaid ? venmoUrl(rec, total, rules) : '',
     materialNote: (site && site.materialNote) || DEFAULT_MATERIAL_NOTE,
+    designTermsNote: rec.designTerms ? 'This order includes a custom design. When you approve your quote, you will be asked to read and agree to my custom design terms.' : '',
     orderLink: orderLink(rec),
     delivery: deliveryLines(rec).filter(Boolean).join('\n'),
     photo: (Array.isArray(rec.finishedPhotos) ? rec.finishedPhotos : []).filter(u => /^https:\/\//.test(String(u)))[0] || '',
@@ -547,7 +548,7 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\nTotal: ${total}\n{materialNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
@@ -622,6 +623,7 @@ const EMAIL_PLACEHOLDERS = {
   orderLink: "Link to the customer's order on the site",
   delivery: 'Delivery date, tracking or pickup, and notes',
   materialNote: 'Your material note from Site Settings (e.g. "All prints are PLA...")',
+  designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
   photo: 'Link to the first finished-print photo you added',
   vacationNote: 'Your vacation message, only while vacation mode is on',
   reviewLink: 'Link where the customer writes their review',
@@ -687,6 +689,17 @@ const RULE_DEFAULTS = {
 const LEGACY_RATES = { baseFee: 2, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034 };
 const RATE_KEYS = ['baseFee', 'minuteRate', 'gramRate', 'specialGramRate'];
 const DEFAULT_MATERIAL_NOTE = 'All prints are PLA unless noted or requested.';
+// Terms a customer agrees to before approving a quote that includes a custom design (editable in Site
+// Settings -> Wording; each quote keeps the exact text it was sent with).
+const DEFAULT_DESIGN_TERMS = [
+  'Custom design terms',
+  '',
+  '1. Free design work. I design your item without charging for the design time. You pay only for the print (print time, material and any special order roll), as quoted.',
+  '2. Who owns what. I own the design and its files, including any changes I make to it later. You own the printed item(s) you buy.',
+  '3. My right to sell it. In exchange for the free design work, I may make, sell and share prints of the design, and keep changing and improving it, now and in the future. Personal details you give me (like a name added to your print) are not included in anything I sell.',
+  '4. How the item is used. You are responsible for how the item is used. 3D prints are not tested or certified for safety, food contact, heavy loads, medical use or use by young children. To the extent the law allows, I am not responsible for any injury, damage or loss caused by how the item is used.',
+  '5. Agreeing. Approving your quote means you agree to these terms for this order.'
+].join('\n');
 
 // Keeps only valid values: numbers from 0 to 100000, and a Venmo username of letters, numbers, - or _.
 function cleanRules(raw) {

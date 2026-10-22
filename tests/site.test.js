@@ -145,6 +145,7 @@ const STATES = {
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
   'home with a multi-color print': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); })()",
   'home with color info': "(() => { state.settings.colors[2].description = 'Shimmery gold'; state.settings.colors[2].link = 'https://example.com/silk'; state.draftItems[0].mode = 'idea'; pickColor(0, 'silk'); render(); })()",
+  'quote with design terms': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.batches.find(b => b.id === '1').designTerms = DEFAULT_DESIGN_TERMS; state.clientTab = 'jobs'; render(); })()",
   'home picking past work': "(async () => { await loadGallery(); setItemMode(0, 'gallery'); })()",
   'home with a special order color': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A vase'); pickColor(0, ''); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
@@ -819,6 +820,34 @@ const STATES = {
     await customer.click('.swatch-pill:has-text("Red")');
     assert(!(await customer.$('.color-info a')), 'an unsafe link was shown');
     await customer.close();
+  });
+  await check('custom designs: the customer must agree to the design terms before approving', async () => {
+    const db = fixtures();
+    db.jobs['c1'] = { id: 'c1', clientName: 'Jane', clientEmail: 'jane@example.com', createdAt: ago(60), phase: 'estimate',
+      items: [{ name: 'Brush holder', mode: 'idea', notes: 'Holds three brushes', qty: 1, filType: 'black', grams: 30 }] };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    assert(await owner.isChecked('#terms-c1'), 'terms should be on by default for a custom design');
+    await owner.fill('#hours-c1-0', '1');
+    await owner.click('#approve-btn-c1');
+    await owner.waitForTimeout(300);
+    assert(/Custom design terms/.test(db.jobs['c1'].designTerms) && /I own the design/.test(db.jobs['c1'].designTerms), 'terms not saved on the quote');
+    await owner.close();
+    const page = await open(db);
+    await page.evaluate(STATES['my requests']);
+    assert(/I may make, sell and share prints of the design/.test(await page.textContent('#order-c1 .design-terms-text')), 'terms not shown to the customer');
+    await page.click('#customer-approve-c1');
+    await page.waitForTimeout(300);
+    assert(!db.jobs['c1'].customerApprovedAt && /tick the box/.test(await page.textContent('#terms-err-c1')), 'approved without agreeing');
+    await page.check('#terms-agree-c1');
+    await page.click('#customer-approve-c1');
+    await page.waitForSelector('text=We got your go-ahead');
+    assert(db.jobs['c1'].customerApprovedAt, 'approval not saved after agreeing');
+    await page.close();
+    const after = await open(db);
+    await after.evaluate(asOwner('dashboard'));
+    assert(/Agreed to design terms/.test(await after.textContent('#order-c1')), 'owner does not see the agreement');
+    await after.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');

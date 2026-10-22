@@ -79,6 +79,12 @@ check('Code.gs carries an exact copy of email-templates.js', () => {
   const end = CODE.indexOf('// ── END SHARED EMAIL TEMPLATES');
   assert(start > 0 && end > start && CODE.slice(start, end) === shared, 'copy the whole of email-templates.js into Code.gs between the markers');
 });
+check('quotes with a custom design mention the design terms', () => {
+  const withTerms = emailsFor('UPDATE', at({ phase: 'quote_sent', designTerms: 'Custom design terms...' }), at({}))[0].body;
+  assert(withTerms.includes('you will be asked to read and agree to my custom design terms'), withTerms);
+  const without = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
+  assert(!without.includes('design terms'), without);
+});
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);

@@ -293,6 +293,11 @@ function renderCustomerOrderAction(batch) {
       return `<div class="order-action"><strong>Thanks!</strong> We got your go-ahead and will confirm your order soon.</div>`;
     }
     return `<div class="order-action">
+      ${batch.designTerms ? `<div class="design-terms">
+        <div class="design-terms-text" tabindex="0" role="region" aria-label="Custom design terms">${esc(batch.designTerms)}</div>
+        <label class="special-order-check" style="font-size:14px;"><input type="checkbox" id="terms-agree-${esc(batch.id)}" /> I have read and agree to the custom design terms</label>
+        <div class="alert error" id="terms-err-${esc(batch.id)}"></div>
+      </div>` : ''}
       <button class="btn-primary" id="customer-approve-${esc(batch.id)}" type="button" onclick="customerApproveQuote('${esc(batch.id)}')">Looks good, I'd like to order</button>
       <div class="order-action-sub">Nothing is charged yet. We'll confirm we can make your order before asking for payment.</div>
     </div>`;
@@ -312,6 +317,12 @@ function renderCustomerOrderAction(batch) {
 }
 
 async function customerApproveQuote(batchId) {
+  const agree = document.getElementById(`terms-agree-${batchId}`);
+  if (agree && !agree.checked) {
+    showAlert(`terms-err-${batchId}`, 'Please read the custom design terms and tick the box to agree before approving.', 'error');
+    agree.focus();
+    return;
+  }
   const btn = document.getElementById(`customer-approve-${batchId}`);
   if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
   await loadBatches(state.historyEmail);
@@ -495,6 +506,7 @@ function normalizeBatch(batch) {
     stockTaken: batch.stockTaken === true,
     paidAt: cleanIso(batch.paidAt),
     rates: quoteRates(cleanRules(batch.rates)),
+    designTerms: cleanText(batch.designTerms, 4000),
     specialOrderCost: Number.isFinite(Number(batch.specialOrderCost)) && batch.specialOrderCost !== null && batch.specialOrderCost !== '' && Number(batch.specialOrderCost) >= 0
       ? Math.min(Number(batch.specialOrderCost), 1000) : null,
     items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
@@ -1230,6 +1242,8 @@ const DEFAULT_HOW_IT_WORKS = [
   { title: 'I print it, you pay', text: 'I confirm the order, print it, and you pay by Venmo. Follow every step under My Requests.' }
 ];
 function materialNote() { return state.settings.materialNote || DEFAULT_MATERIAL_NOTE; }
+function designTermsText() { return state.settings.designTerms || DEFAULT_DESIGN_TERMS; }
+function hasCustomDesign(b) { return b.items.some(it => inferMode(it) === 'idea'); }
 
 function renderHowItWorks() {
   const steps = (state.settings.howItWorks && state.settings.howItWorks.length ? state.settings.howItWorks : DEFAULT_HOW_IT_WORKS)
@@ -1719,8 +1733,8 @@ function renderItemBlock(item, i) {
         ${renderPhotoField(item, i)}` : ''}
       ${mode === 'idea' ? `
         <div class="field" style="margin-bottom:8px;">
-          <label>Describe your idea</label>
-          <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to.</div>
+          <label for="notes-${i}">Describe your idea</label>
+          <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom designs come with my design terms, which you'll see with your quote.</div>
           <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
@@ -2259,6 +2273,7 @@ function renderOwnerBatch(b) {
         <span class="status ${phase}">${phaseLabel(phase)}</span>
         <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
         ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
+        ${b.designTerms && phase !== 'estimate' ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
         <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
       </div>
     </div>
@@ -2325,8 +2340,10 @@ function renderOwnerBatch(b) {
         <div class="field special-order">
           <label for="special-cost-${b.id}">Special order roll cost ($)</label>
           <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? currentRules().rollCost : specialOrderCost(b)).toFixed(2)}" />
-          <div class="field-help">The full ${fmtRoll(currentRules().rollGrams)} roll, charged instead of material. Usually about $${currentRules().rollCost}. Use 0 when they're printing from their own leftover roll (within 2 months).</div>
+          <div class="field-help">The full ${fmtRoll(currentRules().rollGrams)} roll, charged instead of material. Usually about $${currentRules().rollCost}. Use 0 when they're printing from their own leftover roll (within ${currentRules().rollMonths} months).</div>
         </div>` : ''}
+      <label class="special-order-check" style="font-size:14px;margin-top:10px;"><input type="checkbox" id="terms-${b.id}" ${hasCustomDesign(b) ? 'checked' : ''} />
+        Custom design: the customer must agree to my design terms before approving</label>
       <div class="alert error" id="batch-err-${b.id}"></div>
       <div class="alert success" id="batch-ok-${b.id}"></div>
       <button class="btn-primary" id="approve-btn-${b.id}" onclick="approveBatch('${b.id}')" style="margin-top:1rem;">
@@ -2528,7 +2545,7 @@ async function lookupMyRequests() {
 // from the Site Settings tab. Everything has a default so the site works before it's filled in.
 const DEFAULT_ABOUT = "I do 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life: send me a model link or describe your idea, and I'll get back to you with a quote.";
 function blankSettings() {
-  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [] };
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [], designTerms: '' };
 }
 
 // Only the parts the owner changed are kept, so improvements to the default text still reach them.
@@ -2579,6 +2596,7 @@ function cleanSettings(raw) {
     emails: cleanEmails(d.emails),
     rules: cleanRules(d.rules),
     materialNote: cleanText(d.materialNote, 200).trim(),
+    designTerms: cleanText(d.designTerms, 4000).trim(),
     howItWorks: (Array.isArray(d.howItWorks) ? d.howItWorks : []).slice(0, 6)
       .map(s => ({ title: cleanText(s && s.title, 80).trim(), text: cleanText(s && s.text, 300).trim() })).filter(s => s.title),
     vacation: {
@@ -4293,6 +4311,8 @@ async function approveBatch(batchId) {
   });
   if (!allValid) { showAlert(`batch-err-${batchId}`, 'Please fill in print time and grams for every item.', 'error'); return; }
   const costInput = document.getElementById(`special-cost-${batchId}`);
+  const termsBox = document.getElementById(`terms-${batchId}`);
+  batch.designTerms = (termsBox ? termsBox.checked : hasCustomDesign(batch)) ? designTermsText() : '';
   if (costInput) {
     const cost = parseFloat(costInput.value);
     if (!Number.isFinite(cost) || cost < 0) { showAlert(`batch-err-${batchId}`, 'Enter the special order color cost (0 or more).', 'error'); return; }

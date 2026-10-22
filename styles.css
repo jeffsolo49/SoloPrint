@@ -685,3 +685,5 @@ textarea { resize: vertical; min-height: 70px; }
   .gallery-card .gallery-thumbs { display: none; }
   .gallery-card .gallery-body { padding: 10px 12px; min-width: 0; }
 }
+.design-terms { text-align: left; margin-bottom: 12px; }
+.design-terms-text { white-space: pre-wrap; max-height: 220px; overflow-y: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 13px; line-height: 1.55; margin-bottom: 10px; }
