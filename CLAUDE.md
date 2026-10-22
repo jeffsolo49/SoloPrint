@@ -71,7 +71,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 Run all three before pushing (CI runs the same on every push):
 
 ```bash
-cd tests && npm install   # once per session
+cd tests && npm install   # done for you at session start by .claude/hooks/session-start.sh
 CHROMIUM_PATH=/opt/pw-browsers/chromium node site.test.js   # pages, axe accessibility, phone widths, features
 node email.test.js                                         # Code.gs and Loader.gs with Google stubbed
 # Database rules, against a scratch Postgres 16:
@@ -87,8 +87,9 @@ for new tables. `STATES` lists the pages checked for accessibility and sideways 
 
 1. `git fetch origin main && git checkout -B <your claude/ branch> origin/main` (merged branches restart from main).
 2. Make the change, run the checks, commit, push.
-3. Wait for CI (public repo: `curl -s "https://api.github.com/repos/jeffsolo49/soloprint/actions/runs?head_sha=$SHA"`),
-   open a PR and merge it (GitHub MCP tools).
+3. Open a PR and turn on auto-merge for it (GitHub MCP `enable_pr_auto_merge`, merge method "merge"), then
+   stop: a ruleset on `main` requires the `site-and-email` and `database` checks, and GitHub merges by itself
+   once they pass. No need to poll CI. If a check fails, the PR stays open; fix and push to the same branch.
 4. Vercel publishes `main` (project "project-jfaha", https://soloprint.vercel.app; `claude/*` branches don't
    build). Confirm production is the new commit:
    `curl -s "https://api.github.com/repos/jeffsolo49/soloprint/deployments?environment=Production&per_page=1"`.
