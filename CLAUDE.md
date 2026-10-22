@@ -50,7 +50,9 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `paymentStatus` (unpaid → payment_requested → payment_recieved, spelling is historical), `rates` (prices
   saved when the quote was sent), `designTerms` (custom design terms text the customer must agree to before approving), `specialOrderCost`, `finishedPhotos`, `stockTaken`, `paidAt`.
 - Items: `filType` black/white/color/special/special_order; `colorId`/`color`; `specialColor`,
-  `useLeftover`, `leftoverFrom`; `extraColors` (multi-color prints).
+  `useLeftover`, `leftoverFrom`; `extraColors` (multi-color prints); `galleryId` and `setPrice` (a past-work design's set
+  price, which replaces the calculation; re-read from the gallery when the owner quotes, never trusted from the customer).
+- Gallery items (`gallery_items.data`): title, description, photos, filType, minutes, grams, `price` (optional set price).
 
 ## Rules that are easy to break
 

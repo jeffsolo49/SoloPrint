@@ -743,8 +743,16 @@ function colorsRate(item, rules) {
   const parts = itemParts(item);
   return parts.reduce((s, p) => s + filamentRate(p.filType, rules), 0) / parts.length;
 }
+// A past-work design the owner gave a set price: that price per print, no calculation.
+function setPriceOf(item) {
+  const n = Number(item && typeof item === 'object' ? item.setPrice : NaN);
+  return isFinite(n) && n > 0 ? n : 0;
+}
+// Ready to price: a set price, or print time and grams.
+function itemPriced(item) { return setPriceOf(item) > 0 || !!(item && item.minutes && item.grams); }
 // Price of one print. `colors` is an item (all its colors) or a single filament type.
 function printPrice(minutes, grams, colors, rules) {
+  if (setPriceOf(colors)) return setPriceOf(colors);
   const rate = colors && typeof colors === 'object' ? colorsRate(colors, rules) : filamentRate(colors, rules);
   return rules.baseFee + Number(minutes) * rules.minuteRate + Number(grams) * rate;
 }
@@ -842,7 +850,7 @@ function itemLines(rec, withPrices, site) {
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
     const extras = extraColors(it);
     if (extras.length) lines.push(`   Also: ${extras.map(p => p.name + (p.filType === 'leftover' ? ' (leftover roll)' : '')).join(', ')}`);
-    if (withPrices && it.minutes && it.grams) {
+    if (withPrices && itemPriced(it)) {
       const each = printPrice(it.minutes, it.grams, it, rules);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);
     }
@@ -867,7 +875,7 @@ function extraColors(it) {
 
 function orderTotal(rec, site) {
   const items = rec.items || [];
-  if (!items.length || !items.every(it => it.minutes && it.grams)) return 0;
+  if (!items.length || !items.every(itemPriced)) return 0;
   const rules = orderRules(rec, site);
   return items.reduce((s, it) => s + printPrice(it.minutes, it.grams, it, rules) * Math.max(1, parseInt(it.qty, 10) || 1), 0) + rollCharge(rec, rules);
 }

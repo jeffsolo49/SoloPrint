@@ -85,6 +85,10 @@ check('quotes with a custom design mention the design terms', () => {
   const without = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(!without.includes('design terms'), without);
 });
+check('a past-work set price is used as is in the quote email', () => {
+  const [m] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ name: 'Sign', qty: 2, filType: 'black', setPrice: 12 }] }), at({}));
+  assert(m.subject === 'Your SoloPrint quote: $24.00' && m.body.includes('Price: $24.00 ($12.00 each)'), m.subject + '\n' + m.body);
+});
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);
