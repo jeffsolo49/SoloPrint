@@ -2644,10 +2644,13 @@ function renderOwnerEmailsPage() {
     ${Object.entries(EMAIL_TEMPLATES).map(([key, def]) => {
       const t = emailTemplate(key, state.emailsDraft);
       const own = cleanEmails({ [key]: state.emailsDraft[key] })[key];
-      return `<div class="card email-card" id="email-${key}">
+      const usedIn = key === 'footer'
+        ? Object.entries(EMAIL_TEMPLATES).filter(([k]) => emailTemplate(k, state.emailsDraft).body.includes('{footer}')).map(([, d]) => d.label) : [];
+      return `<div class="card email-card${key === 'footer' ? ' email-footer-card' : ''}" id="email-${key}">
         <div class="email-card-head">
           <h3 class="email-card-title">${esc(def.label)}${own ? ' <span class="swatch-note">edited</span>' : ''}</h3>
-          <div class="field-help" style="margin-top:2px;">To: ${esc(def.to)} · ${esc(def.when)}</div>
+          <div class="field-help" style="margin-top:2px;">${key === 'footer' ? '' : `To: ${esc(def.to)} · `}${esc(def.when)}</div>
+          ${key === 'footer' ? `<div class="field-help">Shown at the end of: ${usedIn.length ? esc(usedIn.join(', ')) : 'no emails right now (add {footer} to an email to use it)'}.</div>` : ''}
         </div>
         <div class="email-card-grid">
           <div>
@@ -2656,8 +2659,8 @@ function renderOwnerEmailsPage() {
               <input type="text" id="email-subject-${key}" value="${esc(t.subject)}" maxlength="200" oninput="updateEmailDraft('${key}', 'subject', this.value)" />
             </div>` : ''}
             <div class="field" style="margin-bottom:8px;">
-              <label for="email-body-${key}">Email text</label>
-              <textarea id="email-body-${key}" rows="12" maxlength="5000" oninput="updateEmailDraft('${key}', 'body', this.value)">${esc(t.body)}</textarea>
+              <label for="email-body-${key}">${key === 'footer' ? 'Footer text' : 'Email text'}</label>
+              <textarea id="email-body-${key}" rows="${key === 'footer' ? 6 : 12}" maxlength="5000" oninput="updateEmailDraft('${key}', 'body', this.value)">${esc(t.body)}</textarea>
             </div>
             ${own ? `<button type="button" class="btn-sm" onclick="resetEmail('${key}')">Reset to default</button>` : ''}
           </div>

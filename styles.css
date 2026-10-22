@@ -585,3 +585,4 @@ textarea { resize: vertical; min-height: 70px; }
 .email-placeholders div { display: flex; gap: 8px; align-items: baseline; }
 .email-placeholders dt code { font-family: var(--mono); color: var(--accent); font-weight: 700; }
 .email-placeholders dd { margin: 0; color: var(--muted); }
+.email-footer-card { border-color: var(--border-hover); border-width: 3px; }

@@ -479,7 +479,9 @@ const STATES = {
     await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
     await page.fill('#email-body-footer', 'Thanks!\nJeff');
-    assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'sign-off change should show in other previews');
+    assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'footer change should show in other previews');
+    assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
+    assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
     assert(db.settings.emails.quote.subject === 'Quote for {title}: ${total}' && !db.settings.emails.quote.body, `saved ${JSON.stringify(db.settings.emails)}`);
