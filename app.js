@@ -1242,6 +1242,8 @@ const DEFAULT_HOW_IT_WORKS = [
   { title: 'I print it, you pay', text: 'I confirm the order, print it, and you pay by Venmo. Follow every step under My Requests.' }
 ];
 function materialNote() { return state.settings.materialNote || DEFAULT_MATERIAL_NOTE; }
+const DEFAULT_GALLERY_NOTE = 'Every order is made to your custom specifications.';
+function galleryNote() { return state.settings.galleryNote || DEFAULT_GALLERY_NOTE; }
 function designTermsText() { return state.settings.designTerms || DEFAULT_DESIGN_TERMS; }
 function hasCustomDesign(b) { return b.items.some(it => inferMode(it) === 'idea'); }
 
@@ -2593,6 +2595,7 @@ function cleanSettings(raw) {
     rules: cleanRules(d.rules),
     materialNote: cleanText(d.materialNote, 200).trim(),
     designTerms: cleanText(d.designTerms, 4000).trim(),
+    galleryNote: cleanText(d.galleryNote, 200).trim(),
     topWork: (Array.isArray(d.topWork) ? d.topWork : []).filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(String(id))).slice(0, 5),
     howItWorks: (Array.isArray(d.howItWorks) ? d.howItWorks : []).slice(0, 6)
       .map(s => ({ title: cleanText(s && s.title, 80).trim(), text: cleanText(s && s.text, 300).trim() })).filter(s => s.title),
@@ -3046,12 +3049,12 @@ function renderWorkDetail(g) {
         <div class="job-divider" style="margin:6px 0 14px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
-            <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each</span></div>
+            <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each · automated estimate</span></div>
             <div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>
           </div>
           <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>
         </div>
-        <div class="field-help" style="margin-top:10px;">Price is per item. ${esc(materialNote())} We'll review your request and confirm before asking for payment.</div>` : `
+        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} The price is an automated estimate per item; I'll confirm your quote after reviewing your request. ${esc(materialNote())}</div>` : `
         <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
     </div>
     ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
@@ -3119,7 +3122,7 @@ function renderGalleryTab() {
       </div>
       <div>
         <h2 class="section-title">${esc(GALLERY_NAME)}</h2>
-        <div class="section-sub">Designs we've made before, with the story behind each one. Want one? Tap "Request this".</div>
+        <div class="section-sub">Designs we've made before, with the story behind each one. Want one? Tap "Request this". ${esc(galleryNote())}</div>
       </div>
     </div>`;
   if (!state.galleryLoaded) return `${header}<div class="empty-state"><div class="empty-state-text">Loading...</div></div>`;
@@ -3132,7 +3135,7 @@ function renderGalleryTab() {
         <div class="gallery-body">
           <div class="gallery-title">${esc(g.title || 'Untitled')}</div>
           <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
-          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each</span></div>` : ''}
+          ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">each · automated estimate</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
             ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>` : ''}
@@ -3140,7 +3143,7 @@ function renderGalleryTab() {
         </div>
       </div>`;
     }).join('')}</div>
-    <div class="field-help" style="margin-top:14px;">Prices are per item. We'll review every request and confirm before asking for payment.</div>`;
+    <div class="field-help" style="margin-top:14px;">Prices are automated estimates per item. ${esc(galleryNote())} I'll review every request and confirm the price before asking for payment.</div>`;
 }
 
 // Add a gallery piece to the customer's request form with its known print time and grams.

@@ -102,6 +102,10 @@ function renderWordingSettings(d) {
       <label for="material-note">Material note (on the request form, design pages and quotes)</label>
       <input type="text" id="material-note" value="${esc(d.materialNote || '')}" placeholder="${esc(DEFAULT_MATERIAL_NOTE)}" maxlength="200" oninput="state.settingsDraft.materialNote = this.value" />
     </div>
+    <div class="field">
+      <label for="gallery-note">Past work note (on the Past Work page and each design)</label>
+      <input type="text" id="gallery-note" value="${esc(d.galleryNote || '')}" placeholder="${esc(DEFAULT_GALLERY_NOTE)}" maxlength="200" oninput="state.settingsDraft.galleryNote = this.value" />
+    </div>
     <div class="owner-order-summary-label">"How it works" on the home page</div>
     ${steps.map((step, n) => `<div class="row2 how-edit">
       <div class="field"><label for="how-title-${n}">Step ${n + 1}</label><input type="text" id="how-title-${n}" maxlength="80" value="${esc(step.title)}" oninput="state.settingsDraft.howItWorks[${n}].title = this.value" /></div>

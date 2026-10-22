@@ -39,7 +39,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `customer_approve_quote`, `submit_review`. Anything in an order's data is visible to that customer, so
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
-  `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `topWork`
+  `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
   (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads). Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
@@ -96,6 +96,8 @@ for new tables. `STATES` lists the pages checked for accessibility and sideways 
    stop: a ruleset on `main` requires the `site-and-email` and `database` checks, and GitHub merges by itself
    once they pass. No need to poll CI. If a check fails, the PR stays open; fix and push to the same branch.
    Branches are only checked through their PR, so open the PR right after the first push.
+   GitHub's auto-merge sometimes doesn't fire: if both checks passed and the PR is still open, merge it
+   with `merge_pull_request`.
 4. Vercel publishes `main` (project "project-jfaha", https://soloprint.vercel.app; `claude/*` branches don't
    build). Confirm production is the new commit:
    `curl -s "https://api.github.com/repos/jeffsolo49/soloprint/deployments?environment=Production&per_page=1"`.

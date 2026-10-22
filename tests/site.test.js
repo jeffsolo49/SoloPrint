@@ -881,6 +881,16 @@ const STATES = {
     assert(lines === 1, `the saved note takes ${lines} lines on a phone`);
     await page.close();
   });
+  await check('past work prices say automated estimate, and orders are made to custom specifications', async () => {
+    const page = await open(fixtures());
+    await page.evaluate(STATES['design work']);
+    const list = await page.textContent('main');
+    assert(/each · automated estimate/.test(list) && /made to your custom specifications/.test(list), 'gallery page is missing the notes');
+    await page.evaluate(() => openWork('g1'));
+    const detail = await page.textContent('main');
+    assert(/each · automated estimate/.test(detail) && /made to your custom specifications/.test(detail), 'design page is missing the notes');
+    await page.close();
+  });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
