@@ -1634,9 +1634,9 @@ function renderModeChooser(i, current) {
   return `<div class="field" style="margin-bottom:4px;">
     <div class="mode-question" id="mode-question-${i}">What would you like printed?</div>
     <div class="mode-options">
+      ${opt('gallery', 'Something from my past work', 'Pick a design I have made before', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
       ${opt('link', 'I have a link', 'A model on MakerWorld, Printables or Thingiverse', '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>')}
       ${opt('idea', 'I have an idea', 'Something custom: describe it and I can design it', '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>')}
-      ${opt('gallery', 'Something from my past work', 'Pick a design I have made before', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
     </div>
   </div>`;
 }

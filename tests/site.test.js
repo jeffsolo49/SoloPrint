@@ -741,6 +741,8 @@ const STATES = {
   });
   await check('request form: choices stay on top, the chosen form appears below, switching keeps what was typed', async () => {
     const page = await open(fixtures());
+    const order = await page.$$eval('.mode-title', ts => ts.map(t => t.textContent));
+    assert(order.join() === 'Something from my past work,I have a link,I have an idea', `choice order ${order}`);
     await page.click('text=I have an idea');
     assert(await page.$('.mode-option.selected[aria-pressed="true"]:has-text("I have an idea")') && await page.$('#mode-form-0 #notes-0'), 'idea form not shown below the choices');
     assert(!(await page.$('text=Change')), 'the old Change link is still there');
