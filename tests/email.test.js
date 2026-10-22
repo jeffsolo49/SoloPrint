@@ -148,4 +148,92 @@ check('emails the owner when a backup fails', () => {
   assert(r.error && r.mails.includes('SoloPrint backup failed'), JSON.stringify(r.mails));
 });
 
+console.log('\nLoader (email/Loader.gs):');
+const zlib = require('zlib');
+const LOADER = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Loader.gs'), 'utf8');
+const blob = bytes => ({ bytes: Buffer.from(bytes), getBytes() { return this.bytes; }, getDataAsString() { return this.bytes.toString('utf8'); } });
+const GoogleUtilities = {
+  newBlob: data => blob(data), gzip: b => blob(zlib.gzipSync(b.getBytes())), ungzip: b => blob(zlib.gunzipSync(b.getBytes())),
+  base64Encode: bytes => Buffer.from(bytes).toString('base64'), base64Decode: str => Buffer.from(str, 'base64'),
+  base64EncodeWebSafe: str => Buffer.from(str).toString('base64url'), formatDate: () => '2026-10-22'
+};
+// One Google account: Script properties and cache last between runs; each run() is a fresh execution.
+function google() {
+  const props = { SECRET: '0123456789abcdef0123456789abcdef' }, cache = {}, mails = [], fetches = [];
+  const g = { props, cache, mails, fetches, github: () => CODE, supabase: () => [200, '[]'], failMail: () => false };
+  g.run = (fn, ...args) => {
+    const ctx = {
+      console, Logger: { log() {} }, Utilities: GoogleUtilities, DriveApp: {}, ScriptApp: {},
+      ContentService: { createTextOutput: t => ({ text: t }), MimeType: {} },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), getProperties: () => ({ ...props }), setProperties: v => Object.assign(props, v) }) },
+      CacheService: { getScriptCache: () => ({ get: k => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
+      MailApp: { sendEmail: m => { if (g.failMail(m)) throw new Error('Mail quota exceeded'); mails.push(m); } },
+      UrlFetchApp: { fetch: url => {
+        fetches.push(url);
+        const [code, text] = url.startsWith('https://raw.githubusercontent.com/') ? (g.github() === null ? [500, 'down'] : [200, g.github()]) : g.supabase(url);
+        return { getResponseCode: () => code, getContentText: () => text };
+      } }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(LOADER, ctx);
+    return ctx[fn](...args);
+  };
+  g.post = record => g.run('doPost', { postData: { contents: JSON.stringify({ secret: props.SECRET, type: 'INSERT', record }) } });
+  g.alerts = () => mails.filter(m => m.subject === 'SoloPrint emails need attention');
+  return g;
+}
+const order = { ...base, id: '42' };
+
+check('runs the latest code from GitHub, saves a copy, and checks GitHub at most every 15 minutes', () => {
+  const g = google();
+  assert(g.post(order).text === 'sent 2', 'emails not sent');
+  assert(g.props.SAVED_CODE_PARTS > 0 && g.cache.code === CODE, 'copy not saved');
+  g.post(order);
+  assert(g.fetches.filter(u => u.includes('githubusercontent')).length === 1, 'GitHub fetched again within 15 minutes');
+  assert(!g.alerts().length, 'unexpected alert');
+});
+check('GitHub down: keeps sending with the saved copy, alerts after repeated failures', () => {
+  const g = google();
+  g.post(order);
+  g.github = () => null;
+  for (let i = 0; i < 2; i++) { delete g.cache.code; assert(g.post(order).text === 'sent 2', 'saved copy not used'); }
+  assert(!g.alerts().length, 'alerted on a short GitHub hiccup');
+  delete g.cache.code; g.post(order);
+  delete g.cache.code; g.post(order);
+  assert(g.alerts().length === 1 && /GitHub couldn't be reached/.test(g.alerts()[0].body), `alerts: ${g.alerts().length}`);
+});
+check('a broken update is not used: the last good version keeps running and you are alerted', () => {
+  const g = google();
+  g.post(order);
+  for (const broken of ['function doPost( {', CODE.replace('function emailsFor(type, rec, old, custom) {', 'function emailsFor(type, rec, old, custom) { return [];')]) {
+    g.github = () => broken; delete g.cache.code; delete g.cache['alerted:bad-update'];
+    assert(g.post(order).text === 'sent 2', 'emails stopped after a broken update');
+    assert(/new version of the email code has an error/.test(g.alerts().pop().body), 'no alert for the broken update');
+  }
+  const b64 = Array.from({ length: Number(g.props.SAVED_CODE_PARTS) }, (_, i) => g.props['SAVED_CODE_' + i]).join('');
+  assert(GoogleUtilities.ungzip(blob(GoogleUtilities.base64Decode(b64))).getDataAsString() === CODE, 'saved copy replaced by a broken version');
+});
+check('a failed send alerts you once, not on every order', () => {
+  const g = google();
+  g.failMail = m => m.to !== 'jeffsolo49@gmail.com';
+  for (let i = 0; i < 3; i++) { try { g.post(order); } catch (e) { /* expected */ } }
+  const alerts = g.alerts();
+  assert(alerts.length === 1 && /Sending order emails failed/.test(alerts[0].body) && /Mail quota exceeded/.test(alerts[0].body), `alerts ${alerts.length}`);
+});
+check('no saved copy and GitHub down: alerts that emails are stopped', () => {
+  const g = google();
+  g.github = () => null;
+  let threw = false;
+  try { g.post(order); } catch (e) { threw = true; }
+  assert(threw && /could not be loaded/.test((g.alerts()[0] || {}).body), 'no alert');
+});
+check('the 6-hourly check alerts when the secret no longer matches Supabase', () => {
+  const g = google();
+  g.run('healthCheck');
+  assert(!g.alerts().length, 'alert when everything is fine');
+  g.supabase = () => [400, '{"message":"forbidden"}'];
+  try { g.run('healthCheck'); } catch (e) { /* expected */ }
+  assert(/6-hourly check failed/.test((g.alerts()[0] || {}).body) && /doesn't match/.test(g.alerts()[0].body), 'no mismatch alert');
+});
+
 finish();

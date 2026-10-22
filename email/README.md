@@ -23,10 +23,10 @@ Do this after running `supabase/security.sql`.
 1. **Make a secret.** Use a password generator to make a random string of 30+ letters and numbers.
    It stops anyone else from triggering emails through your script. Don't commit it to the repo.
 2. **Create the script.** Go to <https://script.google.com>, signed in as jeffsolo49@gmail.com, and
-   click **New project**. Name it "SoloPrint emails", delete the sample code, and paste in all of `Code.gs`.
-   Click **Save**. Then open **Project Settings** (gear icon) → **Script properties** → **Add script property**,
+   click **New project**. Name it "SoloPrint emails", delete the sample code, and paste in all of
+   `Loader.gs` (not `Code.gs`: the loader runs the latest `Code.gs` from GitHub by itself). Click **Save**. Then open **Project Settings** (gear icon) → **Script properties** → **Add script property**,
    name it `SECRET` and paste your secret as the value, and save. The secret is kept there, not in the
-   code (this repository is public), so future versions of `Code.gs` can be pasted without editing.
+   code (this repository is public).
 3. **Allow Gmail access.** In the toolbar, pick `sendTestEmail` from the function menu and click **Run**.
    Google asks for permission. Because this is your own script, it shows "Google hasn't verified this app";
    click **Advanced**, then **Go to SoloPrint emails**, then **Allow**. You should get a test email.
@@ -36,7 +36,9 @@ Do this after running `supabase/security.sql`.
 5. **Connect Supabase.** In Supabase → SQL Editor → New query, paste `supabase/email-trigger.sql`,
    replace `PASTE-WEB-APP-URL-HERE` with the Web app URL and `PASTE-YOUR-SECRET-HERE` with your secret,
    then **Run**.
-6. **Try it.** Submit a request on the site using your own email address. You should get both the owner
+6. **Turn on the schedules.** Pick `setupSchedules` and click **Run**: weekly Drive backup, daily quote
+   reminders, and a check every 6 hours that emails you if something stops working.
+7. **Try it.** Submit a request on the site using your own email address. You should get both the owner
    and customer emails within a minute.
 
 ## If an email doesn't arrive
@@ -46,16 +48,26 @@ Do this after running `supabase/security.sql`.
   shows what Supabase got back from the script.
 - Check Gmail's **Sent** folder: emails go out from your account, so they show up there.
 
-## Updating the script later
+## Updates are automatic
 
-Paste the new `Code.gs` over the old one as-is: the secret lives in Script properties, not in the code.
+`Loader.gs` fetches the latest `Code.gs` from GitHub (checking every 15 minutes, when something runs), so
+changes reach your emails within about 20 minutes of being merged: no pasting or redeploying. It tests each
+new version on a sample order first, and keeps a saved copy of the last version that worked (in Script
+properties as `SAVED_CODE_*`; leave those alone).
+
+You get a "SoloPrint emails need attention" email, at most once every 6 hours per problem, when:
+
+- GitHub can't be reached several times in a row (the saved copy keeps sending emails),
+- a new version has an error (the last good version keeps running),
+- sending an order email, the weekly backup or quote reminders fails,
+- the 6-hourly check finds the secret no longer matches Supabase.
+
+Google also emails you if a scheduled run fails outright (for example, if the script loses its Gmail
+permission). Only `Loader.gs` ever needs pasting again, and an alert will say so if it does.
 
 ## Changing the emails later
 
 To change the wording, use the **Emails** tab in owner mode on the site: no script changes needed.
-
-To change the script itself, edit `Code.gs` in the Apps Script editor, save, then **Deploy → Manage deployments → ✏️ Edit →
-Version: New version → Deploy**. The Web app URL stays the same, so Supabase needs no changes.
 
 ## Print time and grams from model links
 
@@ -65,7 +77,7 @@ can edit the numbers, they're labeled as automated estimates, and you see where 
 each order. A profile often covers a full plate, which can be several pieces. Printables blocks
 requests from Google's servers and Thingiverse has no such data, so those links are filled in by hand.
 
-After pasting the new `Code.gs` (no edits needed; the secret is in Script properties), deploy a new version, then:
+Lookups use the loader too, so there's nothing to update. To check them:
 
 1. Pick `testLookup` in the function menu and click **Run**. Google asks for one more permission
    ("connect to an external service"); allow it the same way as before.

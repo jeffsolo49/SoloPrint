@@ -1,10 +1,16 @@
 // SoloPrint order emails, sent from your own Gmail account.
 // Supabase calls this script whenever an order is created or changes (see supabase/email-trigger.sql).
 // Setup steps are in email/README.md.
+//
+// Don't paste this file into Apps Script: paste email/Loader.gs, which runs the latest copy of this file
+// from GitHub. Changes here go live within about 20 minutes of reaching main, so keep the checks green.
+
+// The loader version this file needs (see LOADER_VERSION in Loader.gs).
+const LOADER_VERSION_NEEDED = 1;
 
 // The secret is NOT stored in this file (the repo is public). Save it once in Apps Script:
 // Project Settings (gear) -> Script properties -> Add script property: SECRET = your secret.
-// It must match the secret in supabase/email-trigger.sql. New versions of this file can then be pasted as-is.
+// It must match the secret in supabase/email-trigger.sql.
 function getSecret() {
   // Forgive quotes, a semicolon or spaces copied along with the secret.
   // The property name is matched in any capitalization (SECRET, Secret, secret).
@@ -238,12 +244,30 @@ function testLookup() {
 //  - sendQuoteReminders: every day around 10am, emails customers whose quote has waited 3+ days.
 function setupSchedules() {
   ScriptApp.getProjectTriggers()
-    .filter(t => ['backupToDrive', 'sendQuoteReminders'].includes(t.getHandlerFunction()))
+    .filter(t => ['backupToDrive', 'sendQuoteReminders', 'healthCheck'].includes(t.getHandlerFunction()))
     .forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('backupToDrive').timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
   ScriptApp.newTrigger('sendQuoteReminders').timeBased().everyDays(1).atHour(10).create();
+  ScriptApp.newTrigger('healthCheck').timeBased().everyHours(6).create();
   backupToDrive();
-  Logger.log('Scheduled: weekly backup (Mondays ~3am) and daily quote reminders (~10am). A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+  healthCheck();
+  Logger.log('Scheduled: weekly backup (Mondays ~3am), daily quote reminders (~10am) and a check every 6 hours. A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+}
+
+// Runs every 6 hours. Throws when something would stop the emails; the loader then emails the owner.
+function healthCheck() {
+  const secret = getSecret();
+  if (secret.length < 20) throw new Error('The SECRET script property is missing or too short (Apps Script -> Project Settings -> Script properties).');
+  const res = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/rpc/due_quote_reminders', {
+    method: 'post', contentType: 'application/json',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
+    payload: JSON.stringify({ p_secret: secret, p_days: 36500 }),   // nothing is that old, so no reminders are touched
+    muteHttpExceptions: true
+  });
+  const code = res.getResponseCode();
+  if (/forbidden/.test(res.getContentText())) throw new Error("The SECRET script property doesn't match the secret saved in Supabase, so Supabase can't send emails through this script.");
+  if (code !== 200) throw new Error('Supabase replied ' + code + ': ' + res.getContentText().slice(0, 200));
+  Logger.log('All good: the secret matches Supabase.');
 }
 
 // Older name, kept so instructions that mention it still work.
