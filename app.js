@@ -3014,11 +3014,31 @@ function writeupExcerpt(text, max = 160) {
   return t.length > max ? t.slice(0, max).replace(/\s+\S*$/, '') + '…' : t;
 }
 
-// Each design has its own address (?design=<id>), so it can be linked to and the back button works.
-function designLink(id) { return `${location.origin}${location.pathname}?design=${encodeURIComponent(id)}`; }
+// Each design has its own address (?design=name-sign), so it can be linked to and the back button works.
+// The name part must match designSlug in api/design.js (a test checks); older ?design=<id> links still work.
+function slugify(text) {
+  return String(text || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+}
+function designSlug(design, all = state.gallery.filter(g => g.published)) {
+  const base = slugify(design.title) || String(design.id).toLowerCase();
+  const same = all.filter(d => (slugify(d.title) || String(d.id).toLowerCase()) === base)
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
+  const n = same.findIndex(d => d.id === design.id);
+  return n > 0 ? `${base}-${n + 1}` : base;
+}
+function findDesign(ref) {
+  const all = state.gallery.filter(g => g.published);
+  return all.find(d => d.id === ref) || all.find(d => designSlug(d, all) === String(ref).toLowerCase()) || null;
+}
+function designLink(id) {
+  const g = state.gallery.find(x => x.id === id);
+  return `${location.origin}${location.pathname}?design=${encodeURIComponent(g ? designSlug(g) : id)}`;
+}
 function setDesignUrl(id) {
   const params = new URLSearchParams(location.search);
-  if (id) params.set('design', id); else params.delete('design');
+  const g = id && state.gallery.find(x => x.id === id);
+  if (id) params.set('design', g ? designSlug(g) : id); else params.delete('design');
   const url = location.pathname + (params.toString() ? `?${params}` : '');
   if (url !== location.pathname + location.search) history.pushState({ design: id || '' }, '', url);
 }
@@ -3037,7 +3057,7 @@ function closeWork() {
 }
 function handleDesignLink() {
   const id = String(new URLSearchParams(location.search).get('design') || '');
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return '';
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) return '';
   state.view = 'client';
   state.clientTab = 'gallery';
   state.galleryOpen = id;
@@ -3179,7 +3199,7 @@ function showGalleryPhoto(id, n) {
 
 function renderGalleryTab() {
   const items = state.gallery.filter(g => g.published);
-  const open = state.galleryOpen && items.find(g => g.id === state.galleryOpen);
+  const open = state.galleryOpen && findDesign(state.galleryOpen);
   const header = `
     <div class="section-header">
       <div class="section-icon">
