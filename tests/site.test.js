@@ -482,6 +482,9 @@ const STATES = {
     assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'footer change should show in other previews');
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
+    const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-payment,Emails to you,email-owner_new,email-owner_approved', groups.join(','));
+    assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
     assert(db.settings.emails.quote.subject === 'Quote for {title}: ${total}' && !db.settings.emails.quote.body, `saved ${JSON.stringify(db.settings.emails)}`);

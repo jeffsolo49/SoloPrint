@@ -2641,42 +2641,54 @@ function renderOwnerEmailsPage() {
         ${Object.entries(EMAIL_PLACEHOLDERS).map(([k, d]) => `<div><dt><code>{${k}}</code></dt><dd>${esc(d)}</dd></div>`).join('')}
       </dl>
     </div>
-    ${Object.entries(EMAIL_TEMPLATES).map(([key, def]) => {
-      const t = emailTemplate(key, state.emailsDraft);
-      const own = cleanEmails({ [key]: state.emailsDraft[key] })[key];
-      const usedIn = key === 'footer'
-        ? Object.entries(EMAIL_TEMPLATES).filter(([k]) => emailTemplate(k, state.emailsDraft).body.includes('{footer}')).map(([, d]) => d.label) : [];
-      return `<div class="card email-card${key === 'footer' ? ' email-footer-card' : ''}" id="email-${key}">
-        <div class="email-card-head">
-          <h3 class="email-card-title">${esc(def.label)}${own ? ' <span class="swatch-note">edited</span>' : ''}</h3>
-          <div class="field-help" style="margin-top:2px;">${key === 'footer' ? '' : `To: ${esc(def.to)} · `}${esc(def.when)}</div>
-          ${key === 'footer' ? `<div class="field-help">Shown at the end of: ${usedIn.length ? esc(usedIn.join(', ')) : 'no emails right now (add {footer} to an email to use it)'}.</div>` : ''}
-        </div>
-        <div class="email-card-grid">
-          <div>
-            ${def.subject ? `<div class="field">
-              <label for="email-subject-${key}">Subject</label>
-              <input type="text" id="email-subject-${key}" value="${esc(t.subject)}" maxlength="200" oninput="updateEmailDraft('${key}', 'subject', this.value)" />
-            </div>` : ''}
-            <div class="field" style="margin-bottom:8px;">
-              <label for="email-body-${key}">${key === 'footer' ? 'Footer text' : 'Email text'}</label>
-              <textarea id="email-body-${key}" rows="${key === 'footer' ? 6 : 12}" maxlength="5000" oninput="updateEmailDraft('${key}', 'body', this.value)">${esc(t.body)}</textarea>
-            </div>
-            ${own ? `<button type="button" class="btn-sm" onclick="resetEmail('${key}')">Reset to default</button>` : ''}
-          </div>
-          <div>
-            <div class="owner-order-summary-label" style="margin-bottom:6px;">Preview</div>
-            <div class="email-preview" id="email-preview-${key}" aria-live="polite">${renderEmailPreview(key)}</div>
-          </div>
-        </div>
-      </div>`;
-    }).join('')}
+    ${renderEmailCard('footer')}
+    <h3 class="email-group-title">Emails to customers</h3>
+    ${emailKeysTo('Customer').map(renderEmailCard).join('')}
+    <h3 class="email-group-title">Emails to you</h3>
+    <p class="field-help" style="margin-top:-6px;">Only you get these, at jeffsolo49@gmail.com.</p>
+    ${emailKeysTo('You').map(renderEmailCard).join('')}
     <div class="alert error" id="emails-err"></div>
     <div class="alert success" id="emails-ok"></div>
     <div class="settings-save-row">
       <button class="btn-primary" id="emails-save" onclick="saveEmailsDraft()">Save emails</button>
       ${changed ? `<div class="field-help">${changed} email${changed === 1 ? '' : 's'} changed from the default.</div>` : ''}
     </div>`;
+}
+
+function emailKeysTo(to) {
+  return Object.keys(EMAIL_TEMPLATES).filter(k => k !== 'footer' && EMAIL_TEMPLATES[k].to === to);
+}
+
+function renderEmailCard(key) {
+  const def = EMAIL_TEMPLATES[key];
+  const t = emailTemplate(key, state.emailsDraft);
+  const own = cleanEmails({ [key]: state.emailsDraft[key] })[key];
+  const usedIn = key === 'footer'
+    ? Object.entries(EMAIL_TEMPLATES).filter(([k]) => emailTemplate(k, state.emailsDraft).body.includes('{footer}')).map(([, d]) => d.label) : [];
+  return `<div class="card email-card${key === 'footer' ? ' email-footer-card' : ''}" id="email-${key}">
+    <div class="email-card-head">
+      <h3 class="email-card-title">${esc(def.label)} <span class="email-to ${def.to === 'You' ? 'to-you' : ''}">${key === 'footer' ? 'Customer emails' : def.to === 'You' ? 'To you' : 'To the customer'}</span>${own ? ' <span class="swatch-note">edited</span>' : ''}</h3>
+      <div class="field-help" style="margin-top:2px;">${esc(def.when)}</div>
+      ${key === 'footer' ? `<div class="field-help">Shown at the end of: ${usedIn.length ? esc(usedIn.join(', ')) : 'no emails right now (add {footer} to an email to use it)'}.</div>` : ''}
+    </div>
+    <div class="email-card-grid">
+      <div>
+        ${def.subject ? `<div class="field">
+          <label for="email-subject-${key}">Subject</label>
+          <input type="text" id="email-subject-${key}" value="${esc(t.subject)}" maxlength="200" oninput="updateEmailDraft('${key}', 'subject', this.value)" />
+        </div>` : ''}
+        <div class="field" style="margin-bottom:8px;">
+          <label for="email-body-${key}">${key === 'footer' ? 'Footer text' : 'Email text'}</label>
+          <textarea id="email-body-${key}" rows="${key === 'footer' ? 6 : 12}" maxlength="5000" oninput="updateEmailDraft('${key}', 'body', this.value)">${esc(t.body)}</textarea>
+        </div>
+        ${own ? `<button type="button" class="btn-sm" onclick="resetEmail('${key}')">Reset to default</button>` : ''}
+      </div>
+      <div>
+        <div class="owner-order-summary-label" style="margin-bottom:6px;">Preview</div>
+        <div class="email-preview" id="email-preview-${key}" aria-live="polite">${renderEmailPreview(key)}</div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function updateEmailDraft(key, field, value) {
