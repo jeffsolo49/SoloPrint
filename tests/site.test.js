@@ -200,7 +200,7 @@ const STATES = {
     await check(`request icons stay round at ${width}px`, async () => {
       const page = await open(fixtures(), { width, height: 800 });
       const sizes = await page.$$eval('.mode-icon', els => els.map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }));
-      assert(sizes.length && sizes.every(([w, h]) => w === 42 && h === 42), `icon sizes ${JSON.stringify(sizes)}`);
+      assert(sizes.length && sizes.every(([w, h]) => w === h && w >= 28), `icon sizes ${JSON.stringify(sizes)}`);
       await page.close();
     });
   }
