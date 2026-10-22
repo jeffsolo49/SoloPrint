@@ -632,3 +632,5 @@ textarea { resize: vertical; min-height: 70px; }
 .expense-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .expense-form .field { flex: 1; min-width: 130px; margin-bottom: 0; }
 .money-stats { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; }
+#rules-example { font-size: 13px; color: var(--text); }

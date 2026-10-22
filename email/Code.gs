@@ -44,14 +44,14 @@ function checkSetup() {
 }
 const OWNER_EMAIL = 'jeffsolo49@gmail.com';
 const SITE_URL = 'https://soloprint.vercel.app';  // your site's address, used for links in emails
-const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Public Supabase address and key (the same ones in index.html), used by the weekly backup.
 const SUPA_URL = 'https://xpssamjjyarajtwtrwqx.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
 const BACKUP_FOLDER = 'SoloPrint backups';
 const BACKUPS_TO_KEEP = 12;
 
-const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0, leftover: 0 };
+// Prices, roll rules, reminder timing and the Venmo username come from the owner's Site Settings, with the
+// defaults and pricing math in the shared block below (RULE_DEFAULTS, orderRules, printPrice, rollCharge).
 const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order' };
 
 function doPost(e) {
@@ -280,17 +280,17 @@ function setupWeeklyBackup() {
 // Runs daily (~10am, see setupSchedules): quote reminders, review requests, leftover-roll reminders, and on
 // Mondays the owner's weekly summary. Each part runs even if another fails; failures are reported together.
 function sendQuoteReminders() {
-  const site = loadSiteData(), custom = site.emails || {};
+  const site = loadSiteData(), custom = site.emails || {}, rules = shopRules(site);
   const errors = [];
   const step = (name, fn) => { try { fn(); } catch (err) { errors.push(name + ': ' + (err && err.message || err)); } };
   let report = null;
   const reportData = () => report || (report = callSupabase('owner_report_data', {}));
   step('Quote reminders', () => {
-    const due = callSupabase('due_quote_reminders', { p_days: 3 });
+    const due = callSupabase('due_quote_reminders', { p_days: rules.quoteReminderDays });
     sendAll(reminderEmails(due, custom, site));
     Logger.log('Quote reminders sent: ' + due.length);
   });
-  step('Review requests', () => sendAll(reviewRequestEmails(callSupabase('due_review_requests', { p_days: 7 }), custom, site)));
+  step('Review requests', () => sendAll(reviewRequestEmails(callSupabase('due_review_requests', { p_days: rules.reviewRequestDays }), custom, site)));
   step('Leftover roll reminders', () => {
     const props = PropertiesService.getScriptProperties();
     const sent = JSON.parse(props.getProperty('ROLL_REMINDERS') || '{}');
@@ -337,12 +337,13 @@ function reviewRequestEmails(records, custom, site) {
 // ({ rollId: expiresAt }); expired entries are dropped.
 function rollReminderEmails(jobs, custom, site, now, sent) {
   const keep = {};
+  const rules = shopRules(site);
   Object.keys(sent || {}).forEach(k => { if (new Date(sent[k]) > now) keep[k] = sent[k]; });
   const emails = [];
-  leftoverRolls(jobs || []).forEach(roll => {
+  leftoverRolls(jobs || [], '', rules).forEach(roll => {
     const id = roll.orderId + '|' + roll.key;
     const daysLeft = (new Date(roll.expiresAt) - now) / 864e5;
-    if (keep[id] || daysLeft <= 0 || daysLeft > 14 || roll.left < 50) return;
+    if (keep[id] || daysLeft <= 0 || daysLeft > rules.rollReminderDays || roll.left < 50) return;
     const rec = (jobs || []).find(j => j.id === roll.orderId);
     if (!rec || !validEmail(rec.clientEmail)) return;
     const vars = Object.assign(emailVars(rec, custom, site), { rollColor: roll.color, rollGrams: roll.left.toFixed(0), rollExpires: fmtShortDate(roll.expiresAt) });
@@ -357,11 +358,11 @@ function weeklySummaryEmail(report, custom, site, now) {
   const phase = j => j.phase || 'estimate';
   const weekAgo = now.getTime() - 7 * 864e5;
   const sales = jobs.filter(j => j.paymentStatus === 'payment_recieved' && j.paidAt && new Date(j.paidAt).getTime() >= weekAgo)
-    .reduce((s, j) => s + orderTotal(j), 0);
+    .reduce((s, j) => s + orderTotal(j, site), 0);
   const inventory = (report && report.private && report.private.inventory) || {};
   const low = ((site && site.colors) || []).filter(c => {
     const s = inventory[c.id];
-    return s && isFinite(s.grams) && s.grams <= (isFinite(s.low) ? s.low : 200);
+    return s && isFinite(s.grams) && s.grams <= (isFinite(s.low) ? s.low : shopRules(site).lowStockGrams);
   }).map(c => c.name + ' (' + Math.max(0, Math.round(inventory[c.id].grams)) + ' g)');
   const reviews = Number(report && report.new_reviews) || 0;
   const vars = {
@@ -451,7 +452,9 @@ function emailsFor(type, rec, old, custom, site) {
 
 // Values for the {placeholders} in email text.
 function emailVars(rec, custom, site) {
-  const total = orderTotal(rec);
+  const rules = orderRules(rec, site);
+  const total = orderTotal(rec, site);
+  const roll = rollCharge(rec, rules);
   const unpaid = total && rec.paymentStatus !== 'payment_recieved';
   const vars = {
     name: String(rec.clientName || '').trim() || 'there',
@@ -459,13 +462,14 @@ function emailVars(rec, custom, site) {
     customerEmail: String(rec.clientEmail || ''),
     title: orderTitle(rec),
     submitted: rec.createdAt ? formatDate(rec.createdAt) : '',
-    items: itemLines(rec, false).join('\n\n'),
-    itemsWithPrices: itemLines(rec, true).join('\n\n'),
+    items: itemLines(rec, false, site).join('\n\n'),
+    itemsWithPrices: itemLines(rec, true, site).join('\n\n'),
     estimate: total ? money(total) : '',
     total: total ? money(total) : '',
-    specialRoll: specialOrderCost(rec) ? money(specialOrderCost(rec)) : '',
+    specialRoll: roll ? money(roll) : '',
     amountDue: unpaid ? money(total) : '',
-    venmoLink: unpaid ? venmoUrl(rec, total) : '',
+    venmoLink: unpaid ? venmoUrl(rec, total, rules) : '',
+    materialNote: (site && site.materialNote) || DEFAULT_MATERIAL_NOTE,
     orderLink: orderLink(rec),
     delivery: deliveryLines(rec).filter(Boolean).join('\n'),
     photo: (Array.isArray(rec.finishedPhotos) ? rec.finishedPhotos : []).filter(u => /^https:\/\//.test(String(u)))[0] || '',
@@ -521,7 +525,7 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll (1 kg): ${specialRoll}\nTotal: ${total}\nAll prints are PLA unless noted or requested.\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\nTotal: ${total}\n{materialNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
@@ -590,6 +594,7 @@ const EMAIL_PLACEHOLDERS = {
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
   delivery: 'Delivery date, tracking or pickup, and notes',
+  materialNote: 'Your material note from Site Settings (e.g. "All prints are PLA...")',
   photo: 'Link to the first finished-print photo you added',
   vacationNote: 'Your vacation message, only while vacation mode is on',
   reviewLink: 'Link where the customer writes their review',
@@ -631,11 +636,96 @@ function renderEmailText(text, vars) {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// ── Prices and shop rules ─────────────────────────────────────────────────
+// The owner edits these in Site Settings (saved as settings.rules); anything left blank uses the default.
+// Each quote saves the rates it was sent with (order.rates), so changing prices never changes an order
+// that was already quoted. Orders quoted before rates were saved keep the original prices (LEGACY_RATES).
+const RULE_DEFAULTS = {
+  baseFee: 2,              // $ per print
+  minuteRate: 0.024,       // $ per minute of print time
+  gramRate: 0.024,         // $ per gram, regular colors
+  specialGramRate: 0.034,  // $ per gram, special colors (silk, TPU...)
+  rollCost: 20,            // usual price of a special order roll
+  rollGrams: 1000,         // grams in a special order roll
+  rollMonths: 2,           // how long a leftover roll stays the customer's
+  quoteReminderDays: 3,    // days after a quote with no answer before the reminder email
+  reviewRequestDays: 7,    // days after delivery before asking for a review
+  rollReminderDays: 14,    // days before a leftover roll expires to remind the customer
+  lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
+  venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
+};
+const LEGACY_RATES = { baseFee: 2, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034 };
+const RATE_KEYS = ['baseFee', 'minuteRate', 'gramRate', 'specialGramRate'];
+const DEFAULT_MATERIAL_NOTE = 'All prints are PLA unless noted or requested.';
+
+// Keeps only valid values: numbers from 0 to 100000, and a Venmo username of letters, numbers, - or _.
+function cleanRules(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  Object.keys(RULE_DEFAULTS).forEach(key => {
+    const value = src[key];
+    if (value === null || value === undefined || value === '') return;
+    if (key === 'venmo') {
+      const name = String(value).trim().replace(/^@/, '');
+      if (/^[A-Za-z0-9_-]{1,30}$/.test(name)) out.venmo = name;
+      return;
+    }
+    const n = Number(value);
+    if (isFinite(n) && n >= 0 && n <= 100000) out[key] = n;
+  });
+  return out;
+}
+function shopRules(settings) {
+  return Object.assign({}, RULE_DEFAULTS, cleanRules(settings && settings.rules));
+}
+// The prices an order uses: its saved quote rates, the original prices for older quotes, else today's.
+function orderRules(order, settings) {
+  const rules = shopRules(settings);
+  const saved = quoteRates(cleanRules(order && order.rates));
+  if (Object.keys(saved).length) return Object.assign(rules, saved);
+  if (order && order.phase && order.phase !== 'estimate') return Object.assign(rules, LEGACY_RATES);
+  return rules;
+}
+function quoteRates(rules) {
+  const out = {};
+  RATE_KEYS.forEach(k => { if (rules && isFinite(rules[k])) out[k] = rules[k]; });
+  return out;
+}
+function filamentRate(filType, rules) {
+  if (filType === 'special_order' || filType === 'leftover') return 0;   // the customer pays for a whole roll instead
+  return filType === 'special' ? rules.specialGramRate : rules.gramRate;
+}
+// Multi-color prints split the grams evenly between their colors.
+function colorsRate(item, rules) {
+  const parts = itemParts(item);
+  return parts.reduce((s, p) => s + filamentRate(p.filType, rules), 0) / parts.length;
+}
+// Price of one print. `colors` is an item (all its colors) or a single filament type.
+function printPrice(minutes, grams, colors, rules) {
+  const rate = colors && typeof colors === 'object' ? colorsRate(colors, rules) : filamentRate(colors, rules);
+  return rules.baseFee + Number(minutes) * rules.minuteRate + Number(grams) * rate;
+}
+// What the order pays for special order rolls: the owner's amount once set, else the usual roll price
+// (nothing when every special color comes from the customer's leftover roll).
+function rollCharge(order, rules) {
+  const items = (order && order.items) || [];
+  if (!items.some(usesRolls)) return 0;
+  const set = order.specialOrderCost;
+  if (set !== null && set !== undefined && set !== '' && isFinite(Number(set)) && Number(set) >= 0) return Number(set);
+  return items.some(usesSpecialSpool) ? rules.rollCost : 0;
+}
+function fmtRoll(grams) { return grams % 1000 === 0 ? (grams / 1000) + ' kg' : grams + ' g'; }
+function specialOrderPolicy(rules) {
+  const months = rules.rollMonths === 1 ? '1 month' : rules.rollMonths + ' months';
+  return "Special orders are for a color or material I don't carry, like Red TPU. Filament only comes in full " + fmtRoll(rules.rollGrams) +
+    ' rolls, so I order a whole roll for your print. The roll (usually about $' + rules.rollCost + '; the exact amount is in your quote) replaces the material charge. ' +
+    'The rest of the roll is yours for ' + months + ': place another order with it and the material is free. After ' + months + ', I keep any leftover.';
+}
+
 // ── Colors in a print and leftover rolls ─────────────────────────────────
 // Special orders are a color or material the owner doesn't carry: a whole 1 kg roll is bought for the
 // order (when the owner confirms it). For 2 months the customer can print more in that same
 // color/material from it, up to 1000 g in all (the first order included).
-const ROLL_GRAMS = 1000;
 const ROLL_PHASES = ['order_received', 'production', 'delivered'];
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -658,11 +748,12 @@ function itemGrams(it) { return (Number(it.grams) || 0) * Math.max(1, Number(it.
 function partGrams(it) { return itemGrams(it) / itemParts(it).length; }
 function rollParts(it) { return itemParts(it).filter(p => p.filType === 'leftover'); }
 function usesRolls(it) { return isSpecialOrder(it) || rollParts(it).length > 0; }
-function rollExpiry(iso) { const d = new Date(iso); d.setMonth(d.getMonth() + 2); return d.toISOString(); }
+function rollExpiry(iso, months) { const d = new Date(iso); d.setMonth(d.getMonth() + (isFinite(months) ? months : RULE_DEFAULTS.rollMonths)); return d.toISOString(); }
 function fmtShortDate(iso) { const d = new Date(iso); return isNaN(d) ? '' : SHORT_MONTHS[d.getMonth()] + ' ' + d.getDate(); }
 
 // Every roll bought for special orders, with grams used and left. excludeId leaves one order's use out.
-function leftoverRolls(batches, excludeId) {
+function leftoverRolls(batches, excludeId, rules) {
+  rules = rules || RULE_DEFAULTS;
   const rolls = [];
   (batches || []).forEach(b => {
     if (!ROLL_PHASES.includes(b.phase)) return;
@@ -671,7 +762,7 @@ function leftoverRolls(batches, excludeId) {
       const key = colorKey(it.specialColor);
       if (!key) return;
       let roll = rolls.find(r => r.orderId === b.id && r.key === key);
-      if (!roll) rolls.push(roll = { orderId: b.id, key, color: it.specialColor, email: colorKey(b.clientEmail), boughtAt, expiresAt: rollExpiry(boughtAt), used: 0 });
+      if (!roll) rolls.push(roll = { orderId: b.id, key, color: it.specialColor, email: colorKey(b.clientEmail), boughtAt, expiresAt: rollExpiry(boughtAt, rules.rollMonths), used: 0 });
       roll.used += partGrams(it);
     });
   });
@@ -682,7 +773,7 @@ function leftoverRolls(batches, excludeId) {
       if (roll) roll.used += partGrams(it);
     }));
   });
-  rolls.forEach(r => { r.left = Math.max(0, ROLL_GRAMS - r.used); });
+  rolls.forEach(r => { r.left = Math.max(0, rules.rollGrams - r.used); });
   return rolls;
 }
 function findRoll(rolls, email, part) {
@@ -697,17 +788,19 @@ function vacationText(v) {
 }
 // ── END SHARED EMAIL TEMPLATES ──
 
-function itemLines(rec, withPrices) {
+function itemLines(rec, withPrices, site) {
+  const rules = orderRules(rec, site);
+  const months = rules.rollMonths === 1 ? '1 month' : rules.rollMonths + ' months';
   return (rec.items || []).map((it, i) => {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
     const material = it.color ? `   Color: ${it.color}${it.filType === 'special' ? ' (special)' : ''}`
-      : isSpecialOrderItem(it) ? `   Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from your leftover roll, no material charge)' : ' (full 1 kg roll; the rest is yours for 2 months, and the material is free in another order)'}`
+      : isSpecialOrder(it) ? `   Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from your leftover roll, no material charge)' : ` (full ${fmtRoll(rules.rollGrams)} roll; the rest is yours for ${months}, and the material is free in another order)`}`
       : `   Filament: ${FIL_LABEL[it.filType] || 'Black'}`;
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
     const extras = extraColors(it);
     if (extras.length) lines.push(`   Also: ${extras.map(p => p.name + (p.filType === 'leftover' ? ' (leftover roll)' : '')).join(', ')}`);
     if (withPrices && it.minutes && it.grams) {
-      const each = perPrint(it);
+      const each = printPrice(it.minutes, it.grams, it, rules);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);
     }
     if (it.link) lines.push(`   Link: ${it.link}`);
@@ -725,39 +818,15 @@ function deliveryLines(rec) {
   return lines.length ? [''].concat(lines) : [];
 }
 
-function perPrint(it) {
-  return 2 + Number(it.minutes) * 0.024 + Number(it.grams) * itemRate(it);
-}
-
 function extraColors(it) {
   return (Array.isArray(it.extraColors) ? it.extraColors : []).filter(p => p && p.name);
 }
 
-// Multi-color prints split the grams evenly between their colors; rolls (new or leftover) have no per-gram charge.
-function itemRate(it) {
-  const main = isSpecialOrderItem(it) ? 0 : (FIL_RATE[it.filType] ?? 0.024);
-  const rates = [main].concat(extraColors(it).map(p => FIL_RATE[p.filType] ?? 0.024));
-  return rates.reduce((s, r) => s + r, 0) / rates.length;
-}
-
-function orderTotal(rec) {
+function orderTotal(rec, site) {
   const items = rec.items || [];
   if (!items.length || !items.every(it => it.minutes && it.grams)) return 0;
-  return items.reduce((s, it) => s + perPrint(it) * Math.max(1, parseInt(it.qty, 10) || 1), 0) + specialOrderCost(rec);
-}
-
-function isSpecialOrderItem(it) {
-  return it.filType === 'special_order' || (it.filType === 'special' && !it.colorId && !!it.specialColor);
-}
-
-// The 1 kg roll for special orders (a color or material not carried), charged instead of per gram.
-// The owner can change it per order; 0 when every special item uses the customer's leftover roll.
-function specialOrderCost(rec) {
-  const items = (rec.items || []).filter(it => isSpecialOrderItem(it) || extraColors(it).some(p => p.filType === 'leftover'));
-  if (!items.length) return 0;
-  const cost = rec.specialOrderCost;
-  if (cost !== null && cost !== undefined && cost !== '' && Number(cost) >= 0) return Number(cost);
-  return items.some(it => isSpecialOrderItem(it) && !it.useLeftover) ? 20 : 0;
+  const rules = orderRules(rec, site);
+  return items.reduce((s, it) => s + printPrice(it.minutes, it.grams, it, rules) * Math.max(1, parseInt(it.qty, 10) || 1), 0) + rollCharge(rec, rules);
 }
 
 function orderTitle(rec) {
@@ -765,9 +834,9 @@ function orderTitle(rec) {
   return items.length ? items.map(it => it.name || 'Unnamed').join(', ') : 'your request';
 }
 
-function venmoUrl(rec, total) {
+function venmoUrl(rec, total, rules) {
   const note = `SoloPrint order ${rec.id}: ${orderTitle(rec)}`.slice(0, 140);
-  return `https://venmo.com/${encodeURIComponent(VENMO_USERNAME)}?txn=pay&amount=${money(total)}&note=${encodeURIComponent(note)}`;
+  return `https://venmo.com/${encodeURIComponent(rules.venmo)}?txn=pay&amount=${money(total)}&note=${encodeURIComponent(note)}`;
 }
 
 function money(n) {

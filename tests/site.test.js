@@ -606,7 +606,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
     await page.setInputFiles('#finished-2', { name: 'done.png', mimeType: 'image/png', buffer: PNG });
-    await page.waitForFunction(() => (state.batches.find(b => b.id === '2').finishedPhotos || []).length === 1);
+    for (let t = 0; t < 40 && !(db.jobs['2'].finishedPhotos || []).length; t++) await page.waitForTimeout(100);
     assert(db.uploads.some(u => u.startsWith('gallery/orders/2-')) && db.jobs['2'].finishedPhotos[0].includes('/storage/v1/object/public/gallery/orders/2-'), JSON.stringify(db.jobs['2'].finishedPhotos));
     await page.click('#order-2 >> text=Add to gallery');
     await page.waitForTimeout(400);
@@ -691,6 +691,37 @@ const STATES = {
     const out = await page.evaluate(() => ({ file: window.__file, sheets: window.__sheets.map(s => s[0]), jan: window.__sheets[0][1][1] }));
     assert(out.file === `soloprint-${year}-taxes.xlsx` && out.sheets.join() === 'Summary,Paid orders,Expenses' && out.jan.join() === 'January,1,3.25,0.24,3.01,60', JSON.stringify(out));
     await page.close();
+  });
+  await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
+    const db = fixtures();
+    db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('settings'));
+    await page.waitForTimeout(200);
+    await page.fill('#rule-baseFee', '3');
+    assert(/costs \$5\.64 in a regular color/.test(await page.textContent('#rules-example')), await page.textContent('#rules-example'));   // 3 + 90 x .024 + 20 x .024
+    await page.fill('#rule-venmo', '@Shop-Name');
+    await page.fill('#material-note', 'Printed in PETG unless noted.');
+    await page.fill('#how-title-0', 'Send me your idea');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.rules.baseFee === 3 && db.settings.rules.venmo === 'Shop-Name' && db.settings.materialNote === 'Printed in PETG unless noted.' && db.settings.howItWorks[0].title === 'Send me your idea', JSON.stringify(db.settings));
+    const quoted = await page.evaluate(() => batchTotal(state.batches.find(b => b.id === '1')));
+    assert(Math.abs(quoted - 9.28) < 1e-9, `a quote sent before the change moved to ${quoted}`);
+    await page.evaluate(() => setOwnerTab('dashboard'));
+    await page.fill('#hours-s1-0', '1');
+    await page.click('#approve-btn-s1');
+    await page.waitForTimeout(300);
+    assert(db.jobs['s1'].rates && db.jobs['s1'].rates.baseFee === 3, `rates not saved on the quote: ${JSON.stringify(db.jobs['s1'].rates)}`);
+    await page.close();
+    const customer = await open(db);
+    const home = await customer.textContent('body');
+    assert(home.includes('Send me your idea'), 'edited how-it-works step missing');
+    await customer.click('text=I have an idea');
+    assert((await customer.textContent('body')).includes('Printed in PETG unless noted.'), 'material note missing on the form');
+    await customer.evaluate(() => { updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 10); });
+    assert(/\$3\.00 flat/.test(await customer.textContent('.price-breakdown')), 'estimate does not use the new base fee');
+    await customer.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');

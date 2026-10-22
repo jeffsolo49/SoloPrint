@@ -31,6 +31,85 @@ function renderVacationSettings(d) {
   </div>`;
 }
 
+// ── PRICES, RULES AND WORDING (Site Settings) ─────────────────────────────
+// Everything here is saved in site settings, so changing a price or wording never needs a code change.
+const RULE_FIELDS = [
+  ['Prices', [
+    ['baseFee', 'Base fee per print ($)', 0.5],
+    ['minuteRate', 'Print time ($ per minute)', 0.001, m => `$${(m * 60).toFixed(2)} per hour`],
+    ['gramRate', 'Filament, regular colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
+    ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`]
+  ]],
+  ['Special order rolls', [
+    ['rollCost', 'Usual roll price ($)', 1],
+    ['rollGrams', 'Roll size (g)', 50],
+    ['rollMonths', 'Leftover stays theirs for (months)', 1]
+  ]],
+  ['Reminders and stock', [
+    ['quoteReminderDays', 'Quote reminder after (days with no answer)', 1],
+    ['reviewRequestDays', 'Ask for a review (days after delivery)', 1],
+    ['rollReminderDays', 'Leftover roll reminder (days before it expires)', 1],
+    ['lowStockGrams', 'Warn when a color is down to (g)', 50]
+  ]]
+];
+
+function renderRulesSettings(d) {
+  const draft = d.rules || {};
+  const rules = shopRules(d);
+  return `<div class="card">
+    <h3 class="card-title">Prices and rules</h3>
+    <p class="field-help" style="margin-top:0;">Leave a box blank to use the default shown. Quotes already sent keep the prices they were sent with.</p>
+    ${RULE_FIELDS.map(([group, fields]) => `
+      <div class="owner-order-summary-label" style="margin-top:12px;">${esc(group)}</div>
+      <div class="rules-grid">
+        ${fields.map(([key, label, step, hint]) => `<div class="field">
+          <label for="rule-${key}">${esc(label)}</label>
+          <input type="number" id="rule-${key}" min="0" step="${step}" value="${esc(draft[key] ?? '')}" placeholder="${RULE_DEFAULTS[key]}" oninput="updateRuleDraft('${key}', this.value)" />
+          ${hint ? `<div class="field-help" id="rule-hint-${key}">${esc(hint(rules[key]))}</div>` : ''}
+        </div>`).join('')}
+      </div>`).join('')}
+    <div class="field" style="max-width:320px;">
+      <label for="rule-venmo">Venmo username</label>
+      <input type="text" id="rule-venmo" value="${esc(draft.venmo || '')}" placeholder="${esc(RULE_DEFAULTS.venmo)}" maxlength="31" oninput="updateRuleDraft('venmo', this.value)" />
+    </div>
+    <div class="price-preview-box" id="rules-example" aria-live="polite">${esc(rulesExample(rules))}</div>
+  </div>`;
+}
+
+function rulesExample(rules) {
+  const regular = printPrice(90, 20, 'color', rules), special = printPrice(90, 20, 'special', rules);
+  return `Example: a 1h 30m print using 20 g costs $${regular.toFixed(2)} in a regular color, or $${special.toFixed(2)} in a special color.`;
+}
+
+function updateRuleDraft(key, value) {
+  state.settingsDraft.rules = { ...(state.settingsDraft.rules || {}), [key]: value };
+  const rules = shopRules(state.settingsDraft);
+  const example = document.getElementById('rules-example');
+  if (example) example.textContent = rulesExample(rules);
+  RULE_FIELDS.forEach(([, fields]) => fields.forEach(([k, , , hint]) => {
+    const el = document.getElementById(`rule-hint-${k}`);
+    if (el && hint) el.textContent = hint(rules[k]);
+  }));
+}
+
+function renderWordingSettings(d) {
+  const steps = d.howItWorks && d.howItWorks.length ? d.howItWorks : DEFAULT_HOW_IT_WORKS.map(s => ({ ...s }));
+  if (!d.howItWorks || !d.howItWorks.length) d.howItWorks = steps;
+  return `<div class="card">
+    <h3 class="card-title">Wording</h3>
+    <div class="field">
+      <label for="material-note">Material note (on the request form, design pages and quotes)</label>
+      <input type="text" id="material-note" value="${esc(d.materialNote || '')}" placeholder="${esc(DEFAULT_MATERIAL_NOTE)}" maxlength="200" oninput="state.settingsDraft.materialNote = this.value" />
+    </div>
+    <div class="owner-order-summary-label">"How it works" on the home page</div>
+    ${steps.map((step, n) => `<div class="row2 how-edit">
+      <div class="field"><label for="how-title-${n}">Step ${n + 1}</label><input type="text" id="how-title-${n}" maxlength="80" value="${esc(step.title)}" oninput="state.settingsDraft.howItWorks[${n}].title = this.value" /></div>
+      <div class="field"><label for="how-text-${n}">Details</label><input type="text" id="how-text-${n}" maxlength="300" value="${esc(step.text)}" oninput="state.settingsDraft.howItWorks[${n}].text = this.value" /></div>
+    </div>`).join('')}
+    <button type="button" class="btn-sm" onclick="state.settingsDraft.howItWorks = DEFAULT_HOW_IT_WORKS.map(s => ({ ...s })); render();">Reset steps to default</button>
+  </div>`;
+}
+
 // ── ORDER AGAIN ───────────────────────────────────────────────────────────
 // Copies a past order into the request form: same items, quantities, colors and notes.
 function orderAgain(id) {
@@ -70,7 +149,7 @@ function renderCustomerOrderExtras(b) {
 function customerRolls() {
   const email = colorKey(state.historyEmail);
   const now = new Date();
-  return leftoverRolls(state.batches).filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now)
+  return leftoverRolls(state.batches, '', currentRules()).filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now)
     .sort((a, b) => byName({ name: a.color }, { name: b.color }));
 }
 
@@ -334,12 +413,11 @@ async function decideReview(jobId, approve) {
 
 // ── FILAMENT STOCK ────────────────────────────────────────────────────────
 // owner_private 'inventory': { [colorId]: { grams, low } }. Grams come off when an order moves to Printing.
-const DEFAULT_LOW_GRAMS = 200;
 
 function inventory() { return (state.ownerPrivate && state.ownerPrivate.inventory) || {}; }
 function stockFor(colorId) { const s = inventory()[colorId]; return s && Number.isFinite(s.grams) ? s : null; }
 function lowStockColors() {
-  return state.settings.colors.filter(c => { const s = stockFor(c.id); return s && s.grams <= (Number.isFinite(s.low) ? s.low : DEFAULT_LOW_GRAMS); });
+  return state.settings.colors.filter(c => { const s = stockFor(c.id); return s && s.grams <= (Number.isFinite(s.low) ? s.low : currentRules().lowStockGrams); });
 }
 // Colors customers can pick: stocked ones that haven't run out.
 function customerColors() { return state.settings.colors.filter(c => !c.outOfStock); }
@@ -405,7 +483,7 @@ function renderOwnerFilamentPage() {
       ${colors.length ? `<div class="stock-table">
         ${colors.map(c => {
           const s = stockFor(c.id);
-          const low = s && Number.isFinite(s.low) ? s.low : DEFAULT_LOW_GRAMS;
+          const low = s && Number.isFinite(s.low) ? s.low : currentRules().lowStockGrams;
           const status = !s ? 'Not tracked' : s.grams <= 0 ? 'Out: hidden from customers' : s.grams <= low ? 'Running low' : 'OK';
           return `<div class="stock-row">
             <div class="stock-name"><span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span> ${esc(c.name)}
@@ -444,7 +522,7 @@ async function writeStock(id, patch) {
 }
 function setStock(id, value) { const g = parseFloat(value); writeStock(id, { grams: Number.isFinite(g) && g >= 0 ? g : null }); }
 function addRoll(id) { const s = stockFor(id); writeStock(id, { grams: (s ? Math.max(0, s.grams) : 0) + 1000 }); }
-function setLowStock(id, value) { const g = parseFloat(value); if (stockFor(id)) writeStock(id, { low: Number.isFinite(g) && g >= 0 ? g : DEFAULT_LOW_GRAMS }); }
+function setLowStock(id, value) { const g = parseFloat(value); if (stockFor(id)) writeStock(id, { low: Number.isFinite(g) && g >= 0 ? g : currentRules().lowStockGrams }); }
 
 // ── MONEY: PROFIT AND TAX REPORT ──────────────────────────────────────────
 // owner_private 'money': { costPerKg, expenses: [{ id, date: 'YYYY-MM-DD', what, amount }] }.

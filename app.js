@@ -8,9 +8,8 @@ const MAX_ITEMS       = 10;
 const SUPA_URL        = 'https://xpssamjjyarajtwtrwqx.supabase.co';
 const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwc3NhbWpqeWFyYWp0d3Ryd3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjIxNjMsImV4cCI6MjA5MDc5ODE2M30.nGzAlBtFxdGHLSMThRGTgGH4-0ijpStMSDy2UDApyaM';
 
-// Filament pricing
-// Special orders pay for a whole roll instead of per gram, so their material rate is 0.
-const FIL_RATE = { black: 0.024, white: 0.024, color: 0.024, special: 0.034, special_order: 0, leftover: 0 };
+// Prices, roll rules, reminder timing and the Venmo username are owner settings (Site Settings -> Prices
+// and rules); the defaults and the pricing math are in email-templates.js (RULE_DEFAULTS, printPrice).
 const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order (own roll)' };
 const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
@@ -19,8 +18,6 @@ const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
 // Name of the customer tab that shows finished work with prices.
 const GALLERY_NAME = 'Previous Design Work';
-// Your Venmo username without the @ (e.g. 'Jeff-Solo'). The "Pay with Venmo" button stays hidden while this is blank.
-const VENMO_USERNAME = 'Jeffrey-Sol-3';
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
 const PREVIEW_API = 'https://api.microlink.io/?url=';
 // The SoloPrint Google Apps Script (email/Code.gs) also looks up print time and grams for MakerWorld links.
@@ -174,23 +171,35 @@ function filamentLabel(it) {
   return (FIL_LABEL[it && it.filType] || 'Black') + extras;
 }
 
+// Today's prices, or the prices an order was quoted with.
+function currentRules() { return shopRules(state.settings); }
+function rulesFor(batch) { return orderRules(batch, state.settings); }
+
 // Pass an item to price all of its colors, or a filament type for a single-color price.
-function calcPerPrint(mins, grams, filType) {
+function calcPerPrint(mins, grams, filType, rules = currentRules()) {
   if (!mins || !grams) return null;
-  const rate = filType && typeof filType === 'object' ? itemRate(filType) : (FIL_RATE[filType] ?? 0.024);
-  return 2 + mins * 0.024 + grams * rate;
+  return printPrice(mins, grams, filType, rules);
 }
 
-// Multi-color prints split the grams evenly between their colors for pricing.
-function itemRate(it) {
-  const parts = itemParts(it);
-  return parts.reduce((s, p) => s + (FIL_RATE[p.filType] ?? 0.024), 0) / parts.length;
+// Per-gram rate for an item (multi-color prints split the grams evenly between their colors).
+function itemRate(it, rules = currentRules()) {
+  return colorsRate(it, rules);
 }
 function byName(a, b) {
   return String(a.name || '').localeCompare(String(b.name || ''), 'en', { sensitivity: 'base', numeric: true });
 }
-function calcTotal(mins, grams, filType, qty) {
-  const pp = calcPerPrint(mins, grams, filType);
+// The lines under a price: base fee, print time and filament, each times the quantity.
+function priceBreakdown(minutes, grams, rate, qty, rules) {
+  const perPrint = rules.baseFee + minutes * rules.minuteRate + grams * rate;
+  return [
+    `$${rules.baseFee.toFixed(2)} flat × ${qty} = $${(rules.baseFee * qty).toFixed(2)}`,
+    `${fmtMinutesWithHours(minutes)} × $${rules.minuteRate} × ${qty} = $${(minutes * rules.minuteRate * qty).toFixed(2)}`,
+    `${Number(grams).toFixed(1)}g × $${rate.toFixed(3)} × ${qty} = $${(grams * rate * qty).toFixed(2)}`
+  ].concat(qty > 1 ? [`$${perPrint.toFixed(2)} per print × ${qty}`] : []).join('\n');
+}
+
+function calcTotal(mins, grams, filType, qty, rules = currentRules()) {
+  const pp = calcPerPrint(mins, grams, filType, rules);
   return pp !== null ? pp * qty : null;
 }
 function fmtTime(m) {
@@ -250,15 +259,14 @@ function stampPhase(batch, phase) {
 }
 
 function itemsSubtotal(batch) {
-  return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it, it.qty) || 0), 0);
+  const rules = rulesFor(batch);
+  return batch.items.reduce((s, it) => s + (calcTotal(it.minutes, it.grams, it, it.qty, rules) || 0), 0);
 }
 
-// Cost of the 1 kg roll for special orders; defaults to the typical amount (or 0 when every special
-// item uses the customer's leftover roll) until the owner sets it.
+// Cost of the special order roll; defaults to the usual roll price (or 0 when every special color comes
+// from the customer's leftover roll) until the owner sets it.
 function specialOrderCost(batch) {
-  if (!batch.items.some(usesRolls)) return 0;
-  if (Number.isFinite(batch.specialOrderCost)) return batch.specialOrderCost;
-  return batch.items.some(usesSpecialSpool) ? SPECIAL_ORDER_TYPICAL : 0;
+  return rollCharge(batch, rulesFor(batch));
 }
 
 function orderSum(batch) {
@@ -272,7 +280,7 @@ function batchTotal(batch) {
 
 function venmoPayUrl(batch, total) {
   const note = `SoloPrint order ${batch.id}: ${orderTitle(batch)}`.slice(0, 140);
-  return `https://venmo.com/${encodeURIComponent(VENMO_USERNAME)}?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(note)}`;
+  return `https://venmo.com/${encodeURIComponent(currentRules().venmo)}?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(note)}`;
 }
 
 // Next step the customer can take on an order: approve the quote, then pay once the owner confirms.
@@ -292,7 +300,7 @@ function renderCustomerOrderAction(batch) {
     if (batch.paymentStatus === 'payment_recieved') {
       return `<div class="order-action"><strong>Payment received.</strong> Thank you!</div>`;
     }
-    if (VENMO_USERNAME && total) {
+    if (currentRules().venmo && total) {
       return `<div class="order-action">
         <a class="btn-venmo" href="${esc(venmoPayUrl(batch, total))}" target="_blank" rel="noopener noreferrer">Pay $${total.toFixed(2)} with Venmo</a>
         <div class="order-action-sub">Opens Venmo with the amount and order note filled in. We'll mark your payment received once it comes through.</div>
@@ -465,6 +473,7 @@ function normalizeBatch(batch) {
     finishedPhotos: (Array.isArray(batch.finishedPhotos) ? batch.finishedPhotos : []).map(safeImageUrl).filter(Boolean).slice(0, 6),
     stockTaken: batch.stockTaken === true,
     paidAt: cleanIso(batch.paidAt),
+    rates: quoteRates(cleanRules(batch.rates)),
     specialOrderCost: Number.isFinite(Number(batch.specialOrderCost)) && batch.specialOrderCost !== null && batch.specialOrderCost !== '' && Number(batch.specialOrderCost) >= 0
       ? Math.min(Number(batch.specialOrderCost), 1000) : null,
     items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
@@ -764,7 +773,7 @@ function buildModelAnalyticsRows() {
 
       if (isSoldPhase(batch.phase)) {
         row.quantityOrdered += Number(item.qty) || 0;
-        const total = calcTotal(item.minutes, item.grams, item, item.qty);
+        const total = calcTotal(item.minutes, item.grams, item, item.qty, rulesFor(batch));
         if (total !== null) row.moneySold += total;
       }
     });
@@ -1190,13 +1199,17 @@ function renderAboutCard() {
   </div>`;
 }
 
+const DEFAULT_HOW_IT_WORKS = [
+  { title: 'Tell me what you want', text: 'Paste a model link, describe an idea, or pick something I have made before.' },
+  { title: 'I review it and send a quote', text: "I'll check the print time and material, then email you a price." },
+  { title: 'You approve', text: 'Tap "Looks good" if you want to go ahead. Nothing is charged before this.' },
+  { title: 'I print it, you pay', text: 'I confirm the order, print it, and you pay by Venmo. Follow every step under My Requests.' }
+];
+function materialNote() { return state.settings.materialNote || DEFAULT_MATERIAL_NOTE; }
+
 function renderHowItWorks() {
-  const steps = [
-    ['Tell me what you want', 'Paste a model link, describe an idea, or pick something I have made before.'],
-    ['I review it and send a quote', "I'll check the print time and material, then email you a price."],
-    ['You approve', 'Tap "Looks good" if you want to go ahead. Nothing is charged before this.'],
-    ['I print it, you pay', 'I confirm the order, print it, and you pay by Venmo. Follow every step under My Requests.']
-  ];
+  const steps = (state.settings.howItWorks && state.settings.howItWorks.length ? state.settings.howItWorks : DEFAULT_HOW_IT_WORKS)
+    .map(s => [s.title, s.text]);
   return `<div class="card">
     <h3 class="card-title">How it works</h3>
     <ol class="how-steps">${steps.map(([t, d], n) => `
@@ -1271,16 +1284,14 @@ function renderSubmitTab() {
   `;
 }
 
-// Special orders: a color or material the owner doesn't carry (e.g. Red TPU). The owner buys a full
-// 1 kg roll for the order; the customer pays for the roll instead of per gram.
-const SPECIAL_ORDER_TYPICAL = 20;
-const SPECIAL_ORDER_POLICY = `Special orders are for a color or material I don't carry, like Red TPU. Filament only comes in full 1 kg rolls, so I order a whole roll for your print. The roll (usually about $${SPECIAL_ORDER_TYPICAL}; the exact amount is in your quote) replaces the material charge. The rest of the roll is yours for 2 months: place another order with it and the material is free. After 2 months, I keep any leftover.`;
+// Special orders: a color or material the owner doesn't carry (e.g. Red TPU). The owner buys a whole
+// roll for the order; the customer pays for the roll instead of per gram (see specialOrderPolicy).
 
 // Leftover-roll logic (leftoverRolls, findRoll, itemParts...) is shared with the emails: see email-templates.js.
 
 // Problems with an order's leftover-roll colors, for the owner to see before quoting: one list per item.
 function leftoverChecks(b) {
-  const rolls = leftoverRolls(state.batches, b.id);
+  const rolls = leftoverRolls(state.batches, b.id, currentRules());
   const uses = {};
   b.items.forEach(it => rollParts(it).forEach(p => {
     const roll = findRoll(rolls, b.clientEmail, p);
@@ -1305,7 +1316,7 @@ async function findLeftoverRolls(i, forExtras = false) {
   try {
     const rows = await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || [];
     const now = new Date();
-    state.leftoverRolls = leftoverRolls(rows.map(normalizeBatch).filter(Boolean))
+    state.leftoverRolls = leftoverRolls(rows.map(normalizeBatch).filter(Boolean), '', currentRules())
       .filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now).sort((a, b) => byName({ name: a.color }, { name: b.color }));
     state.leftoverRollsFor = email;
     if (forExtras) state.draftItems[i].showExtras = true; else state.draftItems[i].showRolls = true;
@@ -1343,11 +1354,11 @@ function renderLeftoverPicker(item, i) {
     const rolls = state.leftoverRolls || [];
     return `<div class="special-order-check" role="group" aria-label="Your leftover rolls">
       ${rolls.length ? rolls.map((r, n) => item.extraColors.some(p => p.filType === 'leftover' && p.leftoverFrom === r.orderId && colorKey(p.name) === r.key) ? '' : `<button type="button" class="btn-sm" onclick="useLeftoverRoll(${i}, ${n})">${esc(r.color)}: about ${r.left.toFixed(0)} g left, until ${fmtShortDate(r.expiresAt)}</button>`).join('')
-        : `<span>No leftover rolls found for this email. A roll can be used for 2 months after I order it, for the same color and material, up to ${ROLL_GRAMS} g in all.</span>`}
+        : `<span>No leftover rolls found for this email. A roll can be used for ${currentRules().rollMonths} months after I order it, for the same color and material, up to ${currentRules().rollGrams} g in all.</span>`}
     </div>`;
   }
   return `<div class="special-order-check"><button type="button" class="btn-sm" id="special-leftover-${i}" onclick="findLeftoverRolls(${i})">Use my leftover roll</button>
-    <span id="leftover-msg-${i}" role="status">Same color and material only, within 2 months, up to ${ROLL_GRAMS} g per roll in all.</span></div>`;
+    <span id="leftover-msg-${i}" role="status">Same color and material only, within ${currentRules().rollMonths} months, up to ${currentRules().rollGrams} g per roll in all.</span></div>`;
 }
 
 function renderSpecialOrderBox(item, i) {
@@ -1359,7 +1370,7 @@ function renderSpecialOrderBox(item, i) {
         oninput="updateDraft(${i}, 'specialColor', this.value)" ${item.useLeftover ? 'readonly' : ''} />
     </div>
     ${renderLeftoverPicker(item, i)}
-    <p class="special-order-note">${esc(SPECIAL_ORDER_POLICY)}</p>
+    <p class="special-order-note">${esc(specialOrderPolicy(currentRules()))}</p>
   </div>`;
 }
 
@@ -1473,20 +1484,17 @@ function renderCustomerPricePreview(item) {
   const grams = Number(item.grams);
   const qty = Math.max(1, Number(item.qty) || 1);
   if (!minutes || !grams) {
-    return `<div class="calc-hint">No need to know the price yet: I'll work it out when I review your request.${usesSpecialSpool(item) ? ` A special order roll usually adds about $${SPECIAL_ORDER_TYPICAL}.` : ''}</div>`;
+    return `<div class="calc-hint">No need to know the price yet: I'll work it out when I review your request.${usesSpecialSpool(item) ? ` A special order roll usually adds about $${currentRules().rollCost}.` : ''}</div>`;
   }
-  const perPrint = calcPerPrint(minutes, grams, item);
+  const rules = currentRules();
+  const perPrint = calcPerPrint(minutes, grams, item, rules);
   const total = perPrint * qty;
-  const filamentRate = itemRate(item);
   return `<div class="price-preview-box" style="margin-top:12px;">
     <div class="card-title" style="margin-bottom:6px;">Automated Estimate</div>
     <div class="price-big">$${total.toFixed(2)}</div>
     <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${grams.toFixed(1)}g · quantity ${qty}</div>
-    <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
-${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
-${grams.toFixed(1)}g × $${filamentRate.toFixed(3)} × ${qty} = $${(grams * filamentRate * qty).toFixed(2)}
-$${perPrint.toFixed(2)} per print × ${qty}</div>
-    ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${SPECIAL_ORDER_TYPICAL} for the 1 kg special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
+    <div class="price-breakdown">${priceBreakdown(minutes, grams, itemRate(item, rules), qty, rules)}</div>
+    ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${rules.rollCost} for the ${fmtRoll(rules.rollGrams)} special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
     ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll.</div>` : ''}
     <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
   </div>`;
@@ -1632,7 +1640,7 @@ function renderItemBlock(item, i) {
       ${mode ? `
         <div class="field" style="margin-bottom:10px;">
           <label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
-          <div class="field-help">All prints are PLA unless noted or requested.</div>
+          <div class="field-help">${esc(materialNote())}</div>
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
         </div>
         <div class="field" style="margin-bottom:10px;max-width:160px;">
@@ -1735,8 +1743,8 @@ function renderMyJobsTab() {
         ${renderOrderTracker(b)}
         ${renderFinishedPhotos(b)}
         ${b.items.map(it => {
-          const ip = it.minutes ? calcTotal(it.minutes, it.grams, it, it.qty) : null;
-          const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it) : null;
+          const ip = it.minutes ? calcTotal(it.minutes, it.grams, it, it.qty, rulesFor(b)) : null;
+          const pp = it.minutes ? calcPerPrint(it.minutes, it.grams, it, rulesFor(b)) : null;
           return `<div class="sub-item">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div style="display:flow-root;min-width:0;">${renderModelThumb(it)}
@@ -1984,10 +1992,7 @@ function renderOwnerCalculatorLivePreview(calc) {
     </div>
     <div class="price-preview-box" style="margin-top:16px;">
       <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
-      <div class="price-breakdown">$2.00 flat × ${qty} = $${(2 * qty).toFixed(2)}
-${fmtMinutesWithHours(minutes)} × $0.024 × ${qty} = $${(minutes * 0.024 * qty).toFixed(2)}
-${grams.toFixed(1)}g × $${(FIL_RATE[calc.filType] ?? 0.024).toFixed(3)} × ${qty} = $${(grams * (FIL_RATE[calc.filType] ?? 0.024) * qty).toFixed(2)}
-$${perPrint.toFixed(2)} per print × ${qty}</div>
+      <div class="price-breakdown">${priceBreakdown(minutes, grams, filamentRate(calc.filType, currentRules()), qty, currentRules())}</div>
     </div>`;
 }
 
@@ -2211,8 +2216,8 @@ function renderOwnerBatch(b) {
       ${hasSpecial ? `
         <div class="field special-order">
           <label for="special-cost-${b.id}">Special order roll cost ($)</label>
-          <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? SPECIAL_ORDER_TYPICAL : specialOrderCost(b)).toFixed(2)}" />
-          <div class="field-help">The full 1 kg roll, charged instead of material. Usually about $${SPECIAL_ORDER_TYPICAL}. Use 0 when they're printing from their own leftover roll (within 2 months).</div>
+          <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? currentRules().rollCost : specialOrderCost(b)).toFixed(2)}" />
+          <div class="field-help">The full ${fmtRoll(currentRules().rollGrams)} roll, charged instead of material. Usually about $${currentRules().rollCost}. Use 0 when they're printing from their own leftover roll (within 2 months).</div>
         </div>` : ''}
       <div class="alert error" id="batch-err-${b.id}"></div>
       <div class="alert success" id="batch-ok-${b.id}"></div>
@@ -2251,7 +2256,8 @@ function renderOwnerBatch(b) {
 }
 
 function renderOwnerItem(batchId, it, i) {
-  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it) : null;
+  const rules = rulesFor(state.batches.find(b => b.id === batchId) || {});
+  const pp  = it.minutes && it.grams ? calcPerPrint(it.minutes, it.grams, it, rules) : null;
   const tot = pp !== null ? pp * it.qty : null;
   const known = getKnownEstimate(it);
   const canUseKnown = known && (!it.minutes || !it.grams);
@@ -2261,7 +2267,7 @@ function renderOwnerItem(batchId, it, i) {
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
-          <span style="font-size:12px;color:var(--muted);">$${itemRate(it).toFixed(3)}/g</span>
+          <span style="font-size:12px;color:var(--muted);">$${itemRate(it, rules).toFixed(3)}/g</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
@@ -2414,7 +2420,7 @@ async function lookupMyRequests() {
 // from the Site Settings tab. Everything has a default so the site works before it's filled in.
 const DEFAULT_ABOUT = "I do 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life: send me a model link or describe your idea, and I'll get back to you with a quote.";
 function blankSettings() {
-  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' } };
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [] };
 }
 
 // Only the parts the owner changed are kept, so improvements to the default text still reach them.
@@ -2461,6 +2467,10 @@ function cleanSettings(raw) {
       designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : ''
     })).filter(r => r.id && r.text),
     emails: cleanEmails(d.emails),
+    rules: cleanRules(d.rules),
+    materialNote: cleanText(d.materialNote, 200).trim(),
+    howItWorks: (Array.isArray(d.howItWorks) ? d.howItWorks : []).slice(0, 6)
+      .map(s => ({ title: cleanText(s && s.title, 80).trim(), text: cleanText(s && s.text, 300).trim() })).filter(s => s.title),
     vacation: {
       on: !!(d.vacation && d.vacation.on),
       until: cleanText(d.vacation && d.vacation.until, 60).trim(),
@@ -2579,7 +2589,7 @@ const EMAIL_SAMPLE = {
   items: '1) Benchy x 2\n   Color: Red\n\n2) Phone stand\n   Color: Black\n   Notes: Make it sturdy',
   itemsWithPrices: '1) Benchy x 2\n   Color: Red\n   Price: $9.28 ($4.64 each)\n\n2) Phone stand\n   Color: Black\n   Price: $6.40\n   Notes: Make it sturdy',
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
-  venmoLink: `https://venmo.com/${VENMO_USERNAME}?txn=pay&amount=15.68`,
+  venmoLink: 'https://venmo.com/your-venmo?txn=pay&amount=15.68',
   orderLink: 'https://soloprint.vercel.app/?requests=jane%40example.com#order-1729',
   delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup',
   photo: `${SUPA_URL}/storage/v1/object/public/gallery/orders/1729-photo.jpg`,
@@ -2589,7 +2599,8 @@ const EMAIL_SAMPLE = {
 };
 
 function emailPreview(key) {
-  const vars = { ...EMAIL_SAMPLE, vacationNote: vacationText(state.settings.vacation) };
+  const vars = { ...EMAIL_SAMPLE, vacationNote: vacationText(state.settings.vacation), materialNote: materialNote(),
+    venmoLink: `https://venmo.com/${currentRules().venmo}?txn=pay&amount=15.68` };
   vars.footer = renderEmailText(emailTemplate('footer', state.emailsDraft).body, vars);
   const t = emailTemplate(key, state.emailsDraft);
   return { subject: renderEmailText(t.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, vars) };
@@ -2753,6 +2764,8 @@ function renderOwnerSettingsPage() {
       <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
       ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
     </div>
+    ${renderRulesSettings(d)}
+    ${renderWordingSettings(d)}
     ${renderVacationSettings(d)}
     <div class="card">
       <h3 class="card-title">Customer reviews</h3>
@@ -2896,7 +2909,7 @@ function renderWorkDetail(g) {
           </div>
           <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>
         </div>
-        <div class="field-help" style="margin-top:10px;">Price is per item, printed in PLA unless noted. We'll review your request and confirm before asking for payment.</div>` : `
+        <div class="field-help" style="margin-top:10px;">Price is per item. ${esc(materialNote())} We'll review your request and confirm before asking for payment.</div>` : `
         <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
     </div>
     ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
@@ -3972,15 +3985,11 @@ function previewOwnerItem(batchId, i) {
   const pEl   = document.getElementById(`opreview-${batchId}-${i}`);
   if (!pEl) return;
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
-  const pp  = calcPerPrint(mins, grams, it);
+  const rules = rulesFor(batch);
+  const pp  = calcPerPrint(mins, grams, it, rules);
   const tot = pp * it.qty;
-  const fr  = itemRate(it);
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
-  document.getElementById(`opsub-${batchId}-${i}`).textContent =
-    `$2.00 flat × ${it.qty} = $${(2*it.qty).toFixed(2)}\n` +
-    `${fmtMinutesWithHours(mins)} × $0.024 × ${it.qty} = $${(mins*0.024*it.qty).toFixed(2)}\n` +
-    `${grams}g × $${fr} × ${it.qty} = $${(grams*fr*it.qty).toFixed(2)}` +
-    (it.qty > 1 ? `\n$${pp.toFixed(2)} per print × ${it.qty}` : '');
+  document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, grams, itemRate(it, rules), it.qty, rules);
   pEl.style.display = 'block';
 }
 
@@ -4183,6 +4192,7 @@ async function approveBatch(batchId) {
   btn.disabled = true; btn.textContent = 'Saving & notifying...';
   batch.status = 'quoted';
   batch.phase = 'quote_sent';
+  batch.rates = quoteRates(currentRules());   // this quote keeps these prices even if they change later
   batch.paymentStatus = 'payment_requested';
   batch.customerApprovedAt = '';
   batch.reminderSentAt = '';
@@ -4201,6 +4211,7 @@ async function resetBatch(batchId) {
   b.customerApprovedAt = '';
   b.reminderSentAt = '';
   b.phaseHistory = { estimate: (b.phaseHistory || {}).estimate || b.createdAt };
+  b.rates = {};
   b.items.forEach(it => it.minutes = null);
   await adjustStockForOrder(b, false);
   await upsertBatch(b);

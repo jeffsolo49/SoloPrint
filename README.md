@@ -15,7 +15,10 @@ Live at https://soloprint.vercel.app/
   part pasted into Apps Script; it picks up new versions of `Code.gs` from GitHub by itself), called by the trigger in
   `supabase/email-trigger.sql`. Setup steps are in `email/README.md`.
 - **Site Settings** (owner tab): about text and photo, Messenger/Etsy links, filament colors (type a name and the
-  color picker fills in) and reviews, stored by `supabase/site-settings.sql`.
+  color picker fills in), reviews, **prices and rules** (base fee, time and filament rates, special order rolls,
+  reminder timing, low-stock level, Venmo username), wording (material note, "How it works") and vacation mode,
+  stored by `supabase/site-settings.sql`. Quotes keep the prices they were sent with.
+- **For Claude Code:** `CLAUDE.md` maps the code, the checks and how to ship a change.
 - **Emails** (owner tab): read and edit every automated email. Defaults are in `email-templates.js`,
   which `email/Code.gs` carries an exact copy of (a test checks); your edits are saved in site settings.
 - **More owner tools** (`features.js`, data in `supabase/owner-tools.sql`): private order notes, finished-print

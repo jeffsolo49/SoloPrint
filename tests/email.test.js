@@ -47,7 +47,7 @@ check('special order: 1 kg roll replaces the material charge', () => {
   const special = { name: 'Vase', qty: 1, filType: 'special_order', specialColor: 'Red TPU', minutes: 60, grams: 10 };
   const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [special] }), at({}));
   assert(mail.subject === 'Your SoloPrint quote: $23.44', mail.subject);   // 2 + 1.44 print time + 20 roll, no per-gram charge
-  assert(mail.body.includes('Special order: Red TPU') && mail.body.includes('Special order roll (1 kg): $20.00'), mail.body);
+  assert(mail.body.includes('Special order: Red TPU') && mail.body.includes('Special order roll: $20.00'), mail.body);
   assert(mail.body.includes('PLA unless noted'), 'PLA note missing');
   const custom = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [special], specialOrderCost: 15 }), at({}))[0];
   assert(custom.subject === 'Your SoloPrint quote: $18.44', custom.subject);
@@ -206,6 +206,43 @@ check('daily run: one failing part does not stop the others', () => {
   try { ctx.sendQuoteReminders(); } catch (e) { error = e.message; }
   assert(mails.includes('Still interested? Your SoloPrint quote is waiting'), 'quote reminder not sent');
   assert(/Review requests: due_review_requests isn't set up yet: run supabase\/owner-tools\.sql/.test(error), error);
+});
+
+console.log('\nPrices and rules from Site Settings:');
+check("new prices apply to new requests, never to quotes already sent", () => {
+  const site = { rules: { baseFee: 5, minuteRate: 0.05, venmo: 'New-Name' } };
+  const fresh = emailsFor('INSERT', at({}), null, {}, site)[1].body;            // 2 x (5 + 90 x 0.05 + 20 x 0.024) = 19.96
+  assert(fresh.includes('Automated estimate: $19.96'), fresh);
+  const old = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, site)[0];   // quoted before rates were saved: original prices
+  assert(old.subject === 'Your SoloPrint quote: $9.28', old.subject);
+  const saved = emailsFor('UPDATE', at({ phase: 'quote_sent', rates: { baseFee: 3, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034 } }), at({}), {}, site)[0];
+  assert(saved.subject === 'Your SoloPrint quote: $11.28', saved.subject);       // the rates saved on the quote
+  const confirmed = emailsFor('UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }), {}, site)[0].body;
+  assert(confirmed.includes('https://venmo.com/New-Name?txn=pay&amount=9.28'), confirmed);
+});
+check('bad rule values are ignored', () => {
+  const r = ctxD.shopRules({ rules: { baseFee: -1, minuteRate: 'abc', gramRate: '0.03', venmo: 'bad name!' } });
+  assert(r.baseFee === 2 && r.minuteRate === 0.024 && r.gramRate === 0.03 && r.venmo === 'Jeffrey-Sol-3', JSON.stringify(r));
+});
+check('material note from Site Settings goes in the quote', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { materialNote: 'Printed in PETG unless noted.' })[0].body;
+  assert(body.includes('Printed in PETG unless noted.') && !body.includes('PLA'), body);
+});
+check('reminder timing comes from Site Settings', () => {
+  const days = {};
+  const props = { SECRET: '0123456789abcdef0123456789abcdef' };
+  const ctx = load({
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, getProperties: () => ({ ...props }), setProperty: (k, v) => { props[k] = v; } }) },
+    MailApp: { sendEmail() {} },
+    UrlFetchApp: { fetch: (url, opt) => {
+      if (url.includes('/site_settings')) return { getResponseCode: () => 200, getContentText: () => JSON.stringify([{ data: { rules: { quoteReminderDays: 5, reviewRequestDays: 10 } } }]) };
+      const fn = url.split('/rpc/')[1];
+      days[fn] = JSON.parse(opt.payload).p_days;
+      return { getResponseCode: () => 200, getContentText: () => (fn === 'owner_report_data' ? '{"jobs":[]}' : '[]') };
+    } }
+  });
+  ctx.sendQuoteReminders();
+  assert(days.due_quote_reminders === 5 && days.due_review_requests === 10, JSON.stringify(days));
 });
 
 console.log('\nLoader (email/Loader.gs):');
