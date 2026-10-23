@@ -1215,18 +1215,15 @@ function renderClientApp() {
 
 function renderOwnerNav() {
   const libCount = sortedLibraryEntries().length;
-  const analyticsCount = buildModelAnalyticsRows().length;
   return `
     <nav class="nav" aria-label="Owner sections">
       <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
-      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
+      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Site Settings</button>
       <button class="nav-tab ${state.ownerTab==='emails'?'active':''}" onclick="setOwnerTab('emails')">Emails</button>
-      <button class="nav-tab ${state.ownerTab==='filament'?'active':''}" onclick="setOwnerTab('filament')">Filament${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money</button>
-      <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='filament'?'active':''}" onclick="setOwnerTab('filament')">Filament &amp; Colors${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
   `;
@@ -1992,7 +1989,7 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', filament: 'Filament', money: 'Money', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator and saved models', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', filament: 'Filament and colors', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Dashboard')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${state.ownerTab === 'settings'
         ? renderOwnerSettingsPage()
@@ -2000,17 +1997,13 @@ function renderOwnerApp() {
         ? renderOwnerEmailsPage()
         : state.ownerTab === 'filament'
         ? renderOwnerFilamentPage()
-        : state.ownerTab === 'money'
-        ? renderOwnerMoneyPage()
+        : state.ownerTab === 'money' || state.ownerTab === 'analytics'
+        ? renderOwnerMoneyPage() + renderOwnerAnalyticsPage()
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
-        : state.ownerTab === 'library'
-        ? renderOwnerLibraryPage()
-        : state.ownerTab === 'analytics'
-          ? renderOwnerAnalyticsPage()
-          : state.ownerTab === 'calculator'
-            ? renderOwnerCalculatorPage()
-            : renderOwnerDashboard()}
+        : state.ownerTab === 'calculator' || state.ownerTab === 'library'
+          ? renderOwnerCalculatorPage() + renderOwnerLibraryPage()
+          : renderOwnerDashboard()}
     </main>`;
 }
 
@@ -2018,7 +2011,6 @@ function renderOwnerDashboard() {
   const estimate = state.batches.filter(b => (b.phase || 'estimate') === 'estimate');
   const production = state.batches.filter(b => (b.phase || 'estimate') === 'production');
   const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
-  const rev = delivered.reduce((s,b) => s + orderSum(b), 0);
 
   return `
     <div class="owner-page-header">
@@ -2036,55 +2028,6 @@ function renderOwnerDashboard() {
         <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
         <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
         <div class="stat-card"><div class="stat-val green">${delivered.length}</div><div class="stat-label">Delivered</div></div>
-      </div>
-      <div class="card">
-        <h3 class="card-title">Owner Sheet</h3>
-        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
-          <table class="owner-sheet">
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th>Email</th>
-                <th>Items</th>
-                <th>Created</th>
-                <th>Phase</th>
-                <th>Payment</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${[...state.batches].reverse().map(b => `
-                <tr>
-                  <td>${esc(b.clientName)}</td>
-                  <td><a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a></td>
-                  <td>${b.items.length}</td>
-                  <td>${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
-                  <td>
-                    <select class="phase-select" aria-label="Order phase for ${esc(b.clientName)}" onchange="updateBatchPhase('${b.id}', this.value)">
-                      ${ORDER_PHASES.map((p, idx) => {
-                        const currentIdx = phaseIndex(b.phase || 'estimate');
-                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
-                        return `<option value="${p.id}" ${(b.phase||'estimate')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
-                      }).join('')}
-                    </select>
-                  </td>
-                  <td>
-                    <select class="phase-select" aria-label="Payment status for ${esc(b.clientName)}" onchange="updatePaymentStatus('${b.id}', this.value)">
-                      ${PAYMENT_PHASES.map((p, idx) => {
-                        const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
-                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
-                        return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
-                      }).join('')}
-                    </select>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:1rem;">
-        <h3 class="card-title">Delivered Revenue${state.ownerHistoryAll ? '' : ` (last ${RECENT_ORDER_DAYS} days)`}</h3>
-        <div class="price-big" style="font-size:28px;color:var(--green);">$${rev.toFixed(2)}</div>
       </div>
       ${!state.batches.length
         ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
@@ -2548,13 +2491,17 @@ async function showClientView() {
   if (state.historyEmail) await loadBatches(state.historyEmail);
   render();
 }
+// Saved Models is part of Calculator, Sales Data part of Money (older links and buttons still work).
+const MERGED_TABS = { library: 'calculator', analytics: 'money' };
 function setOwnerTab(tab) {
+  tab = MERGED_TABS[tab] || tab;
   state.ownerTab = tab;
   if ((tab === 'analytics' || tab === 'money') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
   if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
   if (tab === 'emails') { state.emailsDraft = null; loadSettings().then(render); }
+  if (tab === 'filament') { state.settingsDraft = null; loadSettings().then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
@@ -2932,7 +2879,7 @@ function renderOwnerSettingsPage() {
     <div class="owner-page-header">
       <div class="section-header">
         <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
-        <div><h2 class="section-title">Site Settings</h2><div class="section-sub">What customers see about you, your colors, reviews and contact links</div></div>
+        <div><h2 class="section-title">Site Settings</h2><div class="section-sub">What customers see about you, prices, wording, reviews and contact links. Colors are on the Filament &amp; Colors tab.</div></div>
       </div>
     </div>
     ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
@@ -2964,30 +2911,6 @@ function renderOwnerSettingsPage() {
       </div>
       <div class="field-help">Each shows as a button for customers once filled in. Messenger links start with https://m.me/ (find yours in Messenger under your profile → Share).</div>
     </div>
-    <div class="card">
-      <h3 class="card-title">Filament colors</h3>
-      <div class="field-help">Type a color name and the color picker fills in to match; tap the swatch to adjust it. The colors customers can pick. Tick "Special" for special colors and materials you carry (like Red or White TPU); they use the special rate. Anything you don't carry, customers request as a special order. With no colors listed, customers see Black, White and Special Request.</div>
-      ${d.colors.map((c, n) => `
-        <div class="color-row">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-          <input type="color" id="color-hex-${n}" value="${esc(c.hex)}" aria-label="Color for ${esc(c.name || 'new color')}" oninput="state.settingsDraft.colors[${n}].hex = this.value; state.settingsDraft.colors[${n}].hexManual = true" style="width:46px;height:40px;padding:2px;" />
-          <input type="text" value="${esc(c.name)}" aria-label="Color name" placeholder="e.g. Red" oninput="onColorNameInput(${n}, this.value)" onchange="sortSettingsColors()" style="flex:1;min-width:140px;" />
-          <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${c.special ? 'checked' : ''} onchange="state.settingsDraft.colors[${n}].special = this.checked" style="width:auto;" /> Special</label>
-          <button class="btn-sm danger" type="button" onclick="state.settingsDraft.colors.splice(${n}, 1); render();" aria-label="Remove ${esc(c.name || 'color')}">Remove</button>
-        </div>
-        <div class="row2 color-extra">
-          <div class="field"><label for="color-desc-${n}">Description (optional)</label>
-            <input type="text" id="color-desc-${n}" value="${esc(c.description || '')}" maxlength="300" placeholder="e.g. Shimmery gold that shifts in the light" oninput="state.settingsDraft.colors[${n}].description = this.value" /></div>
-          <div class="field"><label for="color-link-${n}">Link to this filament (optional)</label>
-            <input type="url" id="color-link-${n}" value="${esc(c.link || '')}" maxlength="300" placeholder="https://..." oninput="state.settingsDraft.colors[${n}].link = this.value" /></div>
-          <div class="field"><label for="color-rate-${n}">Price per gram, $ (optional)</label>
-            <input type="number" id="color-rate-${n}" value="${c.rate === null || c.rate === undefined ? '' : esc(c.rate)}" min="0" step="0.001" placeholder="${(c.special ? currentRules().specialGramRate : currentRules().gramRate)} (${c.special ? 'special' : 'regular'} rate)" oninput="state.settingsDraft.colors[${n}].rate = this.value" />
-            <div class="field-help">Leave blank to use the ${c.special ? 'special' : 'regular'} rate. Changes apply to new estimates; quotes already sent keep their prices.</div></div>
-        </div>
-        </div>`).join('')}
-      <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
-      ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
-    </div>
     ${renderRulesSettings(d)}
     ${renderWordingSettings(d)}
     ${renderVacationSettings(d)}
@@ -3017,6 +2940,36 @@ function renderOwnerSettingsPage() {
       <button class="btn-primary" style="max-width:260px;" type="button" id="settings-save" onclick="saveSettingsDraft()">Save settings</button>
       <button class="btn-sm" type="button" onclick="state.settingsDraft = null; render();">Undo changes</button>
     </div>`;
+}
+
+// Filament colors (on the Filament & Colors tab; saved with the rest of Site Settings).
+function renderColorSettingsCard(d) {
+  return `
+    <div class="card">
+      <h3 class="card-title">Filament colors</h3>
+      <div class="field-help">Type a color name and the color picker fills in to match; tap the swatch to adjust it. The colors customers can pick. Tick "Special" for special colors and materials you carry (like Red or White TPU); they use the special rate. Anything you don't carry, customers request as a special order. With no colors listed, customers see Black, White and Special Request.</div>
+      ${d.colors.map((c, n) => `
+        <div class="color-row">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+          <input type="color" id="color-hex-${n}" value="${esc(c.hex)}" aria-label="Color for ${esc(c.name || 'new color')}" oninput="state.settingsDraft.colors[${n}].hex = this.value; state.settingsDraft.colors[${n}].hexManual = true" style="width:46px;height:40px;padding:2px;" />
+          <input type="text" value="${esc(c.name)}" aria-label="Color name" placeholder="e.g. Red" oninput="onColorNameInput(${n}, this.value)" onchange="sortSettingsColors()" style="flex:1;min-width:140px;" />
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${c.special ? 'checked' : ''} onchange="state.settingsDraft.colors[${n}].special = this.checked" style="width:auto;" /> Special</label>
+          <button class="btn-sm danger" type="button" onclick="state.settingsDraft.colors.splice(${n}, 1); render();" aria-label="Remove ${esc(c.name || 'color')}">Remove</button>
+        </div>
+        <div class="row2 color-extra">
+          <div class="field"><label for="color-desc-${n}">Description (optional)</label>
+            <input type="text" id="color-desc-${n}" value="${esc(c.description || '')}" maxlength="300" placeholder="e.g. Shimmery gold that shifts in the light" oninput="state.settingsDraft.colors[${n}].description = this.value" /></div>
+          <div class="field"><label for="color-link-${n}">Link to this filament (optional)</label>
+            <input type="url" id="color-link-${n}" value="${esc(c.link || '')}" maxlength="300" placeholder="https://..." oninput="state.settingsDraft.colors[${n}].link = this.value" /></div>
+          <div class="field"><label for="color-rate-${n}">Price per gram, $ (optional)</label>
+            <input type="number" id="color-rate-${n}" value="${c.rate === null || c.rate === undefined ? '' : esc(c.rate)}" min="0" step="0.001" placeholder="${(c.special ? currentRules().specialGramRate : currentRules().gramRate)} (${c.special ? 'special' : 'regular'} rate)" oninput="state.settingsDraft.colors[${n}].rate = this.value" />
+            <div class="field-help">Leave blank to use the ${c.special ? 'special' : 'regular'} rate. Changes apply to new estimates; quotes already sent keep their prices.</div></div>
+        </div>
+        </div>`).join('')}
+      <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
+      ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
+    </div>
+`;
 }
 
 async function saveSettingsDraft() {
