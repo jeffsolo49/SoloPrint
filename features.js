@@ -610,25 +610,12 @@ function renderStockAlerts() {
   </div>`;
 }
 
-function renderOwnerFilamentPage() {
+// Settings -> Filament & colors: how much of each color is on hand (saved as soon as it's changed).
+function renderStockCard() {
   const colors = state.settings.colors;
-  if (!state.settingsDraft) state.settingsDraft = JSON.parse(JSON.stringify(state.settings));
   return `
-    <div class="owner-page-header">
-      <div class="section-header">
-        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg></div>
-        <div><h2 class="section-title">Filament &amp; Colors</h2><div class="section-sub">The colors customers can pick, their prices, and how much of each you have</div></div>
-      </div>
-    </div>
-    ${renderColorSettingsCard(state.settingsDraft)}
-    <div class="alert error" id="settings-err"></div>
-    <div class="alert success" id="settings-ok"></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1rem;">
-      <button class="btn-primary" style="max-width:260px;" type="button" id="settings-save" onclick="saveSettingsDraft()">Save colors</button>
-      <button class="btn-sm" type="button" onclick="state.settingsDraft = null; render();">Undo changes</button>
-    </div>
-    <h3 class="card-title">Stock on hand</h3>
-    <div class="field-help" style="margin-bottom:8px;">Grams come off when an order moves to Printing.</div>
+    <h3 class="card-title" style="margin-top:1.5rem;">Stock on hand</h3>
+    <div class="field-help" style="margin-bottom:8px;">Saved as soon as you change it. Grams come off when an order moves to Printing.</div>
     ${state.ownerPrivateError ? `<div class="alert error" style="display:block;">Filament stock needs a one-time setup: run supabase/owner-tools.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       ${colors.length ? `<div class="stock-table">
@@ -652,7 +639,7 @@ function renderOwnerFilamentPage() {
             </div>
           </div>`;
         }).join('')}
-      </div>` : `<div class="field-help">Add your colors above first.</div>`}
+      </div>` : `<div class="field-help">Add your colors above (and save) first.</div>`}
       <div class="alert error" id="stock-err"></div>
       <p class="field-help">Leave a color blank to not track it. Special order and leftover-roll colors aren't counted (those rolls are the customer's). Moving an order back to the start puts its grams back.</p>
     </div>`;

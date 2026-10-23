@@ -421,7 +421,7 @@ textarea { resize: vertical; min-height: 70px; }
 .lib-import-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .lib-import-row .field { margin-bottom: 0; flex: 1; min-width: 200px; }
 .analytics-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 1rem; }
-.analytics-toolbar .field { margin-bottom: 0; min-width: 280px; flex: 1 1 320px; }
+.analytics-toolbar .field { margin-bottom: 0; min-width: 0; flex: 1 1 260px; }
 .analytics-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .analytics-table th, .analytics-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; vertical-align: middle; }
 .analytics-table th { color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.8px; text-align: center; }
@@ -745,3 +745,9 @@ textarea { resize: vertical; min-height: 70px; }
 .design-parts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .design-part img, .design-part .part-thumb-blank { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; background: var(--surface2); display: block; }
 .design-part-name { font-weight: 700; font-size: 14px; margin-top: 4px; }
+
+/* Settings sub-tabs */
+.sub-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 1rem; }
+.sub-tab { padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface2); border: 2px solid var(--border); border-radius: 999px; cursor: pointer; }
+.sub-tab:hover { border-color: var(--border-hover); }
+.sub-tab.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }

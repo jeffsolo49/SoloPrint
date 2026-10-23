@@ -1217,13 +1217,11 @@ function renderOwnerNav() {
   const libCount = sortedLibraryEntries().length;
   return `
     <nav class="nav" aria-label="Owner sections">
-      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
+      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Orders</button>
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
-      <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Site Settings</button>
-      <button class="nav-tab ${state.ownerTab==='emails'?'active':''}" onclick="setOwnerTab('emails')">Emails</button>
-      <button class="nav-tab ${state.ownerTab==='filament'?'active':''}" onclick="setOwnerTab('filament')">Filament &amp; Colors${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
+      <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
   `;
@@ -1989,14 +1987,10 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator and saved models', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', filament: 'Filament and colors', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Dashboard')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
-      ${state.ownerTab === 'settings'
+      ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
-        : state.ownerTab === 'emails'
-        ? renderOwnerEmailsPage()
-        : state.ownerTab === 'filament'
-        ? renderOwnerFilamentPage()
         : state.ownerTab === 'money' || state.ownerTab === 'analytics'
         ? renderOwnerMoneyPage() + renderOwnerAnalyticsPage()
         : state.ownerTab === 'gallery'
@@ -2492,16 +2486,15 @@ async function showClientView() {
   render();
 }
 // Saved Models is part of Calculator, Sales Data part of Money (older links and buttons still work).
-const MERGED_TABS = { library: 'calculator', analytics: 'money' };
+const MERGED_TABS = { library: 'calculator', analytics: 'money', emails: 'settings', filament: 'settings' };
 function setOwnerTab(tab) {
+  if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
   tab = MERGED_TABS[tab] || tab;
   state.ownerTab = tab;
   if ((tab === 'analytics' || tab === 'money') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
-  if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
-  if (tab === 'emails') { state.emailsDraft = null; loadSettings().then(render); }
-  if (tab === 'filament') { state.settingsDraft = null; loadSettings().then(render); }
+  if (tab === 'settings') { state.settingsDraft = null; state.emailsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
@@ -2871,18 +2864,30 @@ async function saveEmailsDraft() {
 }
 
 // Owner tab. Edits happen on a copy (state.settingsDraft) until "Save settings".
+// Settings has its own tabs: one page per part, plus Emails. Unsaved changes carry between the tabs
+// until Save settings (Emails saves on its own).
+const SETTINGS_TABS = [
+  ['about', 'About & links'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
+  ['wording', 'Wording'], ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails']
+];
+function setSettingsTab(tab) {
+  state.settingsTab = tab;
+  if (tab === 'emails') state.emailsDraft = null;
+  render();
+}
 function renderOwnerSettingsPage() {
   if (!state.settingsDraft) state.settingsDraft = JSON.parse(JSON.stringify(state.settings));
   const d = state.settingsDraft;
   const designs = state.gallery;
-  return `
-    <div class="owner-page-header">
-      <div class="section-header">
-        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
-        <div><h2 class="section-title">Site Settings</h2><div class="section-sub">What customers see about you, prices, wording, reviews and contact links. Colors are on the Filament &amp; Colors tab.</div></div>
-      </div>
-    </div>
-    ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+  if (state.ownerTab === 'emails' || state.ownerTab === 'filament') state.settingsTab = state.ownerTab === 'emails' ? 'emails' : 'colors';
+  const tab = SETTINGS_TABS.some(t => t[0] === state.settingsTab) ? state.settingsTab : 'about';
+  const low = lowStockColors().length;
+  const nav = `<nav class="sub-nav" aria-label="Settings sections">
+    ${SETTINGS_TABS.map(([id, label]) => `<button type="button" class="sub-tab ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" onclick="setSettingsTab('${id}')">${esc(label)}${id === 'colors' && low ? `<span class="nav-badge">${low}</span>` : ''}</button>`).join('')}
+  </nav>`;
+  if (tab === 'emails') return nav + renderOwnerEmailsPage();
+  const body = {
+    about: `
     <div class="card">
       <h3 class="card-title">About you</h3>
       <div class="field"><label>About text</label>
@@ -2911,9 +2916,12 @@ function renderOwnerSettingsPage() {
       </div>
       <div class="field-help">Each shows as a button for customers once filled in. Messenger links start with https://m.me/ (find yours in Messenger under your profile → Share).</div>
     </div>
-    ${renderRulesSettings(d)}
-    ${renderWordingSettings(d)}
-    ${renderVacationSettings(d)}
+`,
+    colors: renderColorSettingsCard(d),
+    prices: renderRulesSettings(d),
+    wording: renderWordingSettings(d),
+    vacation: renderVacationSettings(d),
+    reviews: `
     <div class="card">
       <h3 class="card-title">Customer reviews</h3>
       ${renderReviewApprovals()}
@@ -2934,12 +2942,24 @@ function renderOwnerSettingsPage() {
         </div>`).join('')}
       <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>
     </div>
+`
+  }[tab];
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
+        <div><h2 class="section-title">Settings</h2><div class="section-sub">Everything customers see and how your shop runs. Pick a section below.</div></div>
+      </div>
+    </div>
+    ${nav}
+    ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+    ${body}
     <div class="alert error" id="settings-err"></div>
     <div class="alert success" id="settings-ok"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn-primary" style="max-width:260px;" type="button" id="settings-save" onclick="saveSettingsDraft()">Save settings</button>
       <button class="btn-sm" type="button" onclick="state.settingsDraft = null; render();">Undo changes</button>
-    </div>`;
+    </div>    ${tab === 'colors' ? renderStockCard() : ''}`;
 }
 
 // Filament colors (on the Filament & Colors tab; saved with the rest of Site Settings).
