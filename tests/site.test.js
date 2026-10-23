@@ -177,6 +177,7 @@ const STATES = {
   'owner settings vacation': asOwner('settings/vacation'),
   'owner settings reviews': asOwner('settings/reviews'),
   'owner settings site text': asOwner('settings/text'),
+  'color with a photo picked': "(() => { state.settings.colors.find(c => c.id === 'red').photo = 'https://img.test/red.png'; state.draftItems[0].mode = 'idea'; render(); pickColor(0, 'red'); })()",
   'owner settings faq': "(async () => { await " + asOwner('settings/faq') + "; state.settingsDraft.faq = [{ id: 'f1', q: 'How long?', a: 'About a week.', live: false }]; render(); })()",
   'owner settings show/hide': asOwner('settings/features'),
   'owner emails': asOwner('emails'),
@@ -1320,6 +1321,26 @@ const STATES = {
     const names = await page.evaluate(() => Object.keys(AREA_PREVIEWS));
     const missing = names.filter(n => !require('fs').existsSync(require('path').join(__dirname, '..', 'previews', n + '.jpg')));
     assert(!missing.length, `missing pictures: ${missing}`);
+    await page.close();
+  });
+  await check('colors can have a real-life photo that customers see when choosing', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('settings/colors'));
+    const names = await owner.$$eval('input[aria-label="Color name"]', is => is.map(i => i.value));
+    const red = names.indexOf('Red');
+    await owner.setInputFiles(`#color-photo-${red}`, { name: 'red.png', mimeType: 'image/png', buffer: PNG });
+    await owner.waitForSelector('text=Photo added');
+    await owner.click('#settings-save');
+    await owner.waitForTimeout(300);
+    const photo = db.settings.colors.find(c => c.id === 'red').photo;
+    assert(/\/storage\/v1\/object\/public\/gallery\/site\/color-red-/.test(photo) && db.uploads.some(u => /color-red-.*-thumb\.jpg/.test(u)), photo);
+    await owner.close();
+    const page = await open(db);
+    await page.click('text=I have an idea');
+    assert(await page.$('.swatch-pill:has-text("Red") .swatch-photo'), 'the Red choice should show its photo');
+    await page.click('.swatch-pill:has-text("Red")');
+    assert(await page.$('.color-info .color-photo img'), 'picking Red should show its photo');
     await page.close();
   });
   await check('FAQ is at the bottom of the home page; phones get a back-to-top arrow', async () => {

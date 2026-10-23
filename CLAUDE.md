@@ -41,7 +41,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `customer_approve_quote`, `submit_review`. Anything in an order's data is visible to that customer, so
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
-  `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
+  `emails` (edited email text), colors may have `photo` (real-life picture, `swatchHtml`), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
   (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads).
   `siteText` ({key: {text, live}}, keys and defaults in `SITE_TEXT` in features.js; use `t(key)` for any customer-facing
   text the owner might want to change, including step names), `faq` ([{id, q, a, live}]), `features` ({key: false} for

@@ -1465,7 +1465,7 @@ function renderFilamentPills(i, current) {
     return `<div class="filament-pills" role="group" aria-label="Color">
       ${colors.map(c => `
         <button type="button" class="fil-pill swatch-pill ${item.colorId === c.id ? 'active-color' : ''}" aria-pressed="${item.colorId === c.id}" onclick="pickColor(${i}, '${esc(c.id)}')">
-          <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}${c.description || c.link ? ' <span class="info-mark" aria-hidden="true">ⓘ</span><span class="sr-only"> (has more info)</span>' : ''}
+          ${swatchHtml(c)}${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}${c.description || c.link || c.photo ? ' <span class="info-mark" aria-hidden="true">ⓘ</span><span class="sr-only"> (has more info)</span>' : ''}
         </button>`).join('')}
       <button type="button" class="fil-pill ${isSpecialOrder(item) ? 'active-special' : ''}" aria-pressed="${isSpecialOrder(item)}" onclick="pickColor(${i}, '')">Special order (color or material I don't carry)</button>
     </div>
@@ -1487,13 +1487,20 @@ function renderFilamentPills(i, current) {
 // The owner's description and link for each picked color that has one.
 function renderColorInfo(item) {
   const ids = itemParts(item).map(p => p.colorId).filter(Boolean);
-  const shown = customerColors().filter(c => ids.includes(c.id) && (c.description || c.link));
+  const shown = customerColors().filter(c => ids.includes(c.id) && (c.description || c.link || c.photo));
   if (!shown.length) return '';
-  return `<div class="color-info">${shown.map(c => `<div>
-    <span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>
-    <strong>${esc(c.name)}</strong>${c.description ? `: ${esc(c.description)}` : ''}
+  return `<div class="color-info">${shown.map(c => `<div class="color-info-row">
+    ${c.photo ? `<a class="color-photo" href="${esc(c.photo)}" target="_blank" rel="noopener noreferrer">${thumbImg(c.photo, `${c.name} filament, real-life photo`, 'thumb')}</a>` : ''}
+    <div>${swatchHtml(c)}<strong>${esc(c.name)}</strong>${c.description ? `: ${esc(c.description)}` : ''}
     ${c.link ? ` <a href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">See this filament ↗</a>` : ''}
+    ${c.photo ? '<div class="field-help" style="margin:2px 0 0;">Tap the photo to see it bigger.</div>' : ''}</div>
   </div>`).join('')}</div>`;
+}
+// A color's dot: its real-life photo when there is one, else its color.
+function swatchHtml(c) {
+  return c.photo
+    ? `<span class="swatch swatch-photo" style="background-color:${esc(c.hex)};background-image:url('${esc(thumbUrl(c.photo))}')" aria-hidden="true"></span>`
+    : `<span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>`;
 }
 
 // Colors a customer can add to a multi-color print: stocked colors, plus their leftover rolls.
@@ -2616,7 +2623,8 @@ function cleanSettings(raw) {
       outOfStock: !!(c && c.outOfStock),
       rate: c && c.rate !== '' && c.rate !== null && c.rate !== undefined && Number(c.rate) >= 0 && Number(c.rate) <= 100000 ? Number(c.rate) : null,
       link: safeLink(c && c.link),
-      description: cleanText(c && c.description, 300).trim()
+      description: cleanText(c && c.description, 300).trim(),
+      photo: safeImageUrl(c && c.photo)   // a real-life photo of the filament
     })).filter(c => c.id && c.name).sort(byName),
     reviews: (Array.isArray(d.reviews) ? d.reviews : []).slice(0, 40).map(r => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(r && r.id)) ? r.id : '',
@@ -2996,6 +3004,15 @@ function renderColorSettingsCard(d) {
         <div class="row2 color-extra">
           <div class="field"><label for="color-desc-${n}">Description (optional)</label>
             <input type="text" id="color-desc-${n}" value="${esc(c.description || '')}" maxlength="300" placeholder="e.g. Shimmery gold that shifts in the light" oninput="state.settingsDraft.colors[${n}].description = this.value" /></div>
+          <div class="field"><span class="field-label">Real-life photo (optional)</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              ${c.photo ? `<img class="part-thumb" src="${esc(thumbUrl(c.photo))}" alt="Photo of ${esc(c.name || 'this color')}" referrerpolicy="no-referrer" />` : ''}
+              <label class="btn-sm">${c.photo ? 'Change photo' : 'Add photo'}
+                <input type="file" accept="image/*" id="color-photo-${n}" onchange="uploadColorPhoto(${n}, this.files[0]); this.value='';" style="display:none;" /></label>
+              ${c.photo ? `<button type="button" class="btn-sm danger" onclick="state.settingsDraft.colors[${n}].photo = ''; render();" aria-label="Remove the photo of ${esc(c.name || 'this color')}">Remove photo</button>` : ''}
+              <span class="field-help" id="color-photo-status-${n}" role="status"></span>
+            </div>
+            <div class="field-help">A close-up of a print or the spool, so customers see the real color and finish.</div></div>
           <div class="field"><label for="color-link-${n}">Link to this filament (optional)</label>
             <input type="url" id="color-link-${n}" value="${esc(c.link || '')}" maxlength="300" placeholder="https://..." oninput="state.settingsDraft.colors[${n}].link = this.value" /></div>
           <div class="field"><label for="color-rate-${n}">Price per gram, $ (optional)</label>
@@ -3023,6 +3040,29 @@ async function saveSettingsDraft() {
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Save settings'; }
     showAlert('settings-err', "Couldn't save. If you were logged out, log in again; if this is the first time, run supabase/site-settings.sql.", 'error');
+  }
+}
+
+async function uploadColorPhoto(n, file) {
+  const c = state.settingsDraft && state.settingsDraft.colors[n];
+  const status = document.getElementById(`color-photo-status-${n}`);
+  const token = getOwnerToken();
+  if (!c || !file) return;
+  if (!token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
+  if (status) status.textContent = 'Uploading...';
+  try {
+    const blob = await resizePhoto(file, 1200);
+    const thumb = await resizePhoto(file, THUMB_SIDE);
+    if (!blob || !thumb) throw new Error('resize failed');
+    const path = `site/color-${c.id}-${Date.now()}.jpg`;
+    await uploadStoredPhoto(path, blob, token);
+    await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token);
+    c.photo = GALLERY_PUBLIC_PREFIX + path;
+    render();
+    const done = document.getElementById(`color-photo-status-${n}`);
+    if (done) done.textContent = 'Photo added. Remember to save.';
+  } catch (e) {
+    if (status) status.textContent = /unsupported/.test(e.message) ? "That photo isn't a format this browser can read. Try a JPG or PNG." : "Couldn't upload. Check you're logged in.";
   }
 }
 
