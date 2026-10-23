@@ -842,7 +842,7 @@ function oeItemSet(i, field, value, redraw) {
   const it = oeItem(i);
   if (!it) return;
   it[field] = value;
-  if (redraw) render();
+  if (redraw) render(); else updateOeEstimate(i);
 }
 function oeMode(i, mode) {
   const it = oeItem(i);
@@ -957,11 +957,15 @@ function renderOwnerEditItem(it, i, count) {
         <input type="number" id="oe-qty-${i}" value="${esc(it.qty || 1)}" min="1" max="999" step="1" oninput="oeItemSet(${i}, 'qty', this.value)" />
       </div>
       <div class="field">
-        <label for="oe-grams-${i}">Grams (optional)</label>
+        <label for="oe-grams-${i}">${extras.length ? `Grams: ${esc(main.name || 'first color')}` : 'Grams'} (optional)</label>
         <input type="number" id="oe-grams-${i}" value="${esc(it.grams || '')}" min="0" step="0.1" oninput="oeItemSet(${i}, 'grams', this.value)" />
       </div>
     </div>
-    <div class="field">
+    <div class="field" style="max-width:220px;">
+      <label for="oe-minutes-${i}">Print time, minutes (optional)</label>
+      <input type="number" id="oe-minutes-${i}" value="${esc(it.minutes || it.knownMinutes || '')}" min="0" step="1" oninput="oeItemSet(${i}, 'minutes', this.value)" />
+    </div>
+    ${(it.designParts || []).length ? renderOePartColors(it, i) : `<div class="field">
       <label for="oe-color-${i}">Color</label>
       <select id="oe-color-${i}" onchange="oeColor(${i}, this.value)">
         ${choices.map(c => `<option value="${esc(c.value)}" ${c.value === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
@@ -991,12 +995,21 @@ function renderOwnerEditItem(it, i, count) {
         <option value="">+ Add a color</option>
         ${extraChoices.map(c => `<option value="${esc(c.value)}">${esc(c.name)}</option>`).join('')}
       </select>` : ''}
-    </div>
+    </div>`}
+    ${extras.length ? `<div class="field">
+      <div class="owner-order-summary-label">Grams for each color (one print)</div>
+      <div class="row2">
+        ${extras.map((p, j) => `<div class="field" style="margin-bottom:0;"><label for="oe-extra-grams-${i}-${j}">${esc(p.name)} (g)</label>
+          <input type="number" id="oe-extra-grams-${i}-${j}" value="${esc(p.grams || '')}" min="0" step="0.1" placeholder="Blank = split evenly" oninput="oeExtraGrams(${i}, ${j}, this.value)" /></div>`).join('')}
+      </div>
+      <div class="field-help">The Grams box above is then the first color's (${esc(main.name || 'main color')}). Leave these blank to split the Grams box evenly.</div>
+    </div>` : ''}
     <div class="field">
       <label for="oe-price-${i}">Your price per print ($)</label>
       <input type="number" id="oe-price-${i}" value="${esc(own)}" min="0" step="0.01" placeholder="Blank = calculate from time and grams" oninput="oeItemSet(${i}, 'ownerPrice', this.value)" />
       <div class="field-help">Optional. Replaces the calculated price for this item. The customer sees only the price.</div>
     </div>
+    <div class="price-preview-box" id="oe-est-${i}" aria-live="polite">${renderOeEstimate(it)}</div>
     ${count > 1 ? `<button type="button" class="btn-sm danger" onclick="oeRemoveItem(${i})">Remove item ${i + 1}</button>` : ''}
   </fieldset>`;
 }
@@ -1065,6 +1078,7 @@ async function saveOwnerEdit() {
     it.ownerPrice = own === '' || own === undefined ? null : own === null ? null : Math.round(Number(own) * 100) / 100;
     it.qty = Math.max(1, parseInt(it.qty, 10) || 1);
     it.grams = Number(it.grams) > 0 ? Number(it.grams) : null;
+    it.minutes = Number(it.minutes) > 0 ? Math.round(Number(it.minutes)) : null;
   }
   for (const c of d.extraCharges || []) {
     if (c.amount !== '' && !(Number(c.amount) >= 0)) return err('Each charge amount must be 0 or more.');
@@ -1151,7 +1165,8 @@ function cleanDesignParts(list, withChoice) {
 // Choices for a part: in-stock colors (or Black and White with no colors set up), keyed by color id or type.
 function partColorChoices() { return stockedColors().map(c => ({ ...c, key: c.colorId || c.filType })); }
 
-function applyPartColors(item) {
+// `choices` defaults to the customer's in-stock colors; the owner's edit form passes all colors.
+function applyPartColors(item, choicesIn) {
   if (!(item.designParts || []).length) return;
   // Add-on parts count only when the customer chose them; a design with a set price adds their prices.
   const addOns = item.designParts.filter(p => p.optional && p.include);
@@ -1159,7 +1174,7 @@ function applyPartColors(item) {
   if (item.baseMinutes > 0) item.knownMinutes = item.baseMinutes + addOns.reduce((s, p) => s + (p.minutes || 0), 0);
   const parts = item.designParts.filter(p => p.include !== false);
   if (!parts.length) { item.extraColors = []; item.mainParts = ''; return; }
-  const choices = partColorChoices();
+  const choices = choicesIn || partColorChoices();
   // A part with no color (or one that's out of stock now) gets White, else the first regular color.
   const fallback = defaultColor(choices.map(c => ({ ...c, special: c.filType === 'special' })));
   const groups = [];
@@ -1540,5 +1555,95 @@ function renderFeatureSettings(d) {
     <div class="field-help" style="margin-bottom:10px;">Untick anything you don't want customers to see, then save. Nothing is deleted; tick it again to bring it back.</div>
     ${FEATURE_SWITCHES.map(([k, label]) => `<label class="special-order-check feature-switch"><input type="checkbox" id="feature-${k}" ${d.features[k] === false ? '' : 'checked'}
       onchange="state.settingsDraft.features['${k}'] = this.checked ? true : false" /> ${esc(label)}</label>`).join('')}
+  </div>`;
+}
+
+
+// ── ESTIMATES EVERYWHERE: per-color lines and designs priced like a request ──
+// "White 60 g × $0.024 = $1.44" for each color of an item (one print), using that color's own rate.
+function colorLines(item, grams, rules) {
+  const each = colorGrams(item, grams);
+  return itemParts(item).map((p, n) => {
+    const rate = partRate(p, rules);
+    const label = p.filType === 'special_order' ? `${p.name || 'Special order'} (special order roll)` : p.filType === 'leftover' ? `${p.name} (their leftover roll)` : (p.name || FIL_LABEL[p.filType] || 'Color');
+    return `${label}: ${each[n].toFixed(1)} g × $${rate.toFixed(3)} = $${(each[n] * rate).toFixed(2)}`;
+  });
+}
+function renderColorLines(item, grams, rules) {
+  return itemParts(item).length > 1 || (item.colorId && rules.colorRates && typeof rules.colorRates[item.colorId] === 'number')
+    ? `<div class="price-breakdown color-lines">${colorLines(item, grams, rules).map(esc).join('\n')}</div>` : '';
+}
+
+// A past-work design as a customer would first request it: its own color (else White), each part in its
+// starting color, add-ons left off. Used for the price shown on the gallery and in the owner's design form.
+function designEstimateItem(g) {
+  const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
+  if ((item.designParts || []).length) applyPartColors(item); else ensureItemColor(item);
+  return item;
+}
+function designEstimate(g) {
+  if (g.price > 0) return g.price;
+  const item = designEstimateItem(g);
+  return g.minutes && Number(item.grams) > 0 ? calcPerPrint(g.minutes, item.grams, item) : null;
+}
+
+// Owner's edit form: the price for one item with today's prices (an order being reviewed has no saved prices yet).
+function renderOeEstimate(it) {
+  const d = oeDraft();
+  const rules = rulesFor(d || {});
+  const fixed = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
+  const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+  if (fixed !== null) return `<div class="price-big">$${(fixed * qty).toFixed(2)}</div><div class="field-help">Fixed price: $${fixed.toFixed(2)} each${qty > 1 ? ` × ${qty}` : ''}.</div>`;
+  const minutes = Number(it.minutes) || Number(it.knownMinutes) || 0;
+  const grams = Number(it.grams) || 0;
+  if (!minutes || !grams) return `<div class="field-help">Add print time and grams to see the price.</div>`;
+  const per = printPrice(minutes, grams, it, rules);
+  return `<div class="price-big">$${(per * qty).toFixed(2)}</div>
+    <div class="field-help">$${per.toFixed(2)} each${qty > 1 ? ` × ${qty}` : ''} · ${fmtTime(minutes)} · today's prices, including each color's own price per gram${usesSpecialSpool(it) ? ' (plus the special order roll)' : ''}.</div>
+    ${renderColorLines(it, grams, rules)}`;
+}
+function updateOeEstimate(i) {
+  const it = oeItem(i);
+  const el = document.getElementById(`oe-est-${i}`);
+  if (it && el) el.innerHTML = renderOeEstimate(it);
+}
+// Owner's colors for parts (all colors, in stock or not), in the same shape as partColorChoices.
+function ownerPartChoices() {
+  return oeColorChoices().map(c => ({ key: c.value, name: c.part.name, colorId: c.part.colorId, filType: c.part.filType, hex: '' }));
+}
+function oePartColor(i, k, key) {
+  const it = oeItem(i);
+  if (!it || !it.designParts[k]) return;
+  it.designParts[k].colorId = key;
+  applyPartColors(it, ownerPartChoices());
+  render();
+}
+function oePartInclude(i, k, on) {
+  const it = oeItem(i);
+  if (!it || !it.designParts[k]) return;
+  it.designParts[k].include = !!on;
+  applyPartColors(it, ownerPartChoices());
+  render();
+}
+function oeExtraGrams(i, j, value) {
+  const it = oeItem(i);
+  if (!it || !it.extraColors[j]) return;
+  it.extraColors[j].grams = Number(value) > 0 ? Number(value) : null;
+  updateOeEstimate(i);
+}
+function renderOePartColors(it, i) {
+  const choices = ownerPartChoices();
+  return `<div class="field">
+    <div class="owner-order-summary-label">Parts (this design's colors come from its parts)</div>
+    ${it.designParts.map((p, k) => `<div class="part-color-row">
+      ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : ''}
+      <div class="field">
+        ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="oe-part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="oePartInclude(${i}, ${k}, this.checked)" /> Include add-on: ${esc(p.name)}</label>` : ''}
+        ${p.optional && !p.include ? '' : `<label for="oe-part-color-${i}-${k}">${esc(p.name)}${p.grams ? ` (${p.grams} g)` : ''}</label>
+        <select id="oe-part-color-${i}-${k}" onchange="oePartColor(${i}, ${k}, this.value)">
+          ${choices.map(c => `<option value="${esc(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
+        </select>`}
+      </div>
+    </div>`).join('')}
   </div>`;
 }
