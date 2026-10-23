@@ -139,7 +139,7 @@ function orderAgain(id) {
     const item = {
       ...blankItem(), name: it.name, link: it.link, notes: it.notes, qty: it.qty, grams: it.grams,
       imageLinks: it.imageLinks, previewImage: it.previewImage, mode: it.mode || inferMode(it),
-      filType: it.filType, color: it.color, colorId: it.colorId, specialColor: it.specialColor,
+      filType: it.filType, color: it.color, colorId: it.colorId, specialColor: it.specialColor, mainParts: it.mainParts,
       extraColors: it.extraColors.filter(p => p.filType !== 'leftover' && (!p.colorId || stocked.has(p.colorId)))
     };
     if (item.colorId && !stocked.has(item.colorId)) { item.colorId = ''; item.color = ''; item.filType = 'black'; }
@@ -567,7 +567,7 @@ function customerColors() { return state.settings.colors.filter(c => !c.outOfSto
 function orderColorGrams(b) {
   const used = {};
   b.items.forEach(it => itemParts(it).forEach(p => {
-    if (p.colorId && !['special_order', 'leftover'].includes(p.filType)) used[p.colorId] = (used[p.colorId] || 0) + partGrams(it);
+    if (p.colorId && !['special_order', 'leftover'].includes(p.filType)) used[p.colorId] = (used[p.colorId] || 0) + partGrams(it, p);
   }));
   return used;
 }
@@ -683,7 +683,7 @@ function orderMaterialCost(b) {
   const perGram = costPerKg() / 1000;
   let cost = specialOrderCost(b);
   b.items.forEach(it => itemParts(it).forEach(p => {
-    if (!['special_order', 'leftover'].includes(p.filType)) cost += partGrams(it) * perGram;
+    if (!['special_order', 'leftover'].includes(p.filType)) cost += partGrams(it, p) * perGram;
   }));
   return cost;
 }
@@ -1083,4 +1083,43 @@ async function saveOwnerEdit() {
   state.batches = state.batches.map(x => x.id === clean.id ? clean : x);
   state.ownerEdit = null;
   render();
+}
+
+// ── OWNER CALCULATOR: MORE THAN ONE COLOR ─────────────────────────────────
+// The calculator can price a print in several colors, each with its own grams and its own rate.
+// Choices: the colors in Site Settings (by id), plus the plain filament types.
+function calcChoices() {
+  return [...state.settings.colors].sort(byName).map(c => ({ value: c.id, name: c.name + (c.special ? ' (special)' : ''), part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
+    .concat(['black', 'white', 'color', 'special'].map(f => ({ value: f, name: FIL_LABEL[f] + (state.settings.colors.length ? ' (no specific color)' : ''), part: { name: FIL_LABEL[f], filType: f, colorId: '' } })));
+}
+function calcPart(value) {
+  const c = calcChoices().find(x => x.value === value);
+  return c ? c.part : { name: 'Black', filType: 'black', colorId: '' };
+}
+function calcColorOptions(selected) {
+  return calcChoices().map(c => `<option value="${esc(c.value)}" ${c.value === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+// The calculator as an item, so it's priced exactly like an order.
+function calcItem(calc) {
+  const main = calcPart(calc.color || calc.filType);
+  return { filType: main.filType, colorId: main.colorId, color: main.colorId ? main.name : '',
+    extraColors: (calc.extras || []).map(x => ({ ...calcPart(x.color), grams: Number(x.grams) > 0 ? Number(x.grams) : null })) };
+}
+function setCalcColor(value) {
+  const calc = state.ownerCalculator;
+  calc.color = state.settings.colors.some(c => c.id === value) ? value : '';
+  updateOwnerCalculatorField('filType', calcPart(value).filType);
+}
+function renderCalcExtras(calc) {
+  calc.extras = calc.extras || [];
+  return `<div class="calc-extras">
+    ${calc.extras.map((x, j) => `<div class="row2 calc-extra-row">
+      <div class="field"><label for="calc-extra-color-${j}">Color ${j + 2}</label>
+        <select id="calc-extra-color-${j}" onchange="state.ownerCalculator.extras[${j}].color = this.value; updateOwnerCalculatorField('extras', state.ownerCalculator.extras)">${calcColorOptions(x.color)}</select></div>
+      <div class="field"><label for="calc-extra-grams-${j}">Filament (g), color ${j + 2}</label>
+        <input type="number" id="calc-extra-grams-${j}" value="${esc(x.grams || '')}" min="0" step="0.1" oninput="state.ownerCalculator.extras[${j}].grams = this.value; updateOwnerCalculatorField('extras', state.ownerCalculator.extras)" /></div>
+      <button type="button" class="btn-sm" onclick="state.ownerCalculator.extras.splice(${j}, 1); render();" aria-label="Remove color ${j + 2}">Remove</button>
+    </div>`).join('')}
+    ${calc.extras.length < 8 ? `<button type="button" class="btn-sm" id="calc-add-color" onclick="state.ownerCalculator.extras.push({ color: calcChoices()[0].value, grams: '' }); render();">+ Add another color</button>` : ''}
+  </div>`;
 }
