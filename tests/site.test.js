@@ -25,7 +25,7 @@ function fixtures() {
     },
     gallery: {
       g1: { id: 'g1', published: true, sort_order: 0, data: { title: 'Dragon Organizer', description: 'Started as a request.\n\nPrinted three test versions.', photos: ['https://img.test/d1.png', 'https://img.test/d2.png'], videos: ['dQw4w9WgXcQ'], filType: 'black', minutes: 150, grams: 85.4 } },
-      g2: { id: 'g2', published: true, sort_order: 1, data: { title: 'Name Sign', photos: ['https://img.test/s.png'], parts: [{ id: 'p1', name: 'Plate', grams: 30, photo: 'https://img.test/s.png' }, { id: 'p2', name: 'Letters', grams: 5 }] } },
+      g2: { id: 'g2', published: true, sort_order: 1, data: { title: 'Name Sign', photos: ['https://img.test/s.png'], parts: [{ id: 'p1', name: 'Plate', grams: 30, photo: 'https://img.test/s.png' }, { id: 'p2', name: 'Letters', grams: 5, optional: true }] } },
       g3: { id: 'g3', published: false, sort_order: 2, data: { title: 'Hidden prototype', photos: [] } }
     },
     library: { 'name:planter': { name: 'Planter', minutes: 200, grams: 110, filType: 'black' } },
@@ -465,6 +465,52 @@ const STATES = {
     const live = await owner.textContent('#owner-calc-live-preview');
     assert(/\$6\.24/.test(live) && /Black \+ Red/.test(live) && /100\.0g/.test(live), live);
     await owner.close();
+  });
+  await check('optional add-on parts: customers choose them; they add grams, or their price to a set price', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Stand', grams: 15, optional: true, price: 4 }];
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    assert(await owner.isChecked('#part-optional-1') && !(await owner.isChecked('#part-optional-0')) && (await owner.inputValue('#part-price-1')) === '4', 'owner form should show the add-on and its price');
+    assert(!(await owner.$('#part-price-0')), 'required parts have no add-on price');
+    await owner.close();
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('.design-parts');
+    assert(/Optional add-on/.test(await page.textContent('.design-parts')), 'design page should mark the add-on');
+    await page.click('button:has-text("Request this")');
+    await page.waitForSelector('#part-add-0-1');
+    assert(!(await page.$('#part-color-0-1')) && !(await page.isChecked('#part-add-0-1')), 'add-on starts off, with no color menu');
+    assert(/\$7\.04/.test(await page.textContent('#customer-price-preview-0')), 'without the add-on: 2 + 150 x 0.024 + 60 g x 0.024');
+    await page.check('#part-add-0-1');
+    await page.waitForSelector('#part-color-0-1');
+    let it = await page.evaluate(() => state.draftItems[0]);
+    assert(it.grams === 75 && it.mainParts === 'Body, Stand (add-on)', JSON.stringify(it));
+    assert(/\$7\.40/.test(await page.textContent('#customer-price-preview-0')), 'with the add-on: 75 g');
+    await page.close();
+    // A design with a set price: the add-on adds its own price, re-read from the gallery when quoting.
+    db.gallery.g1.data.price = 20;
+    const shop = await open(db, { suffix: '?design=dragon-organizer' });
+    await shop.waitForSelector('.design-parts');
+    await shop.click('button:has-text("Request this")');
+    await shop.waitForSelector('#part-add-0-1');
+    assert(/\$20\.00/.test(await shop.textContent('#customer-price-preview-0')), 'set price without the add-on');
+    await shop.check('#part-add-0-1');
+    await shop.waitForSelector('#part-color-0-1');
+    assert(/\$24\.00/.test(await shop.textContent('#customer-price-preview-0')), 'set price plus the $4 add-on');
+    await shop.evaluate(() => { state.draftItems[0].designParts[1].price = 0; state.draftItems[0].setPrice = 1; });   // tampered
+    await shop.fill('#client-name', 'Max');
+    await shop.fill('#client-email', 'max@example.com');
+    await shop.click('#submit-btn');
+    await requestSent(shop);
+    await shop.close();
+    const job = Object.values(db.jobs).find(j => j.clientName === 'Max');
+    const quoting = await open(db);
+    await quoting.evaluate(asOwner('dashboard'));
+    await quoting.click(`#approve-btn-${job.id}`);
+    await quoting.waitForTimeout(300);
+    assert(db.jobs[job.id].items[0].setPrice === 24, `quoted ${JSON.stringify(db.jobs[job.id].items[0])}`);
+    await quoting.close();
   });
   await check('design parts: owner lists parts with grams and photos; customers pick a color for each part', async () => {
     const db = fixtures();

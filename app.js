@@ -461,6 +461,7 @@ function cleanItem(it) {
     leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
     mainParts: cleanText(it.mainParts, 200),
     designParts: cleanDesignParts(it.designParts, true),
+    basePrice: cleanNumber(it.basePrice),   // a design's set price before add-ons (the owner re-reads it when quoting)
     extraColors: (Array.isArray(it.extraColors) ? it.extraColors : []).slice(0, 8).map(p => ({
       parts: cleanText(p && p.parts, 200),
       grams: cleanNumber(p && p.grams),
@@ -1665,7 +1666,8 @@ function galleryItemFields(g) {
     name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
     estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
-    designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: '' })) : [], extraColors: [], mainParts: ''
+    designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: '', include: !p.optional })) : [], extraColors: [], mainParts: '',
+    basePrice: g.price > 0 ? g.price : null
   };
 }
 
@@ -3479,7 +3481,7 @@ async function saveGalleryItem() {
     data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], filType: f.filType,
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
-      grams: parseFloat(f.grams) || (f.parts || []).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
+      grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
   });
   const btn = document.getElementById('gallery-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
@@ -4519,9 +4521,13 @@ function readOwnerColorGrams(batchId, i, it) {
   });
 }
 
+// A design's set price from the gallery, plus the prices of the optional add-on parts the customer chose
+// (prices always come from the gallery, never from the customer's request).
 function ownerSetPrice(it) {
   const g = it.galleryId && state.gallery.find(x => x.id === it.galleryId);
-  return g && g.price > 0 ? g.price : null;
+  if (!g || !(g.price > 0)) return null;
+  const chosen = (it.designParts || []).filter(p => p.optional && p.include).map(p => p.id);
+  return g.price + (g.parts || []).filter(p => p.optional && chosen.includes(p.id)).reduce((s, p) => s + (p.price || 0), 0);
 }
 
 async function approveBatch(batchId) {
