@@ -1760,6 +1760,7 @@ function renderTimeSection(item, i) {
 
 function renderItemBlock(item, i) {
   const mode = inferMode(item);
+  if (mode === 'gallery' && syncDesignParts(item)) queueDraftSave();
   const modeLabel = { link: 'Model link', idea: 'Custom idea', gallery: 'From my past work' }[mode];
   return `
     <div class="item-block" id="iblock-${i}">

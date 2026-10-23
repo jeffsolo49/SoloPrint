@@ -1180,6 +1180,33 @@ function applyPartColors(item) {
     grams: hasGrams ? Math.round(g.grams * 10) / 10 : null, parts: g.names.join(', ') }));
 }
 
+// A request keeps a copy of its design's parts (it's saved in the customer's draft). Bring that copy up to date
+// with the design as it is now (parts added, removed, made optional, new grams, add-on prices), keeping the
+// customer's choices. Returns true when something changed.
+let partsGalleryRequested = false;
+function syncDesignParts(item) {
+  if (!item.galleryId || !featureOn('designParts')) return false;
+  if (!state.galleryLoaded) {
+    if (!partsGalleryRequested) { partsGalleryRequested = true; loadGallery().then(render); }
+    return false;
+  }
+  const g = state.gallery.find(x => x.id === item.galleryId);
+  if (!g) return false;
+  const old = item.designParts || [];
+  const fresh = (g.parts || []).map(p => {
+    const was = old.find(o => o.id === p.id);
+    return { ...p, colorId: was ? was.colorId : '', include: !p.optional || !!(was && was.optional && was.include) };
+  });
+  const base = g.price > 0 ? g.price : null, minutes = g.minutes || null;
+  if (JSON.stringify(fresh) === JSON.stringify(old) && item.basePrice === base && item.baseMinutes === minutes) return false;
+  if (!fresh.length && old.length) { item.extraColors = []; item.mainParts = ''; }
+  item.designParts = fresh;
+  item.basePrice = base;
+  item.baseMinutes = minutes;
+  applyPartColors(item);
+  return true;
+}
+
 function setPartIncluded(i, k, on) {
   const item = state.draftItems[i];
   if (!item || !item.designParts[k]) return;

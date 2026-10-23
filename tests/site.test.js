@@ -490,6 +490,17 @@ const STATES = {
     await page.uncheck('#part-add-0-1');
     assert(await page.evaluate(() => state.draftItems[0].knownMinutes === 150), 'unticking should take the time back off');
     await page.close();
+    // A request started before the part was made optional (saved in the customer's draft) follows the design now.
+    const stale = await open(db);
+    await stale.evaluate(async () => {
+      await loadGallery();
+      state.draftItems[0] = { ...blankItem(), mode: 'gallery', galleryId: 'g1', name: 'Dragon Organizer', knownMinutes: 150, knownFromLibrary: true,
+        designParts: [{ id: 'p1', name: 'Body', grams: 60, colorId: 'black', include: true }, { id: 'p2', name: 'Stand', grams: 15, colorId: 'red', include: true }] };
+      render();
+    });
+    await stale.waitForSelector('#part-add-0-1');
+    assert(!(await stale.isChecked('#part-add-0-1')) && await stale.evaluate(() => state.draftItems[0].grams === 60 && !state.draftItems[0].extraColors.length), 'old draft still treats the add-on as required');
+    await stale.close();
     // A design with a set price: the add-on adds its own price, re-read from the gallery when quoting.
     db.gallery.g1.data.price = 20;
     const shop = await open(db, { suffix: '?design=dragon-organizer' });
