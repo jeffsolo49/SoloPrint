@@ -1406,7 +1406,7 @@ const FEATURE_SWITCHES = [
   ['recentWork', '"My Work" photos on the home page'],
   ['howItWorks', '"How it works" on the home page'],
   ['reviews', 'Reviews (home page, design pages, and the review form)'],
-  ['faq', 'FAQ on the home page'],
+  ['faq', 'FAQ at the bottom of the home page'],
   ['queue', 'Order queue and wait estimates'],
   ['orderAgain', '"Order again" button'],
   ['leftoverRolls', '"Your leftover rolls" card on My Requests'],
@@ -1472,7 +1472,7 @@ function renderFaq() {
 const AREA_PREVIEWS = {
   about: 'the About card on the home page', colors: 'the color choices on the request form', prices: 'the price estimate on the request form',
   wording: '"How it works" on the home page', vacation: 'the notice at the top of the home page', reviews: 'reviews on the home page',
-  faq: 'the FAQ on the home page', 'text-menu': 'the menu buttons', 'text-form': 'the request form', 'text-gallery': 'the past work page',
+  faq: 'the FAQ at the bottom of the home page', 'text-menu': 'the menu buttons', 'text-form': 'the request form', 'text-gallery': 'the past work page',
   'text-steps': 'an order on My Requests'
 };
 function areaPreview(name) {
@@ -1646,4 +1646,25 @@ function renderOePartColors(it, i) {
       </div>
     </div>`).join('')}
   </div>`;
+}
+
+// ── BACK TO TOP (phones) ──────────────────────────────────────────────────
+// A small arrow in the corner once you've scrolled down a long page. It sits outside the redrawn page,
+// so it's made once; only shown on narrow screens (styles.css).
+function setupBackToTop() {
+  if (document.getElementById('back-to-top')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'back-to-top';
+  btn.className = 'back-to-top';
+  btn.setAttribute('aria-label', 'Back to top');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+  btn.onclick = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('main')?.focus({ preventScroll: true });
+  };
+  document.body.appendChild(btn);
+  const update = () => btn.classList.toggle('show', window.scrollY > 600);
+  window.addEventListener('scroll', update, { passive: true });
+  update();
 }

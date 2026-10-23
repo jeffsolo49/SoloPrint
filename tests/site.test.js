@@ -1322,6 +1322,25 @@ const STATES = {
     assert(!missing.length, `missing pictures: ${missing}`);
     await page.close();
   });
+  await check('FAQ is at the bottom of the home page; phones get a back-to-top arrow', async () => {
+    const db = fixtures();
+    db.settings.faq = [{ id: 'f1', q: 'Do you ship?', a: 'Pickup only.', live: true }];
+    const page = await open(db);
+    assert(await page.evaluate(() => { const faq = document.querySelector('.faq'); const form = document.getElementById('submit-btn');
+      return !!faq && !!(form.compareDocumentPosition(faq) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'FAQ should come after the request form');
+    await page.setViewportSize({ width: 390, height: 800 });
+    assert(!(await page.isVisible('#back-to-top')), 'arrow should be hidden at the top');
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.waitForTimeout(200);
+    assert(await page.isVisible('#back-to-top'), 'arrow should show after scrolling down');
+    await page.click('#back-to-top');
+    await page.waitForTimeout(800);
+    assert(await page.evaluate(() => window.scrollY) < 50, 'arrow should go back to the top');
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    assert(!(await page.isVisible('#back-to-top')), 'no arrow on wide screens');
+    await page.close();
+  });
   await check('show / hide: switched-off parts of the site disappear', async () => {
     const db = fixtures();
     const owner = await open(db);
