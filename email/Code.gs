@@ -803,10 +803,33 @@ function partRate(part, rules) {
   const own = part.colorId && rules.colorRates && rules.colorRates[part.colorId];
   return typeof own === 'number' ? own : filamentRate(part.filType, rules);
 }
-// Multi-color prints split the grams evenly between their colors.
-function colorsRate(item, rules) {
+// Grams per print of each color, main color first. When the owner gives the extra colors their own grams,
+// `grams` is the main color's weight and each extra color adds its own; otherwise `grams` is the total,
+// split evenly between the colors.
+function colorGrams(item, grams) {
+  const parts = itemParts(item), extras = parts.slice(1);
+  const g = Number(grams === undefined ? item.grams : grams) || 0;
+  return extras.some(p => Number(p.grams) > 0) ? [g].concat(extras.map(p => Number(p.grams) || 0)) : parts.map(() => g / parts.length);
+}
+function hasColorGrams(item) { return itemParts(item).slice(1).some(p => Number(p.grams) > 0); }
+// Material cost of one print: each color's grams at that color's rate.
+function colorsMaterial(item, grams, rules) {
+  const each = colorGrams(item, grams);
+  return itemParts(item).reduce((s, p, n) => s + each[n] * partRate(p, rules), 0);
+}
+// Average $ per gram over all the colors (by weight).
+function colorsRate(item, rules, grams) {
+  const total = colorGrams(item, grams).reduce((s, g) => s + g, 0);
+  if (total > 0) return colorsMaterial(item, grams, rules) / total;
   const parts = itemParts(item);
   return parts.reduce((s, p) => s + partRate(p, rules), 0) / parts.length;
+}
+// "Black: body; Red: eyes" from what the customer said goes in each color (multi-color prints).
+function colorPartsText(item) {
+  return itemParts(item).map((p, n) => {
+    const where = String((n === 0 ? item.mainParts : p.parts) || '').trim();
+    return where ? (p.name || 'Main color') + ': ' + where : '';
+  }).filter(Boolean).join('; ');
 }
 // A fixed price per print instead of the calculation: the owner's own price for this item (ownerPrice,
 // set when editing a request; can be 0), else a past-work design's set price (setPrice).
@@ -830,8 +853,8 @@ function extraChargesTotal(order) { return extraCharges(order).reduce((s, c) => 
 function printPrice(minutes, grams, colors, rules) {
   const fixed = colors && typeof colors === 'object' ? fixedPrice(colors) : null;
   if (fixed !== null) return fixed;
-  const rate = colors && typeof colors === 'object' ? colorsRate(colors, rules) : filamentRate(colors, rules);
-  return rules.baseFee + Number(minutes) * rules.minuteRate + Number(grams) * rate;
+  const material = colors && typeof colors === 'object' ? colorsMaterial(colors, grams, rules) : Number(grams) * filamentRate(colors, rules);
+  return rules.baseFee + Number(minutes) * rules.minuteRate + material;
 }
 // What the order pays for special order rolls: the owner's amount once set, else the usual roll price
 // (nothing when every special color comes from the customer's leftover roll).
@@ -898,8 +921,12 @@ function itemParts(it) {
   return [main].concat(Array.isArray(it.extraColors) ? it.extraColors : []);
 }
 function colorKey(text) { return String(text || '').trim().toLowerCase().replace(/\s+/g, ' '); }
-function itemGrams(it) { return (Number(it.grams) || 0) * Math.max(1, Number(it.qty) || 1); }
-function partGrams(it) { return itemGrams(it) / itemParts(it).length; }
+function itemGrams(it) { return colorGrams(it).reduce((s, g) => s + g, 0) * Math.max(1, Number(it.qty) || 1); }
+// Grams one color of an item uses for the whole quantity (`part` from itemParts(it); the main color otherwise).
+function partGrams(it, part) {
+  const n = (Array.isArray(it.extraColors) ? it.extraColors : []).indexOf(part);
+  return colorGrams(it)[n + 1] * Math.max(1, Number(it.qty) || 1);
+}
 function rollParts(it) { return itemParts(it).filter(p => p.filType === 'leftover'); }
 function usesRolls(it) { return isSpecialOrder(it) || rollParts(it).length > 0; }
 function rollExpiry(iso, months) { const d = new Date(iso); d.setMonth(d.getMonth() + (isFinite(months) ? months : RULE_DEFAULTS.rollMonths)); return d.toISOString(); }
@@ -917,14 +944,14 @@ function leftoverRolls(batches, excludeId, rules) {
       if (!key) return;
       let roll = rolls.find(r => r.orderId === b.id && r.key === key);
       if (!roll) rolls.push(roll = { orderId: b.id, key, color: it.specialColor, email: colorKey(b.clientEmail), boughtAt, expiresAt: rollExpiry(boughtAt, rules.rollMonths), used: 0 });
-      roll.used += partGrams(it);
+      roll.used += partGrams(it, itemParts(it)[0]);
     });
   });
   (batches || []).forEach(b => {
     if (b.id === excludeId) return;
     (b.items || []).forEach(it => rollParts(it).forEach(p => {
       const roll = findRoll(rolls, b.clientEmail, p);
-      if (roll) roll.used += partGrams(it);
+      if (roll) roll.used += partGrams(it, p);
     }));
   });
   rolls.forEach(r => { r.left = Math.max(0, rules.rollGrams - r.used); });
@@ -953,6 +980,7 @@ function itemLines(rec, withPrices, site) {
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
     const extras = extraColors(it);
     if (extras.length) lines.push(`   Also: ${extras.map(p => p.name + (p.filType === 'leftover' ? ' (leftover roll)' : '')).join(', ')}`);
+    if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
     if (withPrices && itemPriced(it)) {
       const each = printPrice(it.minutes, it.grams, it, rules);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);

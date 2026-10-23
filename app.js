@@ -48,6 +48,8 @@ function blankOwnerCalculator() {
     grams: '',
     qty: 1,
     filType: 'black',
+    color: '',        // main color: a color id from Site Settings, or '' to use the filament type
+    extras: [],       // more colors: [{ color: id or filament type, grams }]
     lastResult: null
   };
 }
@@ -462,7 +464,10 @@ function cleanItem(it) {
     specialColor: cleanText(it.specialColor, 60),
     useLeftover: it.useLeftover === true,
     leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
+    mainParts: cleanText(it.mainParts, 200),
     extraColors: (Array.isArray(it.extraColors) ? it.extraColors : []).slice(0, 8).map(p => ({
+      parts: cleanText(p && p.parts, 200),
+      grams: cleanNumber(p && p.grams),
       name: cleanText(p && p.name, 60).trim(),
       filType: ['black', 'white', 'color', 'special', 'leftover'].includes(p && p.filType) ? p.filType : 'color',
       colorId: /^[a-z0-9-]{1,40}$/.test(String(p && p.colorId)) ? p.colorId : '',
@@ -1360,7 +1365,7 @@ function leftoverChecks(b) {
   const uses = {};
   b.items.forEach(it => rollParts(it).forEach(p => {
     const roll = findRoll(rolls, b.clientEmail, p);
-    if (roll) uses[roll.orderId + roll.key] = (uses[roll.orderId + roll.key] || 0) + partGrams(it);
+    if (roll) uses[roll.orderId + roll.key] = (uses[roll.orderId + roll.key] || 0) + partGrams(it, p);
   }));
   return b.items.map(it => rollParts(it).map(p => {
     const roll = findRoll(rolls, b.clientEmail, p);
@@ -1527,8 +1532,29 @@ function renderExtraColors(item, i) {
     </div>
     ${rollsLooked ? '' : `<button type="button" class="btn-sm" id="extra-leftover-${i}" onclick="findLeftoverRolls(${i}, true)">Add my leftover roll</button>
       <span id="leftover-msg-${i}" role="status"></span>`}
-    ${extras.length ? `<div class="field-help">For the estimate, the filament is split evenly between the colors. I'll confirm the price in your quote.</div>` : ''}
+    ${extras.length ? renderColorPartsQuestion(item, i) : ''}
   </div>`;
+}
+
+// Multi-color prints: which parts go in which color.
+function renderColorPartsQuestion(item, i) {
+  const parts = itemParts(item);
+  return `<fieldset class="color-parts">
+    <legend>Which parts should be which color?</legend>
+    ${parts.map((p, n) => `<div class="field">
+      <label for="color-parts-${i}-${n}">${esc(p.name || 'Main color')}${n === 0 ? ' (main color)' : ''}</label>
+      <input type="text" id="color-parts-${i}-${n}" maxlength="200" value="${esc((n === 0 ? item.mainParts : p.parts) || '')}"
+        placeholder="${n === 0 ? 'e.g. the body' : 'e.g. the eyes and the lettering'}" oninput="setColorParts(${i}, ${n}, this.value)" />
+    </div>`).join('')}
+    <div class="field-help">For the estimate, the filament is split evenly between the colors. I'll confirm the price in your quote.</div>
+  </fieldset>`;
+}
+function setColorParts(i, n, value) {
+  const item = state.draftItems[i];
+  if (!item) return;
+  if (n === 0) item.mainParts = value;
+  else if (item.extraColors[n - 1]) item.extraColors[n - 1].parts = value;
+  queueDraftSave();
 }
 
 function toggleExtraColor(i, n) {
@@ -1909,6 +1935,7 @@ function renderMyJobsTab() {
                 ${isWebUrl(it.link) ? `<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>` : it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
                 </div>
                 ${it.notes?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic;">"${esc(it.notes)}"</div>`:''}
+                ${colorPartsText(it) ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">Colors: ${esc(colorPartsText(it))}</div>` : ''}
                 ${renderPhotoLinks(it.imageLinks)}
               </div>
               ${ip!==null
@@ -2135,20 +2162,23 @@ function renderOwnerCalculatorLivePreview(calc) {
   if (!minutes || !grams) {
     return `<div style="font-size:12px;color:var(--muted);line-height:1.8;">Fill in print time and filament weight to see the quote update live here.</div>`;
   }
-  const perPrint = calcPerPrint(minutes, grams, calc.filType);
+  const item = calcItem(calc);
+  const perPrint = calcPerPrint(minutes, grams, item);
   const total = perPrint * qty;
+  const allGrams = colorGrams(item, grams).reduce((s, g) => s + g, 0);
   return `
     <div class="price-big">$${total.toFixed(2)}</div>
-    <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${FIL_LABEL[calc.filType] || calc.filType} filament.</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px;">Owner price for ${qty} print${qty === 1 ? '' : 's'} using ${esc(itemParts(item).map(p => p.name).join(' + '))}.</div>
     <div class="calc-stat-grid">
       <div class="calc-stat"><div class="calc-stat-label">Per Print</div><div class="calc-stat-value accent">$${perPrint.toFixed(2)}</div></div>
       <div class="calc-stat"><div class="calc-stat-label">Quantity</div><div class="calc-stat-value">${qty}</div></div>
       <div class="calc-stat"><div class="calc-stat-label">Print Time</div><div class="calc-stat-value">${fmtTime(minutes)}</div></div>
-      <div class="calc-stat"><div class="calc-stat-label">Filament</div><div class="calc-stat-value green">${grams.toFixed(1)}g</div></div>
+      <div class="calc-stat"><div class="calc-stat-label">Filament</div><div class="calc-stat-value green">${allGrams.toFixed(1)}g</div></div>
     </div>
     <div class="price-preview-box" style="margin-top:16px;">
       <div class="card-title" style="margin-bottom:8px;">Breakdown</div>
-      <div class="price-breakdown">${priceBreakdown(minutes, grams, filamentRate(calc.filType, currentRules()), qty, currentRules())}</div>
+      <div class="price-breakdown">${priceBreakdown(minutes, allGrams, colorsRate(item, currentRules(), grams), qty, currentRules())}</div>
+      ${(calc.extras || []).length ? `<div class="price-breakdown" style="margin-top:8px;">${itemParts(item).map((p, n) => `${esc(p.name)}: ${colorGrams(item, grams)[n].toFixed(1)}g × $${partRate(p, currentRules()).toFixed(3)}`).join('<br>')}</div>` : ''}
     </div>`;
 }
 
@@ -2182,15 +2212,14 @@ function renderOwnerCalculatorPage() {
             <div class="field"><label>Hours</label><input type="number" id="owner-calc-hours" value="${esc(calc.hours)}" min="0" step="1" placeholder="2" oninput="updateOwnerCalculatorField('hours', this.value)" /></div>
             <div class="field"><label>Minutes</label><input type="number" id="owner-calc-mins" value="${esc(calc.minutes)}" min="0" max="59" step="1" placeholder="30" oninput="updateOwnerCalculatorField('minutes', this.value)" /></div>
             <div class="field"><label>Print Time (min.)</label><input class="print-time-output" type="number" id="owner-calc-print-time" value="${minutes || ''}" placeholder="Auto" readonly /></div>
-            <div class="field"><label>Filament (g)</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
+            <div class="field"><label>Filament (g)${(calc.extras || []).length ? ', first color' : ''}</label><input type="number" id="owner-calc-grams" value="${esc(calc.grams)}" min="0" step="0.1" placeholder="85.4" oninput="updateOwnerCalculatorField('grams', this.value)" /></div>
             <div class="field">
-              <label>Filament type</label>
-              <select id="owner-calc-fil" onchange="updateOwnerCalculatorField('filType', this.value)">
-                ${Object.entries(FIL_LABEL).map(([value, label]) => `<option value="${value}" ${calc.filType === value ? 'selected' : ''}>${label}</option>`).join('')}
-              </select>
+              <label>${(calc.extras || []).length ? 'First color' : 'Color'}</label>
+              <select id="owner-calc-fil" onchange="setCalcColor(this.value)">${calcColorOptions(calc.color || calc.filType)}</select>
             </div>
             <div class="field"><label>Quantity</label><input type="number" id="owner-calc-qty" value="${qty}" min="1" step="1" oninput="updateOwnerCalculatorField('qty', this.value)" /></div>
           </div>
+          ${renderCalcExtras(calc)}
           ${modelMatch ? `
             <div class="calc-match">
               <strong>Saved model found</strong>
@@ -2360,6 +2389,7 @@ function renderOwnerBatch(b) {
             <div class="owner-order-summary-label">Item ${i + 1}</div>
             <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
             <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
+            ${colorPartsText(it) ? `<div class="owner-order-summary-value">Which parts: ${esc(colorPartsText(it))}</div>` : ''}
             ${(checks[i] || []).map(c => `<div class="owner-order-summary-value roll-check ${c.ok ? 'ok' : 'bad'}">${c.ok ? '' : '⚠ '}${esc(c.text)}</div>`).join('')}
             <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
             <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
@@ -2469,11 +2499,16 @@ function renderOwnerItem(batchId, it, i) {
     </div>
     <div class="row2" style="margin-top:12px;">
       <div class="field" style="margin-bottom:0;">
-        <label>Filament (grams)</label>
+        <label>${(it.extraColors || []).length ? `Filament (grams): ${esc(itemParts(it)[0].name || 'main color')}` : 'Filament (grams)'}</label>
         <input type="number" id="ograms-${batchId}-${i}" value="${it.grams||''}"
           placeholder="From Bambu Studio" min="0" step="0.1" oninput="previewOwnerItem('${batchId}',${i})" />
       </div>
+      ${(it.extraColors || []).map((p, j) => `<div class="field" style="margin-bottom:0;">
+        <label>Filament (grams): ${esc(p.name)}</label>
+        <input type="number" id="ograms-${batchId}-${i}-x${j}" value="${p.grams || ''}" placeholder="Blank = split evenly" min="0" step="0.1" oninput="previewOwnerItem('${batchId}',${i})" />
+      </div>`).join('')}
     </div>
+    ${(it.extraColors || []).length ? `<div class="field-help">Enter each color's grams, or leave the extra colors blank and put the total in the first box to split it evenly.</div>` : ''}
     <div id="opreview-${batchId}-${i}" style="display:none;" class="price-preview-box">
       <div class="price-big" id="opval-${batchId}-${i}"></div>
       <div class="price-breakdown" id="opsub-${batchId}-${i}"></div>
@@ -4222,7 +4257,7 @@ async function submitBatch() {
   const rollUse = {};
   items.forEach(it => rollParts(it).forEach(p => {
     const roll = draftRoll(p);
-    if (roll) rollUse[roll.orderId + roll.key] = { roll, grams: ((rollUse[roll.orderId + roll.key] || {}).grams || 0) + partGrams(it) };
+    if (roll) rollUse[roll.orderId + roll.key] = { roll, grams: ((rollUse[roll.orderId + roll.key] || {}).grams || 0) + partGrams(it, p) };
   }));
   const over = Object.values(rollUse).find(u => u.grams > u.roll.left);
   if (over) {
@@ -4294,6 +4329,7 @@ function previewOwnerItem(batchId, i) {
   if (!pEl) return;
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
   const rules = rulesFor(batch);
+  readOwnerColorGrams(batchId, i, it);
   const fixed = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
   if (fixed !== null) {
     document.getElementById(`opval-${batchId}-${i}`).textContent = `$${(fixed * it.qty).toFixed(2)}${it.qty > 1 ? ' total' : ''}`;
@@ -4304,7 +4340,8 @@ function previewOwnerItem(batchId, i) {
   const pp  = calcPerPrint(mins, grams, it, rules);
   const tot = pp * it.qty;
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
-  document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, grams, itemRate(it, rules), it.qty, rules);
+  const total = colorGrams(it, grams).reduce((s, g) => s + g, 0);
+  document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, total, colorsRate(it, rules, grams), it.qty, rules);
   pEl.style.display = 'block';
 }
 
@@ -4391,7 +4428,7 @@ function calculateAndSaveOwnerModel() {
     return;
   }
 
-  const perPrint = calcPerPrint(minutes, grams, filType) || 0;
+  const perPrint = calcPerPrint(minutes, grams, calcItem(calc)) || 0;
   state.ownerCalculator.lastResult = {
     link,
     name,
@@ -4483,6 +4520,14 @@ async function saveDeliveryInfo(batchId) {
   render();
 }
 
+// The owner's grams for each extra color of an item (blank = split the first box evenly).
+function readOwnerColorGrams(batchId, i, it) {
+  (it.extraColors || []).forEach((p, j) => {
+    const el = document.getElementById(`ograms-${batchId}-${i}-x${j}`);
+    if (el) p.grams = parseFloat(el.value) > 0 ? parseFloat(el.value) : null;
+  });
+}
+
 function ownerSetPrice(it) {
   const g = it.galleryId && state.gallery.find(x => x.id === it.galleryId);
   return g && g.price > 0 ? g.price : null;
@@ -4499,6 +4544,7 @@ async function approveBatch(batchId) {
     // A past-work design's set price comes from the gallery, never from what the customer's browser sent.
     it.setPrice = ownerSetPrice(it);
     if ((!mins || !grams) && fixedPrice(it) === null) allValid = false;
+    readOwnerColorGrams(batchId, i, it);
     it.minutes = mins  || null;
     it.grams   = grams || it.grams;
     if (mins && grams) saveKnownEstimate(it);
