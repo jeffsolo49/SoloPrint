@@ -48,7 +48,7 @@ function blankOwnerCalculator() {
     minutes: '',
     grams: '',
     qty: 1,
-    filType: 'black',
+    filType: 'white',
     color: '',        // main color: a color id from Site Settings, or '' to use the filament type
     extras: [],       // more colors: [{ color: id or filament type, grams }]
     lastResult: null
@@ -70,7 +70,7 @@ let librarySaveState = 'saved';
 
 function blankItem() {
   return {
-    link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
+    link: '', name: '', grams: null, filType: 'white', qty: 1, notes: '', fetching: false,
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
@@ -1440,11 +1440,14 @@ function renderSpecialOrderBox(item, i) {
   </div>`;
 }
 
-// With owner colors set up, every item has one picked: the matching Black/White, else the first color.
+// With owner colors set up, every item has one picked: White by default (else the first regular color).
+function defaultColor(colors) {
+  return colors.find(x => String(x.name).trim().toLowerCase() === 'white' && !x.special) || colors.find(x => !x.special) || colors[0];
+}
 function ensureItemColor(item) {
   const colors = customerColors();
   if (!colors.length || item.colorId || isSpecialOrder(item)) return;
-  const c = colors.find(x => x.name.toLowerCase() === (FIL_LABEL[item.filType] || '').toLowerCase() && !x.special) || colors.find(x => !x.special) || colors[0];
+  const c = defaultColor(colors);
   item.colorId = c.id;
   item.color = c.name;
   item.filType = c.special ? 'special' : (['black', 'white'].includes(item.filType) && c.name.toLowerCase() === item.filType ? item.filType : 'color');
@@ -1667,7 +1670,7 @@ function galleryItemFields(g) {
     name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
     estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
-    designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: '', include: !p.optional })) : [], extraColors: [], mainParts: '',
+    designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: p.defaultColor || '', include: !p.optional })) : [], extraColors: [], mainParts: '',
     basePrice: g.price > 0 ? g.price : null, baseMinutes: g.minutes || null
   };
 }
@@ -3336,7 +3339,7 @@ function requestGalleryItem(id) {
 }
 
 function blankGalleryForm() {
-  return { id: `g${Date.now()}`, title: '', description: '', photos: '', videos: '', parts: [], filType: 'black', hours: '', minutes: '', grams: '', price: '', published: true };
+  return { id: `g${Date.now()}`, title: '', description: '', photos: '', videos: '', parts: [], filType: 'white', hours: '', minutes: '', grams: '', price: '', published: true };
 }
 
 function renderGalleryFormPrice() {

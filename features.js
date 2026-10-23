@@ -1094,7 +1094,7 @@ function calcChoices() {
 }
 function calcPart(value) {
   const c = calcChoices().find(x => x.value === value);
-  return c ? c.part : { name: 'Black', filType: 'black', colorId: '' };
+  return c ? c.part : { name: 'White', filType: 'white', colorId: '' };
 }
 function calcColorOptions(selected) {
   return calcChoices().map(c => `<option value="${esc(c.value)}" ${c.value === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
@@ -1137,6 +1137,7 @@ function cleanDesignParts(list, withChoice) {
       photo: safeImageUrl(p && p.photo),
       optional: !!(p && p.optional),   // an add-on the customer can choose; otherwise always included
       price: p && p.optional && Number(p.price) > 0 && Number(p.price) <= 100000 ? Math.round(Number(p.price) * 100) / 100 : null,
+      defaultColor: /^[a-z0-9-]{1,40}$/.test(String(p && p.defaultColor)) ? p.defaultColor : '',   // owner's starting color (id or black/white)
       minutes: p && p.optional && Number(p.minutes) > 0 && Number(p.minutes) <= 100000 ? Math.round(Number(p.minutes)) : null   // add-on's extra print time
     };
     if (withChoice) {
@@ -1159,7 +1160,8 @@ function applyPartColors(item) {
   const parts = item.designParts.filter(p => p.include !== false);
   if (!parts.length) { item.extraColors = []; item.mainParts = ''; return; }
   const choices = partColorChoices();
-  const fallback = choices.find(c => c.colorId && c.colorId === item.colorId) || choices.find(c => c.filType !== 'special') || choices[0];
+  // A part with no color (or one that's out of stock now) gets White, else the first regular color.
+  const fallback = defaultColor(choices.map(c => ({ ...c, special: c.filType === 'special' })));
   const groups = [];
   parts.forEach(p => {
     let c = choices.find(x => x.key === p.colorId);
@@ -1195,7 +1197,7 @@ function syncDesignParts(item) {
   const old = item.designParts || [];
   const fresh = (g.parts || []).map(p => {
     const was = old.find(o => o.id === p.id);
-    return { ...p, colorId: was ? was.colorId : '', include: !p.optional || !!(was && was.optional && was.include) };
+    return { ...p, colorId: was ? was.colorId : (p.defaultColor || ''), include: !p.optional || !!(was && was.optional && was.include) };
   });
   const base = g.price > 0 ? g.price : null, minutes = g.minutes || null;
   if (JSON.stringify(fresh) === JSON.stringify(old) && item.basePrice === base && item.baseMinutes === minutes) return false;
@@ -1277,6 +1279,12 @@ function renderDesignPartsForm(f) {
           <input type="text" id="part-name-${n}" value="${esc(p.name || '')}" maxlength="80" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].name = this.value" /></div>
         <div class="field"><label for="part-grams-${n}">Grams</label>
           <input type="number" id="part-grams-${n}" value="${esc(p.grams || '')}" min="0" step="0.1" placeholder="e.g. 40" oninput="state.galleryForm.parts[${n}].grams = this.value" /></div>
+        <div class="field"><label for="part-default-${n}">Starting color</label>
+          <select id="part-default-${n}" onchange="state.galleryForm.parts[${n}].defaultColor = this.value">
+            <option value="">White (default)</option>
+            ${(state.settings.colors.length ? [...state.settings.colors].sort(byName).map(c => ({ key: c.id, name: c.name + (c.special ? ' (special)' : '') + (c.outOfStock ? ' (out of stock)' : '') })) : [{ key: 'black', name: 'Black' }])
+              .filter(c => c.key !== 'white' && !/^white$/i.test(c.name)).map(c => `<option value="${esc(c.key)}" ${c.key === p.defaultColor ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          </select></div>
         <label class="special-order-check part-optional"><input type="checkbox" id="part-optional-${n}" ${p.optional ? 'checked' : ''} onchange="state.galleryForm.parts[${n}].optional = this.checked; render();" /> Optional add-on (customers choose whether to add it)</label>
         ${p.optional ? `<div class="field"><label for="part-price-${n}">Add-on price, $ (designs with a set price)</label>
           <input type="number" id="part-price-${n}" value="${esc(p.price || '')}" min="0" step="0.01" placeholder="e.g. 3" oninput="state.galleryForm.parts[${n}].price = this.value" /></div>
