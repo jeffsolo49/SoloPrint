@@ -86,6 +86,12 @@ check('multi-color: each color priced by its own grams, and the email says which
   assert(mail.subject === 'Your SoloPrint quote: $6.24', mail.subject);   // 2 + 1.44 + 80 x 0.024 + 20 x 0.044
   assert(mail.body.includes('Which parts: Black: the body; Red: the eyes'), mail.body);
 });
+check('order queue switched off: no wait estimate in emails', () => {
+  const queue = [{ at: '2026-10-19T10:00:00Z', printing: true, custom: false }];
+  const on = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue })[0].body;
+  const off = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue, features: { queue: false } })[0].body;
+  assert(/expect it to be printed/.test(on) && !/expect it to be printed/.test(off), off);
+});
 check('owner-edited email text is used, blanks fall back to the default', () => {
   const custom = { quote: { subject: 'Quote for {title}: ${total}', body: '' }, footer: { body: 'Cheers,\nJeff' } };
   const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), custom);
