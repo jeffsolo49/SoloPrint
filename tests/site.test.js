@@ -1277,6 +1277,15 @@ const STATES = {
     assert(/Got your request/.test(await page.textContent('#order-1')), 'live step name not used');
     await page.close();
   });
+  await check('Settings tabs show a "where this shows" picture, and every picture exists', async () => {
+    const page = await open(fixtures());
+    await page.evaluate(asOwner('settings/prices'));
+    assert(await page.$('.area-preview img[src="previews/prices.jpg"]'), 'no picture on Prices & rules');
+    const names = await page.evaluate(() => Object.keys(AREA_PREVIEWS));
+    const missing = names.filter(n => !require('fs').existsSync(require('path').join(__dirname, '..', 'previews', n + '.jpg')));
+    assert(!missing.length, `missing pictures: ${missing}`);
+    await page.close();
+  });
   await check('show / hide: switched-off parts of the site disappear', async () => {
     const db = fixtures();
     const owner = await open(db);

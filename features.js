@@ -1452,6 +1452,23 @@ function renderFaq() {
   </div>`;
 }
 
+// A small picture of the customer-facing area a Settings tab or section changes (previews/*.jpg, made by
+// tests/make-previews.js with sample content). Tap to see it bigger.
+const AREA_PREVIEWS = {
+  about: 'the About card on the home page', colors: 'the color choices on the request form', prices: 'the price estimate on the request form',
+  wording: '"How it works" on the home page', vacation: 'the notice at the top of the home page', reviews: 'reviews on the home page',
+  faq: 'the FAQ on the home page', 'text-menu': 'the menu buttons', 'text-form': 'the request form', 'text-gallery': 'the past work page',
+  'text-steps': 'an order on My Requests'
+};
+function areaPreview(name) {
+  const where = AREA_PREVIEWS[name];
+  if (!where) return '';
+  return `<figure class="area-preview">
+    <a href="previews/${name}.jpg" target="_blank" rel="noopener"><img src="previews/${name}.jpg" alt="Example of ${esc(where)}" loading="lazy" /></a>
+    <figcaption>Where this shows: ${esc(where)} (example)</figcaption>
+  </figure>`;
+}
+
 // Settings -> Site text.
 function renderSiteTextSettings(d) {
   const own = d.siteText = d.siteText || {};
@@ -1461,6 +1478,7 @@ function renderSiteTextSettings(d) {
     ${renderPreviewSwitch()}
     ${SITE_TEXT.map(([group, rows]) => `<fieldset class="owner-edit-item">
       <legend>${esc(group)}</legend>
+      ${areaPreview({ 'Home and menu': 'text-menu', 'Request form': 'text-form', 'Past work': 'text-gallery', 'Order steps customers see': 'text-steps' }[group])}
       ${rows.map(([k, label, def]) => {
         const v = own[k] || {};
         const status = !String(v.text || '').trim() ? 'Original' : v.live ? 'Live' : 'Draft';
