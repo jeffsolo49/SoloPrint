@@ -768,3 +768,9 @@ textarea { resize: vertical; min-height: 70px; }
 .area-preview { margin: 0 0 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .area-preview img { display: block; max-width: 160px; max-height: 120px; width: auto; height: auto; border-radius: 8px; border: 2px solid var(--border); background: var(--surface2); }
 .area-preview figcaption { font-size: 12px; color: var(--muted); flex: 1; min-width: 140px; }
+
+/* Back to top arrow (phones only) */
+.back-to-top { display: none; position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--accent); background: var(--accent); color: var(--on-accent); box-shadow: 0 4px 14px rgba(55,20,110,0.35); cursor: pointer; z-index: 50; align-items: center; justify-content: center; padding: 0; }
+.back-to-top svg { width: 22px; height: 22px; }
+@media (max-width: 760px) { .back-to-top.show { display: flex; } }
+@media print { .back-to-top { display: none !important; } }

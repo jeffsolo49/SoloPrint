@@ -1123,6 +1123,7 @@ async function fetchNameFromServer(url) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
+  setupBackToTop();
   loadPreviewDrafts();
   loadModelLibrary();
   loadClientHistoryEmail();
@@ -1306,7 +1307,6 @@ function renderSubmitTab() {
     ${featureOn('recentWork') ? renderRecentWork() : ''}
     ${featureOn('howItWorks') ? renderHowItWorks() : ''}
     ${renderReviews(state.settings.reviews)}
-    ${renderFaq()}
     <div class="section-header">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -1347,6 +1347,7 @@ function renderSubmitTab() {
     <div class="field-help" style="text-align:center;margin-top:8px;">${esc(t('submitNote'))}${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
     <div class="alert error" id="submit-err"></div>
     <div class="alert success" id="submit-ok"></div>
+    ${renderFaq()}
   `;
 }
 
