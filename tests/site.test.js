@@ -468,11 +468,11 @@ const STATES = {
   });
   await check('optional add-on parts: customers choose them; they add grams, or their price to a set price', async () => {
     const db = fixtures();
-    db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Stand', grams: 15, optional: true, price: 4 }];
+    db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Stand', grams: 15, optional: true, price: 4, minutes: 30 }];
     const owner = await open(db);
     await owner.evaluate(asOwner('gallery'));
     await owner.evaluate(() => editGalleryItem('g1'));
-    assert(await owner.isChecked('#part-optional-1') && !(await owner.isChecked('#part-optional-0')) && (await owner.inputValue('#part-price-1')) === '4', 'owner form should show the add-on and its price');
+    assert(await owner.isChecked('#part-optional-1') && !(await owner.isChecked('#part-optional-0')) && (await owner.inputValue('#part-price-1')) === '4' && (await owner.inputValue('#part-minutes-1')) === '30', 'owner form should show the add-on, its price and time');
     assert(!(await owner.$('#part-price-0')), 'required parts have no add-on price');
     await owner.close();
     const page = await open(db, { suffix: '?design=dragon-organizer' });
@@ -485,8 +485,10 @@ const STATES = {
     await page.check('#part-add-0-1');
     await page.waitForSelector('#part-color-0-1');
     let it = await page.evaluate(() => state.draftItems[0]);
-    assert(it.grams === 75 && it.mainParts === 'Body, Stand (add-on)', JSON.stringify(it));
-    assert(/\$7\.40/.test(await page.textContent('#customer-price-preview-0')), 'with the add-on: 75 g');
+    assert(it.grams === 75 && it.knownMinutes === 180 && it.mainParts === 'Body, Stand (add-on)', JSON.stringify(it));
+    assert(/\$8\.12/.test(await page.textContent('#customer-price-preview-0')), 'with the add-on: 2 + 180 min x 0.024 + 75 g x 0.024');
+    await page.uncheck('#part-add-0-1');
+    assert(await page.evaluate(() => state.draftItems[0].knownMinutes === 150), 'unticking should take the time back off');
     await page.close();
     // A design with a set price: the add-on adds its own price, re-read from the gallery when quoting.
     db.gallery.g1.data.price = 20;
