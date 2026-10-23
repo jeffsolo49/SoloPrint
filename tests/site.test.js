@@ -151,7 +151,8 @@ async function open(db, { width = 1100, height = 900, suffix = '', init } = {}) 
   return page;
 }
 
-const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab}'; await loadBatches(); await loadGallery(); render(); })()`;
+// 'settings/colors' opens a Settings section.
+const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const STATES = {
   'home': '0',
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
@@ -170,6 +171,11 @@ const STATES = {
   'owner saved models': asOwner('library'),
   'owner sales data': asOwner('analytics'),
   'owner site settings': asOwner('settings'),
+  'owner settings colors': asOwner('settings/colors'),
+  'owner settings prices': asOwner('settings/prices'),
+  'owner settings wording': asOwner('settings/wording'),
+  'owner settings vacation': asOwner('settings/vacation'),
+  'owner settings reviews': asOwner('settings/reviews'),
   'owner emails': asOwner('emails'),
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
@@ -537,7 +543,7 @@ const STATES = {
     await page.click('text=I have an idea');
     const pills = await page.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
     assert(pills.join(',') === 'Black,red,White', `customer order ${pills}`);
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/colors'));
     await page.click('text=Add a color');
     const last = page.locator('input[aria-label="Color name"]').nth(3);
     await last.fill('Aqua');
@@ -554,7 +560,7 @@ const STATES = {
     db.jobs.e2 = { id: 'e2', clientName: 'Kim', clientEmail: 'kim@example.com', createdAt: ago(60), phase: 'estimate', paymentStatus: 'unpaid',
       items: [{ name: 'Rose', mode: 'idea', qty: 1, filType: 'color', colorId: 'red', color: 'Red', minutes: 60, grams: 100 }] };
     const page = await open(db);
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/colors'));
     const names = await page.$$eval('input[aria-label="Color name"]', is => is.map(i => i.value));
     const red = names.indexOf('Red');
     assert(/0\.024/.test(await page.getAttribute(`#color-rate-${red}`, 'placeholder')), 'blank rate should say it uses the regular rate');
@@ -571,7 +577,7 @@ const STATES = {
     await page.waitForTimeout(300);
     assert(db.jobs.e2.rates.colorRates.red === 0.034, JSON.stringify(db.jobs.e2.rates));
     // Another day: red goes to 0.044. New estimates change, the sent quote doesn't.
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/colors'));
     await page.fill(`#color-rate-${red}`, '0.044');
     await page.click('#settings-save');
     await page.waitForTimeout(300);
@@ -624,7 +630,7 @@ const STATES = {
   await check('typing a color name fills in the color picker', async () => {
     const db = fixtures();
     const page = await open(db);
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/colors'));
     await page.click('text=Add a color');
     const n = await page.evaluate(() => state.settingsDraft.colors.length - 1);
     const name = page.locator('input[aria-label="Color name"]').nth(n);
@@ -711,7 +717,7 @@ const STATES = {
     db.settings.vacation = { on: true, until: 'Monday, Nov 3' };
     const page = await open(db);
     assert(/Away for now\.\s+I'm away until Monday, Nov 3\. I'll review your request when I'm back\./.test(await page.textContent('.vacation-banner')), 'banner missing');
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/vacation'));
     await page.waitForTimeout(200);
     await page.uncheck('#vacation-on');
     await page.click('#settings-save');
@@ -786,7 +792,7 @@ const STATES = {
     await page.close();
     const owner = await open(db);
     await owner.evaluate(async () => { await loadCustomerReviews(); });
-    await owner.evaluate(asOwner('settings'));
+    await owner.evaluate(asOwner('settings/reviews'));
     await owner.evaluate(() => loadCustomerReviews().then(render));
     await owner.waitForSelector('text=Approve and show');
     await owner.click('text=Approve and show');
@@ -848,11 +854,12 @@ const STATES = {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };
     const page = await open(db);
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/prices'));
     await page.waitForTimeout(200);
     await page.fill('#rule-baseFee', '3');
     assert(/costs \$5\.64 in a regular color/.test(await page.textContent('#rules-example')), await page.textContent('#rules-example'));   // 3 + 90 x .024 + 20 x .024
     await page.fill('#rule-venmo', '@Shop-Name');
+    await page.click('.sub-tab:has-text("Wording")');   // changes carry between the Settings tabs until saved
     await page.fill('#material-note', 'Printed in PETG unless noted.');
     await page.fill('#how-title-0', 'Send me your idea');
     await page.click('#settings-save');
@@ -939,7 +946,7 @@ const STATES = {
   await check('colors can have a description and a link that customers see when they pick them', async () => {
     const db = fixtures();
     const page = await open(db);
-    await page.evaluate(asOwner('settings'));
+    await page.evaluate(asOwner('settings/colors'));
     await page.waitForTimeout(200);
     const n = await page.evaluate(() => state.settingsDraft.colors.findIndex(c => c.id === 'silk'));
     await page.fill(`#color-desc-${n}`, 'Shimmery gold that shifts in the light');

@@ -619,7 +619,7 @@ const EMAIL_TEMPLATES = {
     body: 'Hi {name},\n\nWe received your payment for {title}. Thank you!\n\n{footer}'
   },
   review_request: {
-    label: 'Review request', to: 'Customer', when: "A week after an order is delivered (sent once). Reviews wait for your approval in Site Settings.",
+    label: 'Review request', to: 'Customer', when: "A week after an order is delivered (sent once). Reviews wait for your approval in Settings > Reviews.",
     subject: 'How did your SoloPrint order turn out?',
     body: "Hi {name},\n\nI hope you're enjoying {title}! If you have a minute, I'd love a short review: {reviewLink}\n\nIt helps other people find SoloPrint. Thank you!\n\n{footer}"
   },
@@ -655,7 +655,7 @@ const EMAIL_PLACEHOLDERS = {
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
   delivery: 'Delivery date, tracking or pickup, and notes',
-  materialNote: 'Your material note from Site Settings (e.g. "All prints are PLA...")',
+  materialNote: 'Your material note from Settings > Wording (e.g. "All prints are PLA...")',
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
   queueNote: 'Quote and confirmed emails: how many orders are ahead and about how many days until it\'s printed',

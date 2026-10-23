@@ -610,15 +610,12 @@ function renderStockAlerts() {
   </div>`;
 }
 
-function renderOwnerFilamentPage() {
+// Settings -> Filament & colors: how much of each color is on hand (saved as soon as it's changed).
+function renderStockCard() {
   const colors = state.settings.colors;
   return `
-    <div class="owner-page-header">
-      <div class="section-header">
-        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg></div>
-        <div><h2 class="section-title">Filament</h2><div class="section-sub">How much of each color you have. Grams come off when an order moves to Printing.</div></div>
-      </div>
-    </div>
+    <h3 class="card-title" style="margin-top:1.5rem;">Stock on hand</h3>
+    <div class="field-help" style="margin-bottom:8px;">Saved as soon as you change it. Grams come off when an order moves to Printing.</div>
     ${state.ownerPrivateError ? `<div class="alert error" style="display:block;">Filament stock needs a one-time setup: run supabase/owner-tools.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       ${colors.length ? `<div class="stock-table">
@@ -642,7 +639,7 @@ function renderOwnerFilamentPage() {
             </div>
           </div>`;
         }).join('')}
-      </div>` : `<div class="field-help">Add your colors in Site Settings first.</div>`}
+      </div>` : `<div class="field-help">Add your colors above (and save) first.</div>`}
       <div class="alert error" id="stock-err"></div>
       <p class="field-help">Leave a color blank to not track it. Special order and leftover-roll colors aren't counted (those rolls are the customer's). Moving an order back to the start puts its grams back.</p>
     </div>`;

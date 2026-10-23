@@ -1215,18 +1215,13 @@ function renderClientApp() {
 
 function renderOwnerNav() {
   const libCount = sortedLibraryEntries().length;
-  const analyticsCount = buildModelAnalyticsRows().length;
   return `
     <nav class="nav" aria-label="Owner sections">
-      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Dashboard</button>
-      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator</button>
-      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Gallery</button>
-      <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Site Settings</button>
-      <button class="nav-tab ${state.ownerTab==='emails'?'active':''}" onclick="setOwnerTab('emails')">Emails</button>
-      <button class="nav-tab ${state.ownerTab==='filament'?'active':''}" onclick="setOwnerTab('filament')">Filament${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money</button>
-      <button class="nav-tab ${state.ownerTab==='library'?'active':''}" onclick="setOwnerTab('library')">Saved Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='analytics'?'active':''}" onclick="setOwnerTab('analytics')">Sales Data${analyticsCount ? `<span class="nav-badge">${analyticsCount}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Orders</button>
+      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Designs</button>
+      <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
+      <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
   `;
@@ -1992,25 +1987,17 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Dashboard', calculator: 'Calculator', gallery: 'Gallery', settings: 'Site Settings', emails: 'Emails', filament: 'Filament', money: 'Money', library: 'Saved Models', analytics: 'Sales Data' }[state.ownerTab] || 'Dashboard')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
-      ${state.ownerTab === 'settings'
+      ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
-        : state.ownerTab === 'emails'
-        ? renderOwnerEmailsPage()
-        : state.ownerTab === 'filament'
-        ? renderOwnerFilamentPage()
-        : state.ownerTab === 'money'
-        ? renderOwnerMoneyPage()
+        : state.ownerTab === 'money' || state.ownerTab === 'analytics'
+        ? renderOwnerMoneyPage() + renderOwnerAnalyticsPage()
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
-        : state.ownerTab === 'library'
-        ? renderOwnerLibraryPage()
-        : state.ownerTab === 'analytics'
-          ? renderOwnerAnalyticsPage()
-          : state.ownerTab === 'calculator'
-            ? renderOwnerCalculatorPage()
-            : renderOwnerDashboard()}
+        : state.ownerTab === 'calculator' || state.ownerTab === 'library'
+          ? renderOwnerCalculatorPage() + renderOwnerLibraryPage()
+          : renderOwnerDashboard()}
     </main>`;
 }
 
@@ -2018,7 +2005,6 @@ function renderOwnerDashboard() {
   const estimate = state.batches.filter(b => (b.phase || 'estimate') === 'estimate');
   const production = state.batches.filter(b => (b.phase || 'estimate') === 'production');
   const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
-  const rev = delivered.reduce((s,b) => s + orderSum(b), 0);
 
   return `
     <div class="owner-page-header">
@@ -2036,55 +2022,6 @@ function renderOwnerDashboard() {
         <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
         <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
         <div class="stat-card"><div class="stat-val green">${delivered.length}</div><div class="stat-label">Delivered</div></div>
-      </div>
-      <div class="card">
-        <h3 class="card-title">Owner Sheet</h3>
-        <div class="owner-sheet-wrap" tabindex="0" role="region" aria-label="Scrollable table">
-          <table class="owner-sheet">
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th>Email</th>
-                <th>Items</th>
-                <th>Created</th>
-                <th>Phase</th>
-                <th>Payment</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${[...state.batches].reverse().map(b => `
-                <tr>
-                  <td>${esc(b.clientName)}</td>
-                  <td><a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a></td>
-                  <td>${b.items.length}</td>
-                  <td>${new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
-                  <td>
-                    <select class="phase-select" aria-label="Order phase for ${esc(b.clientName)}" onchange="updateBatchPhase('${b.id}', this.value)">
-                      ${ORDER_PHASES.map((p, idx) => {
-                        const currentIdx = phaseIndex(b.phase || 'estimate');
-                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
-                        return `<option value="${p.id}" ${(b.phase||'estimate')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
-                      }).join('')}
-                    </select>
-                  </td>
-                  <td>
-                    <select class="phase-select" aria-label="Payment status for ${esc(b.clientName)}" onchange="updatePaymentStatus('${b.id}', this.value)">
-                      ${PAYMENT_PHASES.map((p, idx) => {
-                        const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
-                        const isAllowed = idx === currentIdx || idx === currentIdx + 1;
-                        return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
-                      }).join('')}
-                    </select>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:1rem;">
-        <h3 class="card-title">Delivered Revenue${state.ownerHistoryAll ? '' : ` (last ${RECENT_ORDER_DAYS} days)`}</h3>
-        <div class="price-big" style="font-size:28px;color:var(--green);">$${rev.toFixed(2)}</div>
       </div>
       ${!state.batches.length
         ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
@@ -2548,13 +2485,16 @@ async function showClientView() {
   if (state.historyEmail) await loadBatches(state.historyEmail);
   render();
 }
+// Saved Models is part of Calculator, Sales Data part of Money (older links and buttons still work).
+const MERGED_TABS = { library: 'calculator', analytics: 'money', emails: 'settings', filament: 'settings' };
 function setOwnerTab(tab) {
+  if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
+  tab = MERGED_TABS[tab] || tab;
   state.ownerTab = tab;
   if ((tab === 'analytics' || tab === 'money') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
-  if (tab === 'settings') { state.settingsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
-  if (tab === 'emails') { state.emailsDraft = null; loadSettings().then(render); }
+  if (tab === 'settings') { state.settingsDraft = null; state.emailsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
 function updateOwnerCalculatorField(field, value) {
@@ -2924,18 +2864,30 @@ async function saveEmailsDraft() {
 }
 
 // Owner tab. Edits happen on a copy (state.settingsDraft) until "Save settings".
+// Settings has its own tabs: one page per part, plus Emails. Unsaved changes carry between the tabs
+// until Save settings (Emails saves on its own).
+const SETTINGS_TABS = [
+  ['about', 'About & links'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
+  ['wording', 'Wording'], ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails']
+];
+function setSettingsTab(tab) {
+  state.settingsTab = tab;
+  if (tab === 'emails') state.emailsDraft = null;
+  render();
+}
 function renderOwnerSettingsPage() {
   if (!state.settingsDraft) state.settingsDraft = JSON.parse(JSON.stringify(state.settings));
   const d = state.settingsDraft;
   const designs = state.gallery;
-  return `
-    <div class="owner-page-header">
-      <div class="section-header">
-        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
-        <div><h2 class="section-title">Site Settings</h2><div class="section-sub">What customers see about you, your colors, reviews and contact links</div></div>
-      </div>
-    </div>
-    ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+  if (state.ownerTab === 'emails' || state.ownerTab === 'filament') state.settingsTab = state.ownerTab === 'emails' ? 'emails' : 'colors';
+  const tab = SETTINGS_TABS.some(t => t[0] === state.settingsTab) ? state.settingsTab : 'about';
+  const low = lowStockColors().length;
+  const nav = `<nav class="sub-nav" aria-label="Settings sections">
+    ${SETTINGS_TABS.map(([id, label]) => `<button type="button" class="sub-tab ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" onclick="setSettingsTab('${id}')">${esc(label)}${id === 'colors' && low ? `<span class="nav-badge">${low}</span>` : ''}</button>`).join('')}
+  </nav>`;
+  if (tab === 'emails') return nav + renderOwnerEmailsPage();
+  const body = {
+    about: `
     <div class="card">
       <h3 class="card-title">About you</h3>
       <div class="field"><label>About text</label>
@@ -2964,6 +2916,55 @@ function renderOwnerSettingsPage() {
       </div>
       <div class="field-help">Each shows as a button for customers once filled in. Messenger links start with https://m.me/ (find yours in Messenger under your profile → Share).</div>
     </div>
+`,
+    colors: renderColorSettingsCard(d),
+    prices: renderRulesSettings(d),
+    wording: renderWordingSettings(d),
+    vacation: renderVacationSettings(d),
+    reviews: `
+    <div class="card">
+      <h3 class="card-title">Customer reviews</h3>
+      ${renderReviewApprovals()}
+      <div class="field-help">Add real reviews customers have given you, with their permission. They show on the home page, and on a design's page if you link them to it.</div>
+      ${d.reviews.map((r, n) => `
+        <div class="item-block" style="margin-bottom:10px;">
+          <div class="row2">
+            <div class="field"><label>Customer name</label><input type="text" value="${esc(r.name)}" placeholder="Jane S." oninput="state.settingsDraft.reviews[${n}].name = this.value" /></div>
+            <div class="field"><label>Design (optional)</label>
+              <select onchange="state.settingsDraft.reviews[${n}].designId = this.value">
+                <option value="">Not linked to a design</option>
+                ${designs.map(g => `<option value="${esc(g.id)}" ${r.designId === g.id ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>Review</label><textarea placeholder="What they said" oninput="state.settingsDraft.reviews[${n}].text = this.value">${esc(r.text)}</textarea></div>
+          <button class="btn-sm danger" type="button" onclick="state.settingsDraft.reviews.splice(${n}, 1); render();">Remove review</button>
+        </div>`).join('')}
+      <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>
+    </div>
+`
+  }[tab];
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
+        <div><h2 class="section-title">Settings</h2><div class="section-sub">Everything customers see and how your shop runs. Pick a section below.</div></div>
+      </div>
+    </div>
+    ${nav}
+    ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+    ${body}
+    <div class="alert error" id="settings-err"></div>
+    <div class="alert success" id="settings-ok"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-primary" style="max-width:260px;" type="button" id="settings-save" onclick="saveSettingsDraft()">Save settings</button>
+      <button class="btn-sm" type="button" onclick="state.settingsDraft = null; render();">Undo changes</button>
+    </div>    ${tab === 'colors' ? renderStockCard() : ''}`;
+}
+
+// Filament colors (on the Filament & Colors tab; saved with the rest of Site Settings).
+function renderColorSettingsCard(d) {
+  return `
     <div class="card">
       <h3 class="card-title">Filament colors</h3>
       <div class="field-help">Type a color name and the color picker fills in to match; tap the swatch to adjust it. The colors customers can pick. Tick "Special" for special colors and materials you carry (like Red or White TPU); they use the special rate. Anything you don't carry, customers request as a special order. With no colors listed, customers see Black, White and Special Request.</div>
@@ -2988,35 +2989,7 @@ function renderOwnerSettingsPage() {
       <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
       ${d.colors.length ? '' : ` <button class="btn-sm" type="button" onclick="state.settingsDraft.colors = [{ id: 'black', name: 'Black', hex: '#1e1e24', special: false }, { id: 'white', name: 'White', hex: '#f4f4f4', special: false }]; render();">Start with Black and White</button>`}
     </div>
-    ${renderRulesSettings(d)}
-    ${renderWordingSettings(d)}
-    ${renderVacationSettings(d)}
-    <div class="card">
-      <h3 class="card-title">Customer reviews</h3>
-      ${renderReviewApprovals()}
-      <div class="field-help">Add real reviews customers have given you, with their permission. They show on the home page, and on a design's page if you link them to it.</div>
-      ${d.reviews.map((r, n) => `
-        <div class="item-block" style="margin-bottom:10px;">
-          <div class="row2">
-            <div class="field"><label>Customer name</label><input type="text" value="${esc(r.name)}" placeholder="Jane S." oninput="state.settingsDraft.reviews[${n}].name = this.value" /></div>
-            <div class="field"><label>Design (optional)</label>
-              <select onchange="state.settingsDraft.reviews[${n}].designId = this.value">
-                <option value="">Not linked to a design</option>
-                ${designs.map(g => `<option value="${esc(g.id)}" ${r.designId === g.id ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div class="field"><label>Review</label><textarea placeholder="What they said" oninput="state.settingsDraft.reviews[${n}].text = this.value">${esc(r.text)}</textarea></div>
-          <button class="btn-sm danger" type="button" onclick="state.settingsDraft.reviews.splice(${n}, 1); render();">Remove review</button>
-        </div>`).join('')}
-      <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>
-    </div>
-    <div class="alert error" id="settings-err"></div>
-    <div class="alert success" id="settings-ok"></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button class="btn-primary" style="max-width:260px;" type="button" id="settings-save" onclick="saveSettingsDraft()">Save settings</button>
-      <button class="btn-sm" type="button" onclick="state.settingsDraft = null; render();">Undo changes</button>
-    </div>`;
+`;
 }
 
 async function saveSettingsDraft() {
