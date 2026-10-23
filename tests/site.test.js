@@ -466,6 +466,42 @@ const STATES = {
     assert(/\$6\.24/.test(live) && /Black \+ Red/.test(live) && /100\.0g/.test(live), live);
     await owner.close();
   });
+  await check('estimates everywhere use color prices and parts: past work, design form, order card, edit form', async () => {
+    const db = fixtures();
+    db.settings.colors.find(c => c.id === 'red').rate = 0.044;
+    db.gallery.g1.data.colorId = 'red';   // 2 + 150 min x 0.024 + 85.4 g x 0.044 = 9.36
+    db.gallery.g2.data = { title: 'Name Sign', photos: ['https://img.test/s.png'], minutes: 60, filType: 'color',
+      parts: [{ id: 'p1', name: 'Plate', grams: 30 }, { id: 'p2', name: 'Letters', grams: 5, defaultColor: 'red' }] };   // 2 + 1.44 + 30 x 0.024 + 5 x 0.044 = 4.38
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); });
+    const grid = await page.textContent('main');
+    assert(/\$9\.36/.test(grid) && /\$4\.38/.test(grid), 'past work prices should use the color price and the parts');
+    await page.close();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    assert((await owner.inputValue('#gallery-fil')) === 'red' && /\$9\.36/.test(await owner.textContent('#gallery-form-price')), 'design form price');
+    await owner.selectOption('#gallery-fil', 'black');
+    assert(/\$7\.65/.test(await owner.textContent('#gallery-form-price')), 'design form price after picking Black');   // 2 + 3.6 + 85.4 x 0.024
+    // A request for the parts design, edited by the owner: parts keep their colors; the estimate updates.
+    db.jobs.pe = { id: 'pe', clientName: 'Lin', clientEmail: 'lin@example.com', createdAt: ago(60), phase: 'estimate', paymentStatus: 'unpaid',
+      items: [{ name: 'Name Sign', mode: 'gallery', galleryId: 'g2', qty: 1, minutes: 60, grams: 30, filType: 'color', colorId: 'black', color: 'Black', mainParts: 'Plate',
+        extraColors: [{ name: 'Red', filType: 'color', colorId: 'red', grams: 5, parts: 'Letters' }],
+        designParts: [{ id: 'p1', name: 'Plate', grams: 30, colorId: 'black', include: true }, { id: 'p2', name: 'Letters', grams: 5, colorId: 'red', include: true }] }] };
+    await owner.evaluate(asOwner('dashboard'));
+    const card = await owner.textContent('#order-pe');
+    assert(/Red: 5\.0 g × \$0\.044/.test(card) && /Black: 30\.0 g × \$0\.024/.test(card), 'order card should show each color and its price');
+    await owner.click('#edit-request-pe');
+    assert(/\$4\.38/.test(await owner.textContent('#oe-est-0')), 'edit form estimate');
+    await owner.selectOption('#oe-part-color-0-1', 'silk');   // special rate 0.034
+    assert(/\$4\.33/.test(await owner.textContent('#oe-est-0')) && /Silk Gold: 5\.0 g/.test(await owner.textContent('#oe-est-0')), await owner.textContent('#oe-est-0'));
+    await owner.fill('#oe-minutes-0', '90');
+    assert(/\$5\.05/.test(await owner.textContent('#oe-est-0')), 'print time should update the estimate');
+    await owner.click('#owner-edit-save');
+    await owner.waitForSelector('#edit-request-pe');
+    assert(db.jobs.pe.items[0].extraColors[0].colorId === 'silk' && db.jobs.pe.items[0].minutes === 90, JSON.stringify(db.jobs.pe.items[0]));
+    await owner.close();
+  });
   await check('colors start as White; the owner picks a starting color for each part', async () => {
     const db = fixtures();
     db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });

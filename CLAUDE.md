@@ -61,7 +61,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `useLeftover`, `leftoverFrom`; `extraColors` (multi-color prints; each may have `parts` (customer: which parts) and `grams` (owner: that color's weight; then
   item `grams` is the first color's, else it's the total split evenly, see `colorGrams`/`partGrams(it, part)`)), `mainParts`; `galleryId` and `setPrice` (a past-work design's set
   price, which replaces the calculation; re-read from the gallery when the owner quotes, never trusted from the customer).
-- Gallery items (`gallery_items.data`): title, description, photos, filType, minutes, grams, `price` (optional set price),
+- Gallery items (`gallery_items.data`): title, description, photos, filType, `colorId` (the design's color, blank = White), minutes, grams, `price` (optional set price);
+  shown prices come from `designEstimate(g)` (features.js), which prices the design as a request would start (`designEstimateItem`),
   `videos` (YouTube ids, `youtubeId`; played only on the design page by `renderVideos`, never thumbnails or preview images).
   `parts` ([{id, name, grams, photo, optional, price, minutes, defaultColor}] (defaultColor = owner's starting color; else White, `defaultColor()` in app.js) (minutes = add-on print time, added to `baseMinutes`), features.js `cleanDesignParts`; optional = add-on the customer ticks (`include`),
   price = add-on price on set-price designs, added by `ownerSetPrice` from the gallery): copied to a requested item as `designParts` with a
@@ -77,6 +78,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   its checks green; the loader refuses a version that fails its sample email but can't catch everything.
 - Colors in settings can have their own `rate` ($/g); `shopRules` turns them into `rules.colorRates`, `partRate` uses them,
   and quotes save them in `rates.colorRates` (`cleanQuoteRates`), so a sent quote keeps its color prices.
+- Every estimate shows per-color lines with `colorLines`/`renderColorLines` (features.js) when an item has several colors or a color with its own rate.
 - Prices: always go through `printPrice` with `rulesFor(batch)` (an order's own prices) or `currentRules()`
   (today's, for new estimates). Never hardcode rates. An order quoted before `rates` existed uses
   `LEGACY_RATES`.

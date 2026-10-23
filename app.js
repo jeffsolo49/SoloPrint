@@ -1605,6 +1605,7 @@ function renderCustomerPricePreview(item) {
     <div class="price-big">$${total.toFixed(2)}</div>
     <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${allGrams.toFixed(1)}g · quantity ${qty}</div>
     <div class="price-breakdown">${priceBreakdown(minutes, allGrams, colorsRate(item, rules, grams), qty, rules)}</div>
+    ${renderColorLines(item, grams, rules)}
     ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${rules.rollCost} for the ${fmtRoll(rules.rollGrams)} special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
     ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll.</div>` : ''}
     <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
@@ -1668,6 +1669,7 @@ function renderGalleryPicker(i) {
 function galleryItemFields(g) {
   return {
     name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
+    colorId: g.colorId || '', color: g.colorId ? ((state.settings.colors.find(c => c.id === g.colorId) || {}).name || '') : '',
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
     estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
     designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: p.defaultColor || '', include: !p.optional })) : [], extraColors: [], mainParts: '',
@@ -2413,6 +2415,7 @@ function renderOwnerItem(batchId, it, i) {
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
+        ${fixedPrice(priced) === null && Number(it.grams) > 0 ? renderColorLines(it, it.grams, rules) : ''}
         ${it.estimateSource ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">Time and grams auto-filled from ${esc(it.estimateSource)}</div>` : ''}
         ${renderPhotoLinks(it.imageLinks)}
         ${canUseKnown ? `
@@ -3055,6 +3058,7 @@ function cleanGalleryItem(row) {
     description: cleanText(data.description, 8000),
     photos: cleanImageLinks(data.photos),
     filType: cleanFilType(data.filType),
+    colorId: /^[a-z0-9-]{1,40}$/.test(String(data.colorId)) ? data.colorId : '',   // the design's color (blank = White)
     minutes: cleanNumber(data.minutes),
     grams: cleanNumber(data.grams),
     price: cleanNumber(data.price),   // set price that replaces the calculated estimate
@@ -3216,7 +3220,7 @@ function renderWorkDetail(g) {
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
-            ${g.price > 0 ? '' : `<div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
+            ${g.price > 0 ? '' : `<div class="gallery-meta">${(g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
           <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(t('requestThis'))}</button>
         </div>
@@ -3233,9 +3237,9 @@ function showWorkPhoto(id, n) {
   if (el && src) el.innerHTML = `<img src="${esc(src)}" alt="${esc(g.title)}" referrerpolicy="no-referrer" />`;
 }
 
-function galleryPrice(g) {
-  return g.price > 0 ? g.price : calcPerPrint(g.minutes, g.grams, g.filType);
-}
+// The price shown for a design: its set price, else the estimate a customer gets for it as it starts
+// (its color or White, parts in their starting colors, each color at its own price per gram).
+function galleryPrice(g) { return designEstimate(g); }
 function galleryPriceLabel(g) { return g.price > 0 ? 'each' : 'each · automated estimate'; }
 
 async function loadGallery() {
@@ -3343,15 +3347,23 @@ function blankGalleryForm() {
   return { id: `g${Date.now()}`, title: '', description: '', photos: '', videos: '', parts: [], filType: 'white', hours: '', minutes: '', grams: '', price: '', published: true };
 }
 
+function setGalleryFormColor(value) {
+  const f = state.galleryForm || (state.galleryForm = blankGalleryForm());
+  f.colorId = state.settings.colors.some(c => c.id === value) ? value : '';
+  updateGalleryForm('filType', calcPart(value).filType);
+}
 function renderGalleryFormPrice() {
   const f = state.galleryForm || blankGalleryForm();
   const set = parseFloat(f.price);
-  if (set > 0) return `<div class="price-big">$${set.toFixed(2)}</div><div class="field-help">Your set price per item. Customers see just this price, with no calculation and no "automated estimate" label.</div>`;
-  const minutes = totalPrintMinutes(f.hours, f.minutes);
-  const price = calcPerPrint(minutes, parseFloat(f.grams), f.filType);
-  return price !== null
-    ? `<div class="price-big">$${price.toFixed(2)}</div><div class="field-help">Customer price per item, using the same pricing as quotes (${fmtTime(minutes)}, ${parseFloat(f.grams).toFixed(1)}g ${esc(FIL_LABEL[f.filType])}).</div>`
-    : `<div class="field-help">Enter print time and grams to see the price customers will see.</div>`;
+  if (set > 0) return `<div class="price-big">$${set.toFixed(2)}</div><div class="field-help">Your set price per item${(f.parts || []).some(p => p.optional && Number(p.price) > 0) ? ', plus any add-ons a customer picks' : ''}. Customers see just this price, with no calculation and no "automated estimate" label.</div>`;
+  const parts = cleanDesignParts(f.parts);
+  const g = { id: f.id, title: f.title, price: 0, minutes: totalPrintMinutes(f.hours, f.minutes), filType: f.filType, colorId: f.colorId || '', parts,
+    grams: parseFloat(f.grams) || parts.filter(p => !p.optional).reduce((s, p) => s + (p.grams || 0), 0) || null, photos: [] };
+  const price = designEstimate(g);
+  if (price === null) return `<div class="field-help">Enter print time and grams (or parts with grams) to see the price customers will see.</div>`;
+  const item = designEstimateItem(g);
+  return `<div class="price-big">$${price.toFixed(2)}</div><div class="field-help">What customers see per item before they change any colors (${fmtTime(g.minutes)}, ${esc(filamentLabel(item))}), with each color's own price per gram. Same pricing as quotes.</div>
+    ${renderColorLines(item, item.grams, currentRules())}`;
 }
 
 function updateGalleryForm(field, value) {
@@ -3402,10 +3414,8 @@ function renderOwnerGalleryPage() {
       </div>
       ${renderDesignPartsForm(f)}
       <div class="gallery-form-grid">
-        <div class="field"><label>Filament</label>
-          <select id="gallery-fil" onchange="updateGalleryForm('filType', this.value)">
-            ${Object.entries(FIL_LABEL).filter(([v]) => v !== 'special_order').map(([v, label]) => `<option value="${v}" ${f.filType === v ? 'selected' : ''}>${label}</option>`).join('')}
-          </select>
+        <div class="field"><label>Color</label>
+          <select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select>
         </div>
         <div class="field"><label>Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
         <div class="field"><label>Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
@@ -3448,7 +3458,7 @@ function editGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
   state.galleryForm = {
-    id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType,
+    id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
@@ -3466,7 +3476,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [] }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [] }
     })
   });
 }
@@ -3484,7 +3494,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], filType: f.filType,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], filType: f.filType, colorId: f.colorId || '',
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
@@ -4340,7 +4350,8 @@ function previewOwnerItem(batchId, i) {
   const tot = pp * it.qty;
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
   const total = colorGrams(it, grams).reduce((s, g) => s + g, 0);
-  document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, total, colorsRate(it, rules, grams), it.qty, rules);
+  document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, total, colorsRate(it, rules, grams), it.qty, rules)
+    + (itemParts(it).length > 1 ? '\n' + colorLines(it, grams, rules).join('\n') : '');
   pEl.style.display = 'block';
 }
 
