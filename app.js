@@ -461,7 +461,8 @@ function cleanItem(it) {
     leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
     mainParts: cleanText(it.mainParts, 200),
     designParts: cleanDesignParts(it.designParts, true),
-    basePrice: cleanNumber(it.basePrice),   // a design's set price before add-ons (the owner re-reads it when quoting)
+    basePrice: cleanNumber(it.basePrice),
+    baseMinutes: cleanNumber(it.baseMinutes),   // a design's print time before add-ons   // a design's set price before add-ons (the owner re-reads it when quoting)
     extraColors: (Array.isArray(it.extraColors) ? it.extraColors : []).slice(0, 8).map(p => ({
       parts: cleanText(p && p.parts, 200),
       grams: cleanNumber(p && p.grams),
@@ -1667,7 +1668,7 @@ function galleryItemFields(g) {
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
     estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
     designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: '', include: !p.optional })) : [], extraColors: [], mainParts: '',
-    basePrice: g.price > 0 ? g.price : null
+    basePrice: g.price > 0 ? g.price : null, baseMinutes: g.minutes || null
   };
 }
 

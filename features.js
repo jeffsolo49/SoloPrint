@@ -1136,7 +1136,8 @@ function cleanDesignParts(list, withChoice) {
       grams: Number(p && p.grams) > 0 && Number(p.grams) <= 100000 ? Math.round(Number(p.grams) * 10) / 10 : null,
       photo: safeImageUrl(p && p.photo),
       optional: !!(p && p.optional),   // an add-on the customer can choose; otherwise always included
-      price: p && p.optional && Number(p.price) > 0 && Number(p.price) <= 100000 ? Math.round(Number(p.price) * 100) / 100 : null
+      price: p && p.optional && Number(p.price) > 0 && Number(p.price) <= 100000 ? Math.round(Number(p.price) * 100) / 100 : null,
+      minutes: p && p.optional && Number(p.minutes) > 0 && Number(p.minutes) <= 100000 ? Math.round(Number(p.minutes)) : null   // add-on's extra print time
     };
     if (withChoice) {
       part.colorId = /^[a-z0-9-]{1,40}$/.test(String(p && p.colorId)) ? p.colorId : '';
@@ -1152,7 +1153,9 @@ function partColorChoices() { return stockedColors().map(c => ({ ...c, key: c.co
 function applyPartColors(item) {
   if (!(item.designParts || []).length) return;
   // Add-on parts count only when the customer chose them; a design with a set price adds their prices.
-  if (item.basePrice > 0) item.setPrice = item.basePrice + item.designParts.filter(p => p.optional && p.include).reduce((s, p) => s + (p.price || 0), 0);
+  const addOns = item.designParts.filter(p => p.optional && p.include);
+  if (item.basePrice > 0) item.setPrice = item.basePrice + addOns.reduce((s, p) => s + (p.price || 0), 0);
+  if (item.baseMinutes > 0) item.knownMinutes = item.baseMinutes + addOns.reduce((s, p) => s + (p.minutes || 0), 0);
   const parts = item.designParts.filter(p => p.include !== false);
   if (!parts.length) { item.extraColors = []; item.mainParts = ''; return; }
   const choices = partColorChoices();
@@ -1206,7 +1209,7 @@ function renderPartColors(item, i) {
       ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="field">
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="setPartIncluded(${i}, ${k}, this.checked)" />
-          Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''})</span></label>` : ''}
+          Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
         ${p.optional && !p.include ? '' : `<label for="part-color-${i}-${k}">${p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
         <select id="part-color-${i}-${k}" onchange="setPartColor(${i}, ${k}, this.value)">
           ${choices.map(c => `<option value="${esc(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
@@ -1228,7 +1231,7 @@ function renderDesignParts(g) {
     <div class="design-parts-grid">${g.parts.map(p => `<div class="design-part">
       ${p.photo ? thumbImg(p.photo, p.name, 'thumb') : '<span class="part-thumb-blank" aria-hidden="true"></span>'}
       <div class="design-part-name">${esc(p.name)}</div>
-      ${p.optional ? `<div class="gallery-meta"><strong>Optional add-on</strong>${p.price && g.price > 0 ? ` · +$${p.price.toFixed(2)}` : ''}</div>` : ''}
+      ${p.optional ? `<div class="gallery-meta"><strong>Optional add-on</strong>${p.price && g.price > 0 ? ` · +$${p.price.toFixed(2)}` : ''}${p.minutes ? ` · +${fmtTime(p.minutes)} print time` : ''}</div>` : ''}
       ${p.grams ? `<div class="gallery-meta">${p.grams} g</div>` : ''}
     </div>`).join('')}</div>
   </div>`;
@@ -1249,7 +1252,9 @@ function renderDesignPartsForm(f) {
           <input type="number" id="part-grams-${n}" value="${esc(p.grams || '')}" min="0" step="0.1" placeholder="e.g. 40" oninput="state.galleryForm.parts[${n}].grams = this.value" /></div>
         <label class="special-order-check part-optional"><input type="checkbox" id="part-optional-${n}" ${p.optional ? 'checked' : ''} onchange="state.galleryForm.parts[${n}].optional = this.checked; render();" /> Optional add-on (customers choose whether to add it)</label>
         ${p.optional ? `<div class="field"><label for="part-price-${n}">Add-on price, $ (designs with a set price)</label>
-          <input type="number" id="part-price-${n}" value="${esc(p.price || '')}" min="0" step="0.01" placeholder="e.g. 3" oninput="state.galleryForm.parts[${n}].price = this.value" /></div>` : ''}
+          <input type="number" id="part-price-${n}" value="${esc(p.price || '')}" min="0" step="0.01" placeholder="e.g. 3" oninput="state.galleryForm.parts[${n}].price = this.value" /></div>
+        <div class="field"><label for="part-minutes-${n}">Extra print time, minutes</label>
+          <input type="number" id="part-minutes-${n}" value="${esc(p.minutes || '')}" min="0" step="1" placeholder="e.g. 25" oninput="state.galleryForm.parts[${n}].minutes = this.value" /></div>` : ''}
       </div>
       <div class="part-form-actions">
         <label class="btn-sm">${p.photo ? 'Change photo' : 'Add photo'}

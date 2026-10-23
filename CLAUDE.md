@@ -62,7 +62,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   price, which replaces the calculation; re-read from the gallery when the owner quotes, never trusted from the customer).
 - Gallery items (`gallery_items.data`): title, description, photos, filType, minutes, grams, `price` (optional set price),
   `videos` (YouTube ids, `youtubeId`; played only on the design page by `renderVideos`, never thumbnails or preview images).
-  `parts` ([{id, name, grams, photo, optional, price}], features.js `cleanDesignParts`; optional = add-on the customer ticks (`include`),
+  `parts` ([{id, name, grams, photo, optional, price, minutes}] (minutes = add-on print time, added to `baseMinutes`), features.js `cleanDesignParts`; optional = add-on the customer ticks (`include`),
   price = add-on price on set-price designs, added by `ownerSetPrice` from the gallery): copied to a requested item as `designParts` with a
   `colorId` per part; `applyPartColors` groups them into the item's main color + `extraColors` (grams, parts).
 
