@@ -202,30 +202,54 @@ function cleanRules(raw) {
   });
   return out;
 }
+// Per-color $ per gram set on a color in Site Settings (colorRates: { colorId: rate }). Colors without
+// one use the regular or special rate.
+function cleanColorRates(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') Object.keys(raw).forEach(id => {
+    const n = raw[id];
+    if (/^[a-z0-9-]{1,40}$/.test(id) && n !== null && n !== '' && isFinite(Number(n)) && Number(n) >= 0 && Number(n) <= 100000) out[id] = Number(n);
+  });
+  return out;
+}
 function shopRules(settings) {
-  return Object.assign({}, RULE_DEFAULTS, cleanRules(settings && settings.rules));
+  const colorRates = {};
+  ((settings && settings.colors) || []).forEach(c => { if (c && c.id) colorRates[c.id] = c.rate; });
+  return Object.assign({}, RULE_DEFAULTS, cleanRules(settings && settings.rules), { colorRates: cleanColorRates(colorRates) });
 }
 // The prices an order uses: its saved quote rates, the original prices for older quotes, else today's.
 function orderRules(order, settings) {
   const rules = shopRules(settings);
-  const saved = quoteRates(cleanRules(order && order.rates));
-  if (Object.keys(saved).length) return Object.assign(rules, saved);
-  if (order && order.phase && order.phase !== 'estimate') return Object.assign(rules, LEGACY_RATES);
+  const saved = cleanQuoteRates(order && order.rates);
+  if (Object.keys(saved).length) return Object.assign(rules, { colorRates: {} }, saved);
+  if (order && order.phase && order.phase !== 'estimate') return Object.assign(rules, LEGACY_RATES, { colorRates: {} });
   return rules;
 }
+// The rates a quote saves (and keeps), including any per-color rates.
 function quoteRates(rules) {
   const out = {};
   RATE_KEYS.forEach(k => { if (rules && isFinite(rules[k])) out[k] = rules[k]; });
+  const colorRates = cleanColorRates(rules && rules.colorRates);
+  if (Object.keys(colorRates).length) out.colorRates = colorRates;
   return out;
+}
+function cleanQuoteRates(raw) {
+  return quoteRates(Object.assign(cleanRules(raw), { colorRates: raw && raw.colorRates }));
 }
 function filamentRate(filType, rules) {
   if (filType === 'special_order' || filType === 'leftover') return 0;   // the customer pays for a whole roll instead
   return filType === 'special' ? rules.specialGramRate : rules.gramRate;
 }
+// One color's $ per gram: its own rate when set, else the regular or special rate.
+function partRate(part, rules) {
+  if (part.filType === 'special_order' || part.filType === 'leftover') return 0;
+  const own = part.colorId && rules.colorRates && rules.colorRates[part.colorId];
+  return typeof own === 'number' ? own : filamentRate(part.filType, rules);
+}
 // Multi-color prints split the grams evenly between their colors.
 function colorsRate(item, rules) {
   const parts = itemParts(item);
-  return parts.reduce((s, p) => s + filamentRate(p.filType, rules), 0) / parts.length;
+  return parts.reduce((s, p) => s + partRate(p, rules), 0) / parts.length;
 }
 // A fixed price per print instead of the calculation: the owner's own price for this item (ownerPrice,
 // set when editing a request; can be 0), else a past-work design's set price (setPrice).

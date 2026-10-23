@@ -514,7 +514,7 @@ function normalizeBatch(batch) {
     finishedPhotos: (Array.isArray(batch.finishedPhotos) ? batch.finishedPhotos : []).map(safeImageUrl).filter(Boolean).slice(0, 6),
     stockTaken: batch.stockTaken === true,
     paidAt: cleanIso(batch.paidAt),
-    rates: quoteRates(cleanRules(batch.rates)),
+    rates: cleanQuoteRates(batch.rates),
     designTerms: cleanText(batch.designTerms, 4000),
     extraCharges: (Array.isArray(batch.extraCharges) ? batch.extraCharges : []).slice(0, 10)
       .map(c => ({ label: cleanText(c && c.label, 60).trim() || 'Special costs', amount: Math.max(0, Math.min(100000, Number(c && c.amount) || 0)) })),
@@ -2624,6 +2624,7 @@ function cleanSettings(raw) {
       hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) ? c.hex : '#888888',
       special: !!(c && c.special),
       outOfStock: !!(c && c.outOfStock),
+      rate: c && c.rate !== '' && c.rate !== null && c.rate !== undefined && Number(c.rate) >= 0 && Number(c.rate) <= 100000 ? Number(c.rate) : null,
       link: safeLink(c && c.link),
       description: cleanText(c && c.description, 300).trim()
     })).filter(c => c.id && c.name).sort(byName),
@@ -2938,6 +2939,9 @@ function renderOwnerSettingsPage() {
             <input type="text" id="color-desc-${n}" value="${esc(c.description || '')}" maxlength="300" placeholder="e.g. Shimmery gold that shifts in the light" oninput="state.settingsDraft.colors[${n}].description = this.value" /></div>
           <div class="field"><label for="color-link-${n}">Link to this filament (optional)</label>
             <input type="url" id="color-link-${n}" value="${esc(c.link || '')}" maxlength="300" placeholder="https://..." oninput="state.settingsDraft.colors[${n}].link = this.value" /></div>
+          <div class="field"><label for="color-rate-${n}">Price per gram, $ (optional)</label>
+            <input type="number" id="color-rate-${n}" value="${c.rate === null || c.rate === undefined ? '' : esc(c.rate)}" min="0" step="0.001" placeholder="${(c.special ? currentRules().specialGramRate : currentRules().gramRate)} (${c.special ? 'special' : 'regular'} rate)" oninput="state.settingsDraft.colors[${n}].rate = this.value" />
+            <div class="field-help">Leave blank to use the ${c.special ? 'special' : 'regular'} rate. Changes apply to new estimates; quotes already sent keep their prices.</div></div>
         </div>
         </div>`).join('')}
       <button class="btn-sm" type="button" onclick="state.settingsDraft.colors.push({ id: settingsId(), name: '', hex: '#888888', special: false }); render();">Add a color</button>
