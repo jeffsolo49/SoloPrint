@@ -466,6 +466,27 @@ const STATES = {
     assert(/\$6\.24/.test(live) && /Black \+ Red/.test(live) && /100\.0g/.test(live), live);
     await owner.close();
   });
+  await check('colors start as White; the owner picks a starting color for each part', async () => {
+    const db = fixtures();
+    db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });
+    db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Eyes', grams: 5 }];
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    assert((await owner.inputValue('#part-default-0')) === '', 'parts should start as White');
+    await owner.selectOption('#part-default-1', 'red');
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    assert(db.gallery.g1.data.parts[1].defaultColor === 'red' && !db.gallery.g1.data.parts[0].defaultColor, JSON.stringify(db.gallery.g1.data.parts));
+    await owner.close();
+    const page = await open(db);
+    await page.click('text=I have an idea');
+    assert(await page.evaluate(() => state.draftItems[0].colorId === 'white'), 'a new item should start White');
+    await page.evaluate(async () => { await loadGallery(); requestGalleryItem('g1'); });
+    await page.waitForSelector('#part-color-0-1');
+    assert((await page.inputValue('#part-color-0-0')) === 'white' && (await page.inputValue('#part-color-0-1')) === 'red', 'parts should start White and in the owner\'s starting color');
+    await page.close();
+  });
   await check('optional add-on parts: customers choose them; they add grams, or their price to a set price', async () => {
     const db = fixtures();
     db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Stand', grams: 15, optional: true, price: 4, minutes: 30 }];
