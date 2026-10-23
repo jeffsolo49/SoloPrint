@@ -761,3 +761,5 @@ textarea { resize: vertical; min-height: 70px; }
 .faq-item summary { cursor: pointer; font-weight: 700; }
 .faq-answer { margin-top: 8px; }
 .site-text-row input[type=checkbox], .feature-switch input[type=checkbox] { width: 24px; height: 24px; flex-shrink: 0; }
+.part-add, .part-optional { margin: 0 0 6px; }
+.part-add input, .part-optional input { width: 24px; height: 24px; flex-shrink: 0; }
