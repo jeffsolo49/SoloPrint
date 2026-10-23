@@ -67,6 +67,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `// ── END SHARED EMAIL TEMPLATES` … `EOF`.
 - `email/Code.gs` goes live from `main` within ~20 minutes with no review step, through the loader. Keep
   its checks green; the loader refuses a version that fails its sample email but can't catch everything.
+- Colors in settings can have their own `rate` ($/g); `shopRules` turns them into `rules.colorRates`, `partRate` uses them,
+  and quotes save them in `rates.colorRates` (`cleanQuoteRates`), so a sent quote keeps its color prices.
 - Prices: always go through `printPrice` with `rulesFor(batch)` (an order's own prices) or `currentRules()`
   (today's, for new estimates). Never hardcode rates. An order quoted before `rates` existed uses
   `LEGACY_RATES`.

@@ -458,6 +458,37 @@ const STATES = {
     assert(db.settings.colors.map(c => c.name).join(',') === 'Aqua,Black,red,White', `saved ${db.settings.colors.map(c => c.name)}`);
     await page.close();
   });
+  await check('each color can have its own price per gram; sent quotes keep theirs', async () => {
+    const db = fixtures();
+    db.jobs.e2 = { id: 'e2', clientName: 'Kim', clientEmail: 'kim@example.com', createdAt: ago(60), phase: 'estimate', paymentStatus: 'unpaid',
+      items: [{ name: 'Rose', mode: 'idea', qty: 1, filType: 'color', colorId: 'red', color: 'Red', minutes: 60, grams: 100 }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('settings'));
+    const names = await page.$$eval('input[aria-label="Color name"]', is => is.map(i => i.value));
+    const red = names.indexOf('Red');
+    assert(/0\.024/.test(await page.getAttribute(`#color-rate-${red}`, 'placeholder')), 'blank rate should say it uses the regular rate');
+    await page.fill(`#color-rate-${red}`, '0.034');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.colors.find(c => c.id === 'red').rate === 0.034 && db.settings.colors.find(c => c.id === 'black').rate === null, JSON.stringify(db.settings.colors));
+    const price = it => page.evaluate(it => +calcPerPrint(60, 100, it, currentRules()).toFixed(2), it);
+    const redItem = { filType: 'color', colorId: 'red', color: 'Red' };
+    assert(await price(redItem) === 6.84 && await price({ filType: 'color', colorId: 'black', color: 'Black' }) === 5.84, 'red should cost 0.034/g, black 0.024/g');
+    await page.evaluate(asOwner('dashboard'));
+    assert(/\$0\.034\/g/.test(await page.textContent('#order-e2')), 'owner card should show the color rate');
+    await page.click('#approve-btn-e2');
+    await page.waitForTimeout(300);
+    assert(db.jobs.e2.rates.colorRates.red === 0.034, JSON.stringify(db.jobs.e2.rates));
+    // Another day: red goes to 0.044. New estimates change, the sent quote doesn't.
+    await page.evaluate(asOwner('settings'));
+    await page.fill(`#color-rate-${red}`, '0.044');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(await price(redItem) === 7.84, 'new rate not used for new estimates');
+    assert(await price({ ...redItem, extraColors: [{ name: 'Black', filType: 'color', colorId: 'black' }] }) === 5.84 + 1, 'multi-color should average the two colors');
+    assert(await page.evaluate(() => +batchTotal(state.batches.find(b => b.id === 'e2')).toFixed(2)) === 6.84, 'sent quote changed price');
+    await page.close();
+  });
   await check('owner sees whether a leftover roll covers the order', async () => {
     const db = withRolls(fixtures());
     const item = { name: 'More', qty: 1, filType: 'special_order', specialColor: 'Red TPU', useLeftover: true, leftoverFrom: 'r1', grams: 450 };

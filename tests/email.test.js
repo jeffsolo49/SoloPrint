@@ -71,6 +71,13 @@ check('your own item price and added charges are in the quote, with only their l
   const free = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ ...base.items[0], ownerPrice: 0 }] }), at({}))[0];
   assert(free.subject === 'Your SoloPrint quote: $0.00', `a price of 0 is still your price: ${free.subject}`);
 });
+check('a color with its own price per gram: the quote uses the rate it was sent with', () => {
+  const item = { name: 'Rose', qty: 1, filType: 'color', colorId: 'red', color: 'Red', minutes: 60, grams: 100 };
+  const sent = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [item], rates: { baseFee: 2, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034, colorRates: { red: 0.044 } } }), at({}))[0];
+  assert(sent.subject === 'Your SoloPrint quote: $7.84', sent.subject);   // 2 + 1.44 + 100 g x 0.044
+  const older = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [item], rates: { baseFee: 2, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034 } }), at({}))[0];
+  assert(older.subject === 'Your SoloPrint quote: $5.84', `a quote sent before color rates keeps the regular rate: ${older.subject}`);
+});
 check('owner-edited email text is used, blanks fall back to the default', () => {
   const custom = { quote: { subject: 'Quote for {title}: ${total}', body: '' }, footer: { body: 'Cheers,\nJeff' } };
   const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), custom);
