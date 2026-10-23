@@ -17,7 +17,8 @@ const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
 // Name of the customer tab that shows finished work with prices.
-const GALLERY_NAME = 'Previous Design Work';
+// The past work page's name (owner-editable in Settings -> Site text).
+function galleryName() { return t('navGallery'); }
 // Link-preview service used to pull a model's image and title (model sites block direct browser fetches).
 const PREVIEW_API = 'https://api.microlink.io/?url=';
 // The SoloPrint Google Apps Script (email/Code.gs) also looks up print time and grams for MakerWorld links.
@@ -254,13 +255,7 @@ function phaseIndex(phaseId) {
 }
 
 // Customer-facing wording for the order tracker on "My Requests".
-const TRACKER_STEPS = {
-  estimate:       { label: 'Request Received', detail: "We've received your request and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs." },
-  quote_sent:     { label: 'Quote Ready',      detail: "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead." },
-  order_received: { label: 'Order Confirmed',  detail: "Your order is confirmed and queued for the printer." },
-  production:     { label: 'Printing',         detail: 'Your parts are on the printer right now.' },
-  delivered:      { label: 'Delivered',        detail: 'Your order is complete. Enjoy!' }
-};
+// Customer step names and descriptions: SITE_TEXT (step_*, stepInfo_*) in features.js.
 
 function stampPhase(batch, phase) {
   batch.phaseHistory = { ...(batch.phaseHistory || {}) };
@@ -358,7 +353,7 @@ function renderOrderTracker(batch) {
     const at = history[p.id] || (p.id === 'estimate' ? batch.createdAt : null);
     return `<div class="tracker-step ${cls}">
       <div class="tracker-dot">${cls === 'done' ? '✓' : idx + 1}</div>
-      <div class="tracker-label">${TRACKER_STEPS[p.id].label}</div>
+      <div class="tracker-label">${t('step_' + p.id)}</div>
       <div class="tracker-time">${cls && at ? shortTime(at) : ''}</div>
     </div>`;
   }).join('');
@@ -367,7 +362,7 @@ function renderOrderTracker(batch) {
     batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`
   ].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
-    <div class="tracker-status"><strong>${TRACKER_STEPS[phase].label}:</strong> ${TRACKER_STEPS[phase].detail}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    <div class="tracker-status"><strong>${t('step_' + phase)}:</strong> ${t('stepInfo_' + phase)}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
     ${renderOrderQueue(batch)}
     ${renderCustomerOrderAction(batch)}`;
 }
@@ -381,7 +376,7 @@ function canAdvanceToPhase(currentPhase, nextPhase) {
 }
 
 function paymentLabel(paymentStatus) {
-  return (PAYMENT_PHASES.find(p => p.id === paymentStatus) || PAYMENT_PHASES[0]).label;
+  return t('pay_' + (PAYMENT_PHASES.find(p => p.id === paymentStatus) || PAYMENT_PHASES[0]).id);
 }
 
 function paymentIndex(paymentStatus) {
@@ -1126,6 +1121,7 @@ async function fetchNameFromServer(url) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
+  loadPreviewDrafts();
   loadModelLibrary();
   loadClientHistoryEmail();
   restoreDraft();
@@ -1199,16 +1195,17 @@ function renderClientApp() {
   const hasHistoryEmail = !!String(state.historyEmail || '').trim();
   return `
     <nav class="bubble-nav" aria-label="Main">
-      ${renderBubble('submit', 'Request a Quote', 'Get a Quote', 'Start a print or custom design',
+      ${renderBubble('submit', t('navRequest'), t('navRequest'), t('navRequestSub'),
         '<path d="M12 5v14M5 12h14"/>')}
-      ${renderBubble('gallery', GALLERY_NAME, 'Past Work', "See what I've made",
+      ${renderBubble('gallery', galleryName(), galleryName(), t('navGallerySub'),
         '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
-      ${renderBubble('jobs', 'My Requests', 'My Requests', 'Track your orders',
+      ${renderBubble('jobs', t('navJobs'), t('navJobs'), t('navJobsSub'),
         '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M4 5h.01M4 12h.01M4 19h.01"/>',
         hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
     </nav>
     <main class="main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? 'Request a Quote' : state.clientTab === 'gallery' ? GALLERY_NAME : 'My Requests')}</h1>
+      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? t('navRequest') : state.clientTab === 'gallery' ? galleryName() : t('navJobs'))}</h1>
+      ${previewNote()}
       ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : renderMyJobsTab()}
     </main>`;
 }
@@ -1242,7 +1239,7 @@ function renderAboutCard() {
   return `<div class="card about-card">
     ${a.photo ? `<img class="about-photo" src="${esc(a.photo)}" alt="Photo of the SoloPrint owner" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
     <div>
-      <h2 class="section-title" style="font-size:20px;margin-bottom:8px;">Hi, welcome to SoloPrint</h2>
+      <h2 class="section-title" style="font-size:20px;margin-bottom:8px;">${esc(t('aboutTitle'))}</h2>
       <p class="about-text">${esc(a.text)}</p>
       ${a.replyTime ? `<p class="about-reply">${esc(a.replyTime)}</p>` : ''}
       ${renderContactButtons()}
@@ -1278,15 +1275,15 @@ function renderHowItWorks() {
   const steps = (state.settings.howItWorks && state.settings.howItWorks.length ? state.settings.howItWorks : DEFAULT_HOW_IT_WORKS)
     .map(s => [s.title, s.text]);
   return `<div class="card">
-    <h3 class="card-title">How it works</h3>
+    <h3 class="card-title">${esc(t('howTitle'))}</h3>
     <ol class="how-steps">${steps.map(([t, d], n) => `
       <li><span class="how-num" aria-hidden="true">${n + 1}</span><span><strong>${esc(t)}</strong><span class="how-desc">${esc(d)}</span></span></li>`).join('')}
     </ol>
   </div>`;
 }
 
-function renderReviews(reviews, title = 'What customers say') {
-  if (!reviews.length) return '';
+function renderReviews(reviews, title = t('reviewsTitle')) {
+  if (!reviews.length || !featureOn('reviews')) return '';
   return `<div class="card">
     <h3 class="card-title">${esc(title)}</h3>
     <div class="reviews">${reviews.map(r => {
@@ -1303,24 +1300,25 @@ function renderSubmitTab() {
   const items = state.draftItems;
   return `
     ${renderVacationBanner()}
-    ${renderAboutCard()}
-    ${renderRecentWork()}
-    ${renderHowItWorks()}
+    ${featureOn('about') ? renderAboutCard() : ''}
+    ${featureOn('recentWork') ? renderRecentWork() : ''}
+    ${featureOn('howItWorks') ? renderHowItWorks() : ''}
     ${renderReviews(state.settings.reviews)}
+    ${renderFaq()}
     <div class="section-header">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
       </div>
       <div>
-        <h2 class="section-title">New Quote Request</h2>
-        <div class="section-sub">Tell me what you'd like printed. Nothing is charged until you approve a quote.</div>
+        <h2 class="section-title">${esc(t('requestTitle'))}</h2>
+        <div class="section-sub">${esc(t('requestSub'))}</div>
       </div>
     </div>
     ${state.resumedDraft ? `<div class="alert success" id="resume-note" style="display:block;margin:0 0 1rem;" role="status">Welcome back! Your request is filled in below, just as you left it. Finish it whenever you like.</div>` : ''}
 
     <div class="card request-card">
       <div class="field" style="margin-bottom:0;">
-        <label for="client-name" id="client-label">Your name and email <span class="req">*</span></label>
+        <label for="client-name" id="client-label">${esc(t('nameLabel'))} <span class="req">*</span></label>
         <div class="info-inputs">
           <input type="text" id="client-name" value="${esc(state.clientName)}" placeholder="Jane Smith" autocomplete="name"
             oninput="state.clientName=this.value; clearErr(this,'err-name')" />
@@ -1329,22 +1327,22 @@ function renderSubmitTab() {
         </div>
         <div class="field-err" id="err-name">Please enter your name</div>
         <div class="field-err" id="err-email">Please enter a valid email</div>
-        <div class="field-help">Saved as you go, so you can finish later.</div>
+        <div class="field-help">${esc(t('nameHelp'))}</div>
       </div>
     </div>
 
     <div class="card request-card">
-      <h3 class="card-title">Items to print (${items.length}/${MAX_ITEMS})</h3>
+      <h3 class="card-title">${esc(t('itemsTitle'))} (${items.length}/${MAX_ITEMS})</h3>
       ${items.map((item, i) => renderItemBlock(item, i)).join('')}
       ${items.length < MAX_ITEMS ? `
-        <button class="next-link-row" type="button" onclick="addItem()"><span class="plus-circle" aria-hidden="true">+</span> Add another item</button>`
+        <button class="next-link-row" type="button" onclick="addItem()"><span class="plus-circle" aria-hidden="true">+</span> ${esc(t('addItem'))}</button>`
         : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
     </div>
 
     ${renderQueueNotice()}
-    <button class="btn-primary" id="submit-btn" onclick="submitBatch()">Send My Request</button>
+    <button class="btn-primary" id="submit-btn" onclick="submitBatch()">${esc(t('submitButton'))}</button>
     ${state.settings.links.messenger ? `<div class="field-help" style="text-align:center;margin-top:8px;">Questions first? <a class="btn-link" href="${esc(state.settings.links.messenger)}" target="_blank" rel="noopener noreferrer">Message me</a></div>` : ''}
-    <div class="field-help" style="text-align:center;margin-top:8px;">Free to ask. I'll review it and email you a quote${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
+    <div class="field-help" style="text-align:center;margin-top:8px;">${esc(t('submitNote'))}${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
     <div class="alert error" id="submit-err"></div>
     <div class="alert success" id="submit-ok"></div>
   `;
@@ -1666,8 +1664,8 @@ function galleryItemFields(g) {
   return {
     name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
-    estimateSource: `the ${GALLERY_NAME} gallery`, setPrice: g.price > 0 ? g.price : null,
-    designParts: (g.parts || []).map(p => ({ ...p, colorId: '' })), extraColors: [], mainParts: ''
+    estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
+    designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: '' })) : [], extraColors: [], mainParts: ''
   };
 }
 
@@ -1706,11 +1704,11 @@ function renderModeChooser(i, current) {
       <span><span class="mode-title">${title}</span><span class="mode-sub">${sub}</span></span>
     </button>`;
   return `<div class="field" style="margin-bottom:4px;">
-    <div class="mode-question" id="mode-question-${i}">What would you like printed?</div>
+    <div class="mode-question" id="mode-question-${i}">${esc(t('modeQuestion'))}</div>
     <div class="mode-options">
-      ${opt('gallery', 'Something from my past work', 'Pick a design I have made before', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
-      ${opt('link', 'I have a link', 'A model on MakerWorld, Printables or Thingiverse', '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>')}
-      ${opt('idea', 'I have an idea', 'Something custom: describe it and I can design it', '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>')}
+      ${opt('gallery', esc(t('modeGallery')), esc(t('modeGallerySub')), '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>')}
+      ${opt('link', esc(t('modeLink')), esc(t('modeLinkSub')), '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>')}
+      ${opt('idea', esc(t('modeIdea')), esc(t('modeIdeaSub')), '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>')}
     </div>
   </div>`;
 }
@@ -1785,14 +1783,14 @@ function renderItemBlock(item, i) {
             oninput="updateDraft(${i},'name',this.value)" />
         </div>
         <div class="field" style="margin-bottom:8px;">
-          <label>Anything you'd like changed? (optional)</label>
+          <label>${esc(t('changesLabel'))}</label>
           <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
         ${renderPhotoField(item, i)}` : ''}
       ${mode === 'idea' ? `
         <div class="field" style="margin-bottom:8px;">
-          <label for="notes-${i}">Describe your idea</label>
+          <label for="notes-${i}">${esc(t('ideaLabel'))}</label>
           <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom designs come with my design terms, which you'll see with your quote.</div>
           <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
@@ -1813,7 +1811,7 @@ function renderItemBlock(item, i) {
           <button type="button" class="btn-sm" style="margin-top:8px;" onclick="changeGalleryPick(${i})">Pick a different design</button>
         </div>
         <div class="field" style="margin-bottom:8px;">
-          <label>Anything you'd like changed? (optional)</label>
+          <label>${esc(t('changesLabel'))}</label>
           <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>` : ''}
@@ -1846,7 +1844,7 @@ function renderMyJobsTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
-        <h2 class="section-title">My Requests</h2>
+        <h2 class="section-title">${esc(t('navJobs'))}</h2>
         <div class="section-sub">Enter your email to view your personal request history</div>
       </div>
     </div>
@@ -1865,7 +1863,7 @@ function renderMyJobsTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
-        <h2 class="section-title">My Requests</h2>
+        <h2 class="section-title">${esc(t('navJobs'))}</h2>
         <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
       </div>
     </div>
@@ -1891,7 +1889,7 @@ function renderMyJobsTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
-        <h2 class="section-title">My Requests</h2>
+        <h2 class="section-title">${esc(t('navJobs'))}</h2>
         <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
       </div>
     </div>
@@ -1906,7 +1904,7 @@ function renderMyJobsTab() {
       </div>
       <div class="alert error" id="history-err"></div>
     </div>
-    ${renderReviewForm()}
+    ${featureOn('reviews') ? renderReviewForm() : ''}
     ${renderRollsCard()}
     ${[...state.batches].reverse().map(b => {
       const phase = b.phase || 'estimate';
@@ -2404,7 +2402,7 @@ function renderOwnerItem(batchId, it, i) {
         <div class="sub-item-name">${esc(it.name)||'Unnamed'} ${it.qty>1?`<span style="color:var(--muted);font-weight:400;">× ${it.qty}</span>`:''}</div>
         <div class="sub-item-meta">
           <span class="status ${it.filType}">${esc(filamentLabel(it))}</span>
-          <span style="font-size:12px;color:var(--muted);">${typeof it.ownerPrice === 'number' ? `Your price $${it.ownerPrice.toFixed(2)} each (set with Edit request); time and grams optional` : priced.setPrice ? `Set price $${priced.setPrice.toFixed(2)} each (from ${esc(GALLERY_NAME)}); time and grams optional` : `$${itemRate(it, rules).toFixed(3)}/g`}</span>
+          <span style="font-size:12px;color:var(--muted);">${typeof it.ownerPrice === 'number' ? `Your price $${it.ownerPrice.toFixed(2)} each (set with Edit request); time and grams optional` : priced.setPrice ? `Set price $${priced.setPrice.toFixed(2)} each (from ${esc(galleryName())}); time and grams optional` : `$${itemRate(it, rules).toFixed(3)}/g`}</span>
           ${isWebUrl(it.link)?`<a class="job-link" href="${esc(it.link)}" target="_blank">Model Link ↗</a>`: it.link ? `<span style="color:var(--muted);">${esc(it.link)}</span>` : ''}
         </div>
         ${it.notes?`<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:4px;">"${esc(it.notes)}"</div>`:''}
@@ -2566,7 +2564,7 @@ async function lookupMyRequests() {
 // from the Site Settings tab. Everything has a default so the site works before it's filled in.
 const DEFAULT_ABOUT = "I do 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life: send me a model link or describe your idea, and I'll get back to you with a quote.";
 function blankSettings() {
-  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [], designTerms: '' };
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [], designTerms: '', siteText: {}, faq: [], features: {} };
 }
 
 // Only the parts the owner changed are kept, so improvements to the default text still reach them.
@@ -2621,6 +2619,9 @@ function cleanSettings(raw) {
     designTerms: cleanText(d.designTerms, 4000).trim(),
     galleryNote: cleanText(d.galleryNote, 200).trim(),
     topWork: (Array.isArray(d.topWork) ? d.topWork : []).filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(String(id))).slice(0, 5),
+    siteText: cleanSiteText(d.siteText),
+    faq: cleanFaq(d.faq),
+    features: cleanFeatures(d.features),
     howItWorks: (Array.isArray(d.howItWorks) ? d.howItWorks : []).slice(0, 6)
       .map(s => ({ title: cleanText(s && s.title, 80).trim(), text: cleanText(s && s.text, 300).trim() })).filter(s => s.title),
     vacation: {
@@ -2868,7 +2869,8 @@ async function saveEmailsDraft() {
 // until Save settings (Emails saves on its own).
 const SETTINGS_TABS = [
   ['about', 'About & links'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
-  ['wording', 'Wording'], ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails']
+  ['wording', 'Wording'], ['text', 'Site text'], ['faq', 'FAQ'], ['features', 'Show / hide'],
+  ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails']
 ];
 function setSettingsTab(tab) {
   state.settingsTab = tab;
@@ -2921,6 +2923,9 @@ function renderOwnerSettingsPage() {
     prices: renderRulesSettings(d),
     wording: renderWordingSettings(d),
     vacation: renderVacationSettings(d),
+    text: renderSiteTextSettings(d),
+    faq: renderFaqSettings(d),
+    features: renderFeatureSettings(d),
     reviews: `
     <div class="card">
       <h3 class="card-title">Customer reviews</h3>
@@ -3064,7 +3069,7 @@ function cleanVideoIds(list) {
 }
 function parseVideoLinks(text) { return cleanVideoIds(String(text || '').split(/[\s,]+/)); }
 function renderVideos(g) {
-  if (!g.videos || !g.videos.length) return '';
+  if (!g.videos || !g.videos.length || !featureOn('videos')) return '';
   return `<div class="work-videos">${g.videos.map((id, n) => `<div class="video-frame">
     <iframe src="https://www.youtube-nocookie.com/embed/${esc(id)}?rel=0" title="${esc(g.title || 'Design')} video${g.videos.length > 1 ? ` ${n + 1}` : ''}"
       loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -3174,7 +3179,7 @@ function renderRecentWork() {
         <span class="work-card-photo">${thumbImg(g.photos[0], '', 'text')}</span>
         <span class="work-card-name">${esc(g.title)}</span>
       </button>`).join('')}
-      <button class="work-card work-more" type="button" onclick="setTab('gallery')" aria-label="See more: all ${esc(GALLERY_NAME)}">
+      <button class="work-card work-more" type="button" onclick="setTab('gallery')" aria-label="See more: all ${esc(galleryName())}">
         <span class="work-card-photo work-more-box">SEE MORE</span>
         <span class="work-card-name" aria-hidden="true">&nbsp;</span>
       </button>
@@ -3205,7 +3210,7 @@ function renderWorkDetail(g) {
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
             ${g.price > 0 ? '' : `<div class="gallery-meta">${esc(FIL_LABEL[g.filType])} filament${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
-          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>
+          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(t('requestThis'))}</button>
         </div>
         <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>` : `
         <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
@@ -3274,8 +3279,8 @@ function renderGalleryTab() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
       <div>
-        <h2 class="section-title">${esc(GALLERY_NAME)}</h2>
-        <div class="section-sub">Designs we've made before, with the story behind each one. Want one? Tap "Request this". ${esc(galleryNote())}</div>
+        <h2 class="section-title">${esc(galleryName())}</h2>
+        <div class="section-sub">${esc(t('gallerySub'))} ${esc(galleryNote())}</div>
       </div>
     </div>`;
   if (!state.galleryLoaded) return `${header}<div class="empty-state"><div class="empty-state-text">Loading...</div></div>`;
@@ -3300,7 +3305,7 @@ function renderGalleryTab() {
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
-            ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">Request this</button>` : ''}
+            ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(t('requestThis'))}</button>` : ''}
           </div>
         </div>
       </div>`;
@@ -3362,7 +3367,7 @@ function renderOwnerGalleryPage() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
         </div>
-        <div><h2 class="section-title">Gallery</h2><div class="section-sub">Show finished work with prices on the "${esc(GALLERY_NAME)}" tab</div></div>
+        <div><h2 class="section-title">Gallery</h2><div class="section-sub">Show finished work with prices on the "${esc(galleryName())}" tab</div></div>
       </div>
       <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
     </div>
@@ -3404,7 +3409,7 @@ function renderOwnerGalleryPage() {
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
-        <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(GALLERY_NAME)} tab
+        <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
       <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>
       <div class="alert error" id="gallery-err"></div>
@@ -3667,8 +3672,8 @@ function buildNotifications() {
       ORDER_PHASES.forEach(p => {
         if (!history[p.id]) return;
         list.push({ id: `${b.id}-${p.id}`, batchId: b.id, at: history[p.id],
-          title: `${TRACKER_STEPS[p.id].label}: ${orderTitle(b)}`,
-          body: TRACKER_STEPS[p.id].detail });
+          title: `${t('step_' + p.id)}: ${orderTitle(b)}`,
+          body: t('stepInfo_' + p.id) });
       });
     });
   }

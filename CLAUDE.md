@@ -26,7 +26,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `index.html` | Page shell, link-preview tags, app manifest. Loads `email-templates.js`, `app.js`, `features.js`. |
 | `email-templates.js` | **Shared with the email script.** Default email text (`EMAIL_TEMPLATES`, `{placeholders}`), shop rules and pricing (`RULE_DEFAULTS`, `shopRules`, `orderRules`, `printPrice`, `rollCharge`), leftover rolls (`leftoverRolls`, `itemParts`), `vacationText`. |
 | `app.js` | Everything else on the site: state, Supabase calls, customer request form, My Requests. Owner tabs: Orders (`dashboard`), Designs (`gallery`), Calculator & Models (`calculator` + saved models), Money & Sales (`money` + sales data), Settings (`settings`, sub-tabs in `SETTINGS_TABS`: about, colors (+ stock), prices, wording, vacation, reviews, emails). Old tab ids map through `MERGED_TABS`. Global functions called from inline `onclick`; `render()` redraws the whole page from `state`. |
-| `features.js` | Newer features: vacation mode, Order again, leftover-roll card, finished-print photos, reviews (form + owner approval), private notes, Filament tab, Money tab, Prices/Wording settings cards, service worker registration. |
+| `features.js` | Newer features: vacation mode, Order again, leftover-roll card, finished-print photos, reviews (form + owner approval), private notes, Filament tab, Money tab, Prices/Wording settings cards, site text/FAQ/show-hide settings, service worker registration. |
 | `styles.css` | Theme variables on `:root` (retro purple). Contrast is checked by the tests (WCAG 2.2 AA). |
 | `api/design.js` | Vercel function: `/?design=<name>` links (rewritten here by `vercel.json`) get that design's title, description and photo in the link-preview tags. Its `designSlug` must match app.js (a test checks). Tested by `tests/share.test.js`. |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Install as an app. The service worker is network-first. |
@@ -41,7 +41,10 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
   `emails` (edited email text), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
-  (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads). Cleaned by
+  (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads).
+  `siteText` ({key: {text, live}}, keys and defaults in `SITE_TEXT` in features.js; use `t(key)` for any customer-facing
+  text the owner might want to change, including step names), `faq` ([{id, q, a, live}]), `features` ({key: false} for
+  switched-off parts, `featureOn(key)`; Code.gs `featureOff`). Drafts (not live) show only to the owner with `previewDrafts` on. Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
 - Order queue: `order_queue()` (supabase/queue.sql) lists confirmed/printing orders as { at, printing, custom } only;
   `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).

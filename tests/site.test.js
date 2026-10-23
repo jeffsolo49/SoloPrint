@@ -176,6 +176,9 @@ const STATES = {
   'owner settings wording': asOwner('settings/wording'),
   'owner settings vacation': asOwner('settings/vacation'),
   'owner settings reviews': asOwner('settings/reviews'),
+  'owner settings site text': asOwner('settings/text'),
+  'owner settings faq': "(async () => { await " + asOwner('settings/faq') + "; state.settingsDraft.faq = [{ id: 'f1', q: 'How long?', a: 'About a week.', live: false }]; render(); })()",
+  'owner settings show/hide': asOwner('settings/features'),
   'owner emails': asOwner('emails'),
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
@@ -1159,6 +1162,58 @@ const STATES = {
     const data = db.gallery.g1.data;
     assert(data.videos.join() === 'abcdefghijk,ABCDEFGHIJK,zyxwvutsrqp' && data.photos.join() === 'https://img.test/d1.png', JSON.stringify(data));
     await owner.close();
+  });
+  await check('site text, FAQ and step names: drafts stay hidden until Live; the owner can preview them', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('settings/text'));
+    await owner.fill('#st-requestTitle', 'Ask for a print');
+    assert((await owner.textContent('#st-status-requestTitle')).trim() === 'Draft', 'should say Draft');
+    await owner.fill('#st-step_estimate', 'Got your request');
+    await owner.check('#st-live-step_estimate');
+    await owner.click('.sub-tab:has-text("FAQ")');
+    await owner.click('#faq-add');
+    await owner.fill('#faq-q-0', 'Do you ship?');
+    await owner.fill('#faq-a-0', 'Local pickup only for now.');
+    await owner.click('#faq-add');
+    await owner.fill('#faq-q-1', 'Secret draft question');
+    await owner.check('#faq-live-0');
+    await owner.click('#settings-save');
+    await owner.waitForTimeout(300);
+    assert(db.settings.siteText.requestTitle.text === 'Ask for a print' && !db.settings.siteText.requestTitle.live && db.settings.siteText.step_estimate.live, JSON.stringify(db.settings.siteText));
+    assert(db.settings.faq.length === 2 && db.settings.faq[0].live && !db.settings.faq[1].live, JSON.stringify(db.settings.faq));
+    // Preview: the owner sees drafts on the customer pages.
+    await owner.evaluate(async () => { setPreviewDrafts(true); await showClientView(); });
+    let home = await owner.textContent('main');
+    assert(/Ask for a print/.test(home) && /Secret draft question/.test(home) && /only you can see them/.test(home), 'preview should show drafts');
+    await owner.evaluate(() => setPreviewDrafts(false));
+    await owner.close();
+    const page = await open(db);
+    home = await page.textContent('main');
+    assert(!/Ask for a print/.test(home) && /New Quote Request/.test(home), 'draft heading shown to customers');
+    assert(/Do you ship\?/.test(home) && !/Secret draft question/.test(home), 'FAQ: only live questions');
+    await page.evaluate(STATES['my requests']);
+    await page.evaluate(() => { state.batches.find(b => b.id === '1').phase = 'estimate'; render(); });
+    assert(/Got your request/.test(await page.textContent('#order-1')), 'live step name not used');
+    await page.close();
+  });
+  await check('show / hide: switched-off parts of the site disappear', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('settings/features'));
+    await owner.uncheck('#feature-howItWorks');
+    await owner.uncheck('#feature-reviews');
+    await owner.uncheck('#feature-videos');
+    await owner.click('#settings-save');
+    await owner.waitForTimeout(300);
+    assert(db.settings.features.howItWorks === false && db.settings.features.reviews === false && db.settings.features.faq === undefined, JSON.stringify(db.settings.features));
+    await owner.close();
+    const page = await open(db);
+    const home = await page.textContent('main');
+    assert(!/How it works/.test(home) && !/Came out perfect/.test(home) && /New Quote Request/.test(home), 'hidden parts still on the home page');
+    await page.evaluate(async () => { await loadGallery(); openWork('g1'); });
+    assert(!(await page.$('iframe')), 'videos still shown');
+    await page.close();
   });
   await check('each design has its own link, with the gallery still visible above it', async () => {
     const page = await open(fixtures(), { suffix: '?design=g2' });

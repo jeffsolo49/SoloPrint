@@ -292,7 +292,7 @@ function sendQuoteReminders() {
     sendAll(reminderEmails(due, custom, site));
     Logger.log('Quote reminders sent: ' + due.length);
   });
-  step('Review requests', () => sendAll(reviewRequestEmails(callSupabase('due_review_requests', { p_days: rules.reviewRequestDays }), custom, site)));
+  if (!featureOff(site, 'reviews')) step('Review requests', () => sendAll(reviewRequestEmails(callSupabase('due_review_requests', { p_days: rules.reviewRequestDays }), custom, site)));
   step('Unfinished request reminders', () => sendAll(draftReminderEmails(callSupabase('due_draft_reminders', { p_days: rules.draftReminderDays }), custom)));
   step('Leftover roll reminders', () => {
     const props = PropertiesService.getScriptProperties();
@@ -522,8 +522,11 @@ function loadQueue() {
   }
 }
 
+// Features the owner switched off in Settings -> Show / hide.
+function featureOff(site, key) { return !!(site && site.features && site.features[key] === false); }
+
 function queueNote(rec, site) {
-  if (!site || !Array.isArray(site.queue)) return '';
+  if (!site || !Array.isArray(site.queue) || featureOff(site, 'queue')) return '';
   const rules = shopRules(site), custom = orderIsCustom(rec);
   if (rec.phase === 'quote_sent') {
     const q = queueEstimate(site.queue, rules, '', custom);

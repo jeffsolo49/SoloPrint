@@ -751,3 +751,13 @@ textarea { resize: vertical; min-height: 70px; }
 .sub-tab { padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface2); border: 2px solid var(--border); border-radius: 999px; cursor: pointer; }
 .sub-tab:hover { border-color: var(--border-hover); }
 .sub-tab.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* Site text, FAQ, feature switches */
+.draft-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); margin-left: 4px; }
+.draft-tag.live { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.site-text-row { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.feature-switch { display: flex; margin: 0 0 10px; }
+.faq-item { border-bottom: 1px solid var(--border); padding: 10px 0; }
+.faq-item summary { cursor: pointer; font-weight: 700; }
+.faq-answer { margin-top: 8px; }
+.site-text-row input[type=checkbox], .feature-switch input[type=checkbox] { width: 24px; height: 24px; flex-shrink: 0; }

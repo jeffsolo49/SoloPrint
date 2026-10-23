@@ -156,7 +156,7 @@ function orderAgain(id) {
 function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
   return `<div class="order-extras">
-    <button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>
+    ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>` : ''}
     ${delivered ? `<button type="button" class="btn-sm" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
 }
@@ -251,6 +251,7 @@ function queueFromOrders(batches) {
 function draftIsCustom() { return state.draftItems.some(it => inferMode(it) === 'idea' && hasModeContent(it)); }
 
 function renderQueueNotice() {
+  if (!featureOn('queue')) return '';
   if (!Array.isArray(state.queue)) return '';
   const rules = currentRules(), custom = draftIsCustom();
   const q = queueEstimate(state.queue, rules, '', custom);
@@ -261,6 +262,7 @@ function renderQueueNotice() {
 }
 
 function renderOrderQueue(b) {
+  if (!featureOn('queue')) return '';
   if (!Array.isArray(state.queue)) return '';
   const rules = currentRules(), custom = orderIsCustom(b);
   if (b.phase === 'order_received') {
@@ -295,6 +297,7 @@ function customerRolls() {
 }
 
 function renderRollsCard() {
+  if (!featureOn('leftoverRolls')) return '';
   const rolls = customerRolls();
   if (!rolls.length) return '';
   return `<div class="card rolls-card">
@@ -1197,6 +1200,7 @@ function renderPartColors(item, i) {
 
 // Design page: the parts and their weights.
 function renderDesignParts(g) {
+  if (!featureOn('designParts')) return '';
   if (!g.parts || !g.parts.length) return '';
   return `<div class="card design-parts">
     <h3 class="card-title">Parts</h3>
@@ -1257,4 +1261,202 @@ async function uploadPartPhoto(n, file) {
     console.error('Part photo upload error:', e);
     if (status) status.textContent = /unsupported/.test(e.message) ? "That photo isn't a format this browser can read. Try a JPG or PNG." : "Couldn't upload. Check that you're logged in.";
   }
+}
+
+// ── SITE TEXT, FAQ AND FEATURE SWITCHES (Settings) ────────────────────────
+// The owner can change the main headings, labels, form questions and the order step names customers see.
+// Each change is a draft until it's marked Live; the owner can preview drafts while logged in.
+// settings.siteText: { key: { text, live } }. Blank text or not live = the default below.
+const SITE_TEXT = [
+  ['Home and menu', [
+    ['navRequest', 'Menu: request button', 'Request a Quote'],
+    ['navRequestSub', 'Menu: request button, small text', 'Start a print or custom design'],
+    ['navGallery', 'Menu: past work button (also the past work page title)', 'Previous Design Work'],
+    ['navGallerySub', 'Menu: past work button, small text', "See what I've made"],
+    ['navJobs', 'Menu: my requests button (also that page title)', 'My Requests'],
+    ['navJobsSub', 'Menu: my requests button, small text', 'Track your orders'],
+    ['aboutTitle', 'About card heading', 'Hi, welcome to SoloPrint'],
+    ['howTitle', '"How it works" heading', 'How it works'],
+    ['reviewsTitle', 'Reviews heading', 'What customers say'],
+    ['faqTitle', 'FAQ heading', 'Questions'],
+  ]],
+  ['Request form', [
+    ['requestTitle', 'Form heading', 'New Quote Request'],
+    ['requestSub', 'Form heading, small text', "Tell me what you'd like printed. Nothing is charged until you approve a quote."],
+    ['nameLabel', 'Name and email question', 'Your name and email'],
+    ['nameHelp', 'Under name and email', 'Saved as you go, so you can finish later.'],
+    ['itemsTitle', 'Items heading', 'Items to print'],
+    ['modeQuestion', 'First question', 'What would you like printed?'],
+    ['modeGallery', 'Choice 1', 'Something from my past work'],
+    ['modeGallerySub', 'Choice 1, small text', 'Pick a design I have made before'],
+    ['modeLink', 'Choice 2', 'I have a link'],
+    ['modeLinkSub', 'Choice 2, small text', 'A model on MakerWorld, Printables or Thingiverse'],
+    ['modeIdea', 'Choice 3', 'I have an idea'],
+    ['modeIdeaSub', 'Choice 3, small text', 'Something custom: describe it and I can design it'],
+    ['ideaLabel', 'Idea question', 'Describe your idea'],
+    ['changesLabel', 'Changes question (link and past work)', "Anything you'd like changed? (optional)"],
+    ['addItem', 'Add item button', 'Add another item'],
+    ['submitButton', 'Send button', 'Send My Request'],
+    ['submitNote', 'Under the send button', "Free to ask. I'll review it and email you a quote"],
+  ]],
+  ['Past work', [
+    ['gallerySub', 'Past work page, small text', 'Designs we\'ve made before, with the story behind each one. Want one? Tap "Request this".'],
+    ['requestThis', '"Request this" button', 'Request this'],
+  ]],
+  ['Order steps customers see', [
+    ['step_estimate', 'Step 1 name', 'Request Received'],
+    ['stepInfo_estimate', 'Step 1 description', "We've received your request and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs."],
+    ['step_quote_sent', 'Step 2 name', 'Quote Ready'],
+    ['stepInfo_quote_sent', 'Step 2 description', "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead."],
+    ['step_order_received', 'Step 3 name', 'Order Confirmed'],
+    ['stepInfo_order_received', 'Step 3 description', 'Your order is confirmed and queued for the printer.'],
+    ['step_production', 'Step 4 name', 'Printing'],
+    ['stepInfo_production', 'Step 4 description', 'Your parts are on the printer right now.'],
+    ['step_delivered', 'Step 5 name', 'Delivered'],
+    ['stepInfo_delivered', 'Step 5 description', 'Your order is complete. Enjoy!'],
+    ['pay_unpaid', 'Payment: not asked yet', 'Unpaid'],
+    ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
+    ['pay_payment_recieved', 'Payment: paid', 'Payment Received'],
+  ]]
+];
+const SITE_TEXT_DEFAULTS = Object.fromEntries(SITE_TEXT.flatMap(([, rows]) => rows.map(([k, , d]) => [k, d])));
+
+// What the owner can switch off. All on unless switched off.
+const FEATURE_SWITCHES = [
+  ['about', 'About card on the home page'],
+  ['recentWork', '"My Work" photos on the home page'],
+  ['howItWorks', '"How it works" on the home page'],
+  ['reviews', 'Reviews (home page, design pages, and the review form)'],
+  ['faq', 'FAQ on the home page'],
+  ['queue', 'Order queue and wait estimates'],
+  ['orderAgain', '"Order again" button'],
+  ['leftoverRolls', '"Your leftover rolls" card on My Requests'],
+  ['videos', 'Videos on design pages'],
+  ['designParts', 'Parts and a color per part on designs']
+];
+function featureOn(key) { const f = state.settings.features; return !(f && f[key] === false); }
+
+function previewingDrafts() { return !!(state.previewDrafts && state.ownerUnlocked); }
+function t(key) {
+  const own = (state.settings.siteText || {})[key];
+  if (own && own.text && (own.live || previewingDrafts())) return own.text;
+  return SITE_TEXT_DEFAULTS[key] || '';
+}
+function setPreviewDrafts(on) {
+  state.previewDrafts = !!on;
+  try { localStorage.setItem('soloprint-preview-drafts', on ? '1' : ''); } catch (e) { /* not kept */ }
+  render();
+}
+function loadPreviewDrafts() { try { state.previewDrafts = localStorage.getItem('soloprint-preview-drafts') === '1'; } catch (e) { state.previewDrafts = false; } }
+
+function cleanSiteText(raw) {
+  const out = {};
+  Object.keys(SITE_TEXT_DEFAULTS).forEach(k => {
+    const v = raw && typeof raw === 'object' && raw[k];
+    const text = cleanText(v && v.text, 400).trim();
+    if (text) out[k] = { text, live: !!(v && v.live) };
+  });
+  return out;
+}
+function cleanFaq(raw) {
+  return (Array.isArray(raw) ? raw : []).slice(0, 30).map(f => ({
+    id: /^[a-z0-9-]{1,40}$/.test(String(f && f.id)) ? f.id : settingsId(),
+    q: cleanText(f && f.q, 200).trim(), a: cleanText(f && f.a, 2000).trim(), live: !!(f && f.live)
+  })).filter(f => f.q);
+}
+function cleanFeatures(raw) {
+  const out = {};
+  FEATURE_SWITCHES.forEach(([k]) => { if (raw && raw[k] === false) out[k] = false; });
+  return out;
+}
+
+function previewNote() {
+  return previewingDrafts() ? `<div class="alert success preview-note" style="display:block;" role="status">You're seeing your drafts (only you can see them). <button class="btn-link" type="button" onclick="setPreviewDrafts(false)">Stop previewing</button></div>` : '';
+}
+function renderPreviewSwitch() {
+  return `<label class="special-order-check" style="font-size:14px;"><input type="checkbox" ${state.previewDrafts ? 'checked' : ''} onchange="setPreviewDrafts(this.checked)" />
+    Preview my drafts on the site (only you see them, while you're logged in). Save first.</label>`;
+}
+
+// Customer FAQ on the home page (live questions only, or drafts while previewing).
+function renderFaq() {
+  const list = (state.settings.faq || []).filter(f => f.live || previewingDrafts());
+  if (!featureOn('faq') || !list.length) return '';
+  return `<div class="card faq">
+    <h3 class="card-title">${esc(t('faqTitle'))}</h3>
+    ${list.map(f => `<details class="faq-item"><summary>${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</summary><div class="faq-answer">${renderWriteup(f.a)}</div></details>`).join('')}
+  </div>`;
+}
+
+// Settings -> Site text.
+function renderSiteTextSettings(d) {
+  const own = d.siteText = d.siteText || {};
+  return `<div class="card">
+    <h3 class="card-title">Site text</h3>
+    <div class="field-help" style="margin-bottom:10px;">Change any of these. A change is a <strong>draft</strong> (customers still see the original) until you tick <strong>Live</strong> and save. Leave a box blank for the original wording.</div>
+    ${renderPreviewSwitch()}
+    ${SITE_TEXT.map(([group, rows]) => `<fieldset class="owner-edit-item">
+      <legend>${esc(group)}</legend>
+      ${rows.map(([k, label, def]) => {
+        const v = own[k] || {};
+        const status = !String(v.text || '').trim() ? 'Original' : v.live ? 'Live' : 'Draft';
+        const long = def.length > 60;
+        return `<div class="field site-text-row">
+          <label for="st-${k}">${esc(label)} <span class="draft-tag ${status === 'Live' ? 'live' : ''}" id="st-status-${k}">${status}</span></label>
+          ${long ? `<textarea id="st-${k}" rows="2" maxlength="400" placeholder="${esc(def)}" oninput="siteTextSet('${k}', 'text', this.value)">${esc(v.text || '')}</textarea>`
+            : `<input type="text" id="st-${k}" maxlength="400" value="${esc(v.text || '')}" placeholder="${esc(def)}" oninput="siteTextSet('${k}', 'text', this.value)" />`}
+          <label class="special-order-check"><input type="checkbox" id="st-live-${k}" ${v.live ? 'checked' : ''} onchange="siteTextSet('${k}', 'live', this.checked)" /> Live</label>
+        </div>`;
+      }).join('')}
+    </fieldset>`).join('')}
+  </div>`;
+}
+function siteTextSet(k, field, value) {
+  const own = state.settingsDraft.siteText = state.settingsDraft.siteText || {};
+  own[k] = { ...(own[k] || { text: '', live: false }), [field]: value };
+  const el = document.getElementById(`st-status-${k}`);
+  if (el) {
+    const status = !String(own[k].text || '').trim() ? 'Original' : own[k].live ? 'Live' : 'Draft';
+    el.textContent = status;
+    el.classList.toggle('live', status === 'Live');
+  }
+}
+
+// Settings -> FAQ.
+function renderFaqSettings(d) {
+  d.faq = d.faq || [];
+  return `<div class="card">
+    <h3 class="card-title">FAQ</h3>
+    <div class="field-help" style="margin-bottom:10px;">Questions and answers for the home page. Each one stays a <strong>draft</strong> (hidden) until you tick <strong>Live</strong> and save. Leave a blank line between paragraphs.</div>
+    ${renderPreviewSwitch()}
+    ${d.faq.map((f, n) => `<div class="item-block" style="margin-bottom:10px;">
+      <div class="field"><label for="faq-q-${n}">Question ${n + 1}</label>
+        <input type="text" id="faq-q-${n}" maxlength="200" value="${esc(f.q || '')}" placeholder="e.g. How long does an order take?" oninput="state.settingsDraft.faq[${n}].q = this.value" /></div>
+      <div class="field"><label for="faq-a-${n}">Answer</label>
+        <textarea id="faq-a-${n}" maxlength="2000" oninput="state.settingsDraft.faq[${n}].a = this.value">${esc(f.a || '')}</textarea></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <label class="special-order-check" style="margin:0;"><input type="checkbox" id="faq-live-${n}" ${f.live ? 'checked' : ''} onchange="state.settingsDraft.faq[${n}].live = this.checked" /> Live (customers can see it)</label>
+        ${n > 0 ? `<button type="button" class="btn-sm" onclick="moveFaq(${n}, -1)" aria-label="Move question ${n + 1} up">Move up</button>` : ''}
+        <button type="button" class="btn-sm danger" onclick="state.settingsDraft.faq.splice(${n}, 1); render();" aria-label="Remove question ${n + 1}">Remove</button>
+      </div>
+    </div>`).join('')}
+    ${d.faq.length < 30 ? `<button type="button" class="btn-sm" id="faq-add" onclick="state.settingsDraft.faq.push({ id: settingsId(), q: '', a: '', live: false }); render();">+ Add a question</button>` : ''}
+  </div>`;
+}
+function moveFaq(n, by) {
+  const list = state.settingsDraft.faq;
+  const [f] = list.splice(n, 1);
+  list.splice(n + by, 0, f);
+  render();
+}
+
+// Settings -> Features.
+function renderFeatureSettings(d) {
+  d.features = d.features || {};
+  return `<div class="card">
+    <h3 class="card-title">Show or hide parts of the site</h3>
+    <div class="field-help" style="margin-bottom:10px;">Untick anything you don't want customers to see, then save. Nothing is deleted; tick it again to bring it back.</div>
+    ${FEATURE_SWITCHES.map(([k, label]) => `<label class="special-order-check feature-switch"><input type="checkbox" id="feature-${k}" ${d.features[k] === false ? '' : 'checked'}
+      onchange="state.settingsDraft.features['${k}'] = this.checked ? true : false" /> ${esc(label)}</label>`).join('')}
+  </div>`;
 }
