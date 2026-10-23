@@ -733,3 +733,15 @@ textarea { resize: vertical; min-height: 70px; }
 .color-parts .field { margin-bottom: 8px; }
 .calc-extras { margin-top: 10px; }
 .calc-extra-row { align-items: end; }
+
+/* Design parts: owner form, design page, customer color per part */
+.part-form-row, .part-color-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding: 8px 0; }
+.part-form-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.part-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: var(--surface2); }
+.part-thumb-blank { display: inline-block; }
+.part-color-row .field { flex: 1; min-width: 160px; margin-bottom: 0; }
+.part-colors { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 0; min-width: 0; }
+.part-colors legend { font-weight: 700; font-size: 14px; padding: 0 6px; }
+.design-parts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.design-part img, .design-part .part-thumb-blank { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; background: var(--surface2); display: block; }
+.design-part-name { font-weight: 700; font-size: 14px; margin-top: 4px; }

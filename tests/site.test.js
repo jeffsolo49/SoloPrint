@@ -25,7 +25,7 @@ function fixtures() {
     },
     gallery: {
       g1: { id: 'g1', published: true, sort_order: 0, data: { title: 'Dragon Organizer', description: 'Started as a request.\n\nPrinted three test versions.', photos: ['https://img.test/d1.png', 'https://img.test/d2.png'], videos: ['dQw4w9WgXcQ'], filType: 'black', minutes: 150, grams: 85.4 } },
-      g2: { id: 'g2', published: true, sort_order: 1, data: { title: 'Name Sign', photos: ['https://img.test/s.png'] } },
+      g2: { id: 'g2', published: true, sort_order: 1, data: { title: 'Name Sign', photos: ['https://img.test/s.png'], parts: [{ id: 'p1', name: 'Plate', grams: 30, photo: 'https://img.test/s.png' }, { id: 'p2', name: 'Letters', grams: 5 }] } },
       g3: { id: 'g3', published: false, sort_order: 2, data: { title: 'Hidden prototype', photos: [] } }
     },
     library: { 'name:planter': { name: 'Planter', minutes: 200, grams: 110, filType: 'black' } },
@@ -173,6 +173,9 @@ const STATES = {
   'owner emails': asOwner('emails'),
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
+  'design page with parts': "(async () => { await loadGallery(); openWork('g2'); })()",
+  'request with a color per part': "(async () => { await loadGallery(); requestGalleryItem('g2'); })()",
+  'owner gallery parts': "(async () => { await " + asOwner('gallery') + "; editGalleryItem('g2'); })()",
   'owner editing a request': "(async () => { await " + asOwner('dashboard') + "; startOwnerEdit('3'); })()",
   'leftover rolls and a review form': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.batches[1].phase = 'delivered'; state.clientTab = 'jobs'; state.reviewFor = { id: '2', email: 'jane@example.com' }; render(); })()",
   'home in vacation mode': "(() => { state.settings.vacation = { on: true, until: 'Nov 3' }; render(); })()"
@@ -453,6 +456,49 @@ const STATES = {
     const live = await owner.textContent('#owner-calc-live-preview');
     assert(/\$6\.24/.test(live) && /Black \+ Red/.test(live) && /100\.0g/.test(live), live);
     await owner.close();
+  });
+  await check('design parts: owner lists parts with grams and photos; customers pick a color for each part', async () => {
+    const db = fixtures();
+    db.settings.colors.find(c => c.id === 'red').rate = 0.044;
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    await owner.click('#add-design-part');
+    await owner.fill('#part-name-0', 'Body');
+    await owner.fill('#part-grams-0', '60');
+    await owner.setInputFiles('label:has-text("Add photo") input[type=file]', { name: 'body.png', mimeType: 'image/png', buffer: PNG });
+    await owner.waitForSelector('text=Photo added');
+    await owner.click('#add-design-part');
+    await owner.fill('#part-name-1', 'Eyes');
+    await owner.fill('#part-grams-1', '10');
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    const parts = db.gallery.g1.data.parts;
+    assert(parts.length === 2 && parts[0].name === 'Body' && parts[0].grams === 60 && /\/storage\/v1\/object\/public\/gallery\/g1\/part-/.test(parts[0].photo) && parts[1].grams === 10, JSON.stringify(parts));
+    await owner.close();
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('.design-parts');
+    const list = await page.textContent('.design-parts');
+    assert(/Body/.test(list) && /60 g/.test(list) && /Eyes/.test(list) && /10 g/.test(list), list);
+    await page.click('button:has-text("Request this")');
+    await page.waitForSelector('#part-color-0-1');
+    assert(!(await page.$('#pills-0')), 'per-part colors should replace the single color picker');
+    await page.selectOption('#part-color-0-1', 'red');
+    const it = await page.evaluate(() => state.draftItems[0]);
+    assert(it.colorId === 'black' && it.grams === 60 && it.mainParts === 'Body' && it.extraColors.length === 1
+      && it.extraColors[0].colorId === 'red' && it.extraColors[0].grams === 10 && it.extraColors[0].parts === 'Eyes', JSON.stringify(it));
+    // 2 + 150 min x 0.024 + 60 g x 0.024 + 10 g x 0.044
+    assert(/\$7\.48/.test(await page.textContent('#customer-price-preview-0')), await page.textContent('#customer-price-preview-0'));
+    await page.selectOption('#part-color-0-1', 'black');
+    assert(await page.evaluate(() => state.draftItems[0].extraColors.length === 0 && state.draftItems[0].grams === 70), 'one color again should be a single 70 g color');
+    await page.selectOption('#part-color-0-0', 'silk');
+    await page.fill('#client-name', 'Ivy');
+    await page.fill('#client-email', 'ivy@example.com');
+    await page.click('#submit-btn');
+    await requestSent(page);
+    const job = Object.values(db.jobs).find(j => j.clientName === 'Ivy');
+    assert(job.items[0].colorId === 'silk' && job.items[0].mainParts === 'Body' && job.items[0].extraColors[0].name === 'Black' && job.items[0].extraColors[0].parts === 'Eyes', JSON.stringify(job.items[0]));
+    await page.close();
   });
   await check('multi-color print can mix stocked colors with a leftover roll', async () => {
     const db = withRolls(fixtures());
