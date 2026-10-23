@@ -2965,6 +2965,7 @@ function renderOwnerSettingsPage() {
     </div>
     ${nav}
     ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load settings. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
+    ${areaPreview(tab)}
     ${body}
     <div class="alert error" id="settings-err"></div>
     <div class="alert success" id="settings-ok"></div>
