@@ -1123,3 +1123,141 @@ function renderCalcExtras(calc) {
     ${calc.extras.length < 8 ? `<button type="button" class="btn-sm" id="calc-add-color" onclick="state.ownerCalculator.extras.push({ color: calcChoices()[0].value, grams: '' }); render();">+ Add another color</button>` : ''}
   </div>`;
 }
+
+// ── DESIGN PARTS: A COLOR FOR EACH PART ───────────────────────────────────
+// A past-work design can list its parts (name, grams per print, photo). Customers pick a color for each
+// part; parts in the same color are grouped into the item's colors (main color + extraColors with grams),
+// so pricing, stock, rolls and emails work as for any multi-color print.
+function cleanDesignParts(list, withChoice) {
+  return (Array.isArray(list) ? list : []).slice(0, 20).map((p, n) => {
+    const part = {
+      id: /^[A-Za-z0-9_-]{1,40}$/.test(String(p && p.id)) ? p.id : `p${n + 1}`,
+      name: cleanText(p && p.name, 80).trim(),
+      grams: Number(p && p.grams) > 0 && Number(p.grams) <= 100000 ? Math.round(Number(p.grams) * 10) / 10 : null,
+      photo: safeImageUrl(p && p.photo)
+    };
+    if (withChoice) part.colorId = /^[a-z0-9-]{1,40}$/.test(String(p && p.colorId)) ? p.colorId : '';
+    return part;
+  }).filter(p => p.name);
+}
+
+// Choices for a part: in-stock colors (or Black and White with no colors set up), keyed by color id or type.
+function partColorChoices() { return stockedColors().map(c => ({ ...c, key: c.colorId || c.filType })); }
+
+function applyPartColors(item) {
+  const parts = item.designParts || [];
+  if (!parts.length) return;
+  const choices = partColorChoices();
+  const fallback = choices.find(c => c.colorId && c.colorId === item.colorId) || choices.find(c => c.filType !== 'special') || choices[0];
+  const groups = [];
+  parts.forEach(p => {
+    let c = choices.find(x => x.key === p.colorId);
+    if (!c) { c = fallback; p.colorId = c.key; }
+    let g = groups.find(x => x.c.key === c.key);
+    if (!g) groups.push(g = { c, names: [], grams: 0 });
+    g.names.push(p.name);
+    g.grams += Number(p.grams) || 0;
+  });
+  const hasGrams = parts.some(p => Number(p.grams) > 0);
+  const main = groups[0];
+  item.colorId = main.c.colorId || '';
+  item.color = main.c.colorId ? main.c.name : '';
+  item.filType = main.c.filType;
+  item.mainParts = main.names.join(', ');
+  if (hasGrams) item.grams = Math.round((groups.length > 1 ? main.grams : groups.reduce((s, g) => s + g.grams, 0)) * 10) / 10;
+  item.extraColors = groups.slice(1).map(g => ({ name: g.c.name, filType: g.c.filType, colorId: g.c.colorId || '', leftoverFrom: '',
+    grams: hasGrams ? Math.round(g.grams * 10) / 10 : null, parts: g.names.join(', ') }));
+}
+
+function setPartColor(i, k, key) {
+  const item = state.draftItems[i];
+  if (!item || !item.designParts[k]) return;
+  item.designParts[k].colorId = key;
+  applyPartColors(item);
+  render();
+  queueDraftSave();
+  document.getElementById(`part-color-${i}-${k}`)?.focus();
+}
+
+function renderPartColors(item, i) {
+  const choices = partColorChoices();
+  return `<fieldset class="part-colors">
+    <legend>Choose a color for each part</legend>
+    <div class="field-help">${esc(materialNote())}</div>
+    ${item.designParts.map((p, k) => `<div class="part-color-row">
+      ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
+      <div class="field">
+        <label for="part-color-${i}-${k}">${esc(p.name)}${p.grams ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
+        <select id="part-color-${i}-${k}" onchange="setPartColor(${i}, ${k}, this.value)">
+          ${choices.map(c => `<option value="${esc(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
+        </select>
+      </div>
+    </div>`).join('')}
+    ${renderColorInfo(item)}
+    <div class="field-help">Want a color I don't carry for a part? Say so under "Anything you'd like changed?"</div>
+  </fieldset>`;
+}
+
+// Design page: the parts and their weights.
+function renderDesignParts(g) {
+  if (!g.parts || !g.parts.length) return '';
+  return `<div class="card design-parts">
+    <h3 class="card-title">Parts</h3>
+    <div class="field-help" style="margin-bottom:10px;">You can pick a color for each part when you request this.</div>
+    <div class="design-parts-grid">${g.parts.map(p => `<div class="design-part">
+      ${p.photo ? thumbImg(p.photo, p.name, 'thumb') : '<span class="part-thumb-blank" aria-hidden="true"></span>'}
+      <div class="design-part-name">${esc(p.name)}</div>
+      ${p.grams ? `<div class="gallery-meta">${p.grams} g</div>` : ''}
+    </div>`).join('')}</div>
+  </div>`;
+}
+
+// Owner gallery form: list the parts.
+function renderDesignPartsForm(f) {
+  f.parts = f.parts || [];
+  return `<fieldset class="owner-edit-item">
+    <legend>Parts (optional)</legend>
+    <div class="field-help" style="margin-bottom:8px;">Break the design into parts so customers can pick a color for each one. Give each part its grams per print and a photo; the estimate prices each color by its parts' grams.</div>
+    ${f.parts.map((p, n) => `<div class="part-form-row">
+      ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
+      <div class="row2" style="flex:1;min-width:0;">
+        <div class="field"><label for="part-name-${n}">Part ${n + 1} name</label>
+          <input type="text" id="part-name-${n}" value="${esc(p.name || '')}" maxlength="80" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].name = this.value" /></div>
+        <div class="field"><label for="part-grams-${n}">Grams</label>
+          <input type="number" id="part-grams-${n}" value="${esc(p.grams || '')}" min="0" step="0.1" placeholder="e.g. 40" oninput="state.galleryForm.parts[${n}].grams = this.value" /></div>
+      </div>
+      <div class="part-form-actions">
+        <label class="btn-sm">${p.photo ? 'Change photo' : 'Add photo'}
+          <input type="file" accept="image/*" onchange="uploadPartPhoto(${n}, this.files[0]); this.value='';" style="display:none;" /></label>
+        <button type="button" class="btn-sm danger" onclick="state.galleryForm.parts.splice(${n}, 1); render();" aria-label="Remove part ${n + 1}">Remove</button>
+      </div>
+    </div>`).join('')}
+    <span class="field-help" id="part-upload-status" role="status"></span>
+    ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="add-design-part" onclick="state.galleryForm.parts.push({ id: 'p' + Date.now().toString(36), name: '', grams: '', photo: '' }); render();">+ Add a part</button>` : ''}
+    ${f.parts.length ? `<div class="field-help" style="margin-top:6px;">Parts add up to ${f.parts.reduce((s, p) => s + (Number(p.grams) || 0), 0).toFixed(1)} g.</div>` : ''}
+  </fieldset>`;
+}
+
+async function uploadPartPhoto(n, file) {
+  const f = state.galleryForm;
+  const status = document.getElementById('part-upload-status');
+  const token = getOwnerToken();
+  if (!f || !f.parts[n] || !file) return;
+  if (!token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
+  if (status) status.textContent = 'Uploading...';
+  try {
+    const blob = await resizePhoto(file);
+    const thumb = await resizePhoto(file, THUMB_SIDE);
+    if (!blob || !thumb) throw new Error('resize failed');
+    const path = `${f.id}/part-${Date.now()}.jpg`;
+    await uploadStoredPhoto(path, blob, token);
+    await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token);
+    f.parts[n].photo = GALLERY_PUBLIC_PREFIX + path;
+    render();
+    const done = document.getElementById('part-upload-status');
+    if (done) done.textContent = 'Photo added. Remember to save.';
+  } catch (e) {
+    console.error('Part photo upload error:', e);
+    if (status) status.textContent = /unsupported/.test(e.message) ? "That photo isn't a format this browser can read. Try a JPG or PNG." : "Couldn't upload. Check that you're logged in.";
+  }
+}

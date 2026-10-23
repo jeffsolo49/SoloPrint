@@ -74,7 +74,7 @@ function blankItem() {
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
     imageLinks: [], mode: '', color: '', colorId: '', specialColor: '', useLeftover: false, leftoverFrom: '', extraColors: [], showTime: false,
-    galleryId: '', modeDrafts: {}
+    galleryId: '', designParts: [], modeDrafts: {}
   };
 }
 
@@ -465,6 +465,7 @@ function cleanItem(it) {
     useLeftover: it.useLeftover === true,
     leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
     mainParts: cleanText(it.mainParts, 200),
+    designParts: cleanDesignParts(it.designParts, true),
     extraColors: (Array.isArray(it.extraColors) ? it.extraColors : []).slice(0, 8).map(p => ({
       parts: cleanText(p && p.parts, 200),
       grams: cleanNumber(p && p.grams),
@@ -1600,11 +1601,12 @@ function renderCustomerPricePreview(item) {
   const rules = currentRules();
   const perPrint = calcPerPrint(minutes, grams, item, rules);
   const total = perPrint * qty;
+  const allGrams = colorGrams(item, grams).reduce((s, g) => s + g, 0);
   return `<div class="price-preview-box" style="margin-top:12px;">
     <div class="card-title" style="margin-bottom:6px;">Automated Estimate</div>
     <div class="price-big">$${total.toFixed(2)}</div>
-    <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${grams.toFixed(1)}g · quantity ${qty}</div>
-    <div class="price-breakdown">${priceBreakdown(minutes, grams, itemRate(item, rules), qty, rules)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${allGrams.toFixed(1)}g · quantity ${qty}</div>
+    <div class="price-breakdown">${priceBreakdown(minutes, allGrams, colorsRate(item, rules, grams), qty, rules)}</div>
     ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${rules.rollCost} for the ${fmtRoll(rules.rollGrams)} special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
     ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll.</div>` : ''}
     <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
@@ -1669,7 +1671,8 @@ function galleryItemFields(g) {
   return {
     name: g.title, galleryId: g.id, filType: g.filType, grams: g.grams, knownMinutes: g.minutes,
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
-    estimateSource: `the ${GALLERY_NAME} gallery`, setPrice: g.price > 0 ? g.price : null
+    estimateSource: `the ${GALLERY_NAME} gallery`, setPrice: g.price > 0 ? g.price : null,
+    designParts: (g.parts || []).map(p => ({ ...p, colorId: '' })), extraColors: [], mainParts: ''
   };
 }
 
@@ -1678,6 +1681,7 @@ function pickGalleryForItem(i, id) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!item || !g) return;
   Object.assign(item, galleryItemFields(g), { mode: 'gallery' });
+  applyPartColors(item);
   render();
   queueDraftSave();
 }
@@ -1687,6 +1691,8 @@ function changeGalleryPick(i) {
   if (!item) return;
   const blank = blankItem();
   ['name', 'galleryId', 'grams', 'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'previewImage', 'estimateSource', 'setPrice'].forEach(f => { item[f] = blank[f]; });
+  if ((item.designParts || []).length) { item.extraColors = []; item.mainParts = ''; }
+  item.designParts = [];
   render();
 }
 
@@ -1818,9 +1824,9 @@ function renderItemBlock(item, i) {
         </div>` : ''}
       ${mode && (mode !== 'gallery' || item.name) ? `
         <div class="field" style="margin-bottom:10px;">
-          <label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
+          ${(item.designParts || []).length ? renderPartColors(item, i) : `<label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
           <div class="field-help">${esc(materialNote())}</div>
-          <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>
+          <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
         <div class="field" style="margin-bottom:10px;max-width:160px;">
           <label>Quantity</label>
@@ -3066,7 +3072,8 @@ function cleanGalleryItem(row) {
     minutes: cleanNumber(data.minutes),
     grams: cleanNumber(data.grams),
     price: cleanNumber(data.price),   // set price that replaces the calculated estimate
-    videos: cleanVideoIds(data.videos)
+    videos: cleanVideoIds(data.videos),
+    parts: cleanDesignParts(data.parts)
   };
 }
 
@@ -3215,6 +3222,7 @@ function renderWorkDetail(g) {
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
     ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
     ${renderVideos(g)}
+    ${renderDesignParts(g)}
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       ${price !== null ? `
@@ -3332,6 +3340,7 @@ function requestGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!g) return;
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
+  applyPartColors(item);
   state.galleryOpen = '';
   setDesignUrl('');
   const first = state.draftItems[0];
@@ -3345,7 +3354,7 @@ function requestGalleryItem(id) {
 }
 
 function blankGalleryForm() {
-  return { id: `g${Date.now()}`, title: '', description: '', photos: '', videos: '', filType: 'black', hours: '', minutes: '', grams: '', price: '', published: true };
+  return { id: `g${Date.now()}`, title: '', description: '', photos: '', videos: '', parts: [], filType: 'black', hours: '', minutes: '', grams: '', price: '', published: true };
 }
 
 function renderGalleryFormPrice() {
@@ -3405,6 +3414,7 @@ function renderOwnerGalleryPage() {
         <div class="field-help">Paste YouTube links, one per line (up to 5; "Unlisted" videos work). They play on this design's page, under the photos. They're never used as the design's picture: tiles, cards and shared links always use your photos.</div>
         <textarea id="gallery-videos" placeholder="https://youtu.be/..." style="min-height:52px;" oninput="updateGalleryForm('videos', this.value)">${esc(f.videos || '')}</textarea>
       </div>
+      ${renderDesignPartsForm(f)}
       <div class="gallery-form-grid">
         <div class="field"><label>Filament</label>
           <select id="gallery-fil" onchange="updateGalleryForm('filType', this.value)">
@@ -3455,7 +3465,8 @@ function editGalleryItem(id) {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
-    videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n')
+    videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
+    parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' }))
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3469,7 +3480,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [] }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [] }
     })
   });
 }
@@ -3487,8 +3498,10 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, filType: f.filType,
-      minutes: totalPrintMinutes(f.hours, f.minutes), grams: parseFloat(f.grams), price: parseFloat(f.price) || null }
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], filType: f.filType,
+      minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
+      // No total grams typed: the parts' grams add up to it.
+      grams: parseFloat(f.grams) || (f.parts || []).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
   });
   const btn = document.getElementById('gallery-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
@@ -3634,7 +3647,7 @@ async function deleteGalleryItem(id) {
   if (!g || !confirm(`Delete "${g.title || 'this item'}" from the gallery? This cannot be undone.`)) return;
   try {
     await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await deleteStoredPhotos(g.photos);
+    await deleteStoredPhotos(g.photos.concat(g.parts.map(p => p.photo).filter(Boolean)));
   } catch (e) {
     alert("Couldn't delete it. If you were logged out, log in again and retry.");
   }
