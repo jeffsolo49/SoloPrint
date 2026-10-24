@@ -779,3 +779,4 @@ textarea { resize: vertical; min-height: 70px; }
 .swatch-photo { background-size: cover; background-position: center; }
 .color-info-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
 .color-photo img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; border: 2px solid var(--border); display: block; }
+.btn-venmo-full { display: block; text-align: center; text-decoration: none; margin-top: 8px; }

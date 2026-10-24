@@ -47,14 +47,15 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   text the owner might want to change, including step names), `faq` ([{id, q, a, live}]), `features` ({key: false} for
   switched-off parts, `featureOn(key)`; Code.gs `featureOff`). Drafts (not live) show only to the owner with `previewDrafts` on. Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
-- Order queue: `order_queue()` (supabase/queue.sql) lists confirmed/printing orders as { at, printing, custom } only;
+- Order queue: `order_queue()` (supabase/queue.sql) lists confirmed/printing orders as { at, printing, custom } only, `at` =
+  `queueTime` (deposit or full-payment time; null = waiting for a deposit, last in line; deposit % is rule `depositPercent`);
   `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,
   `due_review_requests`, `due_draft_reminders`, `owner_report_data`.
 - Order fields worth knowing: `phase` (estimate → quote_sent → order_received → production → delivered),
-  `paymentStatus` (unpaid → payment_requested → payment_recieved, spelling is historical), `rates` (prices
+  `paymentStatus` (unpaid → payment_requested → deposit_received (optional; sets `depositAt`, `depositAmount`) → payment_recieved, spelling is historical), `rates` (prices
   saved when the quote was sent), `designTerms` (custom design terms text the customer must agree to before approving), `specialOrderCost`, `extraCharges` ([{label, amount}], the owner's added charges; customers see label and amount), `ownerEditedAt`, `finishedPhotos`, `stockTaken`, `paidAt`. The owner edits a request in the estimate phase with "Edit request" (`renderOwnerEditForm` in features.js); `submit_job` strips owner-only fields.
 - Items: `ownerPrice` (owner's own price per print, beats everything; 0 allowed), `setPrice` (past-work set price), see `fixedPrice`;
   `filType` black/white/color/special/special_order; `colorId`/`color`; `specialColor`,

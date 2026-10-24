@@ -91,8 +91,9 @@ async function mockBackend(page, db) {
     }
     if (rest.startsWith('/rpc/order_queue')) {
       const q = Object.values(db.jobs).filter(j => ['order_received', 'production'].includes(j.phase))
-        .map(j => ({ at: (j.phaseHistory || {}).order_received || j.createdAt, printing: j.phase === 'production', custom: !!j.designTerms || (j.items || []).some(it => it.mode === 'idea') }))
-        .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+        // Like supabase/queue.sql: place in line = deposit (or full payment) time; none yet = last.
+        .map(j => ({ at: j.depositAt || j.paidAt || null, printing: j.phase === 'production', custom: !!j.designTerms || (j.items || []).some(it => it.mode === 'idea') }))
+        .sort((a, b) => (a.at ? 0 : 1) - (b.at ? 0 : 1) || String(a.at).localeCompare(String(b.at)));
       return route.fulfill({ json: q });
     }
     if (rest.startsWith('/rpc/save_request_draft')) {
@@ -780,7 +781,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('emails'));
     const cards = await page.$$eval('.email-card', els => els.length);
-    assert(cards === 15, `${cards} email cards`);
+    assert(cards === 16, `${cards} email cards`);
     assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
     await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
@@ -789,7 +790,7 @@ const STATES = {
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-deposit,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
@@ -1399,7 +1400,7 @@ const STATES = {
   });
   await check('order queue: customers see how many orders are ahead and about how many days', async () => {
     const db = fixtures();   // order 2 is printing
-    db.jobs['q1'] = { id: 'q1', clientName: 'Bo', clientEmail: 'bo@example.com', createdAt: ago(300), phase: 'order_received', phaseHistory: { order_received: ago(200) },
+    db.jobs['q1'] = { id: 'q1', clientName: 'Bo', clientEmail: 'bo@example.com', createdAt: ago(300), phase: 'order_received', phaseHistory: { order_received: ago(200) }, depositAt: ago(150), paymentStatus: 'deposit_received',
       items: [{ name: 'Vase', mode: 'idea', notes: 'tall', qty: 1, minutes: 60, grams: 20 }], designTerms: 'terms' };
     const page = await open(db);
     let note = await page.textContent('#queue-note');
@@ -1412,15 +1413,27 @@ const STATES = {
     await page.evaluate(STATES['my requests']);
     assert(/If you go ahead now, expect it to be printed in about 9-13 days/.test(await page.textContent('#order-1')), 'quote has no wait estimate');
     await page.close();
-    db.jobs['1'].phase = 'order_received'; db.jobs['1'].phaseHistory = { order_received: ago(10) };
+    // Confirmed long before Bo, but no deposit yet: no place in line, and a deposit button.
+    db.jobs['1'].phase = 'order_received'; db.jobs['1'].phaseHistory = { order_received: ago(400) };
     const later = await open(db);
     await later.evaluate(STATES['my requests']);
-    assert(/You're #3 in line/.test(await later.textContent('#order-1')), await later.textContent('#order-1'));
+    let card = await later.textContent('#order-1');
+    assert(/Your place in line is set when your deposit comes in/.test(card) && /Pay the 50% deposit, \$4\.64, with Venmo/.test(card) && /Pay in full, \$9\.28/.test(card), card);
     await later.close();
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
-    assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /#2 in line/.test(await owner.textContent('#order-q1')), 'owner queue missing');
+    assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /1 waiting for a deposit/.test(await owner.textContent('main')), 'owner queue summary');
+    assert(/#2 in line/.test(await owner.textContent('#order-q1')) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
+    await owner.selectOption('#order-1 .owner-batch-controls select >> nth=1', 'deposit_received');
+    await owner.waitForTimeout(300);
+    assert(db.jobs['1'].depositAt && db.jobs['1'].depositAmount === 4.64, JSON.stringify(db.jobs['1']));
+    assert(/#3 in line/.test(await owner.textContent('#order-1')), 'deposit just now: behind Bo, whose deposit came first');
     await owner.close();
+    const paid = await open(db);
+    await paid.evaluate(STATES['my requests']);
+    card = await paid.textContent('#order-1');
+    assert(/You're #3 in line/.test(card) && /Deposit received \(\$4\.64\)/.test(card) && /Pay the rest, \$4\.64/.test(card), card);
+    await paid.close();
   });
   await check('design links use the name, and match the link-preview function', async () => {
     const page = await open(fixtures(), { suffix: '?design=name-sign' });

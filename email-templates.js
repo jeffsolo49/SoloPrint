@@ -56,6 +56,11 @@ const EMAIL_TEMPLATES = {
     subject: 'Delivery details for your SoloPrint order',
     body: 'Hi {name},\n\nHere are the delivery details for {title}:\n\n{delivery}\n\n{footer}'
   },
+  deposit: {
+    label: 'Deposit received', to: 'Customer', when: 'You mark the deposit received. Their place in line is set now.',
+    subject: 'Deposit received for your SoloPrint order',
+    body: 'Hi {name},\n\nWe received your deposit for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready. Pay with Venmo: {venmoLink}\n\n{footer}'
+  },
   payment: {
     label: 'Payment received', to: 'Customer', when: 'You mark the payment received.',
     subject: 'Payment received, thank you!',
@@ -164,6 +169,7 @@ const RULE_DEFAULTS = {
   printDaysMin: 1,         // order queue: days to print an existing design, at least...
   printDaysMax: 2,         // ...and at most
   customDesignDays: 7,     // order queue: extra days to design a custom order (at least)
+  depositPercent: 50,      // deposit customers can pay first, % of the total (0 = no deposit option)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
 };
@@ -316,8 +322,12 @@ function orderDays(custom, rules) {
 }
 // Wait for one order. `at` is when it was confirmed; leave it blank for an order not confirmed yet, which
 // joins the end of the line. Orders printing now count as up to one print's worth of days.
+// A confirmed order's place in line is set by when its deposit (or full payment) came in; until then it has none.
+function queueTime(order) { return (order && (order.depositAt || order.paidAt)) || ''; }
+// `at` = this order's place ('' for a new request: everyone counts as ahead). Orders still waiting for a
+// deposit (no time) only count as ahead of new requests.
 function queueEstimate(queue, rules, at, custom) {
-  const ahead = (queue || []).filter(e => e.printing || !at || String(e.at) < String(at));
+  const ahead = (queue || []).filter(e => e.printing || !at || (e.at && String(e.at) < String(at)));
   let min = 0, max = 0;
   ahead.forEach(e => {
     const d = e.printing ? [0, rules.printDaysMax] : orderDays(e.custom, rules);
@@ -333,6 +343,20 @@ function daysText(min, max) {
   return min === max ? 'about ' + min + ' day' + (min === 1 ? '' : 's') : 'about ' + min + '-' + max + ' days';
 }
 function aheadText(n) { return n === 0 ? 'no orders ahead of yours' : n + ' order' + (n === 1 ? '' : 's') + ' ahead of yours'; }
+
+// The deposit: the amount saved when it was received, else the deposit % of the total.
+function depositAmount(order, total, rules) {
+  const saved = Number(order && order.depositAmount);
+  if (saved > 0) return saved;
+  const pct = Math.min(100, Math.max(0, Number(rules.depositPercent) || 0));
+  return Math.round(total * pct) / 100;
+}
+// What's still to pay: nothing once paid, the rest after a deposit, else the total.
+function amountLeft(order, total, rules) {
+  if (order.paymentStatus === 'payment_recieved') return 0;
+  if (order.paymentStatus === 'deposit_received') return Math.max(0, Math.round((total - depositAmount(order, total, rules)) * 100) / 100);
+  return total;
+}
 
 function fmtRoll(grams) { return grams % 1000 === 0 ? (grams / 1000) + ' kg' : grams + ' g'; }
 function specialOrderPolicy(rules) {
