@@ -2,8 +2,8 @@
 -- Run in Supabase: SQL Editor -> New query -> paste -> Run. Safe to re-run.
 -- Run after the other files (security.sql ... drafts.sql).
 
--- Confirmed and printing orders, oldest first, with only what the wait estimate needs: when each was
--- confirmed, whether it's printing now, and whether it includes a custom design. No names, emails,
+-- Confirmed and printing orders, in queue order, with only what the wait estimate needs: when each paid
+-- its deposit, whether it's printing now, and whether it includes a custom design. No names, emails,
 -- items or prices, so anyone can call it.
 create or replace function public.order_queue()
 returns jsonb
@@ -15,7 +15,8 @@ as $$
   select coalesce(jsonb_agg(q order by q->>'at'), '[]'::jsonb)
   from (
     select jsonb_build_object(
-      'at', coalesce(nullif(data->'phaseHistory'->>'order_received', ''), to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+      -- Place in line: when the deposit (or full payment) came in; null while waiting for it.
+      'at', coalesce(nullif(data->>'depositAt', ''), nullif(data->>'paidAt', '')),
       'printing', data->>'phase' = 'production',
       'custom', coalesce(nullif(data->>'designTerms', ''), '') <> ''
                 or exists (select 1 from jsonb_array_elements(coalesce(data->'items', '[]'::jsonb)) it where it->>'mode' = 'idea')

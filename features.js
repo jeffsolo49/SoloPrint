@@ -38,7 +38,8 @@ const RULE_FIELDS = [
     ['baseFee', 'Base fee per print ($)', 0.5],
     ['minuteRate', 'Print time ($ per minute)', 0.001, m => `$${(m * 60).toFixed(2)} per hour`],
     ['gramRate', 'Filament, regular colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
-    ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`]
+    ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
+    ['depositPercent', 'Deposit customers can pay first (% of the total, 0 = none)', 5]
   ]],
   ['Special order rolls', [
     ['rollCost', 'Usual roll price ($)', 1],
@@ -242,11 +243,11 @@ async function loadQueue() {
     state.queue = null;   // queue.sql not run yet: the queue just isn't shown
   }
 }
-function confirmedAt(b) { return (b.phaseHistory || {}).order_received || b.createdAt; }
+// Same as order_queue() in supabase/queue.sql: place in line = when the deposit (or full payment) came in.
 function queueFromOrders(batches) {
   return batches.filter(b => ['order_received', 'production'].includes(b.phase))
-    .map(b => ({ at: confirmedAt(b), printing: b.phase === 'production', custom: orderIsCustom(b) }))
-    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    .map(b => ({ at: queueTime(b) || null, printing: b.phase === 'production', custom: orderIsCustom(b) }))
+    .sort((a, b) => (a.at ? 0 : 1) - (b.at ? 0 : 1) || String(a.at).localeCompare(String(b.at)));
 }
 function draftIsCustom() { return state.draftItems.some(it => inferMode(it) === 'idea' && hasModeContent(it)); }
 
@@ -266,7 +267,11 @@ function renderOrderQueue(b) {
   if (!Array.isArray(state.queue)) return '';
   const rules = currentRules(), custom = orderIsCustom(b);
   if (b.phase === 'order_received') {
-    const q = queueEstimate(state.queue, rules, confirmedAt(b), custom);
+    if (!queueTime(b)) {
+      const q = queueEstimate(state.queue.filter(e => e.at || e.printing), rules, '', custom);
+      return `<div class="queue-note"><strong>Your place in line is set when your deposit comes in.</strong> Right now there ${q.ahead === 1 ? 'is' : 'are'} ${aheadText(q.ahead).replace(' of yours', '')}; after that, expect about ${daysText(q.minDays, q.maxDays).replace(/^about /, '')} to print.</div>`;
+    }
+    const q = queueEstimate(state.queue, rules, queueTime(b), custom);
     return `<div class="queue-note"><strong>You're #${q.ahead + 1} in line.</strong> Expect it to be printed in ${daysText(q.minDays, q.maxDays)}.</div>`;
   }
   if (b.phase === 'estimate' || (b.phase === 'quote_sent' && !b.customerApprovedAt)) {
@@ -276,8 +281,10 @@ function renderOrderQueue(b) {
   return '';
 }
 
+// Null while the order is waiting for its deposit.
 function ownerQueuePosition(b) {
-  return queueFromOrders(state.batches).filter(e => e.printing || String(e.at) < String(confirmedAt(b))).length + 1;
+  const at = queueTime(b);
+  return at ? queueFromOrders(state.batches).filter(e => e.printing || (e.at && String(e.at) < String(at))).length + 1 : null;
 }
 function renderOwnerQueue() {
   const queue = queueFromOrders(state.batches);
@@ -285,7 +292,8 @@ function renderOwnerQueue() {
   const rules = currentRules();
   let min = 0, max = 0;
   queue.forEach(e => { const d = e.printing ? [0, rules.printDaysMax] : orderDays(e.custom, rules); min += d[0]; max += d[1]; });
-  return `<div class="queue-note" style="margin-bottom:1rem;"><strong>Queue:</strong> ${queue.length} confirmed order${queue.length === 1 ? '' : 's'} (${queue.filter(e => e.custom).length} custom), ${daysText(min, max)} of work. New customers are told they're behind these.</div>`;
+  const waiting = queue.filter(e => !e.at && !e.printing).length;
+  return `<div class="queue-note" style="margin-bottom:1rem;"><strong>Queue:</strong> ${queue.length} confirmed order${queue.length === 1 ? '' : 's'} (${queue.filter(e => e.custom).length} custom), ${daysText(min, max)} of work${waiting ? `; ${waiting} waiting for a deposit` : ''}. Places in line go by when the deposit (or full payment) came in. New customers are told they're behind these.</div>`;
 }
 
 // ── LEFTOVER ROLL BALANCES (customer) ─────────────────────────────────────
@@ -1395,6 +1403,7 @@ const SITE_TEXT = [
     ['stepInfo_delivered', 'Step 5 description', 'Your order is complete. Enjoy!'],
     ['pay_unpaid', 'Payment: not asked yet', 'Unpaid'],
     ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
+    ['pay_deposit_received', 'Payment: deposit paid', 'Deposit Received'],
     ['pay_payment_recieved', 'Payment: paid', 'Payment Received'],
   ]]
 ];

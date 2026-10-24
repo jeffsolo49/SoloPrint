@@ -122,8 +122,16 @@ check('quote and confirmed emails say how far back in line the order is', () => 
   const queue = [{ at: '2026-10-01T00:00:00Z', printing: true, custom: false }, { at: '2026-10-02T00:00:00Z', printing: false, custom: true }];
   const quote = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue })[0].body;
   assert(quote.includes('Right now there are 2 orders ahead, so once you approve, expect it to be printed in about 9-13 days.'), quote);
-  const confirmed = emailsFor('UPDATE', at({ phase: 'order_received', phaseHistory: { order_received: '2026-10-03T00:00:00Z' } }), at({ phase: 'quote_sent' }), {}, { queue: queue.concat({ at: '2026-10-03T00:00:00Z', printing: false, custom: false }) })[0].body;
-  assert(confirmed.includes("You're number 3 in line, so expect it to be printed in about 9-13 days."), confirmed);
+  // Confirmed but no deposit yet: no place in line until it comes in.
+  const waiting = queue.concat({ at: null, printing: false, custom: false });
+  const confirmed = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_requested' }), at({ phase: 'quote_sent' }), {}, { queue: waiting })[0].body;
+  assert(confirmed.includes('Your place in line is set when your deposit comes in. Right now there are 2 orders ahead.'), confirmed);
+  // Deposit in: they're placed by when it came in, and told the rest due.
+  const placed = queue.concat({ at: '2026-10-03T00:00:00Z', printing: false, custom: false });
+  const deposit = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'deposit_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64 }),
+    at({ phase: 'order_received', paymentStatus: 'payment_requested' }), {}, { queue: placed });
+  assert(deposit.length === 1 && deposit[0].subject === 'Deposit received for your SoloPrint order', JSON.stringify(deposit.map(m => m.subject)));
+  assert(deposit[0].body.includes("You're number 3 in line, so expect it to be printed in about 9-13 days.") && deposit[0].body.includes('The rest ($4.64) is due') && deposit[0].body.includes('amount=4.64'), deposit[0].body);
   const none = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(!none.includes('in line') && !none.includes('ahead'), 'queue line without queue data');
 });

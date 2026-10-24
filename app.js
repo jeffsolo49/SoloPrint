@@ -36,6 +36,7 @@ const ORDER_PHASES = [
 const PAYMENT_PHASES = [
   { id: 'unpaid', label: 'Unpaid' },
   { id: 'payment_requested', label: 'Payment Requested' },
+  { id: 'deposit_received', label: 'Deposit Received' },   // sets their place in the order queue
   { id: 'payment_recieved', label: 'Payment Recieved' }
 ];
 // ──────────────────────────────────────────────────────────────────────────
@@ -155,6 +156,7 @@ async function submitBatchRemote(batch) {
     // The owner's own prices and charges are never set by a customer (the database drops them too).
     const job = normalizeBatch(batch);
     job.extraCharges = [];
+    delete job.depositAt; delete job.depositAmount; delete job.paidAt;
     job.items.forEach(it => { it.ownerPrice = null; });
     await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job }) });
     return true;
@@ -309,10 +311,21 @@ function renderCustomerOrderAction(batch) {
     if (batch.paymentStatus === 'payment_recieved') {
       return `<div class="order-action"><strong>Payment received.</strong> Thank you!</div>`;
     }
+    const rules = rulesFor(batch);
+    if (batch.paymentStatus === 'deposit_received' && currentRules().venmo && total) {
+      const left = amountLeft(batch, total, rules);
+      return `<div class="order-action"><strong>Deposit received ($${depositAmount(batch, total, rules).toFixed(2)}).</strong> Thank you!
+        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}" target="_blank" rel="noopener noreferrer">Pay the rest, $${left.toFixed(2)}, with Venmo</a>
+        <div class="order-action-sub">Due when your order is ready.</div>` : ''}
+      </div>`;
+    }
     if (currentRules().venmo && total) {
+      const deposit = depositAmount(batch, total, rules);
+      const offerDeposit = batch.phase === 'order_received' && deposit > 0 && deposit < total;
       return `<div class="order-action">
-        <a class="btn-venmo" href="${esc(venmoPayUrl(batch, total))}" target="_blank" rel="noopener noreferrer">Pay $${total.toFixed(2)} with Venmo</a>
-        <div class="order-action-sub">Opens Venmo with the amount and order note filled in. We'll mark your payment received once it comes through.</div>
+        ${offerDeposit ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, deposit))}" target="_blank" rel="noopener noreferrer">Pay the ${Math.round(deposit / total * 100)}% deposit, $${deposit.toFixed(2)}, with Venmo</a>` : ''}
+        <a class="${offerDeposit ? 'btn-secondary btn-venmo-full' : 'btn-venmo'}" href="${esc(venmoPayUrl(batch, total))}" target="_blank" rel="noopener noreferrer">Pay ${offerDeposit ? 'in full, ' : ''}$${total.toFixed(2)} with Venmo</a>
+        <div class="order-action-sub">Opens Venmo with the amount and order note filled in.${featureOn('queue') && batch.phase === 'order_received' ? ' Your place in line is set when your payment comes in.' : ''} We'll mark it received once it comes through.</div>
       </div>`;
     }
   }
@@ -387,8 +400,8 @@ function canAdvancePayment(currentStatus, nextStatus) {
   const currentIdx = paymentIndex(currentStatus);
   const nextIdx = paymentIndex(nextStatus);
   if (currentIdx < 0 || nextIdx < 0) return false;
-  // Enforce sequential flow: stay on current status or move exactly one step forward.
-  return nextIdx === currentIdx || nextIdx === currentIdx + 1;
+  // Only forward (a customer can skip the deposit and pay in full).
+  return nextIdx >= currentIdx;
 }
 
 function isBatchQuoteReady(batch) {
@@ -517,6 +530,8 @@ function normalizeBatch(batch) {
     finishedPhotos: (Array.isArray(batch.finishedPhotos) ? batch.finishedPhotos : []).map(safeImageUrl).filter(Boolean).slice(0, 6),
     stockTaken: batch.stockTaken === true,
     paidAt: cleanIso(batch.paidAt),
+    depositAt: cleanIso(batch.depositAt),
+    depositAmount: Number(batch.depositAmount) > 0 ? Math.round(Number(batch.depositAmount) * 100) / 100 : null,
     rates: cleanQuoteRates(batch.rates),
     designTerms: cleanText(batch.designTerms, 4000),
     extraCharges: (Array.isArray(batch.extraCharges) ? batch.extraCharges : []).slice(0, 10)
@@ -2294,7 +2309,7 @@ function renderOwnerBatch(b) {
         <span class="status ${phase}">${phaseLabel(phase)}</span>
         <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
         ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
-        ${phase === 'order_received' ? `<span class="status quoted">#${ownerQueuePosition(b)} in line</span>` : ''}
+        ${phase === 'order_received' ? `<span class="status quoted">${ownerQueuePosition(b) ? `#${ownerQueuePosition(b)} in line` : 'Waiting for deposit'}</span>` : ''}
         ${b.designTerms && phase !== 'estimate' ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
         <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
       </div>
@@ -2315,10 +2330,11 @@ function renderOwnerBatch(b) {
         <select class="phase-select" onchange="updatePaymentStatus('${b.id}', this.value)">
           ${PAYMENT_PHASES.map((p, idx) => {
             const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
-            const isAllowed = idx === currentIdx || idx === currentIdx + 1;
+            const isAllowed = idx >= currentIdx;
             return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
           }).join('')}
         </select>
+        ${b.depositAt ? `<div class="field-help">Deposit $${(Number(b.depositAmount) || 0).toFixed(2)} on ${esc(formatAustinTime(b.depositAt))}</div>` : ''}
       </div>
     </div>
     <div class="owner-order-summary">
@@ -4446,6 +4462,11 @@ async function updatePaymentStatus(batchId, paymentStatus) {
     return;
   }
   b.paymentStatus = paymentStatus;
+  // The deposit (or full payment, with no deposit) sets their place in the order queue.
+  if (paymentStatus === 'deposit_received' && !b.depositAt) {
+    b.depositAt = new Date().toISOString();
+    b.depositAmount = depositAmount(b, orderSum(b), rulesFor(b));
+  }
   if (paymentStatus === 'payment_recieved' && !b.paidAt) b.paidAt = new Date().toISOString();
   await upsertBatch(b);
   render();

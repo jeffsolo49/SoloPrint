@@ -179,23 +179,26 @@ reset role;
 
 -- Order queue: anyone can see the line, but only timing and whether it's custom, never details.
 insert into public.jobs (id, data) values
-  ('q-1', jsonb_build_object('id','q-1','clientName','Secret Name','clientEmail','q1@example.com','phase','order_received','phaseHistory', jsonb_build_object('order_received','2026-10-01T10:00:00.000Z'),'items', jsonb_build_array(jsonb_build_object('name','Hook','mode','link')))),
+  ('q-1', jsonb_build_object('id','q-1','clientName','Secret Name','clientEmail','q1@example.com','phase','order_received','depositAt','2026-10-05T10:00:00.000Z','phaseHistory', jsonb_build_object('order_received','2026-10-01T10:00:00.000Z'),'items', jsonb_build_array(jsonb_build_object('name','Hook','mode','link')))),
+  ('q-3', jsonb_build_object('id','q-3','clientEmail','q3@example.com','phase','order_received','depositAt','2026-10-06T10:00:00.000Z','phaseHistory', jsonb_build_object('order_received','2026-09-01T10:00:00.000Z'),'items', jsonb_build_array(jsonb_build_object('name','Cup','mode','link')))),
   ('q-2', jsonb_build_object('id','q-2','clientEmail','q2@example.com','phase','production','phaseHistory', jsonb_build_object('order_received','2026-10-02T10:00:00.000Z'),'items', jsonb_build_array(jsonb_build_object('name','Thing','mode','idea'))));
 set role anon;
 do $$ declare q jsonb; begin
   q := public.order_queue();
-  if jsonb_array_length(q) <> 2 then raise exception 'queue should list the 2 confirmed/printing orders, got %', q; end if;
+  if jsonb_array_length(q) <> 3 then raise exception 'queue should list the 3 confirmed/printing orders, got %', q; end if;
   if q::text like '%Secret%' or q::text like '%example.com%' or q::text like '%Hook%' then raise exception 'queue leaks order details: %', q; end if;
-  if (q->0->>'custom')::boolean or not (q->1->>'custom')::boolean or not (q->1->>'printing')::boolean then raise exception 'queue flags wrong: %', q; end if;
+  -- In line by deposit time (q-3 was confirmed first but paid its deposit later); no deposit yet = no time, last.
+  if q->0->>'at' <> '2026-10-05T10:00:00.000Z' or q->1->>'at' <> '2026-10-06T10:00:00.000Z' or q->2->>'at' is not null then raise exception 'queue not ordered by deposit: %', q; end if;
+  if (q->0->>'custom')::boolean or not (q->2->>'custom')::boolean or not (q->2->>'printing')::boolean then raise exception 'queue flags wrong: %', q; end if;
 end $$;
 reset role;
 
 
 -- submit_job drops prices and charges only the owner sets
 set role anon;
-select public.submit_job('{"id":"303","clientEmail":"cut@example.com","extraCharges":[{"label":"Discount","amount":5}],"rates":{"baseFee":0},"specialOrderCost":0,"items":[{"name":"A","ownerPrice":0},{"name":"B"}]}');
+select public.submit_job('{"id":"303","clientEmail":"cut@example.com","extraCharges":[{"label":"Discount","amount":5}],"rates":{"baseFee":0},"specialOrderCost":0,"depositAt":"2000-01-01T00:00:00.000Z","depositAmount":1,"items":[{"name":"A","ownerPrice":0},{"name":"B"}]}');
 do $$ declare d jsonb := (select d from public.customer_jobs('cut@example.com') d); begin
-  if d ? 'extraCharges' or d ? 'rates' or d ? 'specialOrderCost' then raise exception 'submit_job kept owner-only fields'; end if;
+  if d ? 'extraCharges' or d ? 'rates' or d ? 'specialOrderCost' or d ? 'depositAt' or d ? 'depositAmount' then raise exception 'submit_job kept owner-only fields'; end if;
   if d->'items'->0 ? 'ownerPrice' or d->'items'->0->>'name' <> 'A' or d->'items'->1->>'name' <> 'B' then raise exception 'submit_job kept an item price or lost item order: %', d->'items'; end if;
 end $$;
 reset role;

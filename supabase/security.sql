@@ -49,7 +49,7 @@ begin
     raise exception 'invalid request';
   end if;
   -- Prices, charges and order records are the owner's to set, never the customer's.
-  job := job - array['extraCharges', 'rates', 'specialOrderCost', 'designTerms', 'stockTaken', 'paidAt', 'finishedPhotos', 'ownerEditedAt'];
+  job := job - array['extraCharges', 'rates', 'specialOrderCost', 'designTerms', 'stockTaken', 'paidAt', 'finishedPhotos', 'ownerEditedAt', 'depositAt', 'depositAmount'];
   job := jsonb_set(job, '{items}', coalesce((select jsonb_agg(case when jsonb_typeof(it) = 'object' then it - 'ownerPrice' else it end order by n)
     from jsonb_array_elements(job->'items') with ordinality as e(it, n)), '[]'::jsonb));
   insert into public.jobs (id, data)
