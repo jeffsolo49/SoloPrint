@@ -1318,6 +1318,7 @@ function renderDesignPartsForm(f) {
       <div class="part-form-actions">
         <label class="btn-sm">${p.photo ? 'Change photo' : 'Add photo'}
           <input type="file" accept="image/*" onchange="uploadPartPhoto(${n}, this.files[0]); this.value='';" style="display:none;" /></label>
+        ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="part-copy-${n}" onclick="copyDesignPart(${n})" aria-label="Copy part ${n + 1} as another set">Copy</button>` : ''}
         <button type="button" class="btn-sm danger" onclick="state.galleryForm.parts.splice(${n}, 1); render();" aria-label="Remove part ${n + 1}">Remove</button>
       </div>
     </div>`).join('')}
@@ -1325,6 +1326,24 @@ function renderDesignPartsForm(f) {
     ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="add-design-part" onclick="state.galleryForm.parts.push({ id: 'p' + Date.now().toString(36), name: '', grams: '', photo: '' }); render();">+ Add a part</button>` : ''}
     ${f.parts.length ? `<div class="field-help" style="margin-top:6px;">Required parts add up to ${f.parts.filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0).toFixed(1)} g${f.parts.some(p => p.optional) ? `; add-ons ${f.parts.filter(p => p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0).toFixed(1)} g more` : ''}.</div>` : ''}
   </fieldset>`;
+}
+
+// Another set of a part (e.g. half the racks) that customers color separately: same photo, add-on settings
+// and starting color, placed right after it, and in each color idea with the same color as the original.
+function copyDesignPart(n) {
+  const f = state.galleryForm;
+  const p = f && f.parts[n];
+  if (!p || f.parts.length >= 20) return;
+  const base = String(p.name || 'Part').replace(/\s*\(set \d+\)$/i, '');
+  let k = 2;
+  while (f.parts.some(x => String(x.name).toLowerCase() === `${base} (set ${k})`.toLowerCase())) k++;
+  const copy = { ...p, id: 'p' + Date.now().toString(36), name: `${base} (set ${k})` };
+  f.parts.splice(n + 1, 0, copy);
+  ((f.colorMap && f.colorMap.combos) || []).forEach(c => { if (c.colors[p.id]) c.colors[copy.id] = c.colors[p.id]; });
+  render();
+  const s = document.getElementById('part-upload-status');
+  if (s) s.textContent = `Added "${copy.name}". Set each set's grams (for example, half each)${f.colorMap ? ', and upload a color ideas picture with this set in its own color' : ''}.`;
+  document.getElementById(`part-name-${n + 1}`)?.focus();
 }
 
 async function uploadPartPhoto(n, file) {
@@ -2034,7 +2053,7 @@ function renderColorMapForm(f) {
     ${!m ? '' : `
       <h4 class="cm-heading">Which part is each colored area?</h4>
       ${parts.length ? '' : '<div class="alert error" style="display:block;">Add the parts above first (with names), then match each area to a part.</div>'}
-      <div class="field-help">Several areas can be the same part (like a part's top and its shaded edge). Leave the background and shadows as "Not a part". Found one part split into several areas, or a stray edge? Tick "Join" on them and tap "Join areas".</div>
+      <div class="field-help">Several areas can be the same part (like a part's top and its shaded edge). Leave the background and shadows as "Not a part". Found one part split into several areas, or a stray edge? Tick "Join" on them and tap "Join areas". Copied a part as a second set? Change the picture to one with that set in its own color; parts you already matched stay matched.</div>
       <div class="cm-regions">${m.regions.map((r, k) => { const start = m.regions.slice(0, k).reduce((n, x) => n + x.hexes.length, 0); return `<div class="cm-region">
         <canvas class="cm-canvas cm-mask" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), mask: r.hexes.map((h, j) => start + j) }))}" aria-hidden="true"></canvas>
         <div class="field"><label for="cm-region-${k}">${r.hexes.map(h => `<span class="swatch" style="background:${esc(h)}" aria-hidden="true"></span>`).join('')}Area ${k + 1}${r.hexes.length > 1 ? ` (${r.hexes.length} joined)` : ''}${r.share ? ` (${r.share >= 0.01 ? Math.round(r.share * 100) + '%' : 'under 1%'} of the picture)` : ''}</label>
@@ -2177,7 +2196,10 @@ async function uploadColorMapPhoto(file) {
     const photo = GALLERY_PUBLIC_PREFIX + path;
     cmImages.set(photo, Promise.resolve(pixels));
     state.cmJoin = [];
-    f.colorMap = { photo, regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: '' })), combos: (f.colorMap && f.colorMap.combos) || [] };
+    // A new picture of the same design keeps the parts already matched to colors that are still there.
+    const old = (f.colorMap && f.colorMap.regions) || [];
+    const partFor = hex => { const lab = cmLab(...cmRgb(hex)); const o = old.find(r => r.part && r.hexes.some(h => cmDistance(lab, cmLab(...cmRgb(h))) < 6)); return o ? o.part : ''; };
+    f.colorMap = { photo, regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: partFor(r.hex) })), combos: (f.colorMap && f.colorMap.combos) || [] };
     render();
     if (status()) status().textContent = `Found ${f.colorMap.regions.length} colored areas. Pick a part for each, then save.`;
   } catch (e) {
