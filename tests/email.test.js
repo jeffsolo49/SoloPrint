@@ -118,6 +118,10 @@ check('a past-work set price is used as is in the quote email', () => {
   const [m] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ name: 'Sign', qty: 2, filType: 'black', setPrice: 12 }] }), at({}));
   assert(m.subject === 'Your SoloPrint quote: $24.00' && m.body.includes('Price: $24.00 ($12.00 each)'), m.subject + '\n' + m.body);
 });
+check('company logo add-on: the logo price is in the quote and the email asks for the logo', () => {
+  const [m] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ name: 'Sign', qty: 2, filType: 'black', setPrice: 12, logo: true }] }), at({}));
+  assert(m.subject === 'Your SoloPrint quote: $26.00' && m.body.includes('Price: $26.00 ($13.00 each)') && m.body.includes('Add company logo: yes'), m.subject + '\n' + m.body);
+});
 check('quote and confirmed emails say how far back in line the order is', () => {
   const queue = [{ at: '2026-10-01T00:00:00Z', printing: true, custom: false }, { at: '2026-10-02T00:00:00Z', printing: false, custom: true }];
   const quote = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue })[0].body;

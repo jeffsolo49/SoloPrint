@@ -189,7 +189,7 @@ function rulesFor(batch) { return orderRules(batch, state.settings); }
 // Pass an item to price all of its colors, or a filament type for a single-color price.
 function calcPerPrint(mins, grams, filType, rules = currentRules()) {
   const fixed = filType && typeof filType === 'object' ? fixedPrice(filType) : null;
-  if (fixed !== null) return fixed;
+  if (fixed !== null) return fixed + logoCharge(filType, rules);
   if (!mins || !grams) return null;
   return printPrice(mins, grams, filType, rules);
 }
@@ -474,6 +474,7 @@ function cleanItem(it) {
     useLeftover: it.useLeftover === true,
     leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
     mainParts: cleanText(it.mainParts, 200),
+    logo: it.logo === true,   // "Add my company logo" add-on (rules.logoPrice per print)
     designParts: cleanDesignParts(it.designParts, true),
     basePrice: cleanNumber(it.basePrice),
     baseMinutes: cleanNumber(it.baseMinutes),   // a design's print time before add-ons   // a design's set price before add-ons (the owner re-reads it when quoting)
@@ -1622,9 +1623,10 @@ function pickColor(i, colorId) {
 function renderCustomerPricePreview(item) {
   if (setPriceOf(item)) {
     const qty = Math.max(1, Number(item.qty) || 1);
+    const logo = logoCharge(item, currentRules()), each = setPriceOf(item) + logo;
     return `<div class="price-preview-box" style="margin-top:12px;">
-      <div class="price-big">$${(setPriceOf(item) * qty).toFixed(2)}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${setPriceOf(item).toFixed(2)} each${qty > 1 ? ` · quantity ${qty}` : ''}. I'll confirm your order after reviewing your request.</div>
+      <div class="price-big">$${(each * qty).toFixed(2)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${each.toFixed(2)} each${logo ? ` (includes $${logo.toFixed(2)} for your logo)` : ''}${qty > 1 ? ` · quantity ${qty}` : ''}. I'll confirm your order after reviewing your request.</div>
     </div>`;
   }
   const minutes = item.knownFromLibrary ? item.knownMinutes : totalPrintMinutes(item.printHours, item.printMinutes);
@@ -1867,6 +1869,8 @@ function renderItemBlock(item, i) {
           <div class="field-help">${esc(materialNote())}</div>
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
+        ${mode === 'gallery' && featureOn('logoAddOn') ? `<label class="special-order-check" style="margin-bottom:10px;"><input type="checkbox" id="logo-${i}" ${item.logo ? 'checked' : ''} onchange="updateDraft(${i},'logo',this.checked); updateCustomerPricePreview(${i})" />
+          ${esc(logoText('logoCheckbox'))}</label>` : ''}
         <div class="field" style="margin-bottom:10px;max-width:160px;">
           <label>Quantity</label>
           <input type="number" id="qty-${i}" value="${item.qty}" min="1" max="999" step="1"
@@ -2424,6 +2428,7 @@ function renderOwnerBatch(b) {
             ${colorPartsText(it) ? `<div class="owner-order-summary-value">Which parts: ${esc(colorPartsText(it))}</div>` : ''}
             ${(checks[i] || []).map(c => `<div class="owner-order-summary-value roll-check ${c.ok ? 'ok' : 'bad'}">${c.ok ? '' : '⚠ '}${esc(c.text)}</div>`).join('')}
             <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
+            ${it.logo ? '<div class="owner-order-summary-value"><strong>Add their company logo</strong> (ask for the logo file)</div>' : ''}
             <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
             <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
           </div>
@@ -3340,6 +3345,7 @@ function renderWorkDetail(g) {
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       <div id="work-price">${renderWorkPrice(g)}</div>
+      ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}</div>` : ''}
 
     </div>
     ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
@@ -4475,7 +4481,8 @@ function previewOwnerItem(batchId, i) {
   if (!mins || !grams) { pEl.style.display = 'none'; return; }
   const rules = rulesFor(batch);
   readOwnerColorGrams(batchId, i, it);
-  const fixed = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
+  const set = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
+  const fixed = set === null ? null : set + logoCharge(it, rules);
   if (fixed !== null) {
     document.getElementById(`opval-${batchId}-${i}`).textContent = `$${(fixed * it.qty).toFixed(2)}${it.qty > 1 ? ' total' : ''}`;
     document.getElementById(`opsub-${batchId}-${i}`).textContent = 'Fixed price per print; time and grams are just for your records.';
@@ -4487,7 +4494,8 @@ function previewOwnerItem(batchId, i) {
   document.getElementById(`opval-${batchId}-${i}`).textContent = it.qty > 1 ? `$${tot.toFixed(2)} total` : `$${pp.toFixed(2)}`;
   const total = colorGrams(it, grams).reduce((s, g) => s + g, 0);
   document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, total, colorsRate(it, rules, grams), it.qty, rules)
-    + (itemParts(it).length > 1 ? '\n' + colorLines(it, grams, rules).join('\n') : '');
+    + (itemParts(it).length > 1 ? '\n' + colorLines(it, grams, rules).join('\n') : '')
+    + (logoCharge(it, rules) ? `\nIncludes company logo: $${logoCharge(it, rules).toFixed(2)} each` : '');
   pEl.style.display = 'block';
 }
 
