@@ -27,7 +27,7 @@ const cases = [
   ['order confirmed', 'UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }), ['jane@example.com|Your SoloPrint order is confirmed']],
   ['printing', 'UPDATE', at({ phase: 'production' }), at({ phase: 'order_received' }), ['jane@example.com|Your SoloPrint order is printing']],
   ['delivered', 'UPDATE', at({ phase: 'delivered' }), at({ phase: 'production' }), ['jane@example.com|Your SoloPrint order is complete']],
-  ['payment received', 'UPDATE', at({ paymentStatus: 'payment_recieved' }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Payment received, thank you!']],
+  ['payment received', 'UPDATE', at({ paymentStatus: 'payment_received' }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Payment received, thank you!']],
   ['reset to estimate sends nothing', 'UPDATE', at({ phase: 'estimate' }), at({ phase: 'quote_sent' }), []],
   ['unrelated edit sends nothing', 'UPDATE', at({ clientName: 'Janet' }), at({}), []]
 ];
@@ -97,7 +97,7 @@ check('owner-edited email text is used, blanks fall back to the default', () => 
   const [mail] = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), custom);
   assert(mail.subject === 'Quote for Benchy: $9.28', mail.subject);
   assert(mail.body.startsWith('Hi Jane,') && mail.body.includes('Total: $9.28') && mail.body.endsWith('Cheers,\nJeff'), mail.body);
-  const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_recieved' }), at({ phase: 'quote_sent' }))[0].body;
+  const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_received' }), at({ phase: 'quote_sent' }))[0].body;
   assert(!paid.includes('venmo') && !paid.includes('Total:'), `paid orders should drop the payment lines: ${paid}`);
   const note = emailsFor('INSERT', at({ items: [{ name: 'X', notes: 'Price {total} please' }] }), null)[0].body;
   assert(note.includes('Price {total} please'), 'customer text should not be treated as fill-ins');
@@ -236,7 +236,7 @@ check('leftover roll reminder: about 2 weeks before it expires, once per roll', 
 });
 check('weekly summary counts what needs attention', () => {
   const jobs = [at({ id: 'a' }), at({ id: 'b', phase: 'quote_sent' }), at({ id: 'c', phase: 'production', paymentStatus: 'payment_requested' }),
-    at({ id: 'd', phase: 'delivered', paymentStatus: 'payment_recieved', paidAt: daysAgo(2) }), at({ id: 'e', phase: 'delivered', paymentStatus: 'payment_recieved', paidAt: daysAgo(30) })];
+    at({ id: 'd', phase: 'delivered', paymentStatus: 'payment_received', paidAt: daysAgo(2) }), at({ id: 'e', phase: 'delivered', paymentStatus: 'payment_received', paidAt: daysAgo(30) })];
   const site = { colors: [{ id: 'black', name: 'Black' }, { id: 'red', name: 'Red' }] };
   const m = ctxD.weeklySummaryEmail({ jobs, private: { inventory: { black: { grams: 150 }, red: { grams: 800 } } }, new_reviews: 2 }, {}, site, NOW);
   assert(m.to === 'jeffsolo49@gmail.com' && m.subject === 'SoloPrint this week: $9.28 in sales', m.subject);

@@ -782,7 +782,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('emails'));
     const cards = await page.$$eval('.email-card', els => els.length);
-    assert(cards === 16, `${cards} email cards`);
+    assert(cards === 17, `${cards} email cards`);
     assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
     await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
@@ -953,7 +953,7 @@ const STATES = {
     const db = fixtures();
     const year = new Date().getFullYear();
     db.private.money = { costPerKg: 20, expenses: [{ id: 'e1', date: `${year}-01-15`, what: 'Black PLA x3', amount: 60 }] };
-    db.jobs['2'].paymentStatus = 'payment_recieved';
+    db.jobs['2'].paymentStatus = 'payment_received';
     db.jobs['2'].paidAt = `${year}-01-20T12:00:00.000Z`;
     const page = await open(db, { init: () => { window.__sheets = []; window.XLSX = { utils: { book_new: () => ({}), aoa_to_sheet: rows => rows, book_append_sheet: (wb, rows, name) => window.__sheets.push([name, rows]) }, writeFile: (wb, name) => { window.__file = name; } }; } });
     await page.evaluate(asOwner('money'));

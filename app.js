@@ -31,13 +31,14 @@ const ORDER_PHASES = [
   { id: 'quote_sent', label: 'Quote Ready' },
   { id: 'order_received', label: 'Confirmed' },
   { id: 'production', label: 'Printing' },
+  { id: 'final_payment_needed', label: 'Printing Complete' },
   { id: 'delivered', label: 'Delivered' }
 ];
 const PAYMENT_PHASES = [
   { id: 'unpaid', label: 'Unpaid' },
   { id: 'payment_requested', label: 'Payment Requested' },
   { id: 'deposit_received', label: 'Deposit Received' },   // sets their place in the order queue
-  { id: 'payment_recieved', label: 'Payment Recieved' }
+  { id: 'payment_received', label: 'Payment Received' }
 ];
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -308,7 +309,7 @@ function renderCustomerOrderAction(batch) {
     </div>`;
   }
   if (phaseIndex(phase) >= phaseIndex('order_received')) {
-    if (batch.paymentStatus === 'payment_recieved') {
+    if (batch.paymentStatus === 'payment_received') {
       return `<div class="order-action"><strong>Payment received.</strong> Thank you!</div>`;
     }
     const rules = rulesFor(batch);

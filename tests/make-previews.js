@@ -47,7 +47,7 @@ const SHOTS = [
       state.galleryLoaded = true;
       state.draftItems = [blankItem()];
       state.batches = [normalizeBatch({ id: 'p1', clientName: 'Jane', clientEmail: 'jane@example.com', createdAt: new Date(Date.now() - 864e5).toISOString(),
-        phase: 'production', paymentStatus: 'payment_recieved', phaseHistory: { order_received: new Date().toISOString() },
+        phase: 'production', paymentStatus: 'payment_received', phaseHistory: { order_received: new Date().toISOString() },
         items: [{ name: 'Desk Organizer', qty: 1, filType: 'color', colorId: 'red', color: 'Red', minutes: 90, grams: 40 }] })];
       new Function(setup)();
       render();
