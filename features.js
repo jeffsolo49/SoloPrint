@@ -2401,15 +2401,26 @@ function conversationChip(jobId) {
   const s = conversationStatus(jobId);
   return s === 'you' ? '<span class="status waiting-you">Waiting on you</span>' : s === 'customer' ? '<span class="status waiting-them">Waiting on customer</span>' : '';
 }
+// Text-message style: the viewer's side (and the shop's emails, when the owner is looking) on the right,
+// the other person on the left. Emails show as a bubble with the subject; tap to read the whole email.
+// Notes only the owner gets (demo emails to the owner) sit in the middle, owner view only.
 function renderThread(list, viewer, customerName) {
-  if (!list.length) return '<div class="field-help">No messages yet.</div>';
-  return `<ol class="thread">${list.map(m => {
+  const shown = list.filter(m => viewer === 'owner' || !m.toOwner);
+  if (!shown.length) return '<div class="field-help">No messages yet.</div>';
+  return `<ol class="thread">${shown.map(m => {
     const when = m.at ? formatAustinTime(m.at) : '';
-    if (m.via === 'auto') {
-      return `<li class="msg msg-auto"><details><summary>Email ${viewer === 'owner' ? 'sent' : 'from SoloPrint'}: ${esc(m.subject || 'SoloPrint email')} <span class="msg-when">${esc(when)}</span></summary><div class="msg-body">${esc(m.body)}</div></details></li>`;
+    if (m.toOwner) {
+      return `<li class="msg msg-note"><details><summary>Email to you: ${esc(m.subject)} <span class="msg-when">${esc(when)}</span></summary><div class="msg-body">${esc(m.body)}</div></details></li>`;
     }
-    const who = m.sender === viewer ? 'You' : m.sender === 'owner' ? 'SoloPrint' : (customerName || 'Customer');
-    return `<li class="msg ${m.sender === viewer ? 'msg-mine' : 'msg-theirs'}"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)}${m.via === 'email' ? ' · by email' : ''}</span></div><div class="msg-body">${esc(m.body)}</div></li>`;
+    const mine = m.sender === viewer;
+    const side = mine ? 'msg-mine' : 'msg-theirs';
+    const who = mine ? 'You' : m.sender === 'owner' ? 'SoloPrint' : (customerName || 'Customer');
+    // The shop's emails (and the Confirm details email you wrote) fold down to their subject; replies show in full.
+    if (m.via === 'auto' || (m.via === 'email' && m.sender === 'owner' && m.subject && !/^\s*re:/i.test(m.subject))) {
+      return `<li class="msg ${side} msg-email"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)} · email</span></div>
+        <details><summary>${esc(m.subject || 'SoloPrint email')}</summary><div class="msg-body">${esc(m.body)}</div></details></li>`;
+    }
+    return `<li class="msg ${side}"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)}${m.via === 'email' ? ' · by email' : ''}</span></div><div class="msg-body">${esc(m.body)}</div></li>`;
   }).join('')}</ol>`;
 }
 function renderOwnerConversation(b) {
@@ -2480,4 +2491,235 @@ function renderWaitingOnYou() {
   if (!list.length) return '';
   return `<div class="alert waiting-banner" style="display:block;" role="status"><strong>${list.length} conversation${list.length === 1 ? ' is' : 's are'} waiting on you:</strong>
     ${list.map(b => `<a href="#order-${esc(b.id)}" onclick="state.openConversation='${esc(b.id)}'">${esc(b.clientName || b.clientEmail)}: ${esc(orderTitle(b))}</a>`).join(' · ')}</div>`;
+}
+
+// ── PRACTICE ORDER (owner tab "Practice") ─────────────────────────────────
+// A pretend customer and order for trying the whole flow from both sides on one page. It lives only in
+// this page's memory (state.practice): nothing is saved to the database and no email is sent. The emails a
+// real order would send are written from your real email wording and put in the chat instead.
+// Which email goes out when mirrors emailsFor in email/Code.gs; keep the two in step.
+const PRACTICE_PHASE_EMAILS = { quote_sent: 'quote', order_received: 'confirmed', production: 'printing', final_payment_needed: 'final_payment_needed', delivered: 'delivered' };
+function practiceDesigns() { return state.gallery.filter(g => g.published && g.title); }
+function startPractice(galleryId) {
+  const g = state.gallery.find(x => x.id === galleryId);
+  let item;
+  if (g) {
+    item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
+    if (item.designParts.length) applyPartColors(item); else ensureItemColor(item);
+  } else {
+    item = { ...blankItem(), name: 'Phone stand', qty: 2, filType: 'black', grams: 30, knownMinutes: 90, mode: 'link', notes: 'Can it fit a tablet too?' };
+  }
+  const now = new Date().toISOString();
+  const order = normalizeBatch({ id: 'practice', clientName: 'Pat Practice', clientEmail: 'pat.practice@example.com', createdAt: now,
+    phase: 'estimate', paymentStatus: 'unpaid', items: [item], phaseHistory: { estimate: now } });
+  state.practice = { order, messages: [], questions: '', mins: String(item.knownMinutes || ''), grams: String(item.grams || ''), tracking: '', remindedAt: '', reviewAskedAt: '' };
+  practiceEmail('owner_new', true);
+  practiceEmail('customer_received');
+  render();
+}
+function practiceSay(sender, via, body, subject = '', toOwner = false) {
+  const p = state.practice;
+  p.messages.push({ id: 'p' + (p.messages.length + 1), jobId: 'practice', sender, via, subject, body, toOwner, at: new Date().toISOString() });
+}
+function practiceVars() {
+  const o = state.practice.order, rules = rulesFor(o), custom = state.settings.emails || {};
+  const priced = o.items.length && o.items.every(itemPriced);
+  const total = priced ? orderSum(o) : null;
+  const est = o.items.reduce((s, it) => s + (calcTotal(it.minutes || it.knownMinutes, it.grams, it, it.qty, rules) || 0), 0);
+  const left = total ? amountLeft(o, total, rules) : 0;
+  const withPrices = o.items.map((it, i) => {
+    const each = itemPriced(it) ? printPrice(it.minutes, it.grams, it, rules) : null;
+    return detailsItemsText({ items: [it] }).replace(/^1\)/, `${i + 1})`) + (each !== null ? `\n   Price: $${(each * it.qty).toFixed(2)}${it.qty > 1 ? ` ($${each.toFixed(2)} each)` : ''}` : '');
+  }).join('\n\n');
+  const vars = { name: o.clientName, customerName: o.clientName, customerEmail: o.clientEmail, title: orderTitle(o), submitted: formatAustinTime(o.createdAt),
+    items: detailsItemsText(o), itemsWithPrices: withPrices, estimate: est ? est.toFixed(2) : '', total: total ? total.toFixed(2) : '',
+    specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left) : '',
+    materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
+    delivery: [o.deliveryDate && `Delivery date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking / pickup: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
+    photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '' };
+  vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
+  return vars;
+}
+function practiceEmail(key, toOwner = false) {
+  const tpl = emailTemplate(key, state.settings.emails || {}), vars = practiceVars();
+  practiceSay('owner', 'auto', renderEmailText(tpl.body, vars), renderEmailText(tpl.subject, vars).replace(/\s*\n\s*/g, ' '), toOwner);
+}
+// Every change goes through here, so the emails it would send appear in the chat.
+function practiceChange(fn) {
+  const p = state.practice;
+  if (!p) return;
+  const before = JSON.parse(JSON.stringify(p.order));
+  fn(p.order);
+  const o = p.order;
+  if (o.phase !== before.phase) {
+    if (o.phase === 'details_check') practiceSay('owner', 'email', o.detailsEmail.body, o.detailsEmail.subject);
+    else if (PRACTICE_PHASE_EMAILS[o.phase]) practiceEmail(PRACTICE_PHASE_EMAILS[o.phase]);
+  } else if (o.phase === 'delivered' && (o.deliveryTracking || '') !== (before.deliveryTracking || '') && o.deliveryTracking) {
+    practiceEmail('delivery_update');
+  }
+  if (o.customerApprovedAt && !before.customerApprovedAt) practiceEmail('owner_approved', true);
+  if (o.paymentStatus === 'deposit_received' && before.paymentStatus !== 'deposit_received' && !isPaidInFull(before)) practiceEmail('deposit');
+  if (isPaidInFull(o) && !isPaidInFull(before)) practiceEmail('payment');
+  render();
+}
+
+// Your side
+function practiceSendQuote() {
+  const p = state.practice, mins = parseFloat(p.mins), grams = parseFloat(p.grams);
+  const it = p.order.items[0];
+  if (fixedPrice(it) === null && (!(mins > 0) || !(grams > 0))) { showAlert('practice-err', 'Enter print time and grams to quote.', 'error'); return; }
+  practiceChange(o => {
+    o.items.forEach(x => { x.minutes = mins || x.knownMinutes || null; x.grams = grams || x.grams; });
+    o.rates = quoteRates(currentRules());
+    o.phase = 'quote_sent'; o.paymentStatus = 'payment_requested'; o.customerApprovedAt = '';
+    stampPhase(o, 'quote_sent');
+  });
+}
+function practiceAskDetails() {
+  const p = state.practice;
+  const questions = String(p.questions || '').trim();
+  if (!questions) { showAlert('practice-err', 'Write your questions first.', 'error'); return; }
+  practiceChange(o => {
+    o.detailsQuestions = questions;
+    o.detailsEmail = detailsEmailFor(o, questions);
+    o.phase = 'details_check';
+    stampPhase(o, 'details_check');
+  });
+  p.questions = '';
+  render();
+}
+function practicePhase(phase) {
+  const o = state.practice && state.practice.order;
+  if (!o) return;
+  if (phase === 'quote_sent' && beforeQuote(o.phase)) { practiceSendQuote(); return; }
+  if (!canAdvanceToPhase(o.phase, phase)) { render(); return; }
+  if (phase === 'details_check') { render(); document.getElementById('practice-questions')?.focus(); return; }
+  practiceChange(x => { x.phase = phase; stampPhase(x, phase); });
+}
+function practicePayment(status) {
+  const o = state.practice && state.practice.order;
+  if (!o || !canAdvancePayment(o.paymentStatus, status)) { render(); return; }
+  practiceChange(x => {
+    x.paymentStatus = status;
+    if (status === 'deposit_received' && !x.depositAt) { x.depositAt = new Date().toISOString(); x.depositAmount = depositAmount(x, orderSum(x), rulesFor(x)); }
+    if (status === 'payment_received' && !x.paidAt) x.paidAt = new Date().toISOString();
+  });
+}
+function practiceSaveTracking() {
+  const p = state.practice;
+  practiceChange(o => { o.deliveryTracking = String(p.tracking || '').trim(); });
+}
+// The daily emails, without waiting days.
+function practiceSkipAhead() {
+  const p = state.practice, o = p.order;
+  if (o.phase === 'quote_sent' && !o.customerApprovedAt && !p.remindedAt) { practiceEmail('reminder'); p.remindedAt = new Date().toISOString(); }
+  else if (o.phase === 'delivered' && !p.reviewAskedAt) { practiceEmail('review_request'); p.reviewAskedAt = new Date().toISOString(); }
+  else { showAlert('practice-err', 'No daily email is due at this step.', 'error'); return; }
+  render();
+}
+function practiceMessage(sender) {
+  const p = state.practice, id = sender === 'owner' ? 'practice-owner-msg' : 'practice-customer-msg';
+  const el = document.getElementById(id);
+  const text = String(el ? el.value : '').trim();
+  if (!text) return;
+  practiceSay(sender, 'site', text);
+  render();
+  document.getElementById(id)?.focus();
+}
+// Customer side
+function practiceApprove() { practiceChange(o => { o.customerApprovedAt = new Date().toISOString(); }); }
+function practicePay(amount) { practiceSay('customer', 'site', `I just sent $${amount.toFixed(2)} on Venmo.`); render(); }
+
+function renderPracticeCustomer() {
+  const o = state.practice.order, rules = rulesFor(o);
+  const total = o.items.every(itemPriced) ? orderSum(o) : null;
+  let action = '';
+  if (o.phase === 'quote_sent') {
+    action = o.customerApprovedAt ? '<div class="order-action"><strong>Thanks!</strong> We got your go-ahead and will confirm your order soon.</div>'
+      : `<div class="order-action"><button class="btn-primary" type="button" id="practice-approve" onclick="practiceApprove()">Looks good, I'd like to order</button>
+        <div class="order-action-sub">Total $${total !== null ? total.toFixed(2) : '—'}. Nothing is charged yet.</div></div>`;
+  } else if (phaseIndex(o.phase) >= phaseIndex('order_received') && total && !isPaidInFull(o)) {
+    const left = amountLeft(o, total, rules), deposit = depositAmount(o, total, rules);
+    const offerDeposit = o.paymentStatus !== 'deposit_received' && o.phase === 'order_received' && deposit > 0 && deposit < total;
+    action = `<div class="order-action">
+      ${offerDeposit ? `<button class="btn-sm" type="button" id="practice-pay-deposit" onclick="practicePay(${deposit})">Pay the deposit, $${deposit.toFixed(2)} (pretend)</button>` : ''}
+      <button class="btn-sm" type="button" id="practice-pay-all" onclick="practicePay(${left})">Pay $${left.toFixed(2)} (pretend)</button>
+      <div class="order-action-sub">On the real site these open Venmo. Here they just tell you in the chat.</div></div>`;
+  } else if (isPaidInFull(o)) action = '<div class="order-action"><strong>Payment received.</strong> Thank you!</div>';
+  return `<section class="card practice-side" aria-labelledby="practice-cust-h">
+    <h3 class="card-title" id="practice-cust-h">What ${esc(o.clientName)} sees</h3>
+    <div class="job-title">${esc(o.clientName)}'s Request</div>
+    ${renderTrackerSteps(o)}
+    ${action}
+    <div class="conversation customer-conversation"><div class="card-title" style="margin-bottom:6px;">Messages</div>
+      ${renderThread(state.practice.messages, 'customer')}
+      <div class="field" style="margin-top:10px;"><label for="practice-customer-msg">Message as ${esc(o.clientName)}</label>
+        <textarea id="practice-customer-msg" rows="2" spellcheck="true" placeholder="Pretend to be the customer..."></textarea></div>
+      <button class="btn-sm" type="button" id="practice-customer-send" onclick="practiceMessage('customer')">Send as customer</button>
+    </div>
+  </section>`;
+}
+function renderPracticeOwner() {
+  const p = state.practice, o = p.order;
+  const total = o.items.every(itemPriced) ? orderSum(o) : null;
+  return `<section class="card practice-side" aria-labelledby="practice-owner-h">
+    <h3 class="card-title" id="practice-owner-h">What you see</h3>
+    <div class="job-title">${esc(o.clientName)} ${conversationChipFor(p.messages)}</div>
+    <div class="job-meta">${esc(o.clientEmail)} · ${esc(o.items.map(it => `${it.name}${it.qty > 1 ? ` × ${it.qty}` : ''} (${filamentLabel(it)})`).join(', '))}${total !== null ? ` · total $${total.toFixed(2)}` : ''}</div>
+    <div class="row2" style="margin-top:10px;">
+      <div class="field"><label for="practice-phase">Order phase</label>
+        <select id="practice-phase" class="phase-select" onchange="practicePhase(this.value)">
+          ${ORDER_PHASES.map((ph, idx) => `<option value="${ph.id}" ${o.phase === ph.id ? 'selected' : ''} ${idx === phaseIndex(o.phase) || idx === phaseIndex(o.phase) + 1 || (ph.id === 'quote_sent' && beforeQuote(o.phase)) ? '' : 'disabled'}>${ph.label}</option>`).join('')}
+        </select></div>
+      <div class="field"><label for="practice-payment">Payment status</label>
+        <select id="practice-payment" class="phase-select" onchange="practicePayment(this.value)">
+          ${PAYMENT_PHASES.map((ph, idx) => `<option value="${ph.id}" ${o.paymentStatus === ph.id ? 'selected' : ''} ${idx >= paymentIndex(o.paymentStatus) ? '' : 'disabled'}>${ph.label}</option>`).join('')}
+        </select></div>
+    </div>
+    ${beforeQuote(o.phase) ? `<fieldset class="owner-edit-item"><legend>Before the quote</legend>
+      <div class="field"><label for="practice-questions">Confirm details: your questions</label>
+        <textarea id="practice-questions" rows="2" spellcheck="true" oninput="state.practice.questions = this.value">${esc(p.questions)}</textarea></div>
+      <button class="btn-sm" type="button" id="practice-ask" onclick="practiceAskDetails()">Send questions</button>
+      <div class="row2" style="margin-top:10px;">
+        <div class="field"><label for="practice-mins">Print time (minutes)</label><input type="number" id="practice-mins" min="0" value="${esc(p.mins)}" oninput="state.practice.mins = this.value" /></div>
+        <div class="field"><label for="practice-grams">Grams</label><input type="number" id="practice-grams" min="0" value="${esc(p.grams)}" oninput="state.practice.grams = this.value" /></div>
+      </div>
+      <button class="btn-sm" type="button" id="practice-quote" onclick="practiceSendQuote()">Save &amp; notify (send quote)</button>
+    </fieldset>` : ''}
+    ${o.phase === 'delivered' ? `<div class="field"><label for="practice-tracking">Tracking or pickup details</label>
+      <input type="text" id="practice-tracking" value="${esc(p.tracking)}" oninput="state.practice.tracking = this.value" /></div>
+      <button class="btn-sm" type="button" onclick="practiceSaveTracking()">Save delivery details</button>` : ''}
+    <div style="margin-top:8px;"><button class="btn-sm" type="button" id="practice-skip" onclick="practiceSkipAhead()">Skip ahead (send a daily email that's due)</button></div>
+    <div class="alert error" id="practice-err"></div>
+    ${renderTrackerSteps(o, false)}
+    <div class="conversation"><div class="card-title" style="margin-bottom:6px;">Conversation</div>
+      ${renderThread(p.messages, 'owner', o.clientName)}
+      <div class="field" style="margin-top:10px;"><label for="practice-owner-msg">Message to ${esc(o.clientName)}</label>
+        <textarea id="practice-owner-msg" rows="2" spellcheck="true"></textarea></div>
+      <button class="btn-sm" type="button" id="practice-owner-send" onclick="practiceMessage('owner')">Send message</button>
+    </div>
+  </section>`;
+}
+function conversationChipFor(list) {
+  const real = list.filter(m => !m.toOwner);
+  const last = real[real.length - 1];
+  return !last ? '' : last.sender === 'customer' ? '<span class="status waiting-you">Waiting on you</span>' : '<span class="status waiting-them">Waiting on customer</span>';
+}
+function renderPracticePage() {
+  if (!state.galleryLoaded) loadGallery().then(render);
+  const designs = practiceDesigns();
+  return `<div class="owner-page-header"><div class="section-header"><div>
+      <h2 class="section-title">Practice order</h2>
+      <div class="section-sub">A pretend customer for trying the whole order from both sides. Nothing here is saved or emailed, and real customers never see it. Emails show up in the chat instead.</div>
+    </div></div></div>
+    <div class="card practice-start">
+      <div class="row2">
+        <div class="field"><label for="practice-design">Practice request for</label>
+          <select id="practice-design"><option value="">A phone stand (link request)</option>
+            ${designs.map(g => `<option value="${esc(g.id)}">${esc(g.title)}</option>`).join('')}</select></div>
+        <div class="field" style="align-self:end;"><button class="btn-sm" type="button" id="practice-start" onclick="startPractice(document.getElementById('practice-design').value)">${state.practice ? 'Start over' : 'Start a practice order'}</button></div>
+      </div>
+      ${state.practice ? '' : '<div class="field-help">Starting one sends the pretend "New request" and "Request received" emails into the chat, like a real request.</div>'}
+    </div>
+    ${state.practice ? `<div class="practice-grid">${renderPracticeCustomer()}${renderPracticeOwner()}</div>` : ''}`;
 }

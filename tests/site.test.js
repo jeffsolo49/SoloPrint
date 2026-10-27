@@ -1699,7 +1699,7 @@ const STATES = {
     assert(/1 conversation is waiting on you/.test(await owner.textContent('.waiting-banner')), await owner.textContent('.waiting-banner'));
     assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
     const thread = await owner.textContent('#conv-1');
-    assert(/Can it be blue\?/.test(thread) && /by email/.test(thread) && /Email sent: Your SoloPrint quote/.test(thread), thread);
+    assert(/Can it be blue\?/.test(thread) && /by email/.test(thread) && /Your SoloPrint quote/.test(thread), thread);
     await owner.fill('#msg-text-1', 'Yes, blue works.');
     await owner.click('#msg-send-1');
     await owner.waitForTimeout(300);
@@ -1722,6 +1722,47 @@ const STATES = {
     await page.click('#cmsg-send-1');
     await page.waitForFunction(() => /Great, thanks!/.test(document.querySelector('#conv-1').textContent));
     assert(db.messages.some(m => m.sender === 'customer' && m.via === 'site' && m.body === 'Great, thanks!'), 'customer message saved');
+    await page.close();
+  });
+  await check('practice order: both sides on one page, emails only in the chat, nothing saved or sent', async () => {
+    const db = fixtures();
+    const jobsBefore = JSON.stringify(db.jobs), messagesBefore = db.messages.length;
+    const page = await open(db, { width: 1200 });
+    await page.evaluate(asOwner('practice'));
+    await page.waitForSelector('#practice-start');
+    db.log.length = 0;
+    await page.click('#practice-start');
+    const cust = () => page.textContent('#practice-cust-h + * ~ .conversation, .practice-side:first-child .conversation');
+    const own = () => page.textContent('.practice-side:last-child .conversation');
+    assert(/We received your SoloPrint request/.test(await cust()) && /Email to you: New SoloPrint request/.test(await own()) && !/Email to you/.test(await cust()), 'request emails in the chat, the owner note only on your side');
+    await page.fill('#practice-questions', 'Which tablet is it for?');
+    await page.click('#practice-ask');
+    assert(/Which tablet is it for\?/.test(await cust()) && /My questions for you/.test(await page.textContent('.practice-side:first-child')), 'details questions reach the customer');
+    await page.fill('#practice-customer-msg', 'An iPad Air.');
+    await page.click('#practice-customer-send');
+    assert(/Waiting on you/.test(await page.textContent('.practice-side:last-child .job-title')), 'waiting on you after the customer writes');
+    assert(await page.$eval('.practice-side:first-child .thread li:last-child', e => e.classList.contains('msg-mine')) && await page.$eval('.practice-side:last-child .thread li:last-child', e => e.classList.contains('msg-theirs')),
+      "the customer's message is on their right, and on your left");
+    await page.click('#practice-quote');
+    assert(/Your SoloPrint quote: \$/.test(await cust()), 'quote email');
+    await page.click('#practice-approve');
+    assert(/approved their quote/.test(await own()), 'approval note to you');
+    await page.selectOption('#practice-phase', 'order_received');
+    assert(/order is confirmed/.test(await cust()), 'confirmed email');
+    await page.click('#practice-pay-deposit');
+    await page.selectOption('#practice-payment', 'deposit_received');
+    assert(/Deposit received/.test(await cust()), 'deposit email');
+    await page.selectOption('#practice-phase', 'production');
+    await page.selectOption('#practice-phase', 'final_payment_needed');
+    await page.selectOption('#practice-payment', 'payment_received');
+    await page.selectOption('#practice-phase', 'delivered');
+    await page.fill('#practice-tracking', 'USPS 9400 1111');
+    await page.click('text=Save delivery details');
+    await page.click('#practice-skip');
+    const all = await cust();
+    ['is printing', 'final payment', 'Payment received', 'order is complete', 'Delivery details', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
+    assert(db.log.every(l => l.startsWith('GET')), `practice must not write anything: ${db.log.filter(l => !l.startsWith('GET'))}`);
+    assert(JSON.stringify(db.jobs) === jobsBefore && db.messages.length === messagesBefore, 'real orders and messages untouched');
     await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {

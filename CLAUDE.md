@@ -54,6 +54,9 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   customers use `customer_messages`/`customer_send_message`; site messages fire a `MESSAGE` webhook (Code.gs `messageEmail`); Code.gs logs its emails
   (`logSentEmails`) and `collectReplies` (every 5 min, `REPLY_CHECK_MINUTES`; `scheduleReplies` resets the trigger from `healthCheck`; needs Loader v2+ for Gmail) records Gmail replies via secret RPC `record_messages`. Site: messages section of features.js.
   Client notes (Clients page) live in `owner_private` key `clients`, never in orders.
+- Practice tab (owner, `renderPracticePage` in features.js): a pretend order in `state.practice` only, never saved or emailed; its emails are
+  rendered from the real templates into the chat by `practiceChange` (mirrors Code.gs `emailsFor`; keep in step). A test checks it makes no writes.
+  Conversations are text-message style (`renderThread`); the step bar (`renderTrackerSteps`) sits above them.
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,

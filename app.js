@@ -359,7 +359,8 @@ async function customerApproveQuote(batchId) {
   render();
 }
 
-function renderOrderTracker(batch) {
+// The step bar ("pizza tracker") and, for customers, what the current step means.
+function renderTrackerSteps(batch, withStatus = true) {
   const phase = batch.phase || 'estimate';
   const history = batch.phaseHistory || {};
   // "Confirming details" only shows for orders that went through it.
@@ -380,8 +381,12 @@ function renderOrderTracker(batch) {
     batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`
   ].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
-    <div class="tracker-status"><strong>${esc(t('step_' + phase))}:</strong> ${esc(t('stepInfo_' + phase))}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
-    ${phase === 'details_check' && batch.detailsQuestions ? `<div class="details-questions"><strong>My questions for you:</strong><div style="white-space:pre-wrap;">${esc(batch.detailsQuestions)}</div><div class="field-help">Reply to my email with your answers.</div></div>` : ''}
+    ${withStatus ? `<div class="tracker-status"><strong>${esc(t('step_' + phase))}:</strong> ${esc(t('stepInfo_' + phase))}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    ${phase === 'details_check' && batch.detailsQuestions ? `<div class="details-questions"><strong>My questions for you:</strong><div style="white-space:pre-wrap;">${esc(batch.detailsQuestions)}</div><div class="field-help">Reply to my email with your answers.</div></div>` : ''}` : ''}`;
+}
+
+function renderOrderTracker(batch) {
+  return `${renderTrackerSteps(batch)}
     ${renderOrderQueue(batch)}
     ${renderCustomerOrderAction(batch)}`;
 }
@@ -1261,6 +1266,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
+      <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
@@ -2046,10 +2052,12 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
+        : state.ownerTab === 'practice'
+        ? renderPracticePage()
         : state.ownerTab === 'clients'
         ? renderClientsPage()
         : state.ownerTab === 'orders'
@@ -2412,6 +2420,7 @@ function renderOwnerBatch(b) {
         ${b.depositAt ? `<div class="field-help">Deposit $${(Number(b.depositAmount) || 0).toFixed(2)} on ${esc(formatAustinTime(b.depositAt))}</div>` : ''}
       </div>
     </div>
+    ${renderTrackerSteps(b, false)}
     ${renderOwnerConversation(b)}
     <div class="owner-order-summary">
       <div class="card-title" style="margin-bottom:10px;">Submitted Order Summary</div>
