@@ -791,7 +791,7 @@ const STATES = {
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-delivered,email-delivery_update,email-deposit,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-final_payment_needed,email-delivered,email-delivery_update,email-deposit,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
