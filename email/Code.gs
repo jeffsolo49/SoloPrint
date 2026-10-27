@@ -1125,7 +1125,7 @@ function itemLines(rec, withPrices, site) {
   const months = rules.rollMonths === 1 ? '1 month' : rules.rollMonths + ' months';
   return (rec.items || []).map((it, i) => {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
-    const material = it.color ? `   Color: ${it.color}${it.filType === 'special' ? ' (special)' : ''}`
+    const material = it.color ? `   Color: ${it.color}`
       : isSpecialOrder(it) ? `   Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from your leftover roll, no material charge)' : ` (full ${fmtRoll(rules.rollGrams)} roll; the rest is yours for ${months}, and the material is free in another order)`}`
       : `   Filament: ${FIL_LABEL[it.filType] || 'Black'}`;
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, material];
