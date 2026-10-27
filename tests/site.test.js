@@ -54,7 +54,8 @@ async function mockBackend(page, db) {
     if (rest.startsWith('/rpc/submit_job')) {
       // Like supabase/security.sql: prices, charges and order records are the owner's to set.
       const { job } = JSON.parse(req.postData());
-      ['extraCharges', 'rates', 'specialOrderCost', 'designTerms', 'stockTaken', 'paidAt', 'finishedPhotos', 'ownerEditedAt'].forEach(k => delete job[k]);
+      ['extraCharges', 'rates', 'specialOrderCost', 'designTerms', 'stockTaken', 'paidAt', 'finishedPhotos', 'ownerEditedAt', 'depositAt', 'depositAmount', 'customerApprovedAt', 'status'].forEach(k => delete job[k]);
+      job.phase = 'estimate'; job.paymentStatus = 'unpaid';
       job.items = job.items.map(it => { const { ownerPrice, ...rest } = it; return rest; });
       db.jobs[job.id] = job; return route.fulfill({ status: 204, body: '' });
     }

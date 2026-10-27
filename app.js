@@ -366,7 +366,7 @@ function renderOrderTracker(batch) {
     const at = history[p.id] || (p.id === 'estimate' ? batch.createdAt : null);
     return `<div class="tracker-step ${cls}">
       <div class="tracker-dot">${cls === 'done' ? '✓' : idx + 1}</div>
-      <div class="tracker-label">${t('step_' + p.id)}</div>
+      <div class="tracker-label">${esc(t('step_' + p.id))}</div>
       <div class="tracker-time">${cls && at ? shortTime(at) : ''}</div>
     </div>`;
   }).join('');
@@ -375,7 +375,7 @@ function renderOrderTracker(batch) {
     batch.deliveryTracking && `Tracking: ${esc(batch.deliveryTracking)}`
   ].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
-    <div class="tracker-status"><strong>${t('step_' + phase)}:</strong> ${t('stepInfo_' + phase)}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    <div class="tracker-status"><strong>${esc(t('step_' + phase))}:</strong> ${esc(t('stepInfo_' + phase))}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
     ${renderOrderQueue(batch)}
     ${renderCustomerOrderAction(batch)}`;
 }
@@ -3747,8 +3747,8 @@ function buildNotifications() {
       ORDER_PHASES.forEach(p => {
         if (!history[p.id]) return;
         list.push({ id: `${b.id}-${p.id}`, batchId: b.id, at: history[p.id],
-          title: `${t('step_' + p.id)}: ${orderTitle(b)}`,
-          body: t('stepInfo_' + p.id) });
+          title: `${esc(t('step_' + p.id))}: ${orderTitle(b)}`,
+          body: esc(t('stepInfo_' + p.id)) });
       });
     });
   }
