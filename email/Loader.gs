@@ -10,7 +10,7 @@
 //
 // The secret stays in Project Settings -> Script properties (SECRET), as before.
 
-const LOADER_VERSION = 2;
+const LOADER_VERSION = 3;
 const CODE_URL = 'https://raw.githubusercontent.com/jeffsolo49/SoloPrint/main/email/Code.gs';
 const ALERT_EMAIL = 'jeffsolo49@gmail.com';
 const CODE_CACHE_SECONDS = 15 * 60;     // how often to look for a new version
@@ -33,9 +33,12 @@ function testLookup() { return run_('testLookup', []); }
 function connectMakerWorld() { return run_('connectMakerWorld', []); }
 function collectReplies() { return run_('collectReplies', []); }
 
-// Never called. Listing these makes Google ask for the same permissions Code.gs needs.
+// Never called. Listing these makes Google ask for the same permissions Code.gs needs (Google reads the
+// words in this file, not Code.gs): sending email, saving backups to Drive (creating files and folders,
+// not just reading), web requests, schedules, and reading replies in Gmail.
 function permissions_() {
-  MailApp.sendEmail; DriveApp.getRootFolder; UrlFetchApp.fetch; ScriptApp.newTrigger; CacheService.getScriptCache; GmailApp.search;
+  MailApp.sendEmail; DriveApp.getRootFolder; DriveApp.createFolder; DriveApp.getFoldersByName; DriveApp.createFile;
+  UrlFetchApp.fetch; ScriptApp.newTrigger; CacheService.getScriptCache; GmailApp.search;
 }
 
 let loaded_ = null;

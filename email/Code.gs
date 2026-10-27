@@ -6,7 +6,7 @@
 // from GitHub. Changes here go live within about 20 minutes of reaching main, so keep the checks green.
 
 // The loader version this file needs (see LOADER_VERSION in Loader.gs).
-const LOADER_VERSION_NEEDED = 2;   // 2: collectReplies (reads replies in Gmail)
+const LOADER_VERSION_NEEDED = 3;   // 2: collectReplies (reads replies in Gmail); 3: Drive write permission for backups
 
 // The secret is NOT stored in this file (the repo is public). Save it once in Apps Script:
 // Project Settings (gear) -> Script properties -> Add script property: SECRET = your secret.
