@@ -176,6 +176,56 @@ check('no secret is written in Code.gs', () => {
   assert(!/[0-9a-f]{40}/i.test(CODE) && !/const SECRET\s*=/.test(CODE), 'Code.gs contains a secret');
 });
 
+console.log('\nMessages on orders:');
+const SECRET = '0123456789abcdef0123456789abcdef';
+// A Supabase stub that records the RPC calls the script makes.
+function fetchStub(calls) {
+  return { fetch: (url, opt) => { calls.push({ fn: url.split('/rpc/')[1] || url, args: JSON.parse((opt && opt.payload) || '{}') });
+    return { getResponseCode: () => 200, getContentText: () => (/record_messages/.test(url) ? '1' : /site_settings/.test(url) ? '[]' : '[]') }; } };
+}
+check('your message from the site is emailed to the customer, tagged with the order', () => {
+  const sent = [], calls = [];
+  const ctx = load({ MailApp: { sendEmail: m => sent.push(m) }, UrlFetchApp: fetchStub(calls) });
+  const out = ctx.doPost({ postData: { contents: JSON.stringify({ secret: SECRET, type: 'MESSAGE', message: { sender: 'owner', via: 'site', body: 'Blue works.' }, record: at({}) }) } }).text;
+  assert(out === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].subject.startsWith('[SoloPrint #1729] ') && sent[0].body.startsWith('Blue works.') && sent[0].body.includes('#order-1729'), JSON.stringify(sent));
+});
+check("a customer's message from their order page is emailed to you, and replying goes to them", () => {
+  const sent = [];
+  const ctx = load({ MailApp: { sendEmail: m => sent.push(m) }, UrlFetchApp: fetchStub([]) });
+  ctx.doPost({ postData: { contents: JSON.stringify({ secret: SECRET, type: 'MESSAGE', message: { sender: 'customer', via: 'site', body: 'Can it be blue?' }, record: at({}) }) } });
+  assert(sent[0].to === 'jeffsolo49@gmail.com' && sent[0].replyTo === 'jane@example.com' && /Message from Jane/.test(sent[0].subject) && sent[0].body.includes('Can it be blue?'), JSON.stringify(sent));
+});
+check("emails to the customer are logged on the order's conversation", () => {
+  const calls = [];
+  const ctx = load({ MailApp: { sendEmail() {} }, UrlFetchApp: fetchStub(calls) });
+  ctx.doPost({ postData: { contents: JSON.stringify({ secret: SECRET, type: 'UPDATE', record: at({ phase: 'quote_sent' }), old_record: at({}) }) } });
+  const rows = (calls.find(c => c.fn === 'record_messages') || { args: { p_rows: [] } }).args.p_rows;
+  assert(rows.length === 1 && rows[0].job_id === '1729' && rows[0].via === 'auto' && rows[0].sender === 'owner' && /quote/.test(rows[0].subject), JSON.stringify(calls));
+});
+check('only the new part of an emailed reply is kept', () => {
+  const { replyText } = load();
+  const t = replyText('Yes, blue please!\nThanks\n\nOn Mon, Oct 27, 2026 at 3:00 PM SoloPrint <jeffsolo49@gmail.com>\nwrote:\n> Hi Jane,\n> Which color?');
+  assert(t === 'Yes, blue please!\nThanks', JSON.stringify(t));
+  assert(load().replyText('Sure\n-----Original Message-----\nFrom: x') === 'Sure', 'Outlook style');
+});
+check('Gmail replies: customers and your own replies are collected; the shop emails are not', () => {
+  const calls = [];
+  const msg = (from, to, subject, body, id) => ({ getFrom: () => from, getTo: () => to, getSubject: () => subject, getPlainBody: () => body, getId: () => id, getDate: () => new Date('2026-10-27T15:00:00Z') });
+  const thread = { getMessages: () => [
+    msg('SoloPrint <jeffsolo49@gmail.com>', 'jane@example.com', 'Your SoloPrint quote: $9.28', 'Hi Jane, your quote...', 'm1'),
+    msg('Jane <Jane@Example.com>', 'jeffsolo49@gmail.com', 'Re: Your SoloPrint quote: $9.28', 'Looks great!\n\nOn Mon wrote:\n> Hi Jane', 'm2'),
+    msg('jeffsolo49@gmail.com', 'Jane <jane@example.com>', 'Re: [SoloPrint #1729] Benchy', 'Thanks Jane!', 'm3')] };
+  const ctx = load({ GmailApp: { search: () => [thread] }, UrlFetchApp: fetchStub(calls) });
+  ctx.collectReplies();
+  const rows = calls.find(c => c.fn === 'record_messages').args.p_rows;
+  assert(rows.length === 2 && rows[0].sender === 'customer' && rows[0].email === 'jane@example.com' && rows[0].body === 'Looks great!' && rows[0].email_id === 'm2'
+    && rows[1].sender === 'owner' && rows[1].email === 'jane@example.com' && rows[1].job_id === '1729', JSON.stringify(rows));
+});
+check('the email code asks for loader version 2 (Gmail replies), and the loader provides it', () => {
+  const loader = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Loader.gs'), 'utf8');
+  assert(/const LOADER_VERSION_NEEDED = 2;/.test(CODE) && /const LOADER_VERSION = 2;/.test(loader) && /function collectReplies\(\)/.test(loader) && /GmailApp\.search/.test(loader), 'loader and code disagree');
+});
+
 console.log('\nModel lookups:');
 check('MakerWorld: uses the linked profile, else the default; seconds to minutes', () => {
   const design = { title: 'Dragon', defaultInstanceId: 2, instances: [

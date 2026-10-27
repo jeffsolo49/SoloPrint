@@ -455,6 +455,25 @@ function queueOwnerNote(id, value) {
   }, 700);
 }
 
+// Clients page notes and payment issues, by email (owner_private key "clients"); customers never see them.
+function clientNotes() { return (state.ownerPrivate && state.ownerPrivate.clients) || {}; }
+let clientNoteTimer = null;
+function queueClientNote(email, field, value) {
+  const key = String(email || '').trim().toLowerCase();
+  if (!key || !state.ownerPrivate) return;
+  const all = { ...clientNotes() };
+  all[key] = { ...(all[key] || {}), [field]: String(value).slice(0, 4000) };
+  if (!String(all[key].notes || '').trim() && !String(all[key].issues || '').trim()) delete all[key];
+  state.ownerPrivate.clients = all;
+  const status = document.getElementById('client-note-status');
+  if (status) status.textContent = 'Saving...';
+  clearTimeout(clientNoteTimer);
+  clientNoteTimer = setTimeout(async () => {
+    try { await saveOwnerPrivate('clients'); if (status) status.textContent = 'Saved'; }
+    catch (e) { if (status) status.textContent = "Couldn't save. Check you're logged in."; }
+  }, 700);
+}
+
 // ── REVIEWS FROM CUSTOMERS ────────────────────────────────────────────────
 function openReviewForm(id) {
   state.reviewFor = { id, email: state.historyEmail, sent: false };
@@ -2342,4 +2361,123 @@ function renderDetailsCheck(b) {
       <button class="btn-sm danger" type="button" onclick="state.detailsDraft = null; render();">Cancel (don't send)</button>
     </div>
   </fieldset>`;
+}
+
+// ── MESSAGES ON ORDERS (supabase/messages.sql) ────────────────────────────
+// One conversation per order: your messages and the customer's (written on the site or by email), plus the
+// shop's own emails. The email script sends site messages, logs its emails here and collects Gmail replies.
+function cleanMessage(m, jobId) {
+  if (!m || typeof m !== 'object') return null;
+  const body = cleanText(m.body, 10000);
+  if (!body) return null;
+  return { id: String(m.id || ''), jobId: String(m.job_id || jobId || ''), sender: m.sender === 'owner' ? 'owner' : 'customer',
+    via: ['site', 'email', 'auto'].includes(m.via) ? m.via : 'site', subject: cleanText(m.subject, 300), body, at: cleanIso(m.created_at || m.at) };
+}
+async function loadOwnerMessages() {
+  try {
+    const rows = await supaFetch('/order_messages?select=id,job_id,sender,via,subject,body,created_at&order=created_at.asc,id.asc&limit=5000');
+    state.messages = (rows || []).map(m => cleanMessage(m)).filter(Boolean);
+    state.messagesReady = true;
+  } catch (e) {
+    state.messages = [];
+    state.messagesReady = false;   // supabase/messages.sql not run yet
+  }
+}
+async function loadCustomerMessages(email) {
+  const lists = await Promise.all(state.batches.map(b => supaFetch('/rpc/customer_messages', { method: 'POST', body: JSON.stringify({ p_job_id: b.id, p_email: email }) })
+    .then(rows => (rows || []).map(m => cleanMessage(m, b.id)).filter(Boolean)).catch(() => null)));
+  state.messages = lists.flatMap(l => l || []);
+  state.messagesReady = lists.some(l => l !== null);
+}
+function messagesFor(jobId) { return (state.messages || []).filter(m => m.jobId === jobId); }
+// Who the conversation is waiting on: the customer wrote last -> you; you (or the shop's email) -> them.
+function conversationStatus(jobId) {
+  const list = messagesFor(jobId);
+  if (!list.length) return '';
+  return list[list.length - 1].sender === 'customer' ? 'you' : 'customer';
+}
+function waitingOnYou() { return state.batches.filter(b => conversationStatus(b.id) === 'you'); }
+function conversationChip(jobId) {
+  const s = conversationStatus(jobId);
+  return s === 'you' ? '<span class="status waiting-you">Waiting on you</span>' : s === 'customer' ? '<span class="status waiting-them">Waiting on customer</span>' : '';
+}
+function renderThread(list, viewer, customerName) {
+  if (!list.length) return '<div class="field-help">No messages yet.</div>';
+  return `<ol class="thread">${list.map(m => {
+    const when = m.at ? formatAustinTime(m.at) : '';
+    if (m.via === 'auto') {
+      return `<li class="msg msg-auto"><details><summary>Email ${viewer === 'owner' ? 'sent' : 'from SoloPrint'}: ${esc(m.subject || 'SoloPrint email')} <span class="msg-when">${esc(when)}</span></summary><div class="msg-body">${esc(m.body)}</div></details></li>`;
+    }
+    const who = m.sender === viewer ? 'You' : m.sender === 'owner' ? 'SoloPrint' : (customerName || 'Customer');
+    return `<li class="msg ${m.sender === viewer ? 'msg-mine' : 'msg-theirs'}"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)}${m.via === 'email' ? ' · by email' : ''}</span></div><div class="msg-body">${esc(m.body)}</div></li>`;
+  }).join('')}</ol>`;
+}
+function renderOwnerConversation(b) {
+  if (!state.messagesReady) return '';
+  const list = messagesFor(b.id);
+  const status = conversationStatus(b.id);
+  state.msgDrafts = state.msgDrafts || {};
+  return `<details class="conversation" id="conv-${b.id}" ${status === 'you' || state.openConversation === b.id ? 'open' : ''}>
+    <summary><strong>Conversation</strong> ${list.filter(m => m.via !== 'auto').length ? `(${list.filter(m => m.via !== 'auto').length})` : ''} ${conversationChip(b.id)}</summary>
+    ${renderThread(list, 'owner', b.clientName)}
+    <div class="field" style="margin-top:10px;"><label for="msg-text-${b.id}">Message to ${esc(b.clientName || 'the customer')}</label>
+      <textarea id="msg-text-${b.id}" rows="3" spellcheck="true" maxlength="5000" placeholder="They get this by email and on their order page." oninput="state.msgDrafts['${b.id}'] = this.value">${esc(state.msgDrafts[b.id] || '')}</textarea></div>
+    <div class="alert error" id="msg-err-${b.id}"></div>
+    <button class="btn-sm" type="button" id="msg-send-${b.id}" onclick="sendOwnerMessage('${b.id}')">Send message</button>
+  </details>`;
+}
+async function sendOwnerMessage(jobId) {
+  const text = String((state.msgDrafts || {})[jobId] || '').trim();
+  if (!text) { showAlert(`msg-err-${jobId}`, 'Write a message first.', 'error'); return; }
+  const btn = document.getElementById(`msg-send-${jobId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  try {
+    const rows = await supaFetch('/order_messages', { method: 'POST', body: JSON.stringify({ job_id: jobId, sender: 'owner', via: 'site', body: text }) });
+    const saved = cleanMessage((rows || [])[0] || { job_id: jobId, sender: 'owner', via: 'site', body: text, created_at: new Date().toISOString() });
+    if (saved) state.messages.push(saved);
+    state.msgDrafts[jobId] = '';
+    state.openConversation = jobId;
+    render();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send message'; }
+    showAlert(`msg-err-${jobId}`, "Couldn't send. If you were logged out, log in again; if this is the first time, run supabase/messages.sql.", 'error');
+  }
+}
+// Customers: the conversation on their order page.
+function renderCustomerConversation(b) {
+  if (!state.messagesReady) return '';
+  state.msgDrafts = state.msgDrafts || {};
+  return `<div class="conversation customer-conversation" id="conv-${b.id}">
+    <div class="card-title" style="margin-bottom:6px;">Messages</div>
+    ${renderThread(messagesFor(b.id), 'customer')}
+    <div class="field" style="margin-top:10px;"><label for="cmsg-text-${b.id}">Send a message about this order</label>
+      <textarea id="cmsg-text-${b.id}" rows="3" spellcheck="true" maxlength="5000" placeholder="Questions, changes, answers..." oninput="state.msgDrafts['${b.id}'] = this.value">${esc(state.msgDrafts[b.id] || '')}</textarea></div>
+    <div class="alert error" id="cmsg-err-${b.id}"></div>
+    <button class="btn-sm" type="button" id="cmsg-send-${b.id}" onclick="sendCustomerMessage('${b.id}')">Send</button>
+    <div class="field-help" style="margin-top:6px;">You can also just reply to any of my emails.</div>
+  </div>`;
+}
+async function sendCustomerMessage(jobId) {
+  const text = String((state.msgDrafts || {})[jobId] || '').trim();
+  const email = String(state.historyEmail || '').trim().toLowerCase();
+  if (!text) { showAlert(`cmsg-err-${jobId}`, 'Write a message first.', 'error'); return; }
+  const btn = document.getElementById(`cmsg-send-${jobId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  try {
+    await supaFetch('/rpc/customer_send_message', { method: 'POST', body: JSON.stringify({ p_job_id: jobId, p_email: email, p_body: text }) });
+    const rows = await supaFetch('/rpc/customer_messages', { method: 'POST', body: JSON.stringify({ p_job_id: jobId, p_email: email }) });
+    state.messages = (state.messages || []).filter(m => m.jobId !== jobId).concat((rows || []).map(m => cleanMessage(m, jobId)).filter(Boolean));
+    state.msgDrafts[jobId] = '';
+    render();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+    showAlert(`cmsg-err-${jobId}`, "Couldn't send your message. Please try again, or reply to one of my emails.", 'error');
+  }
+}
+// Owner dashboard: conversations waiting on you, at the top.
+function renderWaitingOnYou() {
+  const list = waitingOnYou();
+  if (!list.length) return '';
+  return `<div class="alert waiting-banner" style="display:block;" role="status"><strong>${list.length} conversation${list.length === 1 ? ' is' : 's are'} waiting on you:</strong>
+    ${list.map(b => `<a href="#order-${esc(b.id)}" onclick="state.openConversation='${esc(b.id)}'">${esc(b.clientName || b.clientEmail)}: ${esc(orderTitle(b))}</a>`).join(' · ')}</div>`;
 }
