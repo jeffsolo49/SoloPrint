@@ -1817,7 +1817,7 @@ function renderItemBlock(item, i) {
         </div>
         <div class="field" style="margin-bottom:8px;">
           <label>${esc(t('changesLabel'))}</label>
-          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
+          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
         ${renderPhotoField(item, i)}` : ''}
@@ -1825,7 +1825,7 @@ function renderItemBlock(item, i) {
         <div class="field" style="margin-bottom:8px;">
           <label for="notes-${i}">${esc(t('ideaLabel'))}</label>
           <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom designs come with my design terms, which you'll see with your quote.</div>
-          <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white"
+          <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
         ${renderPhotoField(item, i)}
@@ -1845,7 +1845,7 @@ function renderItemBlock(item, i) {
         </div>
         <div class="field" style="margin-bottom:8px;">
           <label>${esc(t('changesLabel'))}</label>
-          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
+          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>` : ''}
       ${mode && (mode !== 'gallery' || item.name) ? `
@@ -2412,7 +2412,7 @@ function renderOwnerBatch(b) {
           </div>
           <div class="field" style="margin-top:10px;margin-bottom:0;">
             <label>Delivery Notes</label>
-            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery">${esc(b.deliveryNotes || '')}</textarea>
+            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea>
           </div>
           <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save Delivery Details</button>
         </div>
