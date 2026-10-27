@@ -836,13 +836,22 @@ select.color-select, select.color-select option { font-weight: 700; }
 .job-card.waiting-you .conversation { border-color: var(--accent); }
 .status.waiting-you { background: var(--accent); color: var(--on-accent); }
 .status.waiting-them { background: var(--surface2); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
-.thread { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-.msg { max-width: 92%; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); }
-.msg-mine { justify-self: end; background: rgba(var(--accent-rgb),0.1); border-color: rgba(var(--accent-rgb),0.35); }
-.msg-auto { max-width: 100%; justify-self: stretch; background: transparent; border-style: dashed; font-size: 13px; }
-.msg-auto summary { cursor: pointer; color: var(--muted); }
+.thread { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 82%; padding: 8px 12px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface2); }
+.msg-theirs { align-self: flex-start; border-bottom-left-radius: 4px; }
+.msg-mine { align-self: flex-end; background: var(--accent); border-color: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
+.msg-mine .msg-who, .msg-mine .msg-when, .msg-mine summary { color: var(--on-accent); }
+.msg-email summary { cursor: pointer; font-weight: 600; }
+.msg-email .msg-body { margin-top: 6px; font-size: 13px; }
+.msg-note { align-self: center; max-width: 92%; background: transparent; border-style: dashed; font-size: 12px; color: var(--muted); }
+.msg-note summary { cursor: pointer; }
 .msg-who { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
 .msg-when { font-weight: 400; color: var(--muted); }
 .msg-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .waiting-banner { background: rgba(var(--accent-rgb),0.1); border: 2px solid var(--accent); color: var(--text); margin-bottom: 12px; }
 .waiting-banner a { color: var(--accent); font-weight: 700; }
+
+/* Practice order: the customer's screen and yours side by side (stacked on phones). */
+.practice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.practice-side { min-width: 0; }
+@media (max-width: 900px) { .practice-grid { grid-template-columns: 1fr; } }
