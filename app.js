@@ -3566,6 +3566,7 @@ function renderOwnerGalleryPage() {
 function editGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
+  state.cmJoin = [];
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',

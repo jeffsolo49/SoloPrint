@@ -1803,9 +1803,10 @@ function cmFromHsl(hh, s, l) {
 }
 // Repaints the photo: each region whose part has a color (targets[k] = '#rrggbb') gets that color, with each
 // pixel as much lighter or darker than the new color as it was than the region's own color.
-function recolorPixels(img, labels, hexes, targets) {
+// `bases` (optional) is each color's reference lightness; areas of one part share theirs so its faces keep their shading.
+function recolorPixels(img, labels, hexes, targets, bases) {
   const out = new Uint8ClampedArray(img.data);
-  const base = hexes.map(h => cmHsl(...cmRgb(h))[2]);
+  const base = bases || hexes.map(h => cmHsl(...cmRgb(h))[2]);
   const want = targets.map(t => (t ? cmHsl(...cmRgb(t)) : null));
   for (let p = 0; p < labels.length; p++) {
     const k = labels[p], t = want[k];
@@ -1819,17 +1820,18 @@ function recolorPixels(img, labels, hexes, targets) {
 }
 
 
-// Saved on a design as colorMap: { photo, regions: [{ hex, part }], combos: [{ id, name, colors: { partId: colorKey } }] }.
-// A region's part is a part id, or '' to leave that area as it is (the background, shadows). Several areas
-// can be one part (a gray part's lit top and shaded edge). Combos are the owner's suggested colors.
+// Saved on a design as colorMap: { photo, regions: [{ hexes, part }], combos: [{ id, name, colors: { partId: colorKey } }] }.
+// A region (an area) is one or more found colors the owner joined; its part is a part id, or '' to leave it as
+// it is (the background, shadows). Several areas can be one part. Combos are the owner's suggested colors.
 function cleanColorMap(m, parts) {
   if (!m || typeof m !== 'object') return null;
   const photo = safeImageUrl(m.photo);
   if (!photo) return null;
   const ids = (parts || []).map(p => p.id);
-  const regions = (Array.isArray(m.regions) ? m.regions : []).slice(0, 12)
-    .filter(r => r && /^#[0-9a-f]{6}$/i.test(String(r.hex)))
-    .map(r => ({ hex: r.hex.toLowerCase(), part: ids.includes(r.part) ? r.part : '' }));
+  const regions = (Array.isArray(m.regions) ? m.regions : []).slice(0, 16).map(r => ({
+    hexes: (r && Array.isArray(r.hexes) ? r.hexes : [r && r.hex]).filter(h => /^#[0-9a-f]{6}$/i.test(String(h))).slice(0, 16).map(h => h.toLowerCase()),
+    part: r && ids.includes(r.part) ? r.part : ''
+  })).filter(r => r.hexes.length);
   const combos = (Array.isArray(m.combos) ? m.combos : []).slice(0, 8).map((c, n) => {
     const colors = {};
     ids.forEach(id => { const k = c && c.colors && c.colors[id]; if (/^[a-z0-9-]{1,40}$/.test(String(k))) colors[id] = k; });
@@ -1858,9 +1860,23 @@ function cmPartColors(parts, chosen, choices) {
   return out;
 }
 function cmUsable(m) { return !!(m && m.regions.some(r => r.part)); }
+function cmHexes(m) { return m.regions.flatMap(r => r.hexes); }
 function cmCanvas(m, parts, colors, label, cls = '') {
-  const targets = m.regions.map(r => (r.part && parts.some(p => p.id === r.part) ? cmColor(colors[r.part]).hex : null));
-  return `<canvas class="cm-canvas ${cls}" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: m.regions.map(r => r.hex), targets }))}" role="img" aria-label="${esc(label)}"></canvas>`;
+  const on = r => r.part && parts.some(p => p.id === r.part);
+  const targets = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? cmColor(colors[r.part]).hex : null)));
+  const groups = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? parts.findIndex(p => p.id === r.part) : -1)));
+  return `<canvas class="cm-canvas ${cls}" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), targets, groups }))}" role="img" aria-label="${esc(label)}"></canvas>`;
+}
+// Each part's reference lightness: the average of its colors, weighted by how much of the picture each covers.
+function cmBases(labels, hexes, groups) {
+  const own = hexes.map(h => cmHsl(...cmRgb(h))[2]), count = new Array(hexes.length).fill(0);
+  for (let p = 0; p < labels.length; p++) count[labels[p]]++;
+  return own.map((l, k) => {
+    if (groups[k] < 0) return l;
+    let sum = 0, n = 0;
+    groups.forEach((g, j) => { if (g === groups[k]) { sum += own[j] * count[j]; n += count[j]; } });
+    return n ? sum / n : l;
+  });
 }
 function cmDescribe(parts, colors) { return parts.map(p => `${p.name} in ${cmColor(colors[p.id]).name}`).join(', '); }
 function cmLegend(parts, colors) {
@@ -1907,11 +1923,11 @@ async function paintColorPreviews() {
       const lk = s.photo + '|' + s.hexes.join(',');
       if (!cmLabelCache.has(lk)) cmLabelCache.set(lk, labelPixels(img, s.hexes));
       const labels = cmLabelCache.get(lk);
-      if (s.mask !== undefined) {
+      if (s.mask) {
         // One area in its own color, everything else faded, so the owner can see which area it is.
         data = new Uint8ClampedArray(img.data);
-        for (let p = 0; p < labels.length; p++) if (labels[p] !== s.mask) for (let k = 0; k < 3; k++) data[p * 4 + k] = 235 + data[p * 4 + k] * 0.08;
-      } else data = recolorPixels(img, labels, s.hexes, s.targets);
+        for (let p = 0; p < labels.length; p++) if (!s.mask.includes(labels[p])) for (let k = 0; k < 3; k++) data[p * 4 + k] = 235 + data[p * 4 + k] * 0.08;
+      } else data = recolorPixels(img, labels, s.hexes, s.targets, s.groups ? cmBases(labels, s.hexes, s.groups) : null);
       if (cmPainted.size > 60) cmPainted.clear();
       cmPainted.set(spec, data);
     }
@@ -2005,20 +2021,25 @@ function renderColorMapForm(f) {
     <div class="field-help" style="margin-bottom:8px;">Upload a picture where every part is a different solid color (a slicer or CAD screenshot works best). The site finds each colored area; you say which part each one is, then add color ideas. Customers see the picture repainted in those colors, with the same light and shadow.</div>
     <label class="btn-sm">${m ? 'Change picture' : 'Upload picture'}
       <input type="file" accept="image/*" id="cm-upload" onchange="uploadColorMapPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
-    ${m ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap = null; render();">Remove picture</button>' : ''}
+    ${m ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap = null; state.cmJoin = []; render();">Remove picture</button>' : ''}
     <span class="field-help" id="cm-status" role="status"></span>
     ${!m ? '' : `
       <h4 class="cm-heading">Which part is each colored area?</h4>
       ${parts.length ? '' : '<div class="alert error" style="display:block;">Add the parts above first (with names), then match each area to a part.</div>'}
-      <div class="field-help">Several areas can be the same part (like a part's top and its shaded edge). Leave the background and shadows as "Not a part".</div>
-      <div class="cm-regions">${m.regions.map((r, k) => `<div class="cm-region">
-        <canvas class="cm-canvas cm-mask" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: m.regions.map(x => x.hex), mask: k }))}" aria-hidden="true"></canvas>
-        <div class="field"><label for="cm-region-${k}"><span class="swatch" style="background:${esc(r.hex)}" aria-hidden="true"></span>Area ${k + 1}${r.share ? ` (${r.share >= 0.01 ? Math.round(r.share * 100) + '%' : 'under 1%'} of the picture)` : ''}</label>
+      <div class="field-help">Several areas can be the same part (like a part's top and its shaded edge). Leave the background and shadows as "Not a part". Found one part split into several areas, or a stray edge? Tick "Join" on them and tap "Join areas".</div>
+      <div class="cm-regions">${m.regions.map((r, k) => { const start = m.regions.slice(0, k).reduce((n, x) => n + x.hexes.length, 0); return `<div class="cm-region">
+        <canvas class="cm-canvas cm-mask" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), mask: r.hexes.map((h, j) => start + j) }))}" aria-hidden="true"></canvas>
+        <div class="field"><label for="cm-region-${k}">${r.hexes.map(h => `<span class="swatch" style="background:${esc(h)}" aria-hidden="true"></span>`).join('')}Area ${k + 1}${r.hexes.length > 1 ? ` (${r.hexes.length} joined)` : ''}${r.share ? ` (${r.share >= 0.01 ? Math.round(r.share * 100) + '%' : 'under 1%'} of the picture)` : ''}</label>
           <select id="cm-region-${k}" onchange="setCmRegion(${k}, this.value)">
             <option value="">Not a part (leave as is)</option>
             ${parts.map(p => `<option value="${esc(p.id)}" ${p.id === r.part ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-          </select></div>
-      </div>`).join('')}</div>
+          </select>
+          <div class="cm-region-actions">
+            <label class="special-order-check"><input type="checkbox" id="cm-join-${k}" ${(state.cmJoin || []).includes(k) ? 'checked' : ''} onchange="toggleCmJoin(${k}, this.checked)" /> Join</label>
+            ${r.hexes.length > 1 ? `<button type="button" class="btn-sm" id="cm-split-${k}" onclick="splitCmRegion(${k})">Split apart</button>` : ''}
+          </div></div>
+      </div>`; }).join('')}</div>
+      <div id="cm-join-bar">${renderCmJoinBar()}</div>
       <div class="field" style="max-width:340px;"><label for="cm-detail">Areas not split right?</label>
         <select id="cm-detail" onchange="redoColorAreas(this.value)">
           <option value="">Choose...</option>
@@ -2045,6 +2066,48 @@ function renderColorMapForm(f) {
         ${m.combos.length < 8 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}` : ''}
     `}
   </fieldset>`;
+}
+function renderCmJoinBar() {
+  const n = (state.cmJoin || []).length;
+  return n >= 2 ? `<button type="button" class="btn-sm" id="cm-join" onclick="joinCmRegions()">Join ${n} areas into one</button>`
+    : n === 1 ? '<span class="field-help">Tick "Join" on at least one more area.</span>' : '';
+}
+function toggleCmJoin(k, on) {
+  const list = (state.cmJoin || []).filter(x => x !== k);
+  if (on) list.push(k);
+  state.cmJoin = list.sort((a, b) => a - b);
+  const bar = document.getElementById('cm-join-bar');
+  if (bar) bar.innerHTML = renderCmJoinBar();
+}
+// The joined area keeps the first area's place and part (or the first part any of them had).
+function joinCmRegions() {
+  const m = state.galleryForm && state.galleryForm.colorMap;
+  const picked = (state.cmJoin || []).filter(k => m && m.regions[k]);
+  state.cmJoin = [];
+  if (!m || picked.length < 2) { render(); return; }
+  const into = m.regions[picked[0]];
+  picked.slice(1).forEach(k => {
+    const r = m.regions[k];
+    into.hexes = into.hexes.concat(r.hexes);
+    into.part = into.part || r.part;
+    if (r.share || into.share) into.share = (into.share || 0) + (r.share || 0);
+  });
+  m.regions = m.regions.filter((r, k) => !picked.slice(1).includes(k));
+  render();
+  const s = document.getElementById('cm-status');
+  if (s) s.textContent = `Joined ${picked.length} areas into Area ${picked[0] + 1}.`;
+  document.getElementById(`cm-region-${picked[0]}`)?.focus();
+}
+function splitCmRegion(k) {
+  const m = state.galleryForm && state.galleryForm.colorMap;
+  const r = m && m.regions[k];
+  if (!r || r.hexes.length < 2) return;
+  state.cmJoin = [];
+  m.regions.splice(k, 1, ...r.hexes.map(h => ({ hexes: [h], part: r.part })));
+  render();
+  const s = document.getElementById('cm-status');
+  if (s) s.textContent = `Split Area ${k + 1} into ${r.hexes.length} areas.`;
+  document.getElementById(`cm-region-${k}`)?.focus();
 }
 function setCmRegion(k, partId) {
   const m = state.galleryForm && state.galleryForm.colorMap;
@@ -2105,7 +2168,8 @@ async function uploadColorMapPhoto(file) {
     await uploadStoredPhoto(path, blob, token, false, 'image/png');
     const photo = GALLERY_PUBLIC_PREFIX + path;
     cmImages.set(photo, Promise.resolve(pixels));
-    f.colorMap = { photo, regions: findColorRegions(pixels).map(r => ({ ...r, part: '' })), combos: (f.colorMap && f.colorMap.combos) || [] };
+    state.cmJoin = [];
+    f.colorMap = { photo, regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: '' })), combos: (f.colorMap && f.colorMap.combos) || [] };
     render();
     if (status()) status().textContent = `Found ${f.colorMap.regions.length} colored areas. Pick a part for each, then save.`;
   } catch (e) {
@@ -2119,7 +2183,8 @@ async function redoColorAreas(detail) {
   const pixels = await cmPixels(m.photo);
   if (!pixels) { const s = document.getElementById('cm-status'); if (s) s.textContent = "Couldn't read the picture. Try uploading it again."; return; }
   const old = m.regions;
-  m.regions = findColorRegions(pixels, detail).map(r => ({ ...r, part: (old.find(o => o.hex === r.hex) || {}).part || '' }));
+  state.cmJoin = [];
+  m.regions = findColorRegions(pixels, detail).map(r => ({ hexes: [r.hex], share: r.share, part: (old.find(o => o.hexes.includes(r.hex)) || {}).part || '' }));
   render();
   const s = document.getElementById('cm-status');
   if (s) s.textContent = `Found ${m.regions.length} colored areas.`;
