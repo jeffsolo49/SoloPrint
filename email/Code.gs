@@ -76,7 +76,7 @@ function doPost(e) {
 
 // ── MESSAGES (supabase/messages.sql) ──────────────────────────────────────
 // Each order has a conversation on the site. Messages written there are emailed from here; emails to
-// the customer are logged on it; replies in Gmail are collected every 10 minutes (collectReplies).
+// the customer are logged on it; replies in Gmail are collected every 5 minutes (collectReplies).
 // Site messages carry "[SoloPrint #<order>]" in the subject so replies find their order.
 function messageTag(rec) { return '[SoloPrint #' + String(rec.id || '') + ']'; }
 function messageEmail(msg, rec, site) {
@@ -314,20 +314,40 @@ function testLookup() {
 //  - sendQuoteReminders: every day around 10am, emails customers whose quote has waited 3+ days.
 function setupSchedules() {
   ScriptApp.getProjectTriggers()
-    .filter(t => ['backupToDrive', 'sendQuoteReminders', 'healthCheck', 'collectReplies'].includes(t.getHandlerFunction()))
+    .filter(t => ['backupToDrive', 'sendQuoteReminders', 'healthCheck'].includes(t.getHandlerFunction()))
     .forEach(t => ScriptApp.deleteTrigger(t));
-  // Needs loader version 2 (it has collectReplies); with an older loader, replies just aren't collected yet.
-  if (typeof globalThis !== 'undefined' && typeof globalThis.collectReplies === 'function') ScriptApp.newTrigger('collectReplies').timeBased().everyMinutes(10).create();
+  scheduleReplies(true);
   ScriptApp.newTrigger('backupToDrive').timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
   ScriptApp.newTrigger('sendQuoteReminders').timeBased().everyDays(1).atHour(10).create();
   ScriptApp.newTrigger('healthCheck').timeBased().everyHours(6).create();
   backupToDrive();
   healthCheck();
-  Logger.log('Scheduled: weekly backup (Mondays ~3am), daily quote reminders (~10am), a check every 6 hours' + (typeof globalThis !== 'undefined' && typeof globalThis.collectReplies === 'function' ? ' and Gmail replies every 10 minutes' : '') + '. A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+  Logger.log('Scheduled: weekly backup (Mondays ~3am), daily quote reminders (~10am), a check every 6 hours' + (loaderHasReplies() ? ' and Gmail replies every ' + REPLY_CHECK_MINUTES + ' minutes' : '') + '. A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
 }
 
 // Runs every 6 hours. Throws when something would stop the emails; the loader then emails the owner.
+// How often Gmail replies are checked. Google allows 1, 5, 10, 15 or 30; every 5 uses about 15 minutes of
+// the free account's 90 minutes a day of script time, leaving plenty for emails and backups.
+const REPLY_CHECK_MINUTES = 5;
+// The reply check is a function of the pasted loader (version 2 and up); the code itself can't see it otherwise.
+function loaderHasReplies() { return typeof globalThis !== 'undefined' && typeof globalThis.collectReplies === 'function'; }
+// Makes sure the reply check runs every REPLY_CHECK_MINUTES. Runs from setupSchedules and from the 6-hourly
+// check, so a new interval takes effect by itself (Apps Script can't read a schedule's interval, so the one
+// set last is kept in Script properties).
+function scheduleReplies(force) {
+  if (!loaderHasReplies()) return false;
+  const props = PropertiesService.getScriptProperties();
+  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'collectReplies');
+  if (!force && triggers.length === 1 && props.getProperty('REPLY_CHECK_MINUTES') === String(REPLY_CHECK_MINUTES)) return false;
+  triggers.forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('collectReplies').timeBased().everyMinutes(REPLY_CHECK_MINUTES).create();
+  props.setProperty('REPLY_CHECK_MINUTES', String(REPLY_CHECK_MINUTES));
+  return true;
+}
+
 function healthCheck() {
+  try { if (scheduleReplies(false)) Logger.log('Gmail replies are now checked every ' + REPLY_CHECK_MINUTES + ' minutes.'); }
+  catch (err) { Logger.log('Reply schedule not changed: ' + (err && err.message || err)); }
   const secret = getSecret();
   if (secret.length < 20) throw new Error('The SECRET script property is missing or too short (Apps Script -> Project Settings -> Script properties).');
   const res = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/rpc/due_quote_reminders', {

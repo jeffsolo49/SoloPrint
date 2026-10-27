@@ -52,7 +52,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).
 - `order_messages` (supabase/messages.sql): one conversation per order (`sender` owner/customer, `via` site/email/auto). Owner reads/writes the table;
   customers use `customer_messages`/`customer_send_message`; site messages fire a `MESSAGE` webhook (Code.gs `messageEmail`); Code.gs logs its emails
-  (`logSentEmails`) and `collectReplies` (every 10 min, needs Loader v2 for Gmail) records Gmail replies via secret RPC `record_messages`. Site: messages section of features.js.
+  (`logSentEmails`) and `collectReplies` (every 5 min, `REPLY_CHECK_MINUTES`; `scheduleReplies` resets the trigger from `healthCheck`; needs Loader v2+ for Gmail) records Gmail replies via secret RPC `record_messages`. Site: messages section of features.js.
   Client notes (Clients page) live in `owner_private` key `clients`, never in orders.
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
