@@ -1476,12 +1476,23 @@ const STATES = {
     });
     await owner.setInputFiles('#cm-upload', { name: 'render.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
     await owner.waitForSelector('text=colored areas. Pick a part');
-    const regions = await owner.evaluate(() => state.galleryForm.colorMap.regions.map(r => r.hex));
+    const regions = await owner.evaluate(() => state.galleryForm.colorMap.regions.map(r => r.hexes[0]));
     const near = (hex, want) => { const a = parseInt(hex.slice(1), 16), b = parseInt(want.slice(1), 16); return Math.abs((a >> 16) - (b >> 16)) + Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)) + Math.abs((a & 255) - (b & 255)); };
-    const gold = regions.findIndex(h => near(h, '#c89c00') < 60 || near(h, '#a07c02') < 60), blue = regions.findIndex(h => near(h, '#0a3c80') < 30);
+    let gold = regions.findIndex(h => near(h, '#c89c00') < 60 || near(h, '#a07c02') < 60), blue = regions.findIndex(h => near(h, '#0a3c80') < 30);
     assert(regions.length >= 3 && gold >= 0 && blue >= 0, `areas found: ${regions}`);
     assert(regions.filter(h => near(h, '#c89c00') < 140 && h !== regions[blue] && near(h, '#56565a') > 60).length === 1, `the gold part's two shades should be one area: ${regions}`);
     assert(db.uploads.some(u => /^gallery\/g1\/colors-\d+\.png$/.test(u)), db.uploads.join());
+    // Joining areas by hand: two become one (and split back apart).
+    const others = [0, 1, 2, 3].filter(k => k !== gold && k !== blue && k < regions.length);
+    await owner.check(`#cm-join-${gold}`);
+    await owner.check(`#cm-join-${others[0]}`);
+    await owner.click('#cm-join');
+    let now = await owner.evaluate(() => state.galleryForm.colorMap.regions.map(r => r.hexes.length));
+    assert(now.length === regions.length - 1 && now[Math.min(gold, others[0])] === 2, `after joining: ${now}`);
+    await owner.click(`#cm-split-${Math.min(gold, others[0])}`);
+    now = await owner.evaluate(() => state.galleryForm.colorMap.regions.map(r => r.hexes.join()));
+    assert(now.length === regions.length && now.every(h => regions.includes(h)), `after splitting: ${now}`);
+    gold = now.indexOf(regions[gold]); blue = now.indexOf(regions[blue]);
     const partIds = await owner.evaluate(() => state.galleryForm.parts.map(p => p.id));
     await owner.selectOption(`#cm-region-${gold}`, partIds[0]);
     await owner.selectOption(`#cm-region-${blue}`, partIds[1]);

@@ -795,6 +795,9 @@ textarea { resize: vertical; min-height: 70px; }
 .cm-regions { display: grid; gap: 10px; margin: 10px 0; }
 .cm-region { display: flex; gap: 10px; align-items: center; }
 .cm-region .field { flex: 1; min-width: 0; margin: 0; }
+.cm-region-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 6px; }
+.cm-region-actions .special-order-check { margin: 0; }
+#cm-join-bar:empty { display: none; }
 .cm-heading { margin: 16px 0 6px; font-size: 15px; }
 .cm-combo { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
 .cm-combo-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 12px; align-items: end; }
