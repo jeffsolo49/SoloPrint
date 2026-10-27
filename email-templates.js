@@ -175,11 +175,12 @@ const RULE_DEFAULTS = {
   printDaysMax: 2,         // ...and at most
   customDesignDays: 7,     // order queue: extra days to design a custom order (at least)
   depositPercent: 50,      // deposit customers can pay first, % of the total (0 = no deposit option)
+  logoPrice: 1,            // $ per print to add the customer's company logo (the "Add my logo" box)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
 };
 const LEGACY_RATES = { baseFee: 2, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034 };
-const RATE_KEYS = ['baseFee', 'minuteRate', 'gramRate', 'specialGramRate'];
+const RATE_KEYS = ['baseFee', 'minuteRate', 'gramRate', 'specialGramRate', 'logoPrice'];
 const DEFAULT_MATERIAL_NOTE = 'All prints are PLA unless noted or requested.';
 // Terms a customer agrees to before approving a quote that includes a custom design (editable in Site
 // Settings -> Wording; each quote keeps the exact text it was sent with).
@@ -303,12 +304,20 @@ function extraCharges(order) {
     .map(c => ({ label: String(c.label || '').trim() || 'Special costs', amount: Number(c.amount) }));
 }
 function extraChargesTotal(order) { return extraCharges(order).reduce((s, c) => s + c.amount, 0); }
+// The company logo add-on for one print (the customer ticked "Add my company logo"), unless the owner set
+// their own price for the item, which already covers everything.
+function logoCharge(item, rules) {
+  if (!item || typeof item !== 'object' || !item.logo) return 0;
+  const own = item.ownerPrice;
+  if (own !== null && own !== undefined && own !== '' && isFinite(Number(own)) && Number(own) >= 0) return 0;
+  return Number(rules && rules.logoPrice) || 0;
+}
 // Price of one print. `colors` is an item (all its colors) or a single filament type.
 function printPrice(minutes, grams, colors, rules) {
   const fixed = colors && typeof colors === 'object' ? fixedPrice(colors) : null;
-  if (fixed !== null) return fixed;
+  if (fixed !== null) return fixed + logoCharge(colors, rules);
   const material = colors && typeof colors === 'object' ? colorsMaterial(colors, grams, rules) : Number(grams) * filamentRate(colors, rules);
-  return rules.baseFee + Number(minutes) * rules.minuteRate + material;
+  return rules.baseFee + Number(minutes) * rules.minuteRate + material + logoCharge(colors, rules);
 }
 // What the order pays for special order rolls: the owner's amount once set, else the usual roll price
 // (nothing when every special color comes from the customer's leftover roll).

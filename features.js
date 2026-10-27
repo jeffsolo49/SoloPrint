@@ -39,7 +39,8 @@ const RULE_FIELDS = [
     ['minuteRate', 'Print time ($ per minute)', 0.001, m => `$${(m * 60).toFixed(2)} per hour`],
     ['gramRate', 'Filament, regular colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
     ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
-    ['depositPercent', 'Deposit customers can pay first (% of the total, 0 = none)', 5]
+    ['depositPercent', 'Deposit customers can pay first (% of the total, 0 = none)', 5],
+    ['logoPrice', 'Company logo add-on ($ per print)', 0.5]
   ]],
   ['Special order rolls', [
     ['rollCost', 'Usual roll price ($)', 1],
@@ -1409,6 +1410,8 @@ const SITE_TEXT = [
   ['Past work', [
     ['gallerySub', 'Past work page, small text', 'Designs we\'ve made before, with the story behind each one. Want one? Tap "Request this".'],
     ['requestThis', '"Request this" button', 'Request this'],
+    ['logoOffer', 'Design page: company logo add-on note ({price} = the logo price from Prices)', 'Want your company logo on it? I can add it for {price} more per item. Tick "Add my company logo" when you request it, and I\'ll ask you for the logo file.'],
+    ['logoCheckbox', 'Request form: company logo tick box ({price} = the logo price)', 'Add my company logo (+{price} each)'],
     ['colorIdeasTitle', 'Design page: color ideas heading', 'Color ideas'],
     ['colorIdeasNote', 'Design page: under the color ideas heading', 'This design repainted in other colors, to help you choose. Colors on a screen are close, not exact.'],
     ['colorIdeasOwn', 'Design page: button to pick your own colors', 'Pick your own'],
@@ -1448,8 +1451,11 @@ const FEATURE_SWITCHES = [
   ['leftoverRolls', '"Your leftover rolls" card on My Requests'],
   ['videos', 'Videos on design pages'],
   ['designParts', 'Parts and a color per part on designs'],
-  ['colorIdeas', 'Color ideas: design photos repainted in other colors']
+  ['colorIdeas', 'Color ideas: design photos repainted in other colors'],
+  ['logoAddOn', 'Company logo add-on (note on designs and the tick box)']
 ];
+// Site text with the logo add-on price filled in.
+function logoText(key) { return t(key).replace(/\{price\}/g, `$${(Number(currentRules().logoPrice) || 0).toFixed(2)}`); }
 function featureOn(key) { const f = state.settings.features; return !(f && f[key] === false); }
 
 function previewingDrafts() { return !!(state.previewDrafts && state.ownerUnlocked); }
@@ -1630,7 +1636,8 @@ function designEstimate(g, colors) {
 function renderOeEstimate(it) {
   const d = oeDraft();
   const rules = rulesFor(d || {});
-  const fixed = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
+  const set = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
+  const fixed = set === null ? null : set + logoCharge(it, rules);
   const qty = Math.max(1, parseInt(it.qty, 10) || 1);
   if (fixed !== null) return `<div class="price-big">$${(fixed * qty).toFixed(2)}</div><div class="field-help">Fixed price: $${fixed.toFixed(2)} each${qty > 1 ? ` × ${qty}` : ''}.</div>`;
   const minutes = Number(it.minutes) || Number(it.knownMinutes) || 0;

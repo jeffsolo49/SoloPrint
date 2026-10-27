@@ -1608,6 +1608,27 @@ const STATES = {
     assert(await page.evaluate(() => [...document.querySelectorAll('.build-badge')].every(e => e.hidden)), 'over an hour: hidden');
     await page.close();
   });
+  await check('company logo add-on: note on every design, tick box adds the logo price, saved with the request', async () => {
+    const db = fixtures();
+    db.settings.rules = { ...(db.settings.rules || {}), logoPrice: 1.5 };
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('#logo-offer');
+    assert(/company logo/i.test(await page.textContent('#logo-offer')) && /\$1\.50/.test(await page.textContent('#logo-offer')), await page.textContent('#logo-offer'));
+    await page.click('#work-price button:has-text("Request this")');
+    await page.waitForSelector('#logo-0');
+    const price = async () => parseFloat((await page.textContent('#customer-price-preview-0')).match(/\$([\d.]+)/)[1]);
+    const before = await price();
+    await page.check('#logo-0');
+    const after = await price();
+    assert(Math.abs(after - before - 1.5) < 0.001, `logo adds $1.50: ${before} -> ${after}`);
+    await page.fill('#client-name', 'Lee');
+    await page.fill('#client-email', 'lee@example.com');
+    await page.click('#submit-btn');
+    await requestSent(page);
+    const job = Object.values(db.jobs).find(j => j.clientName === 'Lee');
+    assert(job.items[0].logo === true, JSON.stringify(job.items[0]));
+    await page.close();
+  });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
