@@ -1629,6 +1629,18 @@ const STATES = {
     assert(job.items[0].logo === true, JSON.stringify(job.items[0]));
     await page.close();
   });
+  await check('orders marked paid with the old spelling show as paid, and marking paid records the date', async () => {
+    const db = fixtures();
+    db.jobs['2'].paymentStatus = 'payment_recieved';
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.waitForTimeout(300);
+    assert(await page.evaluate(() => state.batches.find(b => b.id === '2').paymentStatus) === 'payment_received', 'old spelling should read as paid');
+    db.jobs['1'].paymentStatus = 'deposit_received';
+    await page.evaluate(() => { state.batches.find(b => b.id === '1').paymentStatus = 'deposit_received'; return updatePaymentStatus('1', 'payment_received'); });
+    assert(db.jobs['1'].paidAt, 'paid date recorded');
+    await page.close();
+  });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));

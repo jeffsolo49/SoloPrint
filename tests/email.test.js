@@ -122,6 +122,12 @@ check('company logo add-on: the logo price is in the quote and the email asks fo
   const [m] = emailsFor('UPDATE', at({ phase: 'quote_sent', items: [{ name: 'Sign', qty: 2, filType: 'black', setPrice: 12, logo: true }] }), at({}));
   assert(m.subject === 'Your SoloPrint quote: $26.00' && m.body.includes('Price: $26.00 ($13.00 each)') && m.body.includes('Add company logo: yes'), m.subject + '\n' + m.body);
 });
+check('orders marked paid with the old spelling count as paid, and re-saving one sends no second payment email', () => {
+  const resaved = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received' }), at({ phase: 'delivered', paymentStatus: 'payment_recieved' }));
+  assert(!resaved.some(m => /Payment received/.test(m.subject)), JSON.stringify(resaved.map(m => m.subject)));
+  const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_received' }), at({ phase: 'order_received', paymentStatus: 'payment_requested' }));
+  assert(paid.some(m => /Payment received/.test(m.subject)), 'a real payment still gets its email');
+});
 check('quote and confirmed emails say how far back in line the order is', () => {
   const queue = [{ at: '2026-10-01T00:00:00Z', printing: true, custom: false }, { at: '2026-10-02T00:00:00Z', printing: false, custom: true }];
   const quote = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue })[0].body;
