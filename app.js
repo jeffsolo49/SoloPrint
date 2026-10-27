@@ -178,8 +178,8 @@ async function deleteBatchRemote(id) {
 // Color name when the customer picked one of the owner's colors, otherwise Black / White / Special Request.
 function filamentLabel(it) {
   const extras = (it && Array.isArray(it.extraColors) ? it.extraColors : [])
-    .map(p => ` + ${p.name}${p.filType === 'leftover' ? ' (leftover roll)' : p.filType === 'special' ? ' (special)' : ''}`).join('');
-  if (it && it.color) return (it.filType === 'special' ? `${it.color} (special)` : it.color) + extras;
+    .map(p => ` + ${p.name}${p.filType === 'leftover' ? ' (leftover roll)' : ''}`).join('');
+  if (it && it.color) return it.color + extras;
   if (it && it.filType === 'special_order') return `Special order: ${it.specialColor || 'color/material not given'}${it.useLeftover ? ' (from their leftover roll)' : ''}${extras}`;
   return (FIL_LABEL[it && it.filType] || 'Black') + extras;
 }

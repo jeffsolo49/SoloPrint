@@ -913,7 +913,7 @@ function oeLeftover(i, value) {
 function oeColorChoices() {
   const colors = [...state.settings.colors].sort(byName);
   return colors.length
-    ? colors.map(c => ({ value: c.id, name: c.name + (c.special ? ' (special)' : '') + (c.outOfStock ? ' (out of stock)' : ''), part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
+    ? colors.map(c => ({ value: c.id, name: c.name + (c.outOfStock ? ' (out of stock)' : ''), part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
     : ['black', 'white'].map(f => ({ value: f, name: FIL_LABEL[f], part: { name: FIL_LABEL[f], filType: f, colorId: '' } }));
 }
 function oeAddExtra(i, value) {
@@ -1016,7 +1016,7 @@ function renderOwnerEditItem(it, i, count) {
     </div>` : ''}
     <div class="field">
       <div class="owner-order-summary-label">Extra colors (multi-color print)</div>
-      ${extras.length ? `<ul class="owner-edit-extras">${extras.map((p, j) => `<li>${esc(p.name)}${p.filType === 'leftover' ? ' (leftover roll)' : p.filType === 'special' ? ' (special)' : ''}
+      ${extras.length ? `<ul class="owner-edit-extras">${extras.map((p, j) => `<li>${esc(p.name)}${p.filType === 'leftover' ? ' (leftover roll)' : ''}
         <button type="button" class="btn-sm" onclick="oeRemoveExtra(${i}, ${j})" aria-label="Remove ${esc(p.name)} from item ${i + 1}">Remove</button></li>`).join('')}</ul>` : '<div class="field-help">None</div>'}
       ${extraChoices.length ? `<label for="oe-extra-${i}" class="sr-only">Add a color to item ${i + 1}</label>
       <select id="oe-extra-${i}" onchange="oeAddExtra(${i}, this.value)">
@@ -1131,7 +1131,7 @@ async function saveOwnerEdit() {
 // The calculator can price a print in several colors, each with its own grams and its own rate.
 // Choices: the colors in Site Settings (by id), plus the plain filament types.
 function calcChoices() {
-  return [...state.settings.colors].sort(byName).map(c => ({ value: c.id, name: c.name + (c.special ? ' (special)' : ''), part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
+  return [...state.settings.colors].sort(byName).map(c => ({ value: c.id, name: c.name, part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
     .concat(['black', 'white', 'color', 'special'].map(f => ({ value: f, name: FIL_LABEL[f] + (state.settings.colors.length ? ' (no specific color)' : ''), part: { name: FIL_LABEL[f], filType: f, colorId: '' } })));
 }
 function calcPart(value) {
@@ -1285,7 +1285,7 @@ function renderPartColors(item, i) {
           Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
         ${p.optional && !p.include ? '' : `<label for="part-color-${i}-${k}">${p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
         <div class="color-pick">${colorDot(p.colorId)}<select id="part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="setPartColor(${i}, ${k}, this.value)">
-          ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
+          ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
         </select></div>`}
       </div>
     </div>`).join('')}
@@ -1326,7 +1326,7 @@ function renderDesignPartsForm(f) {
         <div class="field"><label for="part-default-${n}">Starting color</label>
           <select id="part-default-${n}" onchange="state.galleryForm.parts[${n}].defaultColor = this.value">
             <option value="">White (default)</option>
-            ${(state.settings.colors.length ? [...state.settings.colors].sort(byName).map(c => ({ key: c.id, name: c.name + (c.special ? ' (special)' : '') + (c.outOfStock ? ' (out of stock)' : '') })) : [{ key: 'black', name: 'Black' }])
+            ${(state.settings.colors.length ? [...state.settings.colors].sort(byName).map(c => ({ key: c.id, name: c.name + (c.outOfStock ? ' (out of stock)' : '') })) : [{ key: 'black', name: 'Black' }])
               .filter(c => c.key !== 'white' && !/^white$/i.test(c.name)).map(c => `<option value="${esc(c.key)}" ${c.key === p.defaultColor ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
           </select></div>
         <label class="special-order-check part-optional"><input type="checkbox" id="part-optional-${n}" ${p.optional ? 'checked' : ''} onchange="state.galleryForm.parts[${n}].optional = this.checked; render();" /> Optional add-on (customers choose whether to add it)</label>
@@ -1708,7 +1708,7 @@ function renderOePartColors(it, i) {
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="oe-part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="oePartInclude(${i}, ${k}, this.checked)" /> Include add-on: ${esc(p.name)}</label>` : ''}
         ${p.optional && !p.include ? '' : `<label for="oe-part-color-${i}-${k}">${esc(p.name)}${p.grams ? ` (${p.grams} g)` : ''}</label>
         <div class="color-pick">${colorDot(p.colorId)}<select id="oe-part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="oePartColor(${i}, ${k}, this.value)">
-          ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
+          ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
         </select></div>`}
       </div>
     </div>`).join('')}
@@ -2039,7 +2039,7 @@ function renderColorIdeas(g) {
     ${cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
     ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => `<div class="field"><label for="cm-own-${k}">${esc(p.name)}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
       <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
-        ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
+        ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
       </select></div></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
       ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
