@@ -32,6 +32,8 @@ do $$ begin if not exists (select 1 from public.customer_jobs('jane@example.com'
 do $$ begin if (select count(*) from public.model_library) < 0 then raise exception 'unreachable'; end if; end $$;
 do $$ begin
   if jsonb_typeof(public.backup_export('0123456789abcdef0123456789abcdef')->'jobs') <> 'array' then raise exception 'backup with the right secret failed'; end if;
+  if not (public.backup_export('0123456789abcdef0123456789abcdef') ? 'site_settings') then raise exception 'backup is missing site settings (FAQ, prices, emails)'; end if;
+  if jsonb_typeof(public.backup_export('0123456789abcdef0123456789abcdef')->'owner_private') <> 'array' then raise exception 'backup is missing owner notes, stock and money'; end if;
 end $$;
 reset role;
 

@@ -51,7 +51,13 @@ begin
     'exported_at', now(),
     'jobs', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'created_at', created_at, 'data', data) order by created_at) from public.jobs), '[]'::jsonb),
     'gallery_items', coalesce((select jsonb_agg(to_jsonb(g) order by g.created_at) from public.gallery_items g), '[]'::jsonb),
-    'model_library', coalesce((select jsonb_agg(to_jsonb(m) order by m.key) from public.model_library m), '[]'::jsonb)
+    'model_library', coalesce((select jsonb_agg(to_jsonb(m) order by m.key) from public.model_library m), '[]'::jsonb),
+    -- Site settings (FAQ, prices, email wording, colors...) and the owner's private notes, stock and money.
+    -- Looked up by name so this file still runs before site-settings.sql / owner-tools.sql have made them.
+    'site_settings', case when to_regclass('public.site_settings') is null then null
+      else (select data from public.site_settings where id = 1) end,
+    'owner_private', case when to_regclass('public.owner_private') is null then '[]'::jsonb
+      else coalesce((select jsonb_agg(to_jsonb(o) order by o.key) from public.owner_private o), '[]'::jsonb) end
   );
 end;
 $$;

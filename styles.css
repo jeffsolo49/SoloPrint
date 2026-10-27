@@ -807,3 +807,5 @@ textarea { resize: vertical; min-height: 70px; }
 .cm-request .cm-canvas { margin-top: 4px; }
 .cm-price { margin: 4px 0 12px; }
 .cm-price .color-lines { margin-top: 6px; }
+.color-name { padding: 0 4px; border-radius: 4px; font-weight: 700; }
+select.color-select { font-weight: 700; }

@@ -784,6 +784,23 @@ const STATES = {
     assert(db.settings.about.replyTime === 'Replies within two days', `saved reply time: ${db.settings.about && db.settings.about.replyTime}`);
     await page.close();
   });
+  await check('a page opened earlier never puts back old settings: FAQ added elsewhere is kept', async () => {
+    const db = fixtures();
+    db.settings.faq = [{ id: 'q1', q: 'How long?', a: 'About a week.', live: true }];
+    const page = await open(db);
+    await page.evaluate(asOwner('settings'));
+    await page.waitForTimeout(200);
+    // Meanwhile, on the phone: more questions saved.
+    db.settings = { ...db.settings, faq: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ id: 'q' + n, q: 'Question ' + n, a: 'Answer', live: true })) };
+    await page.fill('#set-reply', 'Replies within two days');
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    assert(db.settings.faq.length === 8 && db.settings.about.replyTime === 'Replies within two days', `faq ${db.settings.faq.length}, reply ${db.settings.about.replyTime}`);
+    // A background save (best sellers on the home page) from the same old page.
+    await page.evaluate(() => saveSettings({ ...state.settings, topWork: ['g1'] }));
+    assert(db.settings.faq.length === 8 && db.settings.topWork[0] === 'g1', `after a background save: faq ${db.settings.faq.length}`);
+    await page.close();
+  });
   await check('emails page: edit, preview, save and reset', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -1554,6 +1571,7 @@ const STATES = {
     const set2 = await pixel(95, 40);
     assert(set2[0] < 60 && set2[1] < 60, `the second set is painted in its own color (black): ${set2}`);
     assert(/Body: Red/.test(await page.textContent('.cm-legend')), await page.textContent('.cm-legend'));
+    assert(/color:#d22b2b;background-color:#ffffff/.test(await page.getAttribute('.cm-legend .color-name', 'style')), 'color names are written in their color');
     // The estimate follows the colors picked: Red costs more per gram here.
     const prices = async () => [await page.textContent('#cm-price .gallery-price'), await page.textContent('#work-price .gallery-price')].map(x => x.match(/\$[\d.]+/)[0]);
     const before = await prices();

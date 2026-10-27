@@ -2738,8 +2738,16 @@ async function loadSettings() {
   }
 }
 
-async function saveSettings(next) {
-  const clean = cleanSettings(next);
+// Saves only what changed since `base` (what this page last loaded), on top of the latest saved settings,
+// so a page left open on another device (or a background save) can't put back an older FAQ, colors, etc.
+async function saveSettings(next, base = state.settings) {
+  const mine = cleanSettings(next), was = cleanSettings(base);
+  let latest = was;
+  const rows = await supaFetch('/site_settings?id=eq.1&select=data');
+  if (rows && rows[0]) latest = cleanSettings(rows[0].data);
+  const merged = { ...latest };
+  Object.keys(mine).forEach(k => { if (JSON.stringify(mine[k]) !== JSON.stringify(was[k])) merged[k] = mine[k]; });
+  const clean = cleanSettings(merged);
   await supaFetch('/site_settings', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
@@ -2971,7 +2979,7 @@ function setSettingsTab(tab) {
   render();
 }
 function renderOwnerSettingsPage() {
-  if (!state.settingsDraft) state.settingsDraft = JSON.parse(JSON.stringify(state.settings));
+  if (!state.settingsDraft) { state.settingsDraft = JSON.parse(JSON.stringify(state.settings)); state.settingsDraftBase = JSON.parse(JSON.stringify(state.settings)); }
   const d = state.settingsDraft;
   const designs = state.gallery;
   if (state.ownerTab === 'emails' || state.ownerTab === 'filament') state.settingsTab = state.ownerTab === 'emails' ? 'emails' : 'colors';
@@ -3107,7 +3115,7 @@ async function saveSettingsDraft() {
   d.colors.forEach(c => { c.name = String(c.name || '').trim(); });
   d.colors.sort(byName);
   try {
-    await saveSettings(d);
+    await saveSettings(d, state.settingsDraftBase || state.settings);
     state.settingsDraft = null;
     render();
     showAlert('settings-ok', 'Settings saved. Customers see the changes right away.', 'success');
