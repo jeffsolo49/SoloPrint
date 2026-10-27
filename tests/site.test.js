@@ -1692,7 +1692,7 @@ const STATES = {
     const t = n => new Date(Date.now() - n * 60000).toISOString();
     db.messages = [
       { id: 1, job_id: '1', sender: 'owner', via: 'auto', subject: 'Your SoloPrint quote: $9.28', body: 'Hi Jane, your quote...', created_at: t(60) },
-      { id: 2, job_id: '1', sender: 'customer', via: 'email', subject: 'Re: Your SoloPrint quote', body: 'Can it be blue?', created_at: t(30) }];
+      { id: 2, job_id: '1', sender: 'customer', via: 'email', subject: 'Re: Your SoloPrint quote', body: 'Can it be blue? Like https://example.com/blue.', created_at: t(30) }];
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
     await owner.waitForSelector('.waiting-banner');
@@ -1700,12 +1700,27 @@ const STATES = {
     assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
     const thread = await owner.textContent('#conv-1');
     assert(/Can it be blue\?/.test(thread) && /by email/.test(thread) && /Your SoloPrint quote/.test(thread), thread);
+    assert(await owner.getAttribute('#conv-1 .msg-body a[href="https://example.com/blue"]', 'target') === '_blank', 'links in messages open');
+    assert(/^Hi Jane, thanks for your request/.test(await owner.inputValue('#msg-text-1')), 'first reply starts from the default text');
+    const grow = await owner.$eval('#msg-text-1', el => { el.value = 'line\n'.repeat(30); el.dispatchEvent(new Event('input')); return el.clientHeight >= el.scrollHeight - 2; });
+    assert(grow, 'the message box grows to fit');
     await owner.fill('#msg-text-1', 'Yes, blue works.');
     await owner.click('#msg-send-1');
     await owner.waitForTimeout(300);
     const sent = db.messages[db.messages.length - 1];
     assert(sent.sender === 'owner' && sent.via === 'site' && sent.job_id === '1' && sent.body === 'Yes, blue works.', JSON.stringify(sent));
     assert(/Waiting on customer/.test(await owner.textContent('#order-1 .job-title')) && !(await owner.$('.waiting-banner')), 'now waiting on the customer');
+    assert(await owner.inputValue('#msg-text-1') === '', 'no default text once you have written');
+    const editable = Object.keys(db.jobs).find(id => ['estimate', 'details_check', undefined].includes(db.jobs[id].phase));
+    if (await owner.$(`#chat-edit-${editable}`)) {
+      await owner.click(`#conv-${editable} > summary`);
+      await owner.click(`#chat-edit-${editable}`);
+      await owner.waitForSelector(`.chat-edit #conv-${editable} + #owner-edit-${editable}`);
+      assert(await owner.$eval(`#conv-${editable}`, el => el.open), 'the conversation stays open beside the edit form');
+      await owner.click('#owner-edit-save');
+      await owner.waitForTimeout(300);
+      assert(!(await owner.$('.chat-edit')), 'saving closes the edit form');
+    } else throw new Error('no order with an "Edit their request" button');
     await owner.evaluate(asOwner('clients'));
     await owner.waitForSelector('#client-notes');
     await owner.fill('#client-notes', 'Prefers pickup.');

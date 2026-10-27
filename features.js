@@ -856,9 +856,10 @@ function startOwnerEdit(id) {
   const b = state.batches.find(x => x.id === id);
   if (!b) return;
   state.ownerEdit = { id, draft: JSON.parse(JSON.stringify(b)) };
+  state.openConversation = id;
   if (!state.galleryLoaded) loadGallery().then(render);
   render();
-  document.getElementById(`order-${id}`)?.scrollIntoView({ block: 'start' });
+  (document.getElementById(`conv-${id}`) || document.getElementById(`order-${id}`))?.scrollIntoView({ block: 'start' });
 }
 function cancelOwnerEdit() { state.ownerEdit = null; render(); }
 function oeDraft() { return state.ownerEdit && state.ownerEdit.draft; }
@@ -1456,6 +1457,9 @@ const SITE_TEXT = [
     ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
     ['pay_deposit_received', 'Payment: deposit paid', 'Deposit Received'],
     ['pay_payment_received', 'Payment: paid', 'Payment Received'],
+  ]],
+  ['Your messages (only you see these)', [
+    ['firstReply', 'Starting text of your first message on an order ({name} = their first name, {item} = what they asked for)', "Hi {name}, thanks for your request for {item}! I'm looking it over now and will have a quote for you soon. "],
   ]]
 ];
 const SITE_TEXT_DEFAULTS = Object.fromEntries(SITE_TEXT.flatMap(([, rows]) => rows.map(([k, , d]) => [k, d])));
@@ -2401,6 +2405,30 @@ function conversationChip(jobId) {
   const s = conversationStatus(jobId);
   return s === 'you' ? '<span class="status waiting-you">Waiting on you</span>' : s === 'customer' ? '<span class="status waiting-them">Waiting on customer</span>' : '';
 }
+// Message text with web links made tappable (the text is escaped first, so only real links become links).
+function linkifyText(text) {
+  return esc(text).replace(/\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g, url => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
+}
+// Message boxes grow to show everything typed in them.
+function autoGrow(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight + 2}px`;
+}
+function growMessageBoxes() { document.querySelectorAll('textarea.autogrow').forEach(autoGrow); }
+// Your first message on an order starts from your "first message" wording (Settings > Wording).
+function firstReplyText(b) {
+  const first = String(b.clientName || '').trim().split(/\s+/)[0] || 'there';
+  return t('firstReply').replace(/\{name\}/g, first).replace(/\{item\}/g, orderTitle(b));
+}
+function ownerMessageDraft(b) {
+  state.msgDrafts = state.msgDrafts || {};
+  if (state.msgDrafts[b.id] === undefined && !messagesFor(b.id).some(m => m.sender === 'owner' && m.via !== 'auto')) {
+    state.msgDrafts[b.id] = firstReplyText(b);
+  }
+  return state.msgDrafts[b.id] || '';
+}
+
 // Text-message style: the viewer's side (and the shop's emails, when the owner is looking) on the right,
 // the other person on the left. Emails show as a bubble with the subject; tap to read the whole email.
 // Notes only the owner gets (demo emails to the owner) sit in the middle, owner view only.
@@ -2410,7 +2438,7 @@ function renderThread(list, viewer, customerName) {
   return `<ol class="thread">${shown.map(m => {
     const when = m.at ? formatAustinTime(m.at) : '';
     if (m.toOwner) {
-      return `<li class="msg msg-note"><details><summary>Email to you: ${esc(m.subject)} <span class="msg-when">${esc(when)}</span></summary><div class="msg-body">${esc(m.body)}</div></details></li>`;
+      return `<li class="msg msg-note"><details><summary>Email to you: ${esc(m.subject)} <span class="msg-when">${esc(when)}</span></summary><div class="msg-body">${linkifyText(m.body)}</div></details></li>`;
     }
     const mine = m.sender === viewer;
     const side = mine ? 'msg-mine' : 'msg-theirs';
@@ -2418,23 +2446,29 @@ function renderThread(list, viewer, customerName) {
     // The shop's emails (and the Confirm details email you wrote) fold down to their subject; replies show in full.
     if (m.via === 'auto' || (m.via === 'email' && m.sender === 'owner' && m.subject && !/^\s*re:/i.test(m.subject))) {
       return `<li class="msg ${side} msg-email"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)} · email</span></div>
-        <details><summary>${esc(m.subject || 'SoloPrint email')}</summary><div class="msg-body">${esc(m.body)}</div></details></li>`;
+        <details><summary>${esc(m.subject || 'SoloPrint email')}</summary><div class="msg-body">${linkifyText(m.body)}</div></details></li>`;
     }
-    return `<li class="msg ${side}"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)}${m.via === 'email' ? ' · by email' : ''}</span></div><div class="msg-body">${esc(m.body)}</div></li>`;
+    return `<li class="msg ${side}"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)}${m.via === 'email' ? ' · by email' : ''}</span></div><div class="msg-body">${linkifyText(m.body)}</div></li>`;
   }).join('')}</ol>`;
 }
 function renderOwnerConversation(b) {
   if (!state.messagesReady) return '';
   const list = messagesFor(b.id);
   const status = conversationStatus(b.id);
-  state.msgDrafts = state.msgDrafts || {};
-  return `<details class="conversation" id="conv-${b.id}" ${status === 'you' || state.openConversation === b.id ? 'open' : ''}>
+  const editing = state.ownerEdit && state.ownerEdit.id === b.id;
+  const draft = ownerMessageDraft(b);
+  return `<details class="conversation" id="conv-${b.id}" ${status === 'you' || state.openConversation === b.id || editing ? 'open' : ''}>
     <summary><strong>Conversation</strong> ${list.filter(m => m.via !== 'auto').length ? `(${list.filter(m => m.via !== 'auto').length})` : ''} ${conversationChip(b.id)}</summary>
     ${renderThread(list, 'owner', b.clientName)}
     <div class="field" style="margin-top:10px;"><label for="msg-text-${b.id}">Message to ${esc(b.clientName || 'the customer')}</label>
-      <textarea id="msg-text-${b.id}" rows="3" spellcheck="true" maxlength="5000" placeholder="They get this by email and on their order page." oninput="state.msgDrafts['${b.id}'] = this.value">${esc(state.msgDrafts[b.id] || '')}</textarea></div>
+      <textarea id="msg-text-${b.id}" class="autogrow" rows="3" spellcheck="true" maxlength="5000" placeholder="They get this by email and on their order page." oninput="state.msgDrafts['${b.id}'] = this.value; autoGrow(this)">${esc(draft)}</textarea></div>
     <div class="alert error" id="msg-err-${b.id}"></div>
-    <button class="btn-sm" type="button" id="msg-send-${b.id}" onclick="sendOwnerMessage('${b.id}')">Send message</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="btn-sm" type="button" id="msg-send-${b.id}" onclick="sendOwnerMessage('${b.id}')">Send message</button>
+      ${editing ? '' : beforeQuote(b.phase || 'estimate')
+        ? `<button class="btn-sm" type="button" id="chat-edit-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit their request</button>`
+        : '<span class="field-help">To change their request, use Edit Quotes below first.</span>'}
+    </div>
   </details>`;
 }
 async function sendOwnerMessage(jobId) {
@@ -2462,7 +2496,7 @@ function renderCustomerConversation(b) {
     <div class="card-title" style="margin-bottom:6px;">Messages</div>
     ${renderThread(messagesFor(b.id), 'customer')}
     <div class="field" style="margin-top:10px;"><label for="cmsg-text-${b.id}">Send a message about this order</label>
-      <textarea id="cmsg-text-${b.id}" rows="3" spellcheck="true" maxlength="5000" placeholder="Questions, changes, answers..." oninput="state.msgDrafts['${b.id}'] = this.value">${esc(state.msgDrafts[b.id] || '')}</textarea></div>
+      <textarea id="cmsg-text-${b.id}" class="autogrow" rows="3" spellcheck="true" maxlength="5000" placeholder="Questions, changes, answers..." oninput="state.msgDrafts['${b.id}'] = this.value; autoGrow(this)">${esc(state.msgDrafts[b.id] || '')}</textarea></div>
     <div class="alert error" id="cmsg-err-${b.id}"></div>
     <button class="btn-sm" type="button" id="cmsg-send-${b.id}" onclick="sendCustomerMessage('${b.id}')">Send</button>
     <div class="field-help" style="margin-top:6px;">You can also just reply to any of my emails.</div>
@@ -2490,7 +2524,13 @@ function renderWaitingOnYou() {
   const list = waitingOnYou();
   if (!list.length) return '';
   return `<div class="alert waiting-banner" style="display:block;" role="status"><strong>${list.length} conversation${list.length === 1 ? ' is' : 's are'} waiting on you:</strong>
-    ${list.map(b => `<a href="#order-${esc(b.id)}" onclick="state.openConversation='${esc(b.id)}'">${esc(b.clientName || b.clientEmail)}: ${esc(orderTitle(b))}</a>`).join(' · ')}</div>`;
+    ${list.map(b => `<button type="button" class="btn-link" onclick="openConversation('${esc(b.id)}')">${esc(b.clientName || b.clientEmail)}: ${esc(orderTitle(b))}</button>`).join(' · ')}</div>`;
+}
+function openConversation(id) {
+  state.openConversation = id;
+  render();
+  const el = document.getElementById(`conv-${id}`) || document.getElementById(`order-${id}`);
+  if (el) { el.scrollIntoView({ block: 'start' }); document.getElementById(`msg-text-${id}`)?.focus({ preventScroll: true }); }
 }
 
 // ── PRACTICE ORDER (owner tab "Practice") ─────────────────────────────────
@@ -2654,7 +2694,7 @@ function renderPracticeCustomer() {
     <div class="conversation customer-conversation"><div class="card-title" style="margin-bottom:6px;">Messages</div>
       ${renderThread(state.practice.messages, 'customer')}
       <div class="field" style="margin-top:10px;"><label for="practice-customer-msg">Message as ${esc(o.clientName)}</label>
-        <textarea id="practice-customer-msg" rows="2" spellcheck="true" placeholder="Pretend to be the customer..."></textarea></div>
+        <textarea id="practice-customer-msg" class="autogrow" rows="2" spellcheck="true" oninput="autoGrow(this)" placeholder="Pretend to be the customer..."></textarea></div>
       <button class="btn-sm" type="button" id="practice-customer-send" onclick="practiceMessage('customer')">Send as customer</button>
     </div>
   </section>`;
@@ -2678,7 +2718,7 @@ function renderPracticeOwner() {
     </div>
     ${beforeQuote(o.phase) ? `<fieldset class="owner-edit-item"><legend>Before the quote</legend>
       <div class="field"><label for="practice-questions">Confirm details: your questions</label>
-        <textarea id="practice-questions" rows="2" spellcheck="true" oninput="state.practice.questions = this.value">${esc(p.questions)}</textarea></div>
+        <textarea id="practice-questions" class="autogrow" rows="2" spellcheck="true" oninput="state.practice.questions = this.value; autoGrow(this)">${esc(p.questions)}</textarea></div>
       <button class="btn-sm" type="button" id="practice-ask" onclick="practiceAskDetails()">Send questions</button>
       <div class="row2" style="margin-top:10px;">
         <div class="field"><label for="practice-mins">Print time (minutes)</label><input type="number" id="practice-mins" min="0" value="${esc(p.mins)}" oninput="state.practice.mins = this.value" /></div>
@@ -2695,7 +2735,7 @@ function renderPracticeOwner() {
     <div class="conversation"><div class="card-title" style="margin-bottom:6px;">Conversation</div>
       ${renderThread(p.messages, 'owner', o.clientName)}
       <div class="field" style="margin-top:10px;"><label for="practice-owner-msg">Message to ${esc(o.clientName)}</label>
-        <textarea id="practice-owner-msg" rows="2" spellcheck="true"></textarea></div>
+        <textarea id="practice-owner-msg" class="autogrow" rows="2" spellcheck="true" oninput="autoGrow(this)"></textarea></div>
       <button class="btn-sm" type="button" id="practice-owner-send" onclick="practiceMessage('owner')">Send message</button>
     </div>
   </section>`;

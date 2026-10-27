@@ -1222,6 +1222,7 @@ function render() {
   `;
   attachAll();
   paintColorPreviews();
+  growMessageBoxes();
   if (state.view === 'client' && state.clientTab === 'submit') queueDraftSave();
 }
 
@@ -2421,7 +2422,9 @@ function renderOwnerBatch(b) {
       </div>
     </div>
     ${renderTrackerSteps(b, false)}
-    ${renderOwnerConversation(b)}
+    ${state.ownerEdit && state.ownerEdit.id === b.id
+      ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>`
+      : renderOwnerConversation(b)}
     <div class="owner-order-summary">
       <div class="card-title" style="margin-bottom:10px;">Submitted Order Summary</div>
       <div class="owner-order-summary-grid">
@@ -2459,7 +2462,7 @@ function renderOwnerBatch(b) {
       </div>
     </div>
     <div class="job-divider"></div>
-    ${state.ownerEdit && state.ownerEdit.id === b.id ? renderOwnerEditForm(b) : `
+    ${state.ownerEdit && state.ownerEdit.id === b.id ? '<div class="field-help">Editing this request next to the conversation above.</div>' : `
     ${beforeQuote(phase) ? `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit request</button>` : `<div class="field-help">To change this request, use Edit Quotes below first.</div>`}
     ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
     ${renderOwnerCharges(b)}`}
