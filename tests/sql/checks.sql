@@ -14,7 +14,7 @@ set role anon;
 select pg_temp.expect_denied('select count(*) from public.jobs', 'anon reading jobs');
 select pg_temp.expect_denied('delete from public.jobs', 'anon deleting jobs');
 select pg_temp.expect_denied($q$select public.submit_job('{"id":"100","clientEmail":"x@y.com","items":[]}')$q$, 'overwriting an order through submit_job');
-select pg_temp.expect_denied($q$select public.submit_job('{"id":"301","clientEmail":"x@y.com","paymentStatus":"payment_recieved","items":[]}')$q$, 'submitting an already-paid order');
+select pg_temp.expect_denied($q$select public.submit_job('{"id":"301","clientEmail":"x@y.com","paymentStatus":"payment_received","items":[]}')$q$, 'submitting an already-paid order');
 select pg_temp.expect_denied($q$select public.submit_job('{"id":"302","clientEmail":"x@y.com","phase":"delivered","items":[]}')$q$, 'submitting a delivered order');
 select pg_temp.expect_denied($q$insert into public.model_library (key, data) values ('x', '{}')$q$, 'anon writing saved models');
 select pg_temp.expect_denied($q$insert into public.gallery_items (id) values ('x')$q$, 'anon writing gallery');

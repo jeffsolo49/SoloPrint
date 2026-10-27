@@ -31,13 +31,14 @@ const ORDER_PHASES = [
   { id: 'quote_sent', label: 'Quote Ready' },
   { id: 'order_received', label: 'Confirmed' },
   { id: 'production', label: 'Printing' },
+  { id: 'final_payment_needed', label: 'Printing Complete' },
   { id: 'delivered', label: 'Delivered' }
 ];
 const PAYMENT_PHASES = [
   { id: 'unpaid', label: 'Unpaid' },
   { id: 'payment_requested', label: 'Payment Requested' },
   { id: 'deposit_received', label: 'Deposit Received' },   // sets their place in the order queue
-  { id: 'payment_recieved', label: 'Payment Recieved' }
+  { id: 'payment_received', label: 'Payment Received' }
 ];
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ function blankOwnerCalculator() {
 
 let state = {
   view: 'client', ownerUnlocked: false,
-  batches: [], clientTab: 'submit', ownerTab: 'dashboard',
+  batches: [], clientTab: 'submit', ownerTab: 'dashboard', selectedClient: null, ordersTab: 'pending',
   gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null, galleryOpen: '',
   draftItems: [blankItem()],
   clientName: '', clientEmail: '', historyEmail: '',
@@ -308,7 +309,7 @@ function renderCustomerOrderAction(batch) {
     </div>`;
   }
   if (phaseIndex(phase) >= phaseIndex('order_received')) {
-    if (batch.paymentStatus === 'payment_recieved') {
+    if (batch.paymentStatus === 'payment_received') {
       return `<div class="order-action"><strong>Payment received.</strong> Thank you!</div>`;
     }
     const rules = rulesFor(batch);
@@ -1232,6 +1233,7 @@ function renderOwnerNav() {
   const libCount = sortedLibraryEntries().length;
   return `
     <nav class="nav" aria-label="Owner sections">
+      <button class="nav-tab ${state.ownerTab==='clients'?'active':''}" onclick="setOwnerTab('clients')">Clients</button>
       <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Orders</button>
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Designs</button>
@@ -1816,7 +1818,7 @@ function renderItemBlock(item, i) {
         </div>
         <div class="field" style="margin-bottom:8px;">
           <label>${esc(t('changesLabel'))}</label>
-          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
+          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
         ${renderPhotoField(item, i)}` : ''}
@@ -1824,7 +1826,7 @@ function renderItemBlock(item, i) {
         <div class="field" style="margin-bottom:8px;">
           <label for="notes-${i}">${esc(t('ideaLabel'))}</label>
           <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom designs come with my design terms, which you'll see with your quote.</div>
-          <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white"
+          <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
         ${renderPhotoField(item, i)}
@@ -1844,7 +1846,7 @@ function renderItemBlock(item, i) {
         </div>
         <div class="field" style="margin-bottom:8px;">
           <label>${esc(t('changesLabel'))}</label>
-          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;"
+          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>` : ''}
       ${mode && (mode !== 'gallery' || item.name) ? `
@@ -2021,6 +2023,10 @@ function renderOwnerApp() {
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
+        : state.ownerTab === 'clients'
+        ? renderClientsPage()
+        : state.ownerTab === 'orders'
+        ? renderOrdersPage()
         : state.ownerTab === 'money' || state.ownerTab === 'analytics'
         ? renderOwnerMoneyPage() + renderOwnerAnalyticsPage()
         : state.ownerTab === 'gallery'
@@ -2057,6 +2063,46 @@ function renderOwnerDashboard() {
         ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
         : [...state.batches].reverse().map(b => renderOwnerBatch(b)).join('')}
   `;
+}
+
+function renderOrdersPage() {
+  const pending = state.batches.filter(b => (b.phase||'estimate') !== 'delivered');
+  const completed = state.batches.filter(b => (b.phase||'estimate') === 'delivered');
+  const orders = state.ordersTab === 'pending' ? pending : completed;
+  const html = renderOwnerDashboard();
+  // Replace the dashboard content with tabs
+  return `<div>
+    <div style="margin-bottom:1rem;">
+      <button class="nav-tab ${state.ordersTab==='pending'?'active':''}" onclick="state.ordersTab='pending';render()">Pending (${pending.length})</button>
+      <button class="nav-tab ${state.ordersTab==='completed'?'active':''}" onclick="state.ordersTab='completed';render()">Completed (${completed.length})</button>
+    </div>
+    ${state.ordersTab==='pending' ? html : '<div>' + orders.map(b => `<div style="padding:1rem;border:1px solid var(--border);margin-bottom:0.5rem;border-radius:4px;"><strong>${esc(b.clientName)}</strong> - ${b.items.map(i=>esc(i.name)).join(', ')}<br><span style="color:var(--muted);">${b.phase} • ${new Date(b.createdAt).toLocaleDateString()}</span></div>`).join('') + '</div>'}
+  </div>`;
+}
+
+function renderClientsPage() {
+  const clients = [...new Set(state.batches.map(b => b.clientEmail))].filter(Boolean).map(email => {
+    const orders = state.batches.filter(b => b.clientEmail === email);
+    const name = orders[0]?.clientName || email;
+    const owner_private = orders[0]?.owner_private || {};
+    return { email, name, orders, notes: owner_private.notes || '', issues: owner_private.issues || '' };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  if (!state.selectedClient && clients.length) state.selectedClient = clients[0].email;
+  const selected = clients.find(c => c.email === state.selectedClient);
+
+  return `<div style="display:grid;grid-template-columns:250px 1fr;gap:1rem;height:100%;">
+    <div style="border-right:1px solid var(--border);overflow-y:auto;">
+      ${clients.map(c => `<div style="padding:0.75rem;cursor:pointer;border-radius:4px;${c.email===state.selectedClient?'background:var(--bg-hover);':''}font-weight:${c.email===state.selectedClient?'bold':'normal'}" onclick="state.selectedClient='${esc(c.email)}';render()">${esc(c.name)}<br><span style="font-size:12px;color:var(--muted);">${c.orders.length} order${c.orders.length!==1?'s':''}</span></div>`).join('')}
+    </div>
+    <div style="overflow-y:auto;padding:1rem;">
+      ${selected ? `<h2>${esc(selected.name)}</h2>
+      <p style="color:var(--muted);">${selected.email}</p>
+      <div class="field"><label>Notes</label><textarea style="width:100%;min-height:100px;border:1px solid var(--border);padding:0.5rem;" spellcheck="true" oninput="state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private={...state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private,notes:this.value};render()">${esc(selected.notes)}</textarea></div>
+      <div class="field"><label>Payment Issues</label><textarea style="width:100%;min-height:80px;border:1px solid var(--border);padding:0.5rem;" spellcheck="true" oninput="state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private={...state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private,issues:this.value};render()">${esc(selected.issues)}</textarea></div>
+      <div style="margin-top:1rem;"><strong>Orders:</strong><ul>${selected.orders.map(o=>`<li>${esc(o.items[0]?.name||'(unnamed)')} - ${o.phase}</li>`).join('')}</ul></div>` : '<p>No clients yet</p>'}
+    </div>
+  </div>`;
 }
 
 function renderOwnerLibraryPage() {
@@ -2411,7 +2457,7 @@ function renderOwnerBatch(b) {
           </div>
           <div class="field" style="margin-top:10px;margin-bottom:0;">
             <label>Delivery Notes</label>
-            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery">${esc(b.deliveryNotes || '')}</textarea>
+            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea>
           </div>
           <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save Delivery Details</button>
         </div>
@@ -4612,6 +4658,7 @@ function ownerSetPrice(it) {
 async function approveBatch(batchId) {
   const batch = state.batches.find(b => b.id === batchId);
   if (!batch) return;
+  if (!confirm(`Ready to send the quote to ${batch.clientName || batch.clientEmail}?`)) return;
   let allValid = true;
   if (batch.items.some(it => it.galleryId) && !state.galleryLoaded) await loadGallery();
   batch.items.forEach((it, i) => {

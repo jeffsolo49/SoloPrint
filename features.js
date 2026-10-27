@@ -700,7 +700,7 @@ function moneyReport(year) {
   const months = MONTH_NAMES.map(name => ({ name, sales: 0, material: 0, expenses: 0, orders: 0 }));
   const orders = [];
   state.batches.forEach(b => {
-    if (b.paymentStatus !== 'payment_recieved') return;
+    if (b.paymentStatus !== 'payment_received') return;
     const d = new Date(paidDate(b));
     if (d.getFullYear() !== year) return;
     const sales = orderSum(b), material = orderMaterialCost(b);
@@ -711,7 +711,7 @@ function moneyReport(year) {
   const exp = expenses().filter(e => String(e.date).startsWith(String(year)));
   exp.forEach(e => { const mm = Number(String(e.date).slice(5, 7)) - 1; if (months[mm]) months[mm].expenses += Number(e.amount) || 0; });
   const total = months.reduce((t, m) => ({ sales: t.sales + m.sales, material: t.material + m.material, expenses: t.expenses + m.expenses, orders: t.orders + m.orders }), { sales: 0, material: 0, expenses: 0, orders: 0 });
-  const unpaid = state.batches.filter(b => ['order_received', 'production', 'delivered'].includes(b.phase) && b.paymentStatus !== 'payment_recieved');
+  const unpaid = state.batches.filter(b => ['order_received', 'production', 'delivered'].includes(b.phase) && b.paymentStatus !== 'payment_received');
   return { months, orders: orders.sort((a, b) => a.date - b.date), expenses: exp, total, unpaid };
 }
 
@@ -1399,12 +1399,14 @@ const SITE_TEXT = [
     ['stepInfo_order_received', 'Step 3 description', 'Your order is confirmed and queued for the printer.'],
     ['step_production', 'Step 4 name', 'Printing'],
     ['stepInfo_production', 'Step 4 description', 'Your parts are on the printer right now.'],
-    ['step_delivered', 'Step 5 name', 'Delivered'],
-    ['stepInfo_delivered', 'Step 5 description', 'Your order is complete. Enjoy!'],
+    ['step_final_payment_needed', 'Step 5 name', 'Printing Complete'],
+    ['stepInfo_final_payment_needed', 'Step 5 description', 'Your print is done. We need your final payment and shipping address before we send it out.'],
+    ['step_delivered', 'Step 6 name', 'Delivered'],
+    ['stepInfo_delivered', 'Step 6 description', 'Your order is complete. Enjoy!'],
     ['pay_unpaid', 'Payment: not asked yet', 'Unpaid'],
     ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
     ['pay_deposit_received', 'Payment: deposit paid', 'Deposit Received'],
-    ['pay_payment_recieved', 'Payment: paid', 'Payment Received'],
+    ['pay_payment_received', 'Payment: paid', 'Payment Received'],
   ]]
 ];
 const SITE_TEXT_DEFAULTS = Object.fromEntries(SITE_TEXT.flatMap(([, rows]) => rows.map(([k, , d]) => [k, d])));

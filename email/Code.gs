@@ -381,7 +381,7 @@ function weeklySummaryEmail(report, custom, site, now) {
   const jobs = (report && report.jobs) || [];
   const phase = j => j.phase || 'estimate';
   const weekAgo = now.getTime() - 7 * 864e5;
-  const sales = jobs.filter(j => j.paymentStatus === 'payment_recieved' && j.paidAt && new Date(j.paidAt).getTime() >= weekAgo)
+  const sales = jobs.filter(j => j.paymentStatus === 'payment_received' && j.paidAt && new Date(j.paidAt).getTime() >= weekAgo)
     .reduce((s, j) => s + orderTotal(j, site), 0);
   const inventory = (report && report.private && report.private.inventory) || {};
   const low = ((site && site.colors) || []).filter(c => {
@@ -393,7 +393,7 @@ function weeklySummaryEmail(report, custom, site, now) {
     weekSales: money(sales),
     waitingQuote: String(jobs.filter(j => phase(j) === 'estimate').length),
     waitingApproval: String(jobs.filter(j => phase(j) === 'quote_sent').length),
-    unpaid: String(jobs.filter(j => ['order_received', 'production', 'delivered'].includes(phase(j)) && j.paymentStatus !== 'payment_recieved').length),
+    unpaid: String(jobs.filter(j => ['order_received', 'production', 'delivered'].includes(phase(j)) && j.paymentStatus !== 'payment_received').length),
     printing: String(jobs.filter(j => phase(j) === 'production').length),
     newReviews: reviews ? String(reviews) : '',
     lowStock: low.join(', '),
@@ -462,7 +462,7 @@ function emailsFor(type, rec, old, custom, site) {
   if (type !== 'UPDATE' || !old) return emails;
 
   if (rec.phase !== old.phase) {
-    const key = { quote_sent: 'quote', order_received: 'confirmed', production: 'printing', delivered: 'delivered' }[rec.phase];
+    const key = { quote_sent: 'quote', order_received: 'confirmed', production: 'printing', final_payment_needed: 'final_payment_needed', delivered: 'delivered' }[rec.phase];
     if (key) send(key, customer);
   } else if (rec.phase === 'delivered' && deliveryLines(rec).join() !== deliveryLines(old).join() && deliveryLines(rec).length) {
     send('delivery_update', customer);
@@ -470,8 +470,8 @@ function emailsFor(type, rec, old, custom, site) {
 
   if (rec.customerApprovedAt && !old.customerApprovedAt) send('owner_approved', OWNER_EMAIL);
 
-  if (rec.paymentStatus === 'deposit_received' && !['deposit_received', 'payment_recieved'].includes(old.paymentStatus)) send('deposit', customer);
-  if (rec.paymentStatus === 'payment_recieved' && old.paymentStatus !== 'payment_recieved') send('payment', customer);
+  if (rec.paymentStatus === 'deposit_received' && !['deposit_received', 'payment_received'].includes(old.paymentStatus)) send('deposit', customer);
+  if (rec.paymentStatus === 'payment_received' && old.paymentStatus !== 'payment_received') send('payment', customer);
   return emails;
 }
 
@@ -563,7 +563,7 @@ function loadSiteData() {
   }
 }
 
-// ── SHARED EMAIL TEMPLATES (exact copy of email-templates.js on the site; edit both together) ──
+// ── SHARED EMAIL TEMPLATES
 // Shared by the site and the emails: the automated email text (defaults the owner can change on the
 // Emails page, saved in site settings as `emails`) and the leftover-roll rules. email/Code.gs carries
 // an exact copy of this file between its SHARED EMAIL TEMPLATES markers, so the site and the emails
@@ -611,6 +611,11 @@ const EMAIL_TEMPLATES = {
     label: 'Printing', to: 'Customer', when: 'You move the order to Printing.',
     subject: 'Your SoloPrint order is printing',
     body: "Hi {name},\n\nYour order for {title} is on the printer now. We'll let you know when it's done.\n\n{footer}"
+  },
+  final_payment_needed: {
+    label: 'Printing complete', to: 'Customer', when: 'You move the order to Printing Complete.',
+    subject: 'Your SoloPrint order is ready — final payment needed',
+    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${amountDue}.\n\nShipping address is also needed at this point. If you are in the USA, shipping costs $15 for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50 and anything not spent on postage will be refunded. We charge the extra amount so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nPay with Venmo: {venmoLink}\nThen reply to this email with your shipping address.\n\n{footer}"
   },
   delivered: {
     label: 'Order complete', to: 'Customer', when: 'You move the order to Delivered.',
@@ -919,7 +924,7 @@ function depositAmount(order, total, rules) {
 }
 // What's still to pay: nothing once paid, the rest after a deposit, else the total.
 function amountLeft(order, total, rules) {
-  if (order.paymentStatus === 'payment_recieved') return 0;
+  if (order.paymentStatus === 'payment_received') return 0;
   if (order.paymentStatus === 'deposit_received') return Math.max(0, Math.round((total - depositAmount(order, total, rules)) * 100) / 100);
   return total;
 }

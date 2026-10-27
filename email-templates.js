@@ -46,6 +46,11 @@ const EMAIL_TEMPLATES = {
     subject: 'Your SoloPrint order is printing',
     body: "Hi {name},\n\nYour order for {title} is on the printer now. We'll let you know when it's done.\n\n{footer}"
   },
+  final_payment_needed: {
+    label: 'Printing complete', to: 'Customer', when: 'You move the order to Printing Complete.',
+    subject: 'Your SoloPrint order is ready — final payment needed',
+    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${amountDue}.\n\nShipping address is also needed at this point. If you are in the USA, shipping costs $15 for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50 and anything not spent on postage will be refunded. We charge the extra amount so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nPay with Venmo: {venmoLink}\nThen reply to this email with your shipping address.\n\n{footer}"
+  },
   delivered: {
     label: 'Order complete', to: 'Customer', when: 'You move the order to Delivered.',
     subject: 'Your SoloPrint order is complete',
@@ -353,7 +358,7 @@ function depositAmount(order, total, rules) {
 }
 // What's still to pay: nothing once paid, the rest after a deposit, else the total.
 function amountLeft(order, total, rules) {
-  if (order.paymentStatus === 'payment_recieved') return 0;
+  if (order.paymentStatus === 'payment_received') return 0;
   if (order.paymentStatus === 'deposit_received') return Math.max(0, Math.round((total - depositAmount(order, total, rules)) * 100) / 100);
   return total;
 }
