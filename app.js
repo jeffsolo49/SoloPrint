@@ -2105,7 +2105,7 @@ function renderClientsPage() {
 
   return `<div style="display:grid;grid-template-columns:250px 1fr;gap:1rem;height:100%;">
     <div style="border-right:1px solid var(--border);overflow-y:auto;">
-      ${clients.map(c => `<div style="padding:0.75rem;cursor:pointer;border-radius:4px;${c.email===state.selectedClient?'background:var(--bg-hover);':''}font-weight:${c.email===state.selectedClient?'bold':'normal'}" onclick="state.selectedClient='${esc(c.email)}';render()">${esc(c.name)}<br><span style="font-size:12px;color:var(--muted);">${c.orders.length} order${c.orders.length!==1?'s':''}</span></div>`).join('')}
+      ${clients.map(c => `<button type="button" class="client-row ${c.email===state.selectedClient?'active':''}" aria-pressed="${c.email===state.selectedClient}" onclick="state.selectedClient='${esc(c.email)}';render()">${esc(c.name)}<br><span style="font-size:12px;color:var(--muted);">${c.orders.length} order${c.orders.length!==1?'s':''}</span></button>`).join('')}
     </div>
     <div style="overflow-y:auto;padding:1rem;">
       ${selected ? `<h2>${esc(selected.name)}</h2>

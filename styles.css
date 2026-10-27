@@ -812,3 +812,16 @@ select.color-select, select.color-select option { font-weight: 700; }
 .color-pick { display: flex; align-items: center; gap: 10px; }
 .color-pick select { flex: 1; min-width: 0; }
 .color-dot { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; border: 3px solid var(--text); box-shadow: inset 0 0 0 2px #ffffff; }
+
+/* Owner area: every clickable box has a clear border so it reads as a button (3:1 against the page). */
+:root { --btn-border: #5d65ad; }
+.nav[aria-label="Owner sections"] { gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+.nav[aria-label="Owner sections"] .nav-tab { border: 2px solid var(--btn-border); border-radius: 10px; padding: 8px 14px; }
+.nav[aria-label="Owner sections"] .nav-tab.active { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); }
+.owner-main .btn-sm, .owner-main .btn-secondary, .owner-main .sub-tab { border: 2px solid var(--btn-border); }
+.owner-main .btn-sm.danger { border-color: var(--red); }
+.owner-main .btn-primary { border: 2px solid var(--accent2); }
+.owner-main .btn-link { border: 2px solid var(--btn-border); border-radius: 8px; padding: 3px 10px; }
+.owner-main .thumb-btn, .owner-main .work-card, .owner-main .gallery-pick-tile { border: 2px solid var(--btn-border); border-radius: 10px; }
+.client-row { display: block; width: 100%; text-align: left; padding: 0.75rem; margin-bottom: 6px; border: 2px solid var(--btn-border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.client-row.active { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); font-weight: 700; }
