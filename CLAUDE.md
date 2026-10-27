@@ -54,7 +54,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,
   `due_review_requests`, `due_draft_reminders`, `owner_report_data`.
-- Order fields worth knowing: `phase` (estimate → quote_sent → order_received → production → delivered),
+- Order fields worth knowing: `phase` (estimate → details_check (optional "Confirming Details": `detailsQuestions`, `detailsEmail` {subject, body} the owner approved, sent as is by Code.gs; `renderDetailsCheck` in features.js; `beforeQuote(phase)` covers both pre-quote phases) → quote_sent → order_received → production → final_payment_needed → delivered),
   `paymentStatus` (unpaid → payment_requested → deposit_received (optional; sets `depositAt`, `depositAmount`) → payment_recieved, spelling is historical), `rates` (prices
   saved when the quote was sent), `designTerms` (custom design terms text the customer must agree to before approving), `specialOrderCost`, `extraCharges` ([{label, amount}], the owner's added charges; customers see label and amount), `ownerEditedAt`, `finishedPhotos`, `stockTaken`, `paidAt`. The owner edits a request in the estimate phase with "Edit request" (`renderOwnerEditForm` in features.js); `submit_job` strips owner-only fields.
 - Items: `ownerPrice` (owner's own price per print, beats everything; 0 allowed), `setPrice` (past-work set price), see `fixedPrice`; `logo` (customer ticked "Add my company logo": `logoCharge` adds rule `logoPrice` per print in `printPrice`, not on top of `ownerPrice`);

@@ -128,6 +128,12 @@ check('orders marked paid with the old spelling count as paid, and re-saving one
   const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_received' }), at({ phase: 'order_received', paymentStatus: 'payment_requested' }));
   assert(paid.some(m => /Payment received/.test(m.subject)), 'a real payment still gets its email');
 });
+check('confirm details: sends exactly the email the owner approved, once', () => {
+  const rec = at({ phase: 'details_check', detailsEmail: { subject: 'A quick\nquestion', body: 'Hi Jane,\n\nHow tall?\n\nThanks' } });
+  const out = emailsFor('UPDATE', rec, at({ phase: 'estimate' }));
+  assert(out.length === 1 && out[0].to === 'jane@example.com' && out[0].subject === 'A quick question' && out[0].body === 'Hi Jane,\n\nHow tall?\n\nThanks', JSON.stringify(out));
+  assert(!emailsFor('UPDATE', rec, at({ phase: 'details_check' })).length, 'no resend while it stays in that step');
+});
 check('quote and confirmed emails say how far back in line the order is', () => {
   const queue = [{ at: '2026-10-01T00:00:00Z', printing: true, custom: false }, { at: '2026-10-02T00:00:00Z', printing: false, custom: true }];
   const quote = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}), {}, { queue })[0].body;

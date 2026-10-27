@@ -28,6 +28,7 @@ const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
 const NOTIF_PREFS_KEY = 'soloprint_notif_prefs_v1';
 const ORDER_PHASES = [
   { id: 'estimate', label: 'Reviewing' },
+  { id: 'details_check', label: 'Confirming Details' },
   { id: 'quote_sent', label: 'Quote Ready' },
   { id: 'order_received', label: 'Confirmed' },
   { id: 'production', label: 'Printing' },
@@ -359,10 +360,12 @@ async function customerApproveQuote(batchId) {
 
 function renderOrderTracker(batch) {
   const phase = batch.phase || 'estimate';
-  const currentIdx = Math.max(0, phaseIndex(phase));
   const history = batch.phaseHistory || {};
+  // "Confirming details" only shows for orders that went through it.
+  const phases = ORDER_PHASES.filter(p => p.id !== 'details_check' || history.details_check || phase === 'details_check');
+  const currentIdx = Math.max(0, phases.findIndex(p => p.id === phase));
   const shortTime = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const steps = ORDER_PHASES.map((p, idx) => {
+  const steps = phases.map((p, idx) => {
     const cls = idx < currentIdx || phase === 'delivered' ? 'done' : idx === currentIdx ? 'current' : '';
     const at = history[p.id] || (p.id === 'estimate' ? batch.createdAt : null);
     return `<div class="tracker-step ${cls}">
@@ -377,6 +380,7 @@ function renderOrderTracker(batch) {
   ].filter(Boolean).join(' · ');
   return `<div class="tracker">${steps}</div>
     <div class="tracker-status"><strong>${esc(t('step_' + phase))}:</strong> ${esc(t('stepInfo_' + phase))}${deliveryInfo ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${deliveryInfo}</div>` : ''}</div>
+    ${phase === 'details_check' && batch.detailsQuestions ? `<div class="details-questions"><strong>My questions for you:</strong><div style="white-space:pre-wrap;">${esc(batch.detailsQuestions)}</div><div class="field-help">Reply to my email with your answers.</div></div>` : ''}
     ${renderOrderQueue(batch)}
     ${renderCustomerOrderAction(batch)}`;
 }
@@ -539,6 +543,9 @@ function normalizeBatch(batch) {
     extraCharges: (Array.isArray(batch.extraCharges) ? batch.extraCharges : []).slice(0, 10)
       .map(c => ({ label: cleanText(c && c.label, 60).trim() || 'Special costs', amount: Math.max(0, Math.min(100000, Number(c && c.amount) || 0)) })),
     ownerEditedAt: cleanIso(batch.ownerEditedAt),
+    detailsQuestions: cleanText(batch.detailsQuestions, 4000),
+    detailsEmail: batch.detailsEmail && typeof batch.detailsEmail === 'object'
+      ? { subject: cleanText(batch.detailsEmail.subject, 200), body: cleanText(batch.detailsEmail.body, 10000), at: cleanIso(batch.detailsEmail.at) } : null,
     specialOrderCost: Number.isFinite(Number(batch.specialOrderCost)) && batch.specialOrderCost !== null && batch.specialOrderCost !== '' && Number(batch.specialOrderCost) >= 0
       ? Math.min(Number(batch.specialOrderCost), 1000) : null,
     items: Array.isArray(batch.items) ? batch.items.slice(0, 50).map(cleanItem) : [],
@@ -1960,7 +1967,7 @@ function renderMyJobsTab() {
     ${[...state.batches].reverse().map(b => {
       const phase = b.phase || 'estimate';
       const allDone = b.items.every(itemPriced);
-      const total = phase !== 'estimate' && allDone ? orderSum(b) : null;
+      const total = !beforeQuote(phase) && allDone ? orderSum(b) : null;
       return `<div class="job-card ${phase}" id="order-${b.id}">
         <div class="job-header">
           <div>
@@ -1992,7 +1999,7 @@ function renderMyJobsTab() {
                 ? `<div style="text-align:right;flex-shrink:0;">
                     <div class="sub-item-price">$${ip.toFixed(2)}</div>
                     ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} each</div>`:''}
-                    ${phase === 'estimate' ? `<div style="font-size:11px;color:var(--muted);">Automated estimate</div>` : ''}
+                    ${beforeQuote(phase) ? `<div style="font-size:11px;color:var(--muted);">Automated estimate</div>` : ''}
                   </div>`
                 : `<div style="font-size:12px;color:var(--muted);font-style:italic;">Pending</div>`}
             </div>
@@ -2055,7 +2062,7 @@ function renderOwnerApp() {
 }
 
 function renderOwnerDashboard() {
-  const estimate = state.batches.filter(b => (b.phase || 'estimate') === 'estimate');
+  const estimate = state.batches.filter(b => beforeQuote(b.phase));
   const production = state.batches.filter(b => (b.phase || 'estimate') === 'production');
   const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
 
@@ -2373,7 +2380,7 @@ function renderOwnerBatch(b) {
         <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
         ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
         ${phase === 'order_received' ? `<span class="status quoted">${ownerQueuePosition(b) ? `#${ownerQueuePosition(b)} in line` : 'Waiting for deposit'}</span>` : ''}
-        ${b.designTerms && phase !== 'estimate' ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
+        ${b.designTerms && !beforeQuote(phase) ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
         <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
       </div>
     </div>
@@ -2438,10 +2445,11 @@ function renderOwnerBatch(b) {
     </div>
     <div class="job-divider"></div>
     ${state.ownerEdit && state.ownerEdit.id === b.id ? renderOwnerEditForm(b) : `
-    ${phase === 'estimate' ? `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit request</button>` : `<div class="field-help">To change this request, use Edit Quotes below first.</div>`}
+    ${beforeQuote(phase) ? `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit request</button>` : `<div class="field-help">To change this request, use Edit Quotes below first.</div>`}
     ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
     ${renderOwnerCharges(b)}`}
-    ${state.ownerEdit && state.ownerEdit.id === b.id ? '' : phase === 'estimate' ? `
+    ${state.ownerEdit && state.ownerEdit.id === b.id ? '' : beforeQuote(phase) ? `
+      ${renderDetailsCheck(b)}
       ${hasSpecial ? `
         <div class="field special-order">
           <label for="special-cost-${b.id}">Special order roll cost ($)</label>
@@ -4532,6 +4540,8 @@ async function updateBatchPhase(batchId, phase) {
     render();
     return;
   }
+  // "Confirming Details" sends an email you write and check first, so choosing it opens that.
+  if (phase === 'details_check' && currentPhase !== 'details_check') { openDetailsCheck(batchId); return; }
   b.phase = phase;
   b.status = phase === 'estimate' ? 'pending' : 'quoted';
   stampPhase(b, phase);
