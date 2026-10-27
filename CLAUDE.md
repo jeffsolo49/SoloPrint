@@ -64,6 +64,8 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   price, which replaces the calculation; re-read from the gallery when the owner quotes, never trusted from the customer).
 - Gallery items (`gallery_items.data`): title, description, photos, filType, `colorId` (the design's color, blank = White), minutes, grams, `price` (optional set price);
   shown prices come from `designEstimate(g)` (features.js), which prices the design as a request would start (`designEstimateItem`),
+  `colorMap` ({ photo (PNG), regions [{hex, part}], combos [{id, name, colors {partId: colorKey}}]}: "Color ideas", the photo repainted per part;
+  `findColorRegions`/`labelPixels`/`recolorPixels`, `renderColorMapForm` (owner), `renderColorIdeas` (design page), `cmRequestPreview` (request form) in features.js),
   `videos` (YouTube ids, `youtubeId`; played only on the design page by `renderVideos`, never thumbnails or preview images).
   `parts` ([{id, name, grams, photo, optional, price, minutes, defaultColor}] (defaultColor = owner's starting color; else White, `defaultColor()` in app.js) (minutes = add-on print time, added to `baseMinutes`), features.js `cleanDesignParts`; optional = add-on the customer ticks (`include`),
   price = add-on price on set-price designs, added by `ownerSetPrice` from the gallery): copied to a requested item as `designParts` with a

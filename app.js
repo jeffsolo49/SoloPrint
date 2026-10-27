@@ -1194,6 +1194,7 @@ function render() {
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
   `;
   attachAll();
+  paintColorPreviews();
   if (state.view === 'client' && state.clientTab === 'submit') queueDraftSave();
 }
 
@@ -3166,7 +3167,8 @@ function cleanGalleryItem(row) {
     grams: cleanNumber(data.grams),
     price: cleanNumber(data.price),   // set price that replaces the calculated estimate
     videos: cleanVideoIds(data.videos),
-    parts: cleanDesignParts(data.parts)
+    parts: cleanDesignParts(data.parts),
+    colorMap: cleanColorMap(data.colorMap, cleanDesignParts(data.parts))   // photo repainted in other colors, features.js
   };
 }
 
@@ -3314,6 +3316,7 @@ function renderWorkDetail(g) {
     </div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
     ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
+    ${renderColorIdeas(g)}
     ${renderVideos(g)}
     ${renderDesignParts(g)}
     <div class="card">
@@ -3429,10 +3432,12 @@ function renderGalleryTab() {
 }
 
 // Add a gallery piece to the customer's request form with its known print time and grams.
-function requestGalleryItem(id) {
+// `colors` ({ partId: colorKey }) comes from the design's color ideas.
+function requestGalleryItem(id, colors) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!g) return;
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
+  if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
   applyPartColors(item);
   state.galleryOpen = '';
   setDesignUrl('');
@@ -3516,6 +3521,7 @@ function renderOwnerGalleryPage() {
         <textarea id="gallery-videos" placeholder="https://youtu.be/..." style="min-height:52px;" oninput="updateGalleryForm('videos', this.value)">${esc(f.videos || '')}</textarea>
       </div>
       ${renderDesignPartsForm(f)}
+      ${renderColorMapForm(f)}
       <div class="gallery-form-grid">
         <div class="field"><label>Color</label>
           <select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select>
@@ -3565,7 +3571,8 @@ function editGalleryItem(id) {
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
-    parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' }))
+    parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3579,7 +3586,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [] }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null }
     })
   });
 }
@@ -3597,7 +3604,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], filType: f.filType, colorId: f.colorId || '',
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '',
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
@@ -3696,10 +3703,10 @@ async function uploadGalleryPhotos(files) {
   }
 }
 
-async function uploadStoredPhoto(path, blob, token, upsert = false) {
+async function uploadStoredPhoto(path, blob, token, upsert = false, type = 'image/jpeg') {
   const res = await fetch(`${SUPA_URL}/storage/v1/object/${GALLERY_BUCKET}/${path}`, {
     method: 'POST',
-    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg', 'x-upsert': upsert ? 'true' : 'false' },
+    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': type, 'x-upsert': upsert ? 'true' : 'false' },
     body: blob
   });
   if (!res.ok) throw new Error(`upload ${res.status}`);

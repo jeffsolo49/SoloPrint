@@ -118,10 +118,14 @@ async function mockBackend(page, db) {
       if (method === 'GET') return route.fulfill({ json: Object.values(db.reviews).filter(r => r.status === 'new') });
       if (method === 'PATCH') { db.reviews[decodeURIComponent(url.split('job_id=eq.')[1])].status = JSON.parse(req.postData()).status; return route.fulfill({ status: 204, body: '' }); }
     }
-    if (url.includes('/storage/v1/object/public/')) return route.fulfill({ body: PNG, contentType: 'image/png' });
+    if (url.includes('/storage/v1/object/public/')) {
+      const file = (db.files || {})[url.split('/storage/v1/object/public/')[1]];
+      return route.fulfill({ body: file ? file.body : PNG, contentType: file ? file.type : 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } });
+    }
     if (url.includes('/storage/v1/object/')) {
       if (!owner) return route.fulfill({ status: 401, json: {} });
       db.uploads.push(url.split('/storage/v1/object/')[1]);
+      (db.files = db.files || {})[url.split('/storage/v1/object/')[1]] = { body: req.postDataBuffer(), type: req.headers()['content-type'] };
       return route.fulfill({ json: { Key: 'ok' } });
     }
     if (url.includes('/auth/v1/token')) {
@@ -1449,6 +1453,74 @@ const STATES = {
     const fn = samples.map(d => api.designSlug(d, samples));
     assert(JSON.stringify(site) === JSON.stringify(fn) && site.join() === 'cafe-sign-large,cafe-sign-large-2,a3,a4', `site ${site} vs function ${fn}`);
     assert(api.findDesign('cafe-sign-large-2', samples).id === 'a2' && api.findDesign('a1', samples).id === 'a1', 'function lookup');
+    await page.close();
+  });
+  await check('color ideas: owner matches photo areas to parts; customers see the photo repainted and request those colors', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    await owner.click('#add-design-part');
+    await owner.fill('#part-name-0', 'Body');
+    await owner.click('#add-design-part');
+    await owner.fill('#part-name-1', 'Eyes');
+    // A render: gray background, a gold part with a lit and a shaded face, a small blue part.
+    const png = await owner.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 200; c.height = 150;
+      const x = c.getContext('2d');
+      x.fillStyle = '#56565a'; x.fillRect(0, 0, 200, 150);
+      x.fillStyle = '#c89c00'; x.fillRect(20, 20, 100, 60);
+      x.fillStyle = '#785c03'; x.fillRect(20, 80, 100, 30);
+      x.fillStyle = '#0a3c80'; x.fillRect(150, 40, 20, 20);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await owner.setInputFiles('#cm-upload', { name: 'render.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await owner.waitForSelector('text=colored areas. Pick a part');
+    const regions = await owner.evaluate(() => state.galleryForm.colorMap.regions.map(r => r.hex));
+    const near = (hex, want) => { const a = parseInt(hex.slice(1), 16), b = parseInt(want.slice(1), 16); return Math.abs((a >> 16) - (b >> 16)) + Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)) + Math.abs((a & 255) - (b & 255)); };
+    const gold = regions.findIndex(h => near(h, '#c89c00') < 60 || near(h, '#a07c02') < 60), blue = regions.findIndex(h => near(h, '#0a3c80') < 30);
+    assert(regions.length >= 3 && gold >= 0 && blue >= 0, `areas found: ${regions}`);
+    assert(regions.filter(h => near(h, '#c89c00') < 140 && h !== regions[blue] && near(h, '#56565a') > 60).length === 1, `the gold part's two shades should be one area: ${regions}`);
+    assert(db.uploads.some(u => /^gallery\/g1\/colors-\d+\.png$/.test(u)), db.uploads.join());
+    const partIds = await owner.evaluate(() => state.galleryForm.parts.map(p => p.id));
+    await owner.selectOption(`#cm-region-${gold}`, partIds[0]);
+    await owner.selectOption(`#cm-region-${blue}`, partIds[1]);
+    await owner.waitForSelector('#cm-add-combo');
+    await owner.click('#cm-add-combo');
+    await owner.fill('#cm-combo-name-0', 'Red and black');
+    await owner.selectOption('#cm-combo-0-0', 'red');
+    await owner.selectOption('#cm-combo-0-1', 'black');
+    await owner.click('#cm-add-combo');
+    await owner.fill('#cm-combo-name-1', 'Shiny');
+    await owner.selectOption('#cm-combo-1-0', 'silk');
+    await owner.waitForFunction(() => document.querySelectorAll('#color-map-form canvas.cm-ready').length >= 5);
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    const map = db.gallery.g1.data.colorMap;
+    assert(map && /colors-\d+\.png$/.test(map.photo) && map.regions[gold].part === partIds[0] && map.regions[blue].part === partIds[1]
+      && map.combos[0].name === 'Red and black' && map.combos[0].colors[partIds[0]] === 'red', JSON.stringify(map));
+    await owner.close();
+
+    db.settings.colors.find(c => c.id === 'silk').outOfStock = true;
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('#color-ideas canvas.cm-ready');
+    const picks = await page.$$eval('.cm-picks button', b => b.map(x => x.textContent.trim()));
+    assert(picks.join() === 'Red and black,Pick your own', `out-of-stock ideas are hidden: ${picks}`);
+    const pixel = (x, y) => page.evaluate(([x, y]) => [...document.querySelector('#color-ideas canvas').getContext('2d').getImageData(x, y, 1, 1).data].slice(0, 3), [x, y]);
+    const lit = await pixel(60, 40), shade = await pixel(60, 95), bg = await pixel(5, 5);
+    assert(lit[0] > 150 && lit[1] < 90 && lit[2] < 90, `the body should be red: ${lit}`);
+    assert(shade[0] < lit[0] && shade[0] > 60 && shade[1] < 60, `the shaded face should stay a darker red: ${shade}`);
+    assert(bg.join() === '86,86,90', `the background is left as it is: ${bg}`);
+    assert(/Body: Red/.test(await page.textContent('.cm-legend')), await page.textContent('.cm-legend'));
+    await page.click('#cm-pick-own');
+    await page.selectOption('#cm-own-1', 'red');
+    assert(await page.evaluate(() => document.activeElement.id) === 'cm-own-1', 'focus stays on the color picked');
+    await page.click('#cm-request');
+    await page.waitForSelector('.cm-request canvas.cm-ready');
+    const it = await page.evaluate(() => state.draftItems[0]);
+    assert(it.designParts[0].colorId === 'red' && it.designParts[1].colorId === 'red' && it.colorId === 'red' && !it.extraColors.length, JSON.stringify(it.designParts));
+    await page.selectOption('#part-color-0-1', 'black');
+    await page.waitForFunction(() => { const c = document.querySelector('.cm-request canvas.cm-ready'); if (!c) return false; const d = c.getContext('2d').getImageData(160, 50, 1, 1).data; return d[0] < 60 && d[1] < 60; });
     await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {
