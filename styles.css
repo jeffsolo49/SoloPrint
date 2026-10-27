@@ -802,3 +802,5 @@ textarea { resize: vertical; min-height: 70px; }
 .cm-combo { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
 .cm-combo-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 12px; align-items: end; }
 .cm-request .cm-canvas { margin-top: 4px; }
+.cm-price { margin: 4px 0 12px; }
+.cm-price .color-lines { margin-top: 6px; }
