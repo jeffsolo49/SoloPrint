@@ -2365,7 +2365,7 @@ function renderDetailsCheck(b) {
 
 // ── MESSAGES ON ORDERS (supabase/messages.sql) ────────────────────────────
 // One conversation per order: your messages and the customer's (written on the site or by email), plus the
-// shop's own emails. The email script sends site messages, logs its emails here and collects Gmail replies.
+// shop's own emails. The email script sends site messages, logs its emails here and collects Gmail replies every 5 minutes.
 function cleanMessage(m, jobId) {
   if (!m || typeof m !== 'object') return null;
   const body = cleanText(m.body, 10000);

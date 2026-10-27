@@ -68,7 +68,7 @@ permission). Only `Loader.gs` ever needs pasting again, and an alert will say so
 ## Customer replies on the site (loader version 2)
 
 Messages on each order show the whole conversation: your messages, theirs, and the shop's emails. To also
-catch replies people send to your emails, the script reads your Gmail every 10 minutes (only emails with
+catch replies people send to your emails, the script reads your Gmail every 5 minutes (only emails with
 "SoloPrint" in the subject, and only from people who have an order). This needs the version 2 loader:
 
 1. Open your Apps Script project, select everything in Code.gs, and paste in all of `email/Loader.gs` from GitHub. Click **Save**.

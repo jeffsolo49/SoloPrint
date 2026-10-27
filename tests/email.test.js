@@ -221,6 +221,18 @@ check('Gmail replies: customers and your own replies are collected; the shop ema
   assert(rows.length === 2 && rows[0].sender === 'customer' && rows[0].email === 'jane@example.com' && rows[0].body === 'Looks great!' && rows[0].email_id === 'm2'
     && rows[1].sender === 'owner' && rows[1].email === 'jane@example.com' && rows[1].job_id === '1729', JSON.stringify(rows));
 });
+check('Gmail replies are checked every 5 minutes, and the 6-hourly check switches an older schedule over by itself', () => {
+  let triggers = [{ getHandlerFunction: () => 'collectReplies' }], created = [];
+  const props = {};
+  const ctx = load({
+    ScriptApp: { getProjectTriggers: () => triggers, deleteTrigger: t => { triggers = triggers.filter(x => x !== t); },
+      newTrigger: name => ({ timeBased: () => ({ everyMinutes: n => ({ create: () => { created.push(name + '/' + n); triggers.push({ getHandlerFunction: () => name }); } }) }) }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, getProperties: () => ({ SECRET: '0123456789abcdef0123456789abcdef' }) }) }
+  });
+  vm.runInContext('globalThis.collectReplies = collectReplies;', ctx);
+  assert(ctx.scheduleReplies(false) === true && created.join() === 'collectReplies/5' && triggers.length === 1, `switched: ${created}`);
+  assert(ctx.scheduleReplies(false) === false && created.length === 1, 'already every 5 minutes: left alone');
+});
 check('the loader matches the version the email code needs and asks Google for every permission it uses', () => {
   const loader = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Loader.gs'), 'utf8');
   const need = (CODE.match(/const LOADER_VERSION_NEEDED = (\d+);/) || [])[1], have = (loader.match(/const LOADER_VERSION = (\d+);/) || [])[1];
