@@ -365,9 +365,11 @@ function depositAmount(order, total, rules) {
   const pct = Math.min(100, Math.max(0, Number(rules.depositPercent) || 0));
   return Math.round(total * pct) / 100;
 }
+// Paid in full. Orders marked paid before the spelling was fixed are saved as 'payment_recieved'.
+function isPaidInFull(order) { return !!order && ['payment_received', 'payment_recieved'].includes(order.paymentStatus); }
 // What's still to pay: nothing once paid, the rest after a deposit, else the total.
 function amountLeft(order, total, rules) {
-  if (order.paymentStatus === 'payment_received') return 0;
+  if (isPaidInFull(order)) return 0;
   if (order.paymentStatus === 'deposit_received') return Math.max(0, Math.round((total - depositAmount(order, total, rules)) * 100) / 100);
   return total;
 }

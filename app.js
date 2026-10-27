@@ -551,7 +551,8 @@ function normalizeBatch(batch) {
     phase = legacyStatus === 'quoted' ? 'quote_sent' : 'estimate';
   }
   if (!ORDER_PHASES.find(p => p.id === phase)) phase = 'estimate';
-  if (paymentStatus === 'partial' || paymentStatus === 'paid') paymentStatus = 'payment_recieved';
+  // Old saved spellings of "paid": 'partial'/'paid' (first version) and 'payment_recieved' (until Oct 2026).
+  if (paymentStatus === 'partial' || paymentStatus === 'paid' || paymentStatus === 'payment_recieved') paymentStatus = 'payment_received';
   if (!PAYMENT_PHASES.find(p => p.id === paymentStatus)) paymentStatus = 'unpaid';
   return {
     ...batch,
@@ -4554,7 +4555,7 @@ async function updatePaymentStatus(batchId, paymentStatus) {
     b.depositAt = new Date().toISOString();
     b.depositAmount = depositAmount(b, orderSum(b), rulesFor(b));
   }
-  if (paymentStatus === 'payment_recieved' && !b.paidAt) b.paidAt = new Date().toISOString();
+  if (paymentStatus === 'payment_received' && !b.paidAt) b.paidAt = new Date().toISOString();
   await upsertBatch(b);
   render();
 }

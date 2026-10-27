@@ -381,7 +381,7 @@ function weeklySummaryEmail(report, custom, site, now) {
   const jobs = (report && report.jobs) || [];
   const phase = j => j.phase || 'estimate';
   const weekAgo = now.getTime() - 7 * 864e5;
-  const sales = jobs.filter(j => j.paymentStatus === 'payment_received' && j.paidAt && new Date(j.paidAt).getTime() >= weekAgo)
+  const sales = jobs.filter(j => isPaidInFull(j) && j.paidAt && new Date(j.paidAt).getTime() >= weekAgo)
     .reduce((s, j) => s + orderTotal(j, site), 0);
   const inventory = (report && report.private && report.private.inventory) || {};
   const low = ((site && site.colors) || []).filter(c => {
@@ -393,7 +393,7 @@ function weeklySummaryEmail(report, custom, site, now) {
     weekSales: money(sales),
     waitingQuote: String(jobs.filter(j => phase(j) === 'estimate').length),
     waitingApproval: String(jobs.filter(j => phase(j) === 'quote_sent').length),
-    unpaid: String(jobs.filter(j => ['order_received', 'production', 'delivered'].includes(phase(j)) && j.paymentStatus !== 'payment_received').length),
+    unpaid: String(jobs.filter(j => ['order_received', 'production', 'delivered'].includes(phase(j)) && !isPaidInFull(j)).length),
     printing: String(jobs.filter(j => phase(j) === 'production').length),
     newReviews: reviews ? String(reviews) : '',
     lowStock: low.join(', '),
@@ -470,8 +470,8 @@ function emailsFor(type, rec, old, custom, site) {
 
   if (rec.customerApprovedAt && !old.customerApprovedAt) send('owner_approved', OWNER_EMAIL);
 
-  if (rec.paymentStatus === 'deposit_received' && !['deposit_received', 'payment_received'].includes(old.paymentStatus)) send('deposit', customer);
-  if (rec.paymentStatus === 'payment_received' && old.paymentStatus !== 'payment_received') send('payment', customer);
+  if (rec.paymentStatus === 'deposit_received' && old.paymentStatus !== 'deposit_received' && !isPaidInFull(old)) send('deposit', customer);
+  if (isPaidInFull(rec) && !isPaidInFull(old)) send('payment', customer);
   return emails;
 }
 
@@ -931,9 +931,11 @@ function depositAmount(order, total, rules) {
   const pct = Math.min(100, Math.max(0, Number(rules.depositPercent) || 0));
   return Math.round(total * pct) / 100;
 }
+// Paid in full. Orders marked paid before the spelling was fixed are saved as 'payment_recieved'.
+function isPaidInFull(order) { return !!order && ['payment_received', 'payment_recieved'].includes(order.paymentStatus); }
 // What's still to pay: nothing once paid, the rest after a deposit, else the total.
 function amountLeft(order, total, rules) {
-  if (order.paymentStatus === 'payment_received') return 0;
+  if (isPaidInFull(order)) return 0;
   if (order.paymentStatus === 'deposit_received') return Math.max(0, Math.round((total - depositAmount(order, total, rules)) * 100) / 100);
   return total;
 }
