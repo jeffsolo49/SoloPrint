@@ -10,14 +10,14 @@
 //
 // The secret stays in Project Settings -> Script properties (SECRET), as before.
 
-const LOADER_VERSION = 1;
+const LOADER_VERSION = 2;
 const CODE_URL = 'https://raw.githubusercontent.com/jeffsolo49/SoloPrint/main/email/Code.gs';
 const ALERT_EMAIL = 'jeffsolo49@gmail.com';
 const CODE_CACHE_SECONDS = 15 * 60;     // how often to look for a new version
 const ALERT_EVERY_SECONDS = 6 * 60 * 60;
 const FETCH_FAILURES_BEFORE_ALERT = 3;
 const EXPORTS = ['doPost', 'doGet', 'checkSetup', 'sendTestEmail', 'setupSchedules', 'setupWeeklyBackup', 'backupToDrive',
-  'sendQuoteReminders', 'healthCheck', 'testLookup', 'connectMakerWorld', 'emailsFor', 'LOADER_VERSION_NEEDED'];
+  'sendQuoteReminders', 'healthCheck', 'testLookup', 'connectMakerWorld', 'collectReplies', 'emailsFor', 'LOADER_VERSION_NEEDED'];
 
 // What Apps Script runs. Each one passes through to the same-named function in Code.gs.
 function doPost(e) { return run_('doPost', [e]); }
@@ -31,10 +31,11 @@ function sendQuoteReminders() { return run_('sendQuoteReminders', []); }
 function healthCheck() { return run_('healthCheck', []); }
 function testLookup() { return run_('testLookup', []); }
 function connectMakerWorld() { return run_('connectMakerWorld', []); }
+function collectReplies() { return run_('collectReplies', []); }
 
 // Never called. Listing these makes Google ask for the same permissions Code.gs needs.
 function permissions_() {
-  MailApp.sendEmail; DriveApp.getRootFolder; UrlFetchApp.fetch; ScriptApp.newTrigger; CacheService.getScriptCache;
+  MailApp.sendEmail; DriveApp.getRootFolder; UrlFetchApp.fetch; ScriptApp.newTrigger; CacheService.getScriptCache; GmailApp.search;
 }
 
 let loaded_ = null;

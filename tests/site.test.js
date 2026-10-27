@@ -33,7 +33,7 @@ function fixtures() {
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
       reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
-    private: {}, reviews: {}, uploads: [], drafts: {},
+    private: {}, reviews: {}, uploads: [], drafts: {}, messages: [],
     log: []
   };
 }
@@ -50,6 +50,28 @@ async function mockBackend(page, db) {
     }
     const rest = url.split('/rest/v1')[1] || '';
     if (rest) db.log.push(`${method} ${rest.split('?')[0]} ${owner ? 'owner' : 'anon'}`);
+    // Like supabase/messages.sql: the owner reads and writes all messages; customers only through the RPCs.
+    if (rest.startsWith('/order_messages')) {
+      if (!owner) return route.fulfill({ status: 401, json: {} });
+      if (method === 'GET') return route.fulfill({ json: db.messages });
+      if (method === 'POST') {
+        const m = JSON.parse(req.postData());
+        const row = { id: db.messages.length + 1, subject: '', created_at: new Date().toISOString(), ...m };
+        db.messages.push(row);
+        return route.fulfill({ status: 201, json: [row] });
+      }
+    }
+    if (rest.startsWith('/rpc/customer_messages') || rest.startsWith('/rpc/customer_send_message')) {
+      const a = JSON.parse(req.postData());
+      const job = db.jobs[a.p_job_id];
+      const mine = job && String(job.clientEmail).toLowerCase() === String(a.p_email).trim().toLowerCase();
+      if (rest.startsWith('/rpc/customer_send_message')) {
+        if (!mine || !String(a.p_body || '').trim()) return route.fulfill({ status: 400, json: {} });
+        db.messages.push({ id: db.messages.length + 1, job_id: a.p_job_id, sender: 'customer', via: 'site', subject: '', body: a.p_body.trim(), created_at: new Date().toISOString() });
+        return route.fulfill({ status: 204, body: '' });
+      }
+      return route.fulfill({ json: mine ? db.messages.filter(m => m.job_id === a.p_job_id).map(m => ({ id: m.id, sender: m.sender, via: m.via, subject: m.subject, body: m.body, at: m.created_at })) : [] });
+    }
     if (rest.startsWith('/rpc/customer_jobs')) {
       const { email } = JSON.parse(req.postData());
       return route.fulfill({ json: Object.values(db.jobs).filter(j => j.clientEmail === email) });
@@ -1664,6 +1686,43 @@ const STATES = {
     await customer.waitForSelector('.details-questions');
     assert(/Changed question/.test(await customer.textContent('.details-questions')), 'customer sees the questions');
     await customer.close();
+  });
+  await check('messages: the conversation on each order, who it is waiting on, and sending from both sides', async () => {
+    const db = fixtures();
+    const t = n => new Date(Date.now() - n * 60000).toISOString();
+    db.messages = [
+      { id: 1, job_id: '1', sender: 'owner', via: 'auto', subject: 'Your SoloPrint quote: $9.28', body: 'Hi Jane, your quote...', created_at: t(60) },
+      { id: 2, job_id: '1', sender: 'customer', via: 'email', subject: 'Re: Your SoloPrint quote', body: 'Can it be blue?', created_at: t(30) }];
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    await owner.waitForSelector('.waiting-banner');
+    assert(/1 conversation is waiting on you/.test(await owner.textContent('.waiting-banner')), await owner.textContent('.waiting-banner'));
+    assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
+    const thread = await owner.textContent('#conv-1');
+    assert(/Can it be blue\?/.test(thread) && /by email/.test(thread) && /Email sent: Your SoloPrint quote/.test(thread), thread);
+    await owner.fill('#msg-text-1', 'Yes, blue works.');
+    await owner.click('#msg-send-1');
+    await owner.waitForTimeout(300);
+    const sent = db.messages[db.messages.length - 1];
+    assert(sent.sender === 'owner' && sent.via === 'site' && sent.job_id === '1' && sent.body === 'Yes, blue works.', JSON.stringify(sent));
+    assert(/Waiting on customer/.test(await owner.textContent('#order-1 .job-title')) && !(await owner.$('.waiting-banner')), 'now waiting on the customer');
+    await owner.evaluate(asOwner('clients'));
+    await owner.waitForSelector('#client-notes');
+    await owner.fill('#client-notes', 'Prefers pickup.');
+    await owner.fill('#client-issues', 'Paid late once.');
+    await owner.waitForTimeout(1000);
+    const notes = db.private.clients && db.private.clients['jane@example.com'];
+    assert(notes && notes.notes === 'Prefers pickup.' && notes.issues === 'Paid late once.', JSON.stringify(db.private));
+    assert(!JSON.stringify(db.jobs).includes('Paid late once'), 'client notes must never be saved in an order');
+    await owner.close();
+    const page = await open(db, { suffix: '?requests=jane%40example.com' });
+    await page.waitForSelector('#conv-1 .thread');
+    assert(/Yes, blue works\./.test(await page.textContent('#conv-1')), 'customer sees your message');
+    await page.fill('#cmsg-text-1', 'Great, thanks!');
+    await page.click('#cmsg-send-1');
+    await page.waitForFunction(() => /Great, thanks!/.test(document.querySelector('#conv-1').textContent));
+    assert(db.messages.some(m => m.sender === 'customer' && m.via === 'site' && m.body === 'Great, thanks!'), 'customer message saved');
+    await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');

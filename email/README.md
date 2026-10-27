@@ -65,6 +65,16 @@ You get a "SoloPrint emails need attention" email, at most once every 6 hours pe
 Google also emails you if a scheduled run fails outright (for example, if the script loses its Gmail
 permission). Only `Loader.gs` ever needs pasting again, and an alert will say so if it does.
 
+## Customer replies on the site (loader version 2)
+
+Messages on each order show the whole conversation: your messages, theirs, and the shop's emails. To also
+catch replies people send to your emails, the script reads your Gmail every 10 minutes (only emails with
+"SoloPrint" in the subject, and only from people who have an order). This needs the version 2 loader:
+
+1. Open your Apps Script project, select everything in Code.gs, and paste in all of `email/Loader.gs` from GitHub. Click **Save**.
+2. Pick `setupSchedules` and click **Run**. Google asks for permission again (now including Gmail): allow it.
+3. **Deploy → Manage deployments → edit (pencil) → Version: New version → Deploy**, so the web app uses it too.
+
 ## Changing the emails later
 
 To change the wording, use the **Emails** tab in owner mode on the site: no script changes needed.

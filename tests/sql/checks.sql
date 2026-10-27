@@ -206,3 +206,38 @@ end $$;
 reset role;
 
 \echo 'All SQL checks passed.'
+
+-- Messages on orders
+set role anon;
+select pg_temp.expect_denied('select count(*) from public.order_messages', 'anon reading messages');
+select pg_temp.expect_denied($q$insert into public.order_messages (job_id, sender, body) values ('100', 'owner', 'x')$q$, 'anon writing messages');
+select public.customer_send_message('100', 'jane@example.com', 'Can it be blue?');
+select pg_temp.expect_denied($q$select public.customer_send_message('100', 'nobody@example.com', 'hi')$q$, 'messaging someone else''s order');
+select pg_temp.expect_denied($q$select public.customer_send_message('100', 'jane@example.com', '   ')$q$, 'an empty message');
+do $$ begin
+  if (select count(*) from public.customer_messages('100', 'JANE@example.com')) <> 1 then raise exception 'Jane should see her message'; end if;
+  if (select count(*) from public.customer_messages('100', 'nobody@example.com')) <> 0 then raise exception 'another email can read Jane''s messages'; end if;
+end $$;
+select pg_temp.expect_denied($q$select public.record_messages('wrong-secret', '[]')$q$, 'recording messages with a wrong secret');
+do $$ declare n int; begin
+  n := public.record_messages('0123456789abcdef0123456789abcdef', '[
+    {"email":"JANE@example.com","sender":"customer","via":"email","body":"Reply by email","email_id":"gm-1"},
+    {"email":"jane@example.com","sender":"customer","via":"email","body":"Reply by email","email_id":"gm-1"},
+    {"email":"stranger@example.com","sender":"customer","via":"email","body":"not a customer","email_id":"gm-2"},
+    {"job_id":"100","email":"nobody@example.com","sender":"customer","via":"email","body":"wrong address for that order","email_id":"gm-3"},
+    {"job_id":"100","email":"jane@example.com","sender":"owner","via":"site","body":"site rows only come from the site","email_id":"gm-4"}]');
+  if n <> 1 then raise exception 'record_messages should keep exactly 1 of those rows (kept %)', n; end if;
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"email":"stranger@example.com"}';
+do $$ begin if (select count(*) from public.order_messages) <> 0 then raise exception 'a stranger account can read messages'; end if; end $$;
+reset role;
+set role authenticated;
+set request.jwt.claims = '{"email":"jeffsolo49@gmail.com"}';
+insert into public.order_messages (job_id, sender, via, body) values ('100', 'owner', 'site', 'Sure, blue works.');
+do $$ begin if (select count(*) from public.order_messages) <> 3 then raise exception 'owner should see all 3 messages'; end if; end $$;
+reset role;
+do $$ begin
+  if (select count(*) from net.calls where body->>'type' = 'MESSAGE') <> 2 then raise exception 'site messages (customer and owner) should be sent to the email script'; end if;
+end $$;

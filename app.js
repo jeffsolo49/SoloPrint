@@ -128,7 +128,8 @@ async function loadBatches(filterEmail = '') {
       ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!email) { await loadOwnerPrivate(); syncTopWork(); }
+    if (!email) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages()]); syncTopWork(); }
+    else await loadCustomerMessages(email);
     state.synced = true;
   } catch(e) {
     console.error('Load error:', e);
@@ -543,6 +544,7 @@ function normalizeBatch(batch) {
     extraCharges: (Array.isArray(batch.extraCharges) ? batch.extraCharges : []).slice(0, 10)
       .map(c => ({ label: cleanText(c && c.label, 60).trim() || 'Special costs', amount: Math.max(0, Math.min(100000, Number(c && c.amount) || 0)) })),
     ownerEditedAt: cleanIso(batch.ownerEditedAt),
+    owner_private: undefined,   // never in an order (customers can read their orders); client notes live in owner_private.clients
     detailsQuestions: cleanText(batch.detailsQuestions, 4000),
     detailsEmail: batch.detailsEmail && typeof batch.detailsEmail === 'object'
       ? { subject: cleanText(batch.detailsEmail.subject, 200), body: cleanText(batch.detailsEmail.body, 10000), at: cleanIso(batch.detailsEmail.at) } : null,
@@ -1978,6 +1980,7 @@ function renderMyJobsTab() {
         </div>
         <div class="job-divider"></div>
         ${renderOrderTracker(b)}
+        ${renderCustomerConversation(b)}
         ${renderFinishedPhotos(b)}
         ${b.items.map(it => {
           const ip = it.minutes ? calcTotal(it.minutes, it.grams, it, it.qty, rulesFor(b)) : null;
@@ -2076,6 +2079,7 @@ function renderOwnerDashboard() {
       </div>
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
+      ${renderWaitingOnYou()}
       ${renderStockAlerts()}
       ${renderOwnerQueue()}
       <div class="stats-row">
@@ -2108,8 +2112,8 @@ function renderClientsPage() {
   const clients = [...new Set(state.batches.map(b => b.clientEmail))].filter(Boolean).map(email => {
     const orders = state.batches.filter(b => b.clientEmail === email);
     const name = orders[0]?.clientName || email;
-    const owner_private = orders[0]?.owner_private || {};
-    return { email, name, orders, notes: owner_private.notes || '', issues: owner_private.issues || '' };
+    const own = clientNotes()[String(email).toLowerCase()] || {};
+    return { email, name, orders, notes: own.notes || '', issues: own.issues || '' };
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   if (!state.selectedClient && clients.length) state.selectedClient = clients[0].email;
@@ -2117,13 +2121,14 @@ function renderClientsPage() {
 
   return `<div style="display:grid;grid-template-columns:250px 1fr;gap:1rem;height:100%;">
     <div style="border-right:1px solid var(--border);overflow-y:auto;">
-      ${clients.map(c => `<button type="button" class="client-row ${c.email===state.selectedClient?'active':''}" aria-pressed="${c.email===state.selectedClient}" onclick="state.selectedClient='${esc(c.email)}';render()">${esc(c.name)}<br><span style="font-size:12px;color:var(--muted);">${c.orders.length} order${c.orders.length!==1?'s':''}</span></button>`).join('')}
+      ${clients.map(c => `<button type="button" class="client-row ${c.email===state.selectedClient?'active':''}" aria-pressed="${c.email===state.selectedClient}" onclick="state.selectedClient='${esc(c.email)}';render()">${esc(c.name)}<br><span style="font-size:12px;color:var(--muted);">${c.orders.length} order${c.orders.length!==1?'s':''}</span>${c.orders.some(o => conversationStatus(o.id) === 'you') ? ' <span class="status waiting-you">Waiting on you</span>' : ''}</button>`).join('')}
     </div>
     <div style="overflow-y:auto;padding:1rem;">
       ${selected ? `<h2>${esc(selected.name)}</h2>
       <p style="color:var(--muted);">${selected.email}</p>
-      <div class="field"><label>Notes</label><textarea style="width:100%;min-height:100px;border:1px solid var(--border);padding:0.5rem;" spellcheck="true" oninput="state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private={...state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private,notes:this.value};render()">${esc(selected.notes)}</textarea></div>
-      <div class="field"><label>Payment Issues</label><textarea style="width:100%;min-height:80px;border:1px solid var(--border);padding:0.5rem;" spellcheck="true" oninput="state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private={...state.batches.find(b=>b.clientEmail==='${esc(selected.email)}').owner_private,issues:this.value};render()">${esc(selected.issues)}</textarea></div>
+      <div class="field-help">Only you can see these notes. <span id="client-note-status" role="status"></span></div>
+      <div class="field"><label for="client-notes">Notes</label><textarea id="client-notes" style="width:100%;min-height:100px;" spellcheck="true" data-email="${esc(selected.email)}" oninput="queueClientNote(this.dataset.email, 'notes', this.value)">${esc(selected.notes)}</textarea></div>
+      <div class="field"><label for="client-issues">Payment Issues</label><textarea id="client-issues" style="width:100%;min-height:80px;" spellcheck="true" data-email="${esc(selected.email)}" oninput="queueClientNote(this.dataset.email, 'issues', this.value)">${esc(selected.issues)}</textarea></div>
       <div style="margin-top:1rem;"><strong>Orders:</strong><ul>${selected.orders.map(o=>`<li>${esc(o.items[0]?.name||'(unnamed)')} - ${o.phase}</li>`).join('')}</ul></div>` : '<p>No clients yet</p>'}
     </div>
   </div>`;
@@ -2365,10 +2370,10 @@ function renderOwnerBatch(b) {
   const checks = b.items.some(it => rollParts(it).length) ? leftoverChecks(b) : [];
   const rollProblem = checks.some(list => list.some(c => !c.ok));
   const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  return `<div class="job-card ${phase}" id="order-${b.id}">
+  return `<div class="job-card ${phase} ${conversationStatus(b.id) === 'you' ? 'waiting-you' : ''}" id="order-${b.id}">
     <div class="job-header">
       <div>
-        <div class="job-title">${esc(b.clientName)}</div>
+        <div class="job-title">${esc(b.clientName)} ${conversationChip(b.id)}</div>
         <div class="job-meta">
           <a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a>
           · ${b.items.length} item${b.items.length>1?'s':''}
@@ -2407,6 +2412,7 @@ function renderOwnerBatch(b) {
         ${b.depositAt ? `<div class="field-help">Deposit $${(Number(b.depositAmount) || 0).toFixed(2)} on ${esc(formatAustinTime(b.depositAt))}</div>` : ''}
       </div>
     </div>
+    ${renderOwnerConversation(b)}
     <div class="owner-order-summary">
       <div class="card-title" style="margin-bottom:10px;">Submitted Order Summary</div>
       <div class="owner-order-summary-grid">

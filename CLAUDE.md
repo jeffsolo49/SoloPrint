@@ -33,7 +33,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `previews/*.jpg`, `tests/make-previews.js` | Small "where this shows" pictures in the Settings tabs (`AREA_PREVIEWS`, `areaPreview` in features.js), taken with sample content. Re-run the script after a big change to one of those areas. |
 | `email/Code.gs` | The Apps Script: order emails (`emailsFor`), daily jobs (`sendQuoteReminders` runs quote reminders, review requests, roll reminders, Monday summary), weekly Drive backup, MakerWorld lookups, `healthCheck`. Contains an exact copy of `email-templates.js` between the `SHARED EMAIL TEMPLATES` markers. |
 | `email/Loader.gs` | The only code pasted into Apps Script. Runs the latest `email/Code.gs` from GitHub `main` (checked every 15 min), keeps a saved copy, emails the owner on problems. |
-| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`, `queue`. All must stay safe to re-run. |
+| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`, `queue`, `messages`. All must stay safe to re-run. |
 
 ## Data
 
@@ -50,6 +50,10 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Order queue: `order_queue()` (supabase/queue.sql) lists confirmed/printing orders as { at, printing, custom } only, `at` =
   `queueTime` (deposit or full-payment time; null = waiting for a deposit, last in line; deposit % is rule `depositPercent`);
   `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).
+- `order_messages` (supabase/messages.sql): one conversation per order (`sender` owner/customer, `via` site/email/auto). Owner reads/writes the table;
+  customers use `customer_messages`/`customer_send_message`; site messages fire a `MESSAGE` webhook (Code.gs `messageEmail`); Code.gs logs its emails
+  (`logSentEmails`) and `collectReplies` (every 10 min, needs Loader v2 for Gmail) records Gmail replies via secret RPC `record_messages`. Site: messages section of features.js.
+  Client notes (Clients page) live in `owner_private` key `clients`, never in orders.
 - `request_drafts`: unsent requests (one per email), saved through `save_request_draft` once an email is typed,
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,

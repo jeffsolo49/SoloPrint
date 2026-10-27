@@ -6,7 +6,7 @@
 // from GitHub. Changes here go live within about 20 minutes of reaching main, so keep the checks green.
 
 // The loader version this file needs (see LOADER_VERSION in Loader.gs).
-const LOADER_VERSION_NEEDED = 1;
+const LOADER_VERSION_NEEDED = 2;   // 2: collectReplies (reads replies in Gmail)
 
 // The secret is NOT stored in this file (the repo is public). Save it once in Apps Script:
 // Project Settings (gear) -> Script properties -> Add script property: SECRET = your secret.
@@ -60,11 +60,78 @@ function doPost(e) {
   const secret = getSecret();
   if (secret.length < 20 || body.secret !== secret) return reply('forbidden');
   const site = loadSiteData();
+  if (body.type === 'MESSAGE') {
+    const m = messageEmail(body.message || {}, body.record || {}, site);
+    if (!m) return reply('sent 0');
+    MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: m.replyTo });
+    return reply('sent 1');
+  }
   const phase = (body.record || {}).phase;
   if (phase === 'quote_sent' || phase === 'order_received') site.queue = loadQueue();
   const emails = emailsFor(body.type, body.record || {}, body.old_record || null, site.emails || {}, site);
   emails.forEach(m => MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: OWNER_EMAIL }));
+  logSentEmails(body.record || {}, emails);
   return reply('sent ' + emails.length);
+}
+
+// ── MESSAGES (supabase/messages.sql) ──────────────────────────────────────
+// Each order has a conversation on the site. Messages written there are emailed from here; emails to
+// the customer are logged on it; replies in Gmail are collected every 10 minutes (collectReplies).
+// Site messages carry "[SoloPrint #<order>]" in the subject so replies find their order.
+function messageTag(rec) { return '[SoloPrint #' + String(rec.id || '') + ']'; }
+function messageEmail(msg, rec, site) {
+  const text = String(msg.body || '').trim();
+  const customer = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(rec.clientEmail || '')) ? String(rec.clientEmail) : '';
+  if (!text || !rec.id) return null;
+  if (msg.sender === 'owner') {
+    if (!customer) return null;
+    const vars = emailVars(rec, (site && site.emails) || {}, site);
+    return { to: customer, replyTo: OWNER_EMAIL, subject: messageTag(rec) + ' ' + orderTitle(rec), body: text + '\n\n' + vars.footer };
+  }
+  const name = String(rec.clientName || '').trim() || 'A customer';
+  return { to: OWNER_EMAIL, replyTo: customer || OWNER_EMAIL, subject: messageTag(rec) + ' Message from ' + name + ': ' + orderTitle(rec),
+    body: name + (customer ? ' (' + customer + ')' : '') + ' wrote on their order page:\n\n' + text + '\n\nReply to this email, or on the order in your dashboard: ' + SITE_URL };
+}
+// The shop's emails to the customer go on the order's conversation. Never stops an email from sending.
+function logSentEmails(rec, emails) {
+  const customer = String(rec.clientEmail || '').toLowerCase();
+  const rows = (emails || []).filter(m => customer && String(m.to).toLowerCase() === customer)
+    .map(m => ({ job_id: String(rec.id || ''), email: customer, sender: 'owner', via: m.kind === 'details_check' ? 'email' : 'auto', subject: m.subject, body: m.body }));
+  if (!rows.length) return;
+  try { callSupabase('record_messages', { p_rows: rows }); } catch (err) { Logger.log('Messages not logged: ' + (err && err.message || err)); }
+}
+function emailAddress(text) {
+  const s = String(text || '').split(',')[0];
+  const m = s.match(/<([^>]+)>/);
+  return (m ? m[1] : s).trim().toLowerCase();
+}
+// The new part of a reply: everything above the quoted earlier email.
+function replyText(text) {
+  let t = String(text || '').replace(/\r\n/g, '\n');
+  const cuts = [/\n[^\n]*On [^\n]{0,200}(\n[^\n]{0,200})?wrote:\s*\n/, /\n-{2,}\s*Original Message/i, /\n_{10,}/, /\nFrom: [^\n]+\n(Sent|Date): /];
+  cuts.forEach(re => { const m = ('\n' + t).match(re); if (m) t = ('\n' + t).slice(0, m.index).slice(1); });
+  return t.split('\n').filter(line => !/^\s*>/.test(line)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+// Runs every 10 minutes. Finds replies in Gmail to SoloPrint emails (the customer's, and yours written in
+// Gmail) and records them on the right order. Only addresses that belong to an order are kept.
+function collectReplies() {
+  const owner = OWNER_EMAIL.toLowerCase();
+  const rows = [];
+  GmailApp.search('subject:SoloPrint newer_than:3d -in:spam -in:trash', 0, 100).forEach(thread => thread.getMessages().forEach(m => {
+    const from = emailAddress(m.getFrom());
+    const subject = String(m.getSubject() || '');
+    const mine = from === owner;
+    // The shop's own emails (never "Re:") are logged when they're sent.
+    if (mine && !/^\s*re:/i.test(subject)) return;
+    const body = replyText(m.getPlainBody());
+    if (!body) return;
+    const tag = subject.match(/\[SoloPrint #([A-Za-z0-9_-]{1,64})\]/);
+    rows.push({ email_id: m.getId(), job_id: tag ? tag[1] : '', email: mine ? emailAddress(m.getTo()) : from,
+      sender: mine ? 'owner' : 'customer', via: 'email', subject: subject.slice(0, 300), body: body.slice(0, 5000), at: m.getDate().toISOString() });
+  }));
+  const added = rows.length ? callSupabase('record_messages', { p_rows: rows }) : 0;
+  Logger.log('Replies found: ' + rows.length + ', new: ' + added);
+  return added;
 }
 
 function reply(text) {
@@ -247,14 +314,16 @@ function testLookup() {
 //  - sendQuoteReminders: every day around 10am, emails customers whose quote has waited 3+ days.
 function setupSchedules() {
   ScriptApp.getProjectTriggers()
-    .filter(t => ['backupToDrive', 'sendQuoteReminders', 'healthCheck'].includes(t.getHandlerFunction()))
+    .filter(t => ['backupToDrive', 'sendQuoteReminders', 'healthCheck', 'collectReplies'].includes(t.getHandlerFunction()))
     .forEach(t => ScriptApp.deleteTrigger(t));
+  // Needs loader version 2 (it has collectReplies); with an older loader, replies just aren't collected yet.
+  if (typeof globalThis !== 'undefined' && typeof globalThis.collectReplies === 'function') ScriptApp.newTrigger('collectReplies').timeBased().everyMinutes(10).create();
   ScriptApp.newTrigger('backupToDrive').timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(3).create();
   ScriptApp.newTrigger('sendQuoteReminders').timeBased().everyDays(1).atHour(10).create();
   ScriptApp.newTrigger('healthCheck').timeBased().everyHours(6).create();
   backupToDrive();
   healthCheck();
-  Logger.log('Scheduled: weekly backup (Mondays ~3am), daily quote reminders (~10am) and a check every 6 hours. A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
+  Logger.log('Scheduled: weekly backup (Mondays ~3am), daily quote reminders (~10am), a check every 6 hours' + (typeof globalThis !== 'undefined' && typeof globalThis.collectReplies === 'function' ? ' and Gmail replies every 10 minutes' : '') + '. A first backup was saved to Drive > ' + BACKUP_FOLDER + '.');
 }
 
 // Runs every 6 hours. Throws when something would stop the emails; the loader then emails the owner.
@@ -450,7 +519,7 @@ function emailsFor(type, rec, old, custom, site) {
   const send = (key, to) => {
     if (!to) return;
     const t = emailTemplate(key, custom);
-    emails.push({ to, subject: renderEmailText(t.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, vars) });
+    emails.push({ to, kind: key, subject: renderEmailText(t.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, vars) });
   };
 
   if (type === 'INSERT') {
@@ -464,7 +533,7 @@ function emailsFor(type, rec, old, custom, site) {
   if (rec.phase !== old.phase && rec.phase === 'details_check') {
     // The owner wrote and checked this email on the site; send exactly that.
     const d = rec.detailsEmail || {};
-    if (customer && String(d.body || '').trim()) emails.push({ to: customer, subject: String(d.subject || 'Quick check on your SoloPrint request').replace(/\s+/g, ' ').trim().slice(0, 200), body: String(d.body).slice(0, 10000) });
+    if (customer && String(d.body || '').trim()) emails.push({ to: customer, kind: 'details_check', subject: String(d.subject || 'Quick check on your SoloPrint request').replace(/\s+/g, ' ').trim().slice(0, 200), body: String(d.body).slice(0, 10000) });
     else send('details_check', customer);
   } else if (rec.phase !== old.phase) {
     const key = { quote_sent: 'quote', order_received: 'confirmed', production: 'printing', final_payment_needed: 'final_payment_needed', delivered: 'delivered' }[rec.phase];
