@@ -18,6 +18,21 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Prices, roll rules, reminder timing, the Venmo username, the material note, "How it works" and every
   email's wording are owner-editable on the site. Prefer adding a setting over hardcoding anything the
   owner might want to change.
+- Keeps Claude usage down: don't watch PRs (no `subscribe_pr_activity`, no check-ins); open the PR, turn on
+  auto-merge, and say it will be live in a few minutes (the site's "Updated N min ago" corner confirms it).
+  Keep screenshots and repeat test runs to what a change needs. When a request is small (wording, a color,
+  a one-line fix), suggest switching to Sonnet with `/model` before doing it; big features stay on Opus.
+
+## Open ideas (offered, not started)
+
+- Automatic Supabase updates: a GitHub job running `supabase/*.sql` on merge via a `SUPABASE_ACCESS_TOKEN`
+  secret; `email-trigger.sql` would first need to keep the saved webhook URL/secret when its placeholders are blank.
+- Photos in order messages (site uploads both ways; Gmail attachments saved to the owner's Drive).
+- My Requests opens with just an email address; require the order link or an emailed code.
+- Order-flow problems from the diagram (https://claude.ai/artifact/5tgxMcnutahHxZ6FkbpBpu): "Quote Ready" in the
+  phase list skips the quote checks; "Payment Requested" set at quote time; no warning when printing unpaid;
+  confirmed email lacks the deposit; "final payment" email sent when already paid and asks pickups for an address;
+  "Delivered" says complete before it arrives; payment and phase emails a minute apart.
 
 ## Files
 
@@ -123,11 +138,11 @@ for new tables. `STATES` lists the pages checked for accessibility and sideways 
 1. `git fetch origin main && git checkout -B <your claude/ branch> origin/main` (merged branches restart from main).
 2. Make the change, run the checks, commit, push.
 3. Open a PR and turn on auto-merge for it (GitHub MCP `enable_pr_auto_merge`, merge method "merge"), then
-   stop: a ruleset on `main` requires the `site-and-email` and `database` checks, and GitHub merges by itself
+   stop (don't subscribe to its activity): a ruleset on `main` requires the `site-and-email` and `database` checks, and GitHub merges by itself
    once they pass. No need to poll CI. If a check fails, the PR stays open; fix and push to the same branch.
    Branches are only checked through their PR, so open the PR right after the first push.
-   GitHub's auto-merge sometimes doesn't fire: if both checks passed and the PR is still open, merge it
-   with `merge_pull_request`.
+   GitHub's auto-merge sometimes doesn't fire: at the start of the next request, if an earlier PR is still open
+   with both checks passed, merge it with `merge_pull_request`.
 4. Vercel publishes `main` (project "project-jfaha", https://soloprint.vercel.app; `claude/*` branches don't
    build). Confirm production is the new commit:
    `curl -s "https://api.github.com/repos/jeffsolo49/soloprint/deployments?environment=Production&per_page=1"`.
