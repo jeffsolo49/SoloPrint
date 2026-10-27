@@ -1264,9 +1264,9 @@ function renderPartColors(item, i) {
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="setPartIncluded(${i}, ${k}, this.checked)" />
           Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
         ${p.optional && !p.include ? '' : `<label for="part-color-${i}-${k}">${p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
-        <select id="part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="setPartColor(${i}, ${k}, this.value)">
+        <div class="color-pick">${colorDot(p.colorId)}<select id="part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="setPartColor(${i}, ${k}, this.value)">
           ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
-        </select>`}
+        </select></div>`}
       </div>
     </div>`).join('')}
     ${renderColorInfo(item)}
@@ -1679,9 +1679,9 @@ function renderOePartColors(it, i) {
       <div class="field">
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="oe-part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="oePartInclude(${i}, ${k}, this.checked)" /> Include add-on: ${esc(p.name)}</label>` : ''}
         ${p.optional && !p.include ? '' : `<label for="oe-part-color-${i}-${k}">${esc(p.name)}${p.grams ? ` (${p.grams} g)` : ''}</label>
-        <select id="oe-part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="oePartColor(${i}, ${k}, this.value)">
+        <div class="color-pick">${colorDot(p.colorId)}<select id="oe-part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="oePartColor(${i}, ${k}, this.value)">
           ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
-        </select>`}
+        </select></div>`}
       </div>
     </div>`).join('')}
   </div>`;
@@ -1900,13 +1900,21 @@ function cmBases(labels, hexes, groups) {
   });
 }
 function cmDescribe(parts, colors) { return parts.map(p => `${p.name} in ${cmColor(colors[p.id]).name}`).join(', '); }
-// A color's name written in that color, on white or black (whichever keeps it readable: at least 4.5:1).
-function colorTextStyle(key) {
-  const hex = cmColor(key).hex;
-  const lum = cmRgb(hex).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
-  const l = 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2];
-  return `color:${hex};background-color:${1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? '#ffffff' : '#000000'}`;
+// A color's name written in that color on one dark gray (bold, so 3:1 contrast is enough). Colors too dark
+// to read there (black, navy) are lightened just enough; the dot beside the picker shows the true color.
+const COLOR_TEXT_BG = '#1c1c21';
+function cmLuminance(rgb) {
+  const lum = rgb.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  return 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2];
 }
+function colorTextStyle(key) {
+  const bg = cmLuminance(cmRgb(COLOR_TEXT_BG));
+  let rgb = cmRgb(cmColor(key).hex);
+  for (let n = 0; n < 40 && (cmLuminance(rgb) + 0.05) / (bg + 0.05) < 3; n++) rgb = rgb.map(v => v + (255 - v) * 0.06);
+  return `color:${cmHex(rgb)};background-color:${COLOR_TEXT_BG}`;
+}
+// A big dot in the true color (real black included) beside each color picker.
+function colorDot(key) { return `<span class="color-dot" style="background:${esc(cmColor(key).hex)}" aria-hidden="true"></span>`; }
 // Parts with no area in the picture (like a copied set before a picture shows it): their color can't be shown.
 function cmMissing(m, parts) { return parts.filter(p => !m.regions.some(r => r.part === p.id)); }
 function cmLegend(parts, colors, m) {
@@ -2002,9 +2010,9 @@ function renderColorIdeas(g) {
     </div>
     ${cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
     ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => `<div class="field"><label for="cm-own-${k}">${esc(p.name)}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
-      <select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
+      <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
-      </select></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
+      </select></div></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
       ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
     <button class="btn-sm" type="button" id="cm-request" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('colorIdeasRequest'))}</button>
@@ -2095,9 +2103,9 @@ function renderColorMapForm(f) {
             <div class="field"><label for="cm-combo-name-${n}">Idea ${n + 1} name</label>
               <input type="text" id="cm-combo-name-${n}" maxlength="40" value="${esc(c.name)}" placeholder="e.g. Gold and black" oninput="state.galleryForm.colorMap.combos[${n}].name = this.value" /></div>
             ${parts.map((p, k) => `<div class="field"><label for="cm-combo-${n}-${k}">${esc(p.name)}</label>
-              <select id="cm-combo-${n}-${k}" class="color-select" style="${colorTextStyle(cc[p.id])}" onchange="setCmComboColor(${n}, '${esc(p.id)}', this.value, 'cm-combo-${n}-${k}')">
+              <div class="color-pick">${colorDot(cc[p.id])}<select id="cm-combo-${n}-${k}" class="color-select" style="${colorTextStyle(cc[p.id])}" onchange="setCmComboColor(${n}, '${esc(p.id)}', this.value, 'cm-combo-${n}-${k}')">
                 ${choices.map(o => `<option value="${esc(o.key)}" style="${colorTextStyle(o.key)}" ${o.key === cc[p.id] ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
-              </select></div>`).join('')}
+              </select></div></div>`).join('')}
             <button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos.splice(${n}, 1); render();" aria-label="Remove color idea ${n + 1}">Remove idea</button>
           </div>
         </div>`; }).join('')}
