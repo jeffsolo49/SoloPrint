@@ -275,7 +275,7 @@ function renderOrderQueue(b) {
     const q = queueEstimate(state.queue, rules, queueTime(b), custom);
     return `<div class="queue-note"><strong>You're #${q.ahead + 1} in line.</strong> Expect it to be printed in ${daysText(q.minDays, q.maxDays)}.</div>`;
   }
-  if (b.phase === 'estimate' || (b.phase === 'quote_sent' && !b.customerApprovedAt)) {
+  if (beforeQuote(b.phase) || (b.phase === 'quote_sent' && !b.customerApprovedAt)) {
     const q = queueEstimate(state.queue, rules, '', custom);
     return `<div class="queue-note"><strong>Current wait:</strong> ${aheadText(q.ahead)}. If you go ahead now, expect it to be printed in ${daysText(q.minDays, q.maxDays)}.</div>`;
   }
@@ -1421,16 +1421,18 @@ const SITE_TEXT = [
   ['Order steps customers see', [
     ['step_estimate', 'Step 1 name', 'Request Received'],
     ['stepInfo_estimate', 'Step 1 description', "We've received your request and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs."],
-    ['step_quote_sent', 'Step 2 name', 'Quote Ready'],
-    ['stepInfo_quote_sent', 'Step 2 description', "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead."],
-    ['step_order_received', 'Step 3 name', 'Order Confirmed'],
-    ['stepInfo_order_received', 'Step 3 description', 'Your order is confirmed and queued for the printer.'],
-    ['step_production', 'Step 4 name', 'Printing'],
-    ['stepInfo_production', 'Step 4 description', 'Your parts are on the printer right now.'],
-    ['step_final_payment_needed', 'Step 5 name', 'Printing Complete'],
-    ['stepInfo_final_payment_needed', 'Step 5 description', 'Your print is done. We need your final payment and shipping address before we send it out.'],
-    ['step_delivered', 'Step 6 name', 'Delivered'],
-    ['stepInfo_delivered', 'Step 6 description', 'Your order is complete. Enjoy!'],
+    ['step_details_check', 'Step 2 name (only when you ask to confirm details)', 'Confirming Details'],
+    ['stepInfo_details_check', 'Step 2 description', "I've sent you a few questions to make sure I get your order right. Please check your email and reply."],
+    ['step_quote_sent', 'Step 3 name', 'Quote Ready'],
+    ['stepInfo_quote_sent', 'Step 3 description', "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead."],
+    ['step_order_received', 'Step 4 name', 'Order Confirmed'],
+    ['stepInfo_order_received', 'Step 4 description', 'Your order is confirmed and queued for the printer.'],
+    ['step_production', 'Step 5 name', 'Printing'],
+    ['stepInfo_production', 'Step 5 description', 'Your parts are on the printer right now.'],
+    ['step_final_payment_needed', 'Step 6 name', 'Printing Complete'],
+    ['stepInfo_final_payment_needed', 'Step 6 description', 'Your print is done. We need your final payment and shipping address before we send it out.'],
+    ['step_delivered', 'Step 7 name', 'Delivered'],
+    ['stepInfo_delivered', 'Step 7 description', 'Your order is complete. Enjoy!'],
     ['pay_unpaid', 'Payment: not asked yet', 'Unpaid'],
     ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
     ['pay_deposit_received', 'Payment: deposit paid', 'Deposit Received'],
@@ -2244,4 +2246,100 @@ async function redoColorAreas(detail) {
   render();
   const s = document.getElementById('cm-status');
   if (s) s.textContent = `Found ${m.regions.length} colored areas.`;
+}
+
+// ── CONFIRM DETAILS (a step before the quote) ─────────────────────────────
+// You write your questions, see the whole email (their request filled in), edit any of it, then send it or
+// cancel. The email script sends exactly the subject and text you approved (detailsEmail on the order).
+function detailsItemsText(b) {
+  return (b.items || []).map((it, i) => {
+    const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+    const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${filamentLabel(it)}`];
+    if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
+    if (it.logo) lines.push('   Add your company logo: yes');
+    if (it.link) lines.push(`   Link: ${it.link}`);
+    if (it.notes) lines.push(`   Notes: ${it.notes}`);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+function detailsEmailFor(b, questions) {
+  const custom = state.settings.emails || {};
+  const orderLink = `${location.origin}/?requests=${encodeURIComponent(b.clientEmail || '')}#order-${encodeURIComponent(b.id)}`;
+  const vars = { name: String(b.clientName || '').trim() || 'there', title: orderTitle(b), detailsQuestions: questions,
+    items: detailsItemsText(b), orderLink, siteLink: location.origin };
+  vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
+  const tpl = emailTemplate('details_check', custom);
+  return { subject: renderEmailText(tpl.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(tpl.body, vars) };
+}
+function openDetailsCheck(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  state.detailsDraft = { id, questions: '', edited: false, ...detailsEmailFor(b, '') };
+  render();
+  document.getElementById(`details-q-${id}`)?.focus();
+}
+function updateDetailsQuestions(id, text) {
+  const d = state.detailsDraft, b = state.batches.find(x => x.id === id);
+  if (!d || d.id !== id || !b) return;
+  d.questions = text;
+  if (d.edited) return;   // once you've changed the email itself, your questions no longer rewrite it
+  Object.assign(d, detailsEmailFor(b, text));
+  const subject = document.getElementById(`details-subject-${id}`), body = document.getElementById(`details-body-${id}`);
+  if (subject) subject.value = d.subject;
+  if (body) body.value = d.body;
+}
+function editDetailsEmail(id, field, value) {
+  const d = state.detailsDraft;
+  if (!d || d.id !== id) return;
+  d[field] = value;
+  d.edited = true;
+}
+async function sendDetailsCheck(id) {
+  const d = state.detailsDraft, b = state.batches.find(x => x.id === id);
+  if (!d || d.id !== id || !b) return;
+  if (!String(d.body || '').trim() || !String(d.subject || '').trim()) { showAlert(`details-err-${id}`, 'The email needs a subject and some text.', 'error'); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.clientEmail || ''))) { showAlert(`details-err-${id}`, "This request has no valid email address, so there's no one to send it to.", 'error'); return; }
+  const btn = document.getElementById(`details-send-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  b.detailsQuestions = String(d.questions || '').trim();
+  b.detailsEmail = { subject: d.subject.trim(), body: d.body, at: new Date().toISOString() };
+  b.phase = 'details_check';
+  stampPhase(b, 'details_check');
+  try {
+    await upsertBatch(b);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send email'; }
+    showAlert(`details-err-${id}`, "Couldn't send. If you were logged out, log in again and retry.", 'error');
+    return;
+  }
+  state.detailsDraft = null;
+  render();
+  showAlert(`batch-ok-${id}`, `Sent to ${b.clientEmail}. The order is now "Confirming Details". Send the quote when you have their answers.`, 'success');
+}
+function renderDetailsCheck(b) {
+  const d = state.detailsDraft && state.detailsDraft.id === b.id ? state.detailsDraft : null;
+  if (!d) {
+    const sent = b.phase === 'details_check' && b.detailsEmail;
+    return `<div class="details-check">
+      ${sent ? `<div class="field-help"><strong>Details check sent ${esc(formatAustinTime(b.detailsEmail.at || b.phaseHistory.details_check))}.</strong> Waiting for their answers; send the quote below when you're ready.</div>
+        <details><summary>See the email you sent</summary><div class="email-preview" style="white-space:pre-wrap;"><strong>${esc(b.detailsEmail.subject)}</strong>\n\n${esc(b.detailsEmail.body)}</div></details>` : ''}
+      <button class="btn-sm" type="button" id="details-open-${b.id}" onclick="openDetailsCheck('${b.id}')">${sent ? 'Ask more questions' : 'Confirm details with the customer'}</button>
+      ${sent ? '' : '<span class="field-help"> Optional: email them a summary of their request and your questions before you quote.</span>'}
+    </div>`;
+  }
+  return `<fieldset class="details-check owner-edit-item">
+    <legend>Confirm details with ${esc(b.clientName || 'the customer')}</legend>
+    <div class="field"><label for="details-q-${b.id}">Your questions</label>
+      <textarea id="details-q-${b.id}" rows="4" spellcheck="true" placeholder="e.g. How tall should it be? Is matte black OK?" oninput="updateDetailsQuestions('${b.id}', this.value)">${esc(d.questions)}</textarea></div>
+    <div class="field-help" style="margin-bottom:6px;">This is exactly what ${esc(b.clientEmail || 'they')} will get. You can change any of it.</div>
+    <div class="field"><label for="details-subject-${b.id}">Subject</label>
+      <input type="text" id="details-subject-${b.id}" maxlength="200" value="${esc(d.subject)}" oninput="editDetailsEmail('${b.id}', 'subject', this.value)" /></div>
+    <div class="field"><label for="details-body-${b.id}">Email</label>
+      <textarea id="details-body-${b.id}" rows="14" spellcheck="true" oninput="editDetailsEmail('${b.id}', 'body', this.value)">${esc(d.body)}</textarea></div>
+    <div class="alert error" id="details-err-${b.id}"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-sm" type="button" id="details-send-${b.id}" onclick="sendDetailsCheck('${b.id}')">Send email</button>
+      <button class="btn-sm danger" type="button" onclick="state.detailsDraft = null; render();">Cancel (don't send)</button>
+    </div>
+  </fieldset>`;
 }

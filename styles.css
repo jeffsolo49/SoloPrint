@@ -826,3 +826,5 @@ select.color-select, select.color-select option { font-weight: 700; }
 .client-row { display: block; width: 100%; text-align: left; padding: 0.75rem; margin-bottom: 6px; border: 2px solid var(--btn-border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
 .client-row.active { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); font-weight: 700; }
 .logo-offer { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(var(--accent-rgb),0.08); border: 1px solid var(--border); font-size: 14px; }
+.details-check { margin: 12px 0; display: grid; gap: 8px; }
+.details-questions { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(var(--accent-rgb),0.08); border: 1px solid var(--border); }

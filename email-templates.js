@@ -21,6 +21,11 @@ const EMAIL_TEMPLATES = {
     subject: 'We received your SoloPrint request',
     body: "Hi {name},\n\nThanks for your request for {title}. We've received your submission and will respond promptly after reviewing it.\n\n{vacationNote}\n\n{items}\n\nAutomated estimate: ${estimate}\nAny prices shown on the site are automated estimates, not exact costs. We'll email your confirmed quote once we've reviewed your request.\n\n{footer}"
   },
+  details_check: {
+    label: 'Confirm details', to: 'Customer', when: 'You tap "Confirm details" on a request. You see the email and can edit it before it sends.',
+    subject: 'Quick check on your SoloPrint request',
+    body: "Hi {name},\n\nThanks for your request for {title}. Before I put your quote together, please check the details below.\n\n{detailsQuestions}\n\nHere's what you asked for:\n\n{items}\n\nJust reply to this email, or answer on your order page: {orderLink}\n\n{footer}"
+  },
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
@@ -111,6 +116,7 @@ const EMAIL_PLACEHOLDERS = {
   materialNote: 'Your material note from Settings > Wording (e.g. "All prints are PLA...")',
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
+  detailsQuestions: 'Confirm details email: your questions for this customer (you type them when you send it)',
   queueNote: 'Quote and confirmed emails: how many orders are ahead and about how many days until it\'s printed',
   photo: 'Link to the first finished-print photo you added',
   vacationNote: 'Your vacation message, only while vacation mode is on',
@@ -229,12 +235,14 @@ function shopRules(settings) {
   ((settings && settings.colors) || []).forEach(c => { if (c && c.id) colorRates[c.id] = c.rate; });
   return Object.assign({}, RULE_DEFAULTS, cleanRules(settings && settings.rules), { colorRates: cleanColorRates(colorRates) });
 }
+// Phases before a quote is sent: "Reviewing" and "Confirming details". Prices aren't locked in yet.
+function beforeQuote(phase) { return !phase || phase === 'estimate' || phase === 'details_check'; }
 // The prices an order uses: its saved quote rates, the original prices for older quotes, else today's.
 function orderRules(order, settings) {
   const rules = shopRules(settings);
   const saved = cleanQuoteRates(order && order.rates);
   if (Object.keys(saved).length) return Object.assign(rules, { colorRates: {} }, saved);
-  if (order && order.phase && order.phase !== 'estimate') return Object.assign(rules, LEGACY_RATES, { colorRates: {} });
+  if (order && order.phase && !beforeQuote(order.phase)) return Object.assign(rules, LEGACY_RATES, { colorRates: {} });
   return rules;
 }
 // The rates a quote saves (and keeps), including any per-color rates.

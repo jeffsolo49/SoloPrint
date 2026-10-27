@@ -812,10 +812,10 @@ const STATES = {
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
     await page.fill('#email-body-footer', 'Thanks!\nJeff');
     assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'footer change should show in other previews');
-    assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
+    assert(/Shown at the end of: Request received, Confirm details, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-quote,email-reminder,email-confirmed,email-printing,email-final_payment_needed,email-delivered,email-delivery_update,email-deposit,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-details_check,email-quote,email-reminder,email-confirmed,email-printing,email-final_payment_needed,email-delivered,email-delivery_update,email-deposit,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
@@ -1640,6 +1640,30 @@ const STATES = {
     await page.evaluate(() => { state.batches.find(b => b.id === '1').paymentStatus = 'deposit_received'; return updatePaymentStatus('1', 'payment_received'); });
     assert(db.jobs['1'].paidAt, 'paid date recorded');
     await page.close();
+  });
+  await check('confirm details: owner writes questions, sees and edits the exact email, sends it; quoting still works after', async () => {
+    const db = fixtures();
+    db.jobs['9'] = { id: '9', clientName: 'Ana', clientEmail: 'ana@example.com', createdAt: new Date().toISOString(), phase: 'estimate', paymentStatus: 'unpaid',
+      items: [{ name: 'Phone stand', qty: 2, filType: 'black', notes: 'Fits an iPad?' }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.click('#details-open-9');
+    await page.fill('#details-q-9', 'Which iPad model?');
+    const body = await page.inputValue('#details-body-9');
+    assert(/Hi Ana/.test(body) && /Which iPad model\?/.test(body) && /Phone stand x 2/.test(body) && /Notes: Fits an iPad\?/.test(body) && /#order-9/.test(body), body);
+    await page.fill('#details-body-9', body + '\nP.S. Edited by hand.');
+    await page.fill('#details-q-9', 'Changed question');
+    assert(/Edited by hand/.test(await page.inputValue('#details-body-9')), 'edits to the email are kept');
+    await page.click('#details-send-9');
+    await page.waitForTimeout(300);
+    const job = db.jobs['9'];
+    assert(job.phase === 'details_check' && /Edited by hand/.test(job.detailsEmail.body) && job.detailsEmail.subject && job.detailsQuestions === 'Changed question' && job.phaseHistory.details_check, JSON.stringify(job));
+    assert(await page.$('#approve-btn-9'), 'the quote can still be sent from Confirming Details');
+    await page.close();
+    const customer = await open(db, { suffix: '?requests=ana%40example.com' });
+    await customer.waitForSelector('.details-questions');
+    assert(/Changed question/.test(await customer.textContent('.details-questions')), 'customer sees the questions');
+    await customer.close();
   });
   await check('installable as an app: manifest and icons', async () => {
     const root = path.resolve(__dirname, '..');
