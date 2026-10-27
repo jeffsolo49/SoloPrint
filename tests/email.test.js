@@ -221,9 +221,16 @@ check('Gmail replies: customers and your own replies are collected; the shop ema
   assert(rows.length === 2 && rows[0].sender === 'customer' && rows[0].email === 'jane@example.com' && rows[0].body === 'Looks great!' && rows[0].email_id === 'm2'
     && rows[1].sender === 'owner' && rows[1].email === 'jane@example.com' && rows[1].job_id === '1729', JSON.stringify(rows));
 });
-check('the email code asks for loader version 2 (Gmail replies), and the loader provides it', () => {
+check('the loader matches the version the email code needs and asks Google for every permission it uses', () => {
   const loader = fs.readFileSync(path.resolve(__dirname, '..', 'email', 'Loader.gs'), 'utf8');
-  assert(/const LOADER_VERSION_NEEDED = 2;/.test(CODE) && /const LOADER_VERSION = 2;/.test(loader) && /function collectReplies\(\)/.test(loader) && /GmailApp\.search/.test(loader), 'loader and code disagree');
+  const need = (CODE.match(/const LOADER_VERSION_NEEDED = (\d+);/) || [])[1], have = (loader.match(/const LOADER_VERSION = (\d+);/) || [])[1];
+  assert(need && need === have && /function collectReplies\(\)/.test(loader), `code needs loader ${need}, loader is ${have}`);
+  // Google grants only what the loader's own words mention: backups create files and folders in Drive.
+  const perms = loader.slice(loader.indexOf('function permissions_'));
+  ['MailApp.sendEmail', 'DriveApp.createFile', 'DriveApp.createFolder', 'UrlFetchApp.fetch', 'ScriptApp.newTrigger', 'GmailApp.search'].forEach(w => assert(perms.includes(w), `permissions_ is missing ${w}`));
+  ['DriveApp.', 'GmailApp.', 'MailApp.', 'UrlFetchApp.', 'ScriptApp.'].forEach(svc => {
+    if (CODE.includes(svc)) assert(perms.includes(svc), `Code.gs uses ${svc} but the loader doesn't ask for it`);
+  });
 });
 
 console.log('\nModel lookups:');
