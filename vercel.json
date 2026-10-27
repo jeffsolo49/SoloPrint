@@ -8,6 +8,16 @@
     "api/design.js": { "includeFiles": "index.html" }
   },
   "routes": [
-    { "src": "/", "has": [{ "type": "query", "key": "design" }], "dest": "/api/design" }
+    { "src": "/", "has": [{ "type": "query", "key": "design" }], "dest": "/api/design" },
+    {
+      "src": "/(.*)",
+      "continue": true,
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
+      }
+    }
   ]
 }
