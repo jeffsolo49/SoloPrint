@@ -1505,10 +1505,32 @@ const STATES = {
     await owner.fill('#cm-combo-name-1', 'Shiny');
     await owner.selectOption('#cm-combo-1-0', 'silk');
     await owner.waitForFunction(() => document.querySelectorAll('#color-map-form canvas.cm-ready').length >= 5);
+    // A second set of the body: copied part, and a new picture with that set in orange.
+    await owner.click('#part-copy-0');
+    assert(await owner.inputValue('#part-name-1') === 'Body (set 2)', await owner.inputValue('#part-name-1'));
+    const setId = await owner.evaluate(() => state.galleryForm.parts[1].id);
+    const png2 = await owner.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 200; c.height = 150;
+      const x = c.getContext('2d');
+      x.fillStyle = '#56565a'; x.fillRect(0, 0, 200, 150);
+      x.fillStyle = '#c89c00'; x.fillRect(20, 20, 50, 60);
+      x.fillStyle = '#785c03'; x.fillRect(20, 80, 50, 30);
+      x.fillStyle = '#e0600a'; x.fillRect(70, 20, 50, 90);
+      x.fillStyle = '#0a3c80'; x.fillRect(150, 40, 20, 20);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await owner.setInputFiles('#cm-upload', { name: 'render2.png', mimeType: 'image/png', buffer: Buffer.from(png2, 'base64') });
+    await owner.waitForSelector('text=colored areas. Pick a part');
+    const areas = await owner.evaluate(() => state.galleryForm.colorMap.regions.map(r => ({ hex: r.hexes[0], part: r.part })));
+    const orange = areas.findIndex(r => near(r.hex, '#e0600a') < 40);
+    assert(orange >= 0 && !areas[orange].part && areas.some(r => r.part === partIds[0]) && areas.some(r => r.part === partIds[1]), `kept matches, new area for set 2: ${JSON.stringify(areas)}`);
+    await owner.selectOption(`#cm-region-${orange}`, setId);
+    assert(await owner.evaluate(id => state.galleryForm.colorMap.combos[0].colors[id], setId) === 'red', 'the copy starts with the same color in each idea');
+    await owner.selectOption('#cm-combo-0-1', 'black');
     await owner.click('#gallery-save');
     await owner.waitForTimeout(300);
     const map = db.gallery.g1.data.colorMap;
-    assert(map && /colors-\d+\.png$/.test(map.photo) && map.regions[gold].part === partIds[0] && map.regions[blue].part === partIds[1]
+    assert(map && /colors-\d+\.png$/.test(map.photo) && map.regions.some(r => r.part === partIds[0]) && map.regions.some(r => r.part === partIds[1]) && map.regions[orange].part === setId
       && map.combos[0].name === 'Red and black' && map.combos[0].colors[partIds[0]] === 'red', JSON.stringify(map));
     await owner.close();
 
@@ -1524,23 +1546,25 @@ const STATES = {
     assert(lit[0] > 150 && lit[1] < 90 && lit[2] < 90, `the body should be red: ${lit}`);
     assert(shade[0] < lit[0] && shade[0] > 60 && shade[1] < 60, `the shaded face should stay a darker red: ${shade}`);
     assert(bg.join() === '86,86,90', `the background is left as it is: ${bg}`);
+    const set2 = await pixel(95, 40);
+    assert(set2[0] < 60 && set2[1] < 60, `the second set is painted in its own color (black): ${set2}`);
     assert(/Body: Red/.test(await page.textContent('.cm-legend')), await page.textContent('.cm-legend'));
     // The estimate follows the colors picked: Red costs more per gram here.
     const prices = async () => [await page.textContent('#cm-price .gallery-price'), await page.textContent('#work-price .gallery-price')].map(x => x.match(/\$[\d.]+/)[0]);
     const before = await prices();
     assert(before[0] === before[1] && /Red/.test(await page.textContent('#cm-price')), `card and page price match: ${before}`);
     await page.click('#cm-pick-own');
-    await page.selectOption('#cm-own-1', 'red');
-    assert(await page.evaluate(() => document.activeElement.id) === 'cm-own-1', 'focus stays on the color picked');
+    await page.selectOption('#cm-own-2', 'red');
+    assert(await page.evaluate(() => document.activeElement.id) === 'cm-own-2', 'focus stays on the color picked');
     const after = await prices();
     assert(after[0] === after[1] && parseFloat(after[0].slice(1)) > parseFloat(before[0].slice(1)), `more red should cost more: ${before} -> ${after}`);
     assert(/In the colors picked above/.test(await page.textContent('#work-price')), await page.textContent('#work-price'));
     await page.click('#work-price button:has-text("Request this")');
     await page.waitForSelector('.cm-request canvas.cm-ready');
     const it = await page.evaluate(() => state.draftItems[0]);
-    assert(it.designParts[0].colorId === 'red' && it.designParts[1].colorId === 'red' && it.colorId === 'red' && !it.extraColors.length, JSON.stringify(it.designParts));
+    assert(it.designParts[0].colorId === 'red' && it.designParts[1].colorId === 'black' && it.designParts[2].colorId === 'red' && it.colorId === 'red' && it.extraColors.length === 1 && it.extraColors[0].parts === 'Body (set 2)', JSON.stringify(it.designParts));
     assert((await page.textContent('#customer-price-preview-0')).includes(after[0]), `request estimate matches: ${await page.textContent('#customer-price-preview-0')} vs ${after[0]}`);
-    await page.selectOption('#part-color-0-1', 'black');
+    await page.selectOption('#part-color-0-2', 'black');
     await page.waitForFunction(() => { const c = document.querySelector('.cm-request canvas.cm-ready'); if (!c) return false; const d = c.getContext('2d').getImageData(160, 50, 1, 1).data; return d[0] < 60 && d[1] < 60; });
     await page.close();
   });
