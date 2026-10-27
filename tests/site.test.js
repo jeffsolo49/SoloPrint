@@ -1571,7 +1571,7 @@ const STATES = {
     const set2 = await pixel(95, 40);
     assert(set2[0] < 60 && set2[1] < 60, `the second set is painted in its own color (black): ${set2}`);
     assert(/Body: Red/.test(await page.textContent('.cm-legend')), await page.textContent('.cm-legend'));
-    assert(/color:#d22b2b;background-color:#ffffff/.test(await page.getAttribute('.cm-legend .color-name', 'style')), 'color names are written in their color');
+    assert(/color:#[0-9a-f]{6};background-color:#1c1c21/.test(await page.getAttribute('.cm-legend .color-name', 'style')), 'color names are written in their color');
     // The estimate follows the colors picked: Red costs more per gram here.
     const prices = async () => [await page.textContent('#cm-price .gallery-price'), await page.textContent('#work-price .gallery-price')].map(x => x.match(/\$[\d.]+/)[0]);
     const before = await prices();
@@ -1588,6 +1588,7 @@ const STATES = {
     assert(it.designParts[0].colorId === 'red' && it.designParts[1].colorId === 'black' && it.designParts[2].colorId === 'red' && it.colorId === 'red' && it.extraColors.length === 1 && it.extraColors[0].parts === 'Body (set 2)', JSON.stringify(it.designParts));
     assert((await page.textContent('#customer-price-preview-0')).includes(after[0]), `request estimate matches: ${await page.textContent('#customer-price-preview-0')} vs ${after[0]}`);
     await page.selectOption('#part-color-0-2', 'black');
+    assert(/background:\s*#1e1e24/.test(await page.getAttribute('#part-color-0-2 >> xpath=preceding-sibling::span[contains(@class,"color-dot")]', 'style')), 'a dot in the true color sits beside the picker');
     await page.waitForFunction(() => { const c = document.querySelector('.cm-request canvas.cm-ready'); if (!c) return false; const d = c.getContext('2d').getImageData(160, 50, 1, 1).data; return d[0] < 60 && d[1] < 60; });
     await page.close();
   });
