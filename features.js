@@ -1594,14 +1594,16 @@ function renderColorLines(item, grams, rules) {
 
 // A past-work design as a customer would first request it: its own color (else White), each part in its
 // starting color, add-ons left off. Used for the price shown on the gallery and in the owner's design form.
-function designEstimateItem(g) {
+// `colors` ({ partId: colorKey }, optional): the colors a customer picked under Color ideas.
+function designEstimateItem(g, colors) {
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
+  if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
   if ((item.designParts || []).length) applyPartColors(item); else ensureItemColor(item);
   return item;
 }
-function designEstimate(g) {
+function designEstimate(g, colors) {
   if (g.price > 0) return g.price;
-  const item = designEstimateItem(g);
+  const item = designEstimateItem(g, colors);
   return g.minutes && Number(item.grams) > 0 ? calcPerPrint(g.minutes, item.grams, item) : null;
 }
 
@@ -1949,17 +1951,19 @@ function cmCombosFor(g, choices) {
   // Customers see ideas whose colors are all in stock; the owner sees every idea.
   return g.colorMap.combos.filter(c => c.name && (state.ownerUnlocked || Object.values(c.colors).every(k => keys.includes(k))));
 }
+function cmShown(g) { return featureOn('colorIdeas') && featureOn('designParts') && (g.parts || []).length > 0 && cmUsable(g.colorMap); }
 function cmViewColors(id) {
   const g = state.gallery.find(x => x.id === id);
-  if (!g || !g.colorMap) return null;
+  if (!g || !cmShown(g)) return null;
   const choices = partColorChoices(), combos = cmCombosFor(g, choices), v = cmView(g, combos);
   const combo = combos.find(c => c.id === v.pick);
   return cmPartColors(g.parts, combo ? combo.colors : v.own, choices);
 }
 function renderColorIdeas(g) {
-  if (!featureOn('colorIdeas') || !featureOn('designParts') || !(g.parts || []).length || !cmUsable(g.colorMap)) return '';
+  if (!cmShown(g)) return '';
   const choices = partColorChoices(), combos = cmCombosFor(g, choices), v = cmView(g, combos);
   const colors = cmViewColors(g.id);
+  const price = designEstimate(g, colors), item = designEstimateItem(g, colors);
   return `<div class="card color-ideas" id="color-ideas">
     <h3 class="card-title">${esc(t('colorIdeasTitle'))}</h3>
     <div class="field-help" style="margin-bottom:10px;">${esc(t('colorIdeasNote'))}</div>
@@ -1972,6 +1976,8 @@ function renderColorIdeas(g) {
       <select id="cm-own-${k}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${choices.map(c => `<option value="${esc(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
       </select></div>`).join('')}</div>` : cmLegend(g.parts, colors)}
+    ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
+      ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
     <button class="btn-sm" type="button" id="cm-request" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('colorIdeasRequest'))}</button>
   </div>`;
 }
@@ -1980,6 +1986,8 @@ function refreshColorIdeas(id, focusId) {
   const el = document.getElementById('color-ideas');
   if (!g || !el) { render(); return; }
   el.outerHTML = renderColorIdeas(g);
+  const price = document.getElementById('work-price');
+  if (price) price.innerHTML = renderWorkPrice(g);
   paintColorPreviews();
   if (focusId) document.getElementById(focusId)?.focus();
 }

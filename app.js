@@ -3305,7 +3305,6 @@ function renderRecentWork() {
 }
 
 function renderWorkDetail(g) {
-  const price = galleryPrice(g);
   return `
     <div id="work-detail" class="work-detail-head">
       <h2 class="section-title">${esc(g.title || 'Untitled')}</h2>
@@ -3321,19 +3320,26 @@ function renderWorkDetail(g) {
     ${renderDesignParts(g)}
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
-      ${price !== null ? `
-        <div class="job-divider" style="margin:6px 0 14px;"></div>
+      <div id="work-price">${renderWorkPrice(g)}</div>
+
+    </div>
+    ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
+}
+
+// The design's price and "Request this": in the colors picked under Color ideas when that card shows.
+function renderWorkPrice(g) {
+  const colors = cmViewColors(g.id);
+  const price = designEstimate(g, colors);
+  if (price === null) return `<div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`;
+  return `<div class="job-divider" style="margin:6px 0 14px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
-            ${g.price > 0 ? '' : `<div class="gallery-meta">${(g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
+            ${g.price > 0 ? '' : `<div class="gallery-meta">${colors ? 'In the colors picked above' : (g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
-          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(t('requestThis'))}</button>
+          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('requestThis'))}</button>
         </div>
-        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>` : `
-        <div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`}
-    </div>
-    ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
+        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>`;
 }
 
 function showWorkPhoto(id, n) {

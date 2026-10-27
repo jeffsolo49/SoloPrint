@@ -1513,6 +1513,8 @@ const STATES = {
     await owner.close();
 
     db.settings.colors.find(c => c.id === 'silk').outOfStock = true;
+    db.settings.colors.find(c => c.id === 'red').rate = 0.5;
+    db.gallery.g1.data.parts.forEach(p => { p.grams = 40; });
     const page = await open(db, { suffix: '?design=dragon-organizer' });
     await page.waitForSelector('#color-ideas canvas.cm-ready');
     const picks = await page.$$eval('.cm-picks button', b => b.map(x => x.textContent.trim()));
@@ -1523,13 +1525,21 @@ const STATES = {
     assert(shade[0] < lit[0] && shade[0] > 60 && shade[1] < 60, `the shaded face should stay a darker red: ${shade}`);
     assert(bg.join() === '86,86,90', `the background is left as it is: ${bg}`);
     assert(/Body: Red/.test(await page.textContent('.cm-legend')), await page.textContent('.cm-legend'));
+    // The estimate follows the colors picked: Red costs more per gram here.
+    const prices = async () => [await page.textContent('#cm-price .gallery-price'), await page.textContent('#work-price .gallery-price')].map(x => x.match(/\$[\d.]+/)[0]);
+    const before = await prices();
+    assert(before[0] === before[1] && /Red/.test(await page.textContent('#cm-price')), `card and page price match: ${before}`);
     await page.click('#cm-pick-own');
     await page.selectOption('#cm-own-1', 'red');
     assert(await page.evaluate(() => document.activeElement.id) === 'cm-own-1', 'focus stays on the color picked');
-    await page.click('#cm-request');
+    const after = await prices();
+    assert(after[0] === after[1] && parseFloat(after[0].slice(1)) > parseFloat(before[0].slice(1)), `more red should cost more: ${before} -> ${after}`);
+    assert(/In the colors picked above/.test(await page.textContent('#work-price')), await page.textContent('#work-price'));
+    await page.click('#work-price button:has-text("Request this")');
     await page.waitForSelector('.cm-request canvas.cm-ready');
     const it = await page.evaluate(() => state.draftItems[0]);
     assert(it.designParts[0].colorId === 'red' && it.designParts[1].colorId === 'red' && it.colorId === 'red' && !it.extraColors.length, JSON.stringify(it.designParts));
+    assert((await page.textContent('#customer-price-preview-0')).includes(after[0]), `request estimate matches: ${await page.textContent('#customer-price-preview-0')} vs ${after[0]}`);
     await page.selectOption('#part-color-0-1', 'black');
     await page.waitForFunction(() => { const c = document.querySelector('.cm-request canvas.cm-ready'); if (!c) return false; const d = c.getContext('2d').getImageData(160, 50, 1, 1).data; return d[0] < 60 && d[1] < 60; });
     await page.close();
