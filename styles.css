@@ -849,7 +849,17 @@ select.color-select, select.color-select option { font-weight: 700; }
 .msg-when { font-weight: 400; color: var(--muted); }
 .msg-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .waiting-banner { background: rgba(var(--accent-rgb),0.1); border: 2px solid var(--accent); color: var(--text); margin-bottom: 12px; }
-.waiting-banner a { color: var(--accent); font-weight: 700; }
+.waiting-banner a, .waiting-banner .btn-link { color: var(--accent); font-weight: 700; }
+.msg-body a { color: var(--accent); text-decoration: underline; font-weight: 600; }
+.msg-mine .msg-body a { color: var(--on-accent); }
+textarea.autogrow { resize: vertical; overflow-y: auto; min-height: 70px; max-height: 70vh; }
+/* Editing a request beside its conversation: side by side on wide screens, chat then form on phones. */
+.chat-edit { display: grid; gap: 12px; }
+.chat-edit .owner-edit { margin: 12px 0; }
+@media (min-width: 900px) {
+  .chat-edit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .chat-edit .conversation { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto; }
+}
 
 /* Practice order: the customer's screen and yours side by side (stacked on phones). */
 .practice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
