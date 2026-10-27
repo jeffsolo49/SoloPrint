@@ -1090,23 +1090,34 @@ function formatAustinTime(iso) {
   }).format(new Date(iso));
 }
 
-/** Last write time of this HTML document (browser). Updates whenever index.html is saved or the server sends a new Last-Modified. */
-function getBuildDate() {
-  const d = new Date(document.lastModified);
-  if (!Number.isFinite(d.getTime()) || d.getTime() === 0) return null;
-  return d;
+// "Updated N min ago" in the header: when the live site was last published (Vercel's production deploy,
+// as GitHub records it; the repo is public so no key is needed). Hidden after an hour.
+const DEPLOYS_URL = 'https://api.github.com/repos/jeffsolo49/soloprint/deployments?environment=Production&per_page=1';
+let lastUpdateAt = 0;
+function updateBadgeText(now = Date.now()) {
+  const mins = Math.floor((now - lastUpdateAt) / 60000);
+  if (!lastUpdateAt || mins > 60 || mins < 0) return '';
+  return mins < 1 ? 'Updated just now' : `Updated ${mins} min ago`;
 }
-
-/**
- * Auto build id from file mtime (milliseconds). Changes on every save that updates the file timestamp.
- * Same instant as the time shown — both come from document.lastModified.
- */
-function formatBuildBadge() {
-  const d = getBuildDate();
-  if (!d) return '—';
-  const buildId = `b${d.getTime()}`;
-  const when = `${formatAustinTime(d.toISOString())} CT`;
-  return `${buildId} · ${when}`;
+// Two copies: in the header on wide screens, a thin line under it on phones (styles.css).
+function refreshUpdateBadge() {
+  const text = updateBadgeText();
+  document.querySelectorAll('.build-badge').forEach(el => { el.textContent = text; el.hidden = !text; });
+}
+async function loadLastUpdate() {
+  try {
+    const res = await fetch(DEPLOYS_URL, { cache: 'no-store' });
+    const list = res.ok ? await res.json() : [];
+    const at = Date.parse(list && list[0] && list[0].created_at);
+    if (Number.isFinite(at)) lastUpdateAt = at;
+  } catch (e) { /* offline: keep the last time we knew */ }
+  refreshUpdateBadge();
+}
+function startUpdateBadge() {
+  loadLastUpdate();
+  setInterval(refreshUpdateBadge, 30000);
+  setInterval(() => { if (!document.hidden) loadLastUpdate(); }, 5 * 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadLastUpdate(); });
 }
 
 // ── URL PARSING ───────────────────────────────────────────────────────────
@@ -1140,6 +1151,7 @@ async function fetchNameFromServer(url) {
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
   setupBackToTop();
+  startUpdateBadge();
   loadPreviewDrafts();
   loadModelLibrary();
   loadClientHistoryEmail();
@@ -1180,9 +1192,7 @@ function render() {
         <span class="logo-text">SOLO<span>PRINT</span></span>
       </button>
       <div class="header-actions">
-        <div class="build-badge" title="Last change to this page: build id b… is the file timestamp (ms). Time is Austin (America/Chicago). Resave index.html to refresh.">
-          ${formatBuildBadge()}
-        </div>
+        <div class="build-badge" id="build-badge" title="When the site was last updated" ${updateBadgeText() ? '' : 'hidden'}>${updateBadgeText()}</div>
         <span title="${state.synced ? 'Synced' : 'Offline'}"><span class="sync-dot ${state.synced?'':'offline'}"></span></span>
         ${renderNotifBell()}
         ${state.view === 'client'
@@ -1191,6 +1201,7 @@ function render() {
              ${state.ownerUnlocked ? `<button class="btn-sm danger" onclick="logoutOwner()">Logout</button>` : ''}`}
       </div>
     </header>
+    <div class="build-badge build-badge-phone" title="When the site was last updated" ${updateBadgeText() ? '' : 'hidden'}>${updateBadgeText()}</div>
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
   `;
   attachAll();

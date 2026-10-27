@@ -45,6 +45,9 @@ async function mockBackend(page, db) {
     const owner = (req.headers()['authorization'] || '') === OWNER;
     if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('blob:')) return route.continue();
     if (url.startsWith('https://img.test/')) return route.fulfill({ body: PNG, contentType: 'image/png' });
+    if (url.startsWith('https://api.github.com/repos/jeffsolo49/soloprint/deployments')) {
+      return route.fulfill({ json: [{ created_at: new Date(Date.now() - (db.deployedMinsAgo ?? 59) * 60000 - 5000).toISOString() }], headers: { 'Access-Control-Allow-Origin': '*' } });
+    }
     const rest = url.split('/rest/v1')[1] || '';
     if (rest) db.log.push(`${method} ${rest.split('?')[0]} ${owner ? 'owner' : 'anon'}`);
     if (rest.startsWith('/rpc/customer_jobs')) {
@@ -1566,6 +1569,22 @@ const STATES = {
     assert((await page.textContent('#customer-price-preview-0')).includes(after[0]), `request estimate matches: ${await page.textContent('#customer-price-preview-0')} vs ${after[0]}`);
     await page.selectOption('#part-color-0-2', 'black');
     await page.waitForFunction(() => { const c = document.querySelector('.cm-request canvas.cm-ready'); if (!c) return false; const d = c.getContext('2d').getImageData(160, 50, 1, 1).data; return d[0] < 60 && d[1] < 60; });
+    await page.close();
+  });
+  await check('header shows how many minutes ago the site was updated, and hides after an hour', async () => {
+    const db = fixtures();
+    db.deployedMinsAgo = 7;
+    const page = await open(db, { width: 390 });
+    await page.waitForSelector('.build-badge-phone:not([hidden])');
+    assert(await page.textContent('.build-badge-phone') === 'Updated 7 min ago' && await page.isVisible('.build-badge-phone') && !(await page.isVisible('#build-badge')), await page.textContent('.build-badge-phone'));
+    db.deployedMinsAgo = 0;
+    await page.evaluate(() => loadLastUpdate());
+    assert(await page.textContent('.build-badge-phone') === 'Updated just now', await page.textContent('.build-badge-phone'));
+    await page.setViewportSize({ width: 1100, height: 900 });
+    assert(await page.isVisible('#build-badge') && !(await page.isVisible('.build-badge-phone')), 'wide screens show it in the header');
+    db.deployedMinsAgo = 61;
+    await page.evaluate(() => loadLastUpdate());
+    assert(await page.evaluate(() => [...document.querySelectorAll('.build-badge')].every(e => e.hidden)), 'over an hour: hidden');
     await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {

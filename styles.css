@@ -57,7 +57,8 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 .header-actions { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 640px) {
   .header { padding: 0 1rem; }
-  .build-badge { display: none; }
+  #build-badge { display: none; }
+  div.build-badge-phone { display: block; border: none; border-radius: 0; padding: 3px 1rem; text-align: right; background: var(--surface); border-bottom: 1px solid var(--border); }
 }
 @media (max-width: 380px) {
   .logo-text { display: none; }
@@ -76,6 +77,8 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
   line-height: 1.2;
   white-space: nowrap;
 }
+.build-badge-phone { display: none; }
+.build-badge[hidden] { display: none !important; }
 
 .nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; overflow-x: auto; }
 .nav::-webkit-scrollbar { display: none; }
