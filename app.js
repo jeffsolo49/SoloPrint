@@ -4613,6 +4613,7 @@ function ownerSetPrice(it) {
 async function approveBatch(batchId) {
   const batch = state.batches.find(b => b.id === batchId);
   if (!batch) return;
+  if (!confirm(`Ready to send the quote to ${batch.clientName || batch.clientEmail}?`)) return;
   let allValid = true;
   if (batch.items.some(it => it.galleryId) && !state.galleryLoaded) await loadGallery();
   batch.items.forEach((it, i) => {
