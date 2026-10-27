@@ -1512,6 +1512,7 @@ const STATES = {
     await owner.click('#part-copy-0');
     assert(await owner.inputValue('#part-name-1') === 'Body (set 2)', await owner.inputValue('#part-name-1'));
     const setId = await owner.evaluate(() => state.galleryForm.parts[1].id);
+    assert(/"Body \(set 2\)"/.test(await owner.textContent('#cm-missing')), 'warns that the copied set has no area in the picture');
     const png2 = await owner.evaluate(() => {
       const c = document.createElement('canvas'); c.width = 200; c.height = 150;
       const x = c.getContext('2d');
@@ -1528,6 +1529,7 @@ const STATES = {
     const orange = areas.findIndex(r => near(r.hex, '#e0600a') < 40);
     assert(orange >= 0 && !areas[orange].part && areas.some(r => r.part === partIds[0]) && areas.some(r => r.part === partIds[1]), `kept matches, new area for set 2: ${JSON.stringify(areas)}`);
     await owner.selectOption(`#cm-region-${orange}`, setId);
+    assert(!(await owner.$('#cm-missing')), 'no warning once every part has an area');
     assert(await owner.evaluate(id => state.galleryForm.colorMap.combos[0].colors[id], setId) === 'red', 'the copy starts with the same color in each idea');
     await owner.selectOption('#cm-combo-0-1', 'black');
     await owner.click('#gallery-save');

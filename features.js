@@ -1900,8 +1900,11 @@ function cmBases(labels, hexes, groups) {
   });
 }
 function cmDescribe(parts, colors) { return parts.map(p => `${p.name} in ${cmColor(colors[p.id]).name}`).join(', '); }
-function cmLegend(parts, colors) {
-  return `<ul class="cm-legend">${parts.map(p => { const c = cmColor(colors[p.id]); return `<li><span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(p.name)}: ${esc(c.name)}</li>`; }).join('')}</ul>`;
+// Parts with no area in the picture (like a copied set before a picture shows it): their color can't be shown.
+function cmMissing(m, parts) { return parts.filter(p => !m.regions.some(r => r.part === p.id)); }
+function cmLegend(parts, colors, m) {
+  const missing = cmMissing(m, parts).map(p => p.id);
+  return `<ul class="cm-legend">${parts.map(p => { const c = cmColor(colors[p.id]); return `<li><span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>${esc(p.name)}: ${esc(c.name)}${missing.includes(p.id) ? ' <span class="gallery-meta">(not shown in the picture)</span>' : ''}</li>`; }).join('')}</ul>`;
 }
 
 // Painting: photos are read once, each pixel's area is worked out once per photo, and finished pictures are kept.
@@ -1991,10 +1994,10 @@ function renderColorIdeas(g) {
       <button type="button" class="btn-sm" id="cm-pick-own" aria-pressed="${v.pick === 'own'}" onclick="setCmPick('${esc(g.id)}', 'own')">${esc(t('colorIdeasOwn'))}</button>
     </div>
     ${cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
-    ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => `<div class="field"><label for="cm-own-${k}">${esc(p.name)}</label>
+    ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => `<div class="field"><label for="cm-own-${k}">${esc(p.name)}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
       <select id="cm-own-${k}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${choices.map(c => `<option value="${esc(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}${c.filType === 'special' ? ' (special)' : ''}</option>`).join('')}
-      </select></div>`).join('')}</div>` : cmLegend(g.parts, colors)}
+      </select></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
       ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
     <button class="btn-sm" type="button" id="cm-request" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('colorIdeasRequest'))}</button>
@@ -2074,6 +2077,7 @@ function renderColorMapForm(f) {
           <option value="more">Find more areas (split shades)</option>
         </select></div>
       ${cmUsable(cleanColorMap(m, parts)) ? `
+        ${cmMissing(m, parts).length ? `<div class="alert error" style="display:block;" id="cm-missing">No area in the picture is set to ${cmMissing(m, parts).map(p => `"${esc(p.name)}"`).join(', ')}, so the picture can't show ${cmMissing(m, parts).length > 1 ? 'their colors' : 'its color'}. If it's a copied set, make a screenshot with that set's pieces in a color of their own, tap "Change picture" and set the new area to it (your other areas stay matched).</div>` : ''}
         <h4 class="cm-heading">Starting colors</h4>
         ${cmCanvas(m, parts, cmPartColors(parts, {}, choices), `${f.title}: starting colors`, 'cm-small')}
         <h4 class="cm-heading">Color ideas customers can tap</h4>
