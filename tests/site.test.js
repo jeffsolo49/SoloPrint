@@ -1493,7 +1493,7 @@ const STATES = {
     const later = await open(db);
     await later.evaluate(STATES['my requests']);
     let card = await later.textContent('#order-1');
-    assert(/Your place in line is set when your deposit comes in/.test(card) && /Pay the 50% deposit, \$4\.64, with Venmo/.test(card) && /Pay in full, \$9\.28/.test(card), card);
+    assert(/Your place in line is set when your deposit comes in/.test(card) && /Pay the 75% deposit, \$6.96, with Venmo/.test(card) && /Pay in full, \$9\.28/.test(card), card);
     await later.close();
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
@@ -1501,13 +1501,13 @@ const STATES = {
     assert(/#2 in line/.test(await owner.textContent('#order-q1')) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
     await owner.selectOption('#order-1 .owner-batch-controls select >> nth=1', 'deposit_received');
     await owner.waitForTimeout(300);
-    assert(db.jobs['1'].depositAt && db.jobs['1'].depositAmount === 4.64, JSON.stringify(db.jobs['1']));
+    assert(db.jobs['1'].depositAt && db.jobs['1'].depositAmount === 6.96, JSON.stringify(db.jobs['1']));
     assert(/#3 in line/.test(await owner.textContent('#order-1')), 'deposit just now: behind Bo, whose deposit came first');
     await owner.close();
     const paid = await open(db);
     await paid.evaluate(STATES['my requests']);
     card = await paid.textContent('#order-1');
-    assert(/You're #3 in line/.test(card) && /Deposit received \(\$4\.64\)/.test(card) && /Pay the rest, \$4\.64/.test(card), card);
+    assert(/You're #3 in line/.test(card) && /Deposit received \(\$6.96\)/.test(card) && /Pay the rest, \$2.32/.test(card), card);
     await paid.close();
   });
   await check('design links use the name, and match the link-preview function', async () => {
@@ -1808,12 +1808,13 @@ const STATES = {
     await page.selectOption('#practice-phase', 'production');
     await page.selectOption('#practice-phase', 'final_payment_needed');
     await page.selectOption('#practice-payment', 'payment_received');
-    await page.selectOption('#practice-phase', 'delivered');
+    await page.selectOption('#practice-phase', 'ready_to_ship');
     await page.fill('#practice-tracking', 'USPS 9400 1111');
-    await page.click('text=Save delivery details');
+    await page.click('text=Save shipping details');
+    await page.selectOption('#practice-phase', 'delivered');
     await page.click('#practice-skip');
     const all = await cust();
-    ['is printing', 'final payment', 'Payment received', 'order is complete', 'Delivery details', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
+    ['is printing', 'final payment', 'Payment received', 'is on its way', 'Tracking number: USPS 9400 1111', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
     assert(db.log.every(l => l.startsWith('GET')), `practice must not write anything: ${db.log.filter(l => !l.startsWith('GET'))}`);
     assert(JSON.stringify(db.jobs) === jobsBefore && db.messages.length === messagesBefore, 'real orders and messages untouched');
     await page.close();
