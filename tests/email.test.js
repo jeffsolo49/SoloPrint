@@ -25,7 +25,7 @@ const cases = [
   ['quote sent', 'UPDATE', at({ phase: 'quote_sent' }), at({}), ['jane@example.com|Your SoloPrint quote: $9.28']],
   ['customer approved', 'UPDATE', at({ phase: 'quote_sent', customerApprovedAt: '2026-10-20T16:00:00Z' }), at({ phase: 'quote_sent' }), ['jeffsolo49@gmail.com|Jane approved their quote']],
   ['order confirmed', 'UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }), ['jane@example.com|Your SoloPrint order is confirmed']],
-  ['printing', 'UPDATE', at({ phase: 'production' }), at({ phase: 'order_received' }), ['jane@example.com|Your SoloPrint order is printing']],
+  ['an order saved as Printing before the steps were merged sends no new Confirmed email', 'UPDATE', at({ phase: 'order_received' }), at({ phase: 'production' }), []],
   ['delivered', 'UPDATE', at({ phase: 'delivered' }), at({ phase: 'production' }), ['jane@example.com|Your SoloPrint order has shipped']],
   ['payment received', 'UPDATE', at({ paymentStatus: 'payment_received' }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Payment received, thank you!']],
   ['reset to estimate sends nothing', 'UPDATE', at({ phase: 'estimate' }), at({ phase: 'quote_sent' }), []],
@@ -156,7 +156,17 @@ check('printing done email: total, deposit, remainder with the shipping fee', ()
     at({ phase: 'production', paymentStatus: 'deposit_received', depositAmount: 4.64 }))[0].body;
   const m = body.match(/total cost is \$(\d+\.\d\d).*deposit of \$(\d+\.\d\d) the remainder is \$(\d+\.\d\d)/);
   assert(m && m[2] === '4.64' && Math.abs(Number(m[1]) - 4.64 + 15 - Number(m[3])) < 0.011, body);
-  assert(body.includes('shipping costs $15.00 for USPS') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
+  assert(body.includes('a $15.00 deposit for USPS') && body.includes('refund whatever was not spent on postage') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
+});
+check('shipped email: tracking, invoice and the shipping deposit refund', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64, deliveryTracking: 'USPS 9400 1111', postageCost: 9.5 }),
+    at({ phase: 'ready_to_ship', paymentStatus: 'payment_received', depositAmount: 4.64 }))[0].body;
+  assert(body.includes('on its way') && body.includes('Tracking number: USPS 9400 1111'), body);
+  assert(body.includes('Shipping deposit paid: $15.00') && body.includes('Total paid: $24.28') && body.includes('refunded $4.50') && body.includes("I'll send your $4.50 shipping deposit refund"), body);
+});
+check('confirmed email asks for the deposit with a Venmo link', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }))[0].body;
+  assert(/deposit \(75% of the total\)/.test(body) && /amount=6\.96/.test(body), body);
 });
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
