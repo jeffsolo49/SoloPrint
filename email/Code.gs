@@ -63,13 +63,13 @@ function doPost(e) {
   if (body.type === 'MESSAGE') {
     const m = messageEmail(body.message || {}, body.record || {}, site);
     if (!m) return reply('sent 0');
-    MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: m.replyTo });
+    mail(m, m.replyTo);
     return reply('sent 1');
   }
   const phase = (body.record || {}).phase;
   if (phase === 'quote_sent' || phase === 'order_received') site.queue = loadQueue();
   const emails = emailsFor(body.type, body.record || {}, body.old_record || null, site.emails || {}, site);
-  emails.forEach(m => MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: OWNER_EMAIL }));
+  emails.forEach(m => mail(m, OWNER_EMAIL));
   logSentEmails(body.record || {}, emails);
   return reply('sent ' + emails.length);
 }
@@ -395,7 +395,18 @@ function sendQuoteReminders() {
 }
 
 function sendAll(emails) {
-  (emails || []).forEach(m => MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, name: 'SoloPrint', replyTo: OWNER_EMAIL }));
+  (emails || []).forEach(m => mail(m, OWNER_EMAIL));
+}
+
+// Every email goes out as plain text plus the same text as HTML with its web links made into real links,
+// so links can be tapped in every mail app.
+function mail(m, replyTo) {
+  MailApp.sendEmail({ to: m.to, subject: m.subject, body: m.body, htmlBody: emailHtml(m.body), name: 'SoloPrint', replyTo: replyTo });
+}
+function emailHtml(text) {
+  const safe = String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const linked = safe.replace(/\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g, url => '<a href="' + url + '">' + url + '</a>');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;">' + linked.replace(/\n/g, '<br>') + '</div>';
 }
 
 // Calls one of the secret-protected database functions (supabase/*.sql).
@@ -600,6 +611,8 @@ function emailVars(rec, custom, site) {
     reviewLink: orderLink(rec).replace('#order-', '&review=' + encodeURIComponent(String(rec.id || '')) + '#order-'),
     siteLink: SITE_URL
   };
+  vars.detailsItems = [vars.itemsWithPrices, vars.specialRoll ? 'Special order roll: $' + vars.specialRoll : '', vars.extraCharges,
+    vars.total ? 'Total: $' + vars.total : ''].filter(Boolean).join('\n\n');
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   return vars;
 }
@@ -684,7 +697,7 @@ const EMAIL_TEMPLATES = {
   details_check: {
     label: 'Confirm details', to: 'Customer', when: 'You tap "Confirm details" on a request. You see the email and can edit it before it sends.',
     subject: 'Quick check on your SoloPrint request',
-    body: "Hi {name},\n\nThanks for your request for {title}. Before I put your quote together, please check the details below.\n\n{detailsQuestions}\n\nHere's what you asked for:\n\n{items}\n\nJust reply to this email, or answer on your order page: {orderLink}\n\n{footer}"
+    body: "Hi {name},\n\nThanks for your request for {title}. Before I put your quote together, please check the details below.\n\n{detailsQuestions}\n\n{detailsItems}\n\nQuestions? Just reply to this email.\n\nThanks,\nJeff Solomon\nSoloPrint"
   },
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
@@ -777,6 +790,7 @@ const EMAIL_PLACEHOLDERS = {
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
   detailsQuestions: 'Confirm details email: your questions for this customer (you type them when you send it)',
+  detailsItems: 'Full breakdown: every item with its color, parts, logo, link, notes and price (or estimate), then charges and the total',
   queueNote: 'Quote and confirmed emails: how many orders are ahead and about how many days until it\'s printed',
   photo: 'Link to the first finished-print photo you added',
   vacationNote: 'Your vacation message, only while vacation mode is on',
@@ -810,8 +824,10 @@ function renderEmailText(text, vars) {
   const lines = [];
   String(text || '').split('\n').forEach(line => {
     let empty = false;
-    const filled = line.replace(/\{(\w+)\}/g, (match, key) => {
-      if (!Object.prototype.hasOwnProperty.call(vars, key)) return match;
+    const filled = line.replace(/\{(\w+)\}/g, (match, typed) => {
+      // {detailsitems} works as well as {detailsItems}
+      const key = Object.prototype.hasOwnProperty.call(vars, typed) ? typed : Object.keys(vars).find(k => k.toLowerCase() === typed.toLowerCase());
+      if (!key) return match;
       const value = vars[key] === null || vars[key] === undefined ? '' : String(vars[key]);
       if (!value) empty = true;
       return value;

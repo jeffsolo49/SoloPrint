@@ -188,6 +188,13 @@ check('your message from the site is emailed to the customer, tagged with the or
   const ctx = load({ MailApp: { sendEmail: m => sent.push(m) }, UrlFetchApp: fetchStub(calls) });
   const out = ctx.doPost({ postData: { contents: JSON.stringify({ secret: SECRET, type: 'MESSAGE', message: { sender: 'owner', via: 'site', body: 'Blue works.' }, record: at({}) }) } }).text;
   assert(out === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].subject.startsWith('[SoloPrint #1729] ') && sent[0].body.startsWith('Blue works.') && sent[0].body.includes('#order-1729'), JSON.stringify(sent));
+  assert(/<a href="https:\/\/[^"]+#order-1729">/.test(sent[0].htmlBody) && !/<script/.test(ctx.emailHtml('<script>x</script>')), 'links in emails are real links: ' + sent[0].htmlBody);
+});
+check('{detailsItems} gives the full breakdown, and placeholders work in any capitals', () => {
+  const ctx = load({});
+  const vars = ctx.emailVars(at({ items: [{ name: 'Benchy', qty: 2, filType: 'black', minutes: 60, grams: 20, notes: 'Shiny' }] }), {}, {});
+  assert(/1\) Benchy x 2/.test(vars.detailsItems) && /Price: \$/.test(vars.detailsItems) && /Notes: Shiny/.test(vars.detailsItems) && /Total: \$/.test(vars.detailsItems), vars.detailsItems);
+  assert(ctx.renderEmailText('A {detailsitems} B', { detailsItems: 'X' }) === 'A X B', 'lower-case placeholder');
 });
 check("a customer's message from their order page is emailed to you, and replying goes to them", () => {
   const sent = [];

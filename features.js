@@ -2285,11 +2285,33 @@ function detailsItemsText(b) {
     return lines.join('\n');
   }).join('\n\n');
 }
+// {detailsItems}: every item in full with its price (or estimate, before you've set time and grams), then any
+// special order roll and charges, and the total.
+function detailsBreakdown(b) {
+  const rules = rulesFor(b);
+  let sum = 0, allKnown = true, estimated = false;
+  const items = (b.items || []).map((it, i) => {
+    const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+    const exact = itemPriced(it);
+    const price = calcTotal(exact ? it.minutes : it.minutes || it.knownMinutes, it.grams, it, qty, rules);
+    if (price === null) allKnown = false; else sum += price;
+    if (!exact) estimated = true;
+    const each = price !== null && qty > 1 ? ` ($${(price / qty).toFixed(2)} each)` : '';
+    const line = price === null ? '   Price: I\'ll work this out for your quote' : `   ${exact ? 'Price' : 'Estimated price'}: $${price.toFixed(2)}${each}`;
+    return detailsItemsText({ items: [it] }).replace(/^1\)/, `${i + 1})`) + '\n' + line;
+  });
+  const lines = [items.join('\n\n')];
+  const roll = specialOrderCost(b);
+  if (roll > 0) { lines.push(`Special order roll: $${roll.toFixed(2)}`); sum += roll; }
+  extraCharges(b).forEach(c => { lines.push(`${c.label}: $${c.amount.toFixed(2)}`); sum += c.amount; });
+  if (allKnown && sum > 0) lines.push(`${estimated ? 'Estimated total' : 'Total'}: $${sum.toFixed(2)}`);
+  return lines.join('\n\n');
+}
 function detailsEmailFor(b, questions) {
   const custom = state.settings.emails || {};
   const orderLink = `${location.origin}/?requests=${encodeURIComponent(b.clientEmail || '')}#order-${encodeURIComponent(b.id)}`;
   const vars = { name: String(b.clientName || '').trim() || 'there', title: orderTitle(b), detailsQuestions: questions,
-    items: detailsItemsText(b), orderLink, siteLink: location.origin };
+    items: detailsItemsText(b), detailsItems: detailsBreakdown(b), orderLink, siteLink: location.origin };
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   const tpl = emailTemplate('details_check', custom);
   return { subject: renderEmailText(tpl.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(tpl.body, vars) };
@@ -2407,13 +2429,41 @@ function conversationChip(jobId) {
 }
 // Message text with web links made tappable (the text is escaped first, so only real links become links).
 function linkifyText(text) {
-  return esc(text).replace(/\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g, url => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
+  return esc(text).replace(/\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g, url => `<a class="auto-link" href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
 }
 // Message boxes grow to show everything typed in them.
 function autoGrow(el) {
   if (!el) return;
   el.style.height = 'auto';
   el.style.height = `${el.scrollHeight + 2}px`;
+}
+// Every web address shown as text anywhere on the site becomes a link that opens in a new tab
+// (run after each redraw; text inside links, buttons and form boxes is left alone).
+function linkifyPage(root) {
+  if (!root || !document.createTreeWalker) return;
+  const skip = 'a,button,textarea,input,select,option,script,style,summary,label,code';
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => /https?:\/\//.test(n.nodeValue) && !n.parentElement.closest(skip) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    const html = linkifyText(n.nodeValue);
+    if (!html.includes('<a ')) return;
+    const span = document.createElement('span');
+    span.innerHTML = html;
+    n.replaceWith(...span.childNodes);
+  });
+}
+// Whatever gets drawn, whenever (whole-page redraws, pop-ups, live previews), its links are made tappable.
+if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', () => {
+    linkifyPage(document.body);
+    new MutationObserver(changes => changes.forEach(c => c.addedNodes.forEach(n => {
+      if (n.nodeType === 1) linkifyPage(n);
+      else if (n.nodeType === 3 && n.parentElement) linkifyPage(n.parentElement);
+    }))).observe(document.body, { childList: true, subtree: true });
+  });
 }
 function growMessageBoxes() { document.querySelectorAll('textarea.autogrow').forEach(autoGrow); }
 // Your first message on an order starts from your "first message" wording (Settings > Wording).
@@ -2576,7 +2626,7 @@ function practiceVars() {
     specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left) : '',
     materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
     delivery: [o.deliveryDate && `Delivery date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking / pickup: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
-    photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '' };
+    photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '', detailsItems: detailsBreakdown(o) };
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   return vars;
 }

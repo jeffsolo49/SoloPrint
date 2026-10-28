@@ -24,7 +24,7 @@ const EMAIL_TEMPLATES = {
   details_check: {
     label: 'Confirm details', to: 'Customer', when: 'You tap "Confirm details" on a request. You see the email and can edit it before it sends.',
     subject: 'Quick check on your SoloPrint request',
-    body: "Hi {name},\n\nThanks for your request for {title}. Before I put your quote together, please check the details below.\n\n{detailsQuestions}\n\nHere's what you asked for:\n\n{items}\n\nJust reply to this email, or answer on your order page: {orderLink}\n\n{footer}"
+    body: "Hi {name},\n\nThanks for your request for {title}. Before I put your quote together, please check the details below.\n\n{detailsQuestions}\n\n{detailsItems}\n\nQuestions? Just reply to this email.\n\nThanks,\nJeff Solomon\nSoloPrint"
   },
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
@@ -117,6 +117,7 @@ const EMAIL_PLACEHOLDERS = {
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
   detailsQuestions: 'Confirm details email: your questions for this customer (you type them when you send it)',
+  detailsItems: 'Full breakdown: every item with its color, parts, logo, link, notes and price (or estimate), then charges and the total',
   queueNote: 'Quote and confirmed emails: how many orders are ahead and about how many days until it\'s printed',
   photo: 'Link to the first finished-print photo you added',
   vacationNote: 'Your vacation message, only while vacation mode is on',
@@ -150,8 +151,10 @@ function renderEmailText(text, vars) {
   const lines = [];
   String(text || '').split('\n').forEach(line => {
     let empty = false;
-    const filled = line.replace(/\{(\w+)\}/g, (match, key) => {
-      if (!Object.prototype.hasOwnProperty.call(vars, key)) return match;
+    const filled = line.replace(/\{(\w+)\}/g, (match, typed) => {
+      // {detailsitems} works as well as {detailsItems}
+      const key = Object.prototype.hasOwnProperty.call(vars, typed) ? typed : Object.keys(vars).find(k => k.toLowerCase() === typed.toLowerCase());
+      if (!key) return match;
       const value = vars[key] === null || vars[key] === undefined ? '' : String(vars[key]);
       if (!value) empty = true;
       return value;

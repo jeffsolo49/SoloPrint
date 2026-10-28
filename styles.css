@@ -865,3 +865,5 @@ textarea.autogrow { resize: vertical; overflow-y: auto; min-height: 70px; max-he
 .practice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .practice-side { min-width: 0; }
 @media (max-width: 900px) { .practice-grid { grid-template-columns: 1fr; } }
+/* Web addresses in any text become links (linkifyPage in features.js). */
+a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; overflow-wrap: anywhere; }
