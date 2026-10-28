@@ -35,7 +35,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Order-flow problems from the diagram (https://claude.ai/artifact/5tgxMcnutahHxZ6FkbpBpu): "Quote Ready" in the
   phase list skips the quote checks; "Payment Requested" set at quote time; no warning when printing unpaid;
   confirmed email lacks the deposit; "final payment" email sent when already paid and asks pickups for an address;
-  "Delivered" says complete before it arrives; payment and phase emails a minute apart.
+  payment and phase emails a minute apart.
 
 ## Files
 
@@ -66,7 +66,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   switched-off parts, `featureOn(key)`; Code.gs `featureOff`). Drafts (not live) show only to the owner with `previewDrafts` on. Cleaned by
   `cleanSettings` in app.js; add new fields there or they're dropped on save.
 - Order queue: `order_queue()` (supabase/queue.sql) lists confirmed/printing orders as { at, printing, custom } only, `at` =
-  `queueTime` (deposit or full-payment time; null = waiting for a deposit, last in line; deposit % is rule `depositPercent`);
+  `queueTime` (deposit or full-payment time; null = waiting for a deposit, last in line; deposit % is rule `depositPercent`, default 75 so later price rises rarely need a second deposit);
   `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).
 - `order_messages` (supabase/messages.sql): one conversation per order (`sender` owner/customer, `via` site/email/auto). Owner reads/writes the table;
   customers use `customer_messages`/`customer_send_message`; site messages fire a `MESSAGE` webhook (Code.gs `messageEmail`); Code.gs logs its emails
@@ -83,7 +83,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   reopened by `?resume=<id>` (`get_request_draft`), cleared on submit.
 - Script-only RPCs need the shared secret (`private.email_settings`): `backup_export`, `due_quote_reminders`,
   `due_review_requests`, `due_draft_reminders`, `owner_report_data`.
-- Order fields worth knowing: `phase` (estimate → details_check (optional "Confirming Details": `detailsQuestions`, `detailsEmail` {subject, body} the owner approved, sent as is by Code.gs; `renderDetailsCheck` in features.js; `beforeQuote(phase)` covers both pre-quote phases) → quote_sent → order_received → production → final_payment_needed → delivered),
+- Order fields worth knowing: `phase` (estimate → details_check (optional "Confirming Details": `detailsQuestions`, `detailsEmail` {subject, body} the owner approved, sent as is by Code.gs; `renderDetailsCheck` in features.js; `beforeQuote(phase)` covers both pre-quote phases) → quote_sent → order_received → production → final_payment_needed → ready_to_ship (paid; the owner enters carrier + tracking in `deliveryTracking`) → delivered (labelled "Shipped"; its email carries `{delivery}`)),
   `paymentStatus` (unpaid → payment_requested → deposit_received (optional; sets `depositAt`, `depositAmount`) → payment_recieved, spelling is historical), `rates` (prices
   saved when the quote was sent), `designTerms` (custom design terms text the customer must agree to before approving), `specialOrderCost`, `extraCharges` ([{label, amount}], the owner's added charges; customers see label and amount), `ownerEditedAt`, `finishedPhotos`, `stockTaken`, `paidAt`. The owner edits a request in the estimate phase with "Edit request" (`renderOwnerEditForm` in features.js); `submit_job` strips owner-only fields.
 - Items: `ownerPrice` (owner's own price per print, beats everything; 0 allowed), `setPrice` (past-work set price), see `fixedPrice`; `logo` (customer ticked "Add my company logo": `logoCharge` adds rule `logoPrice` per print in `printPrice`, not on top of `ownerPrice`);

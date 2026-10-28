@@ -33,7 +33,8 @@ const ORDER_PHASES = [
   { id: 'order_received', label: 'Confirmed' },
   { id: 'production', label: 'Printing' },
   { id: 'final_payment_needed', label: 'Printing Complete' },
-  { id: 'delivered', label: 'Delivered' }
+  { id: 'ready_to_ship', label: 'Ready to Ship' },
+  { id: 'delivered', label: 'Shipped' }
 ];
 const PAYMENT_PHASES = [
   { id: 'unpaid', label: 'Unpaid' },
@@ -316,10 +317,12 @@ function renderCustomerOrderAction(batch) {
     }
     const rules = rulesFor(batch);
     if (batch.paymentStatus === 'deposit_received' && currentRules().venmo && total) {
-      const left = amountLeft(batch, total, rules);
+      const done = phaseIndex(phase) >= phaseIndex('final_payment_needed');
+      const fp = finalPayment(batch, total, rules);
+      const left = done ? fp.remainder : amountLeft(batch, total, rules);
       return `<div class="order-action"><strong>Deposit received ($${depositAmount(batch, total, rules).toFixed(2)}).</strong> Thank you!
-        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}" target="_blank" rel="noopener noreferrer">Pay the rest, $${left.toFixed(2)}, with Venmo</a>
-        <div class="order-action-sub">Due when your order is ready.</div>` : ''}
+        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}" target="_blank" rel="noopener noreferrer">Pay the rest${done ? ' and shipping' : ''}, $${left.toFixed(2)}, with Venmo</a>
+        <div class="order-action-sub">${done ? `Includes $${fp.fee.toFixed(2)} for shipping; whatever isn't spent on postage is refunded.` : 'Due when your order is ready.'}</div>` : ''}
       </div>`;
     }
     if (currentRules().venmo && total) {
@@ -2487,24 +2490,24 @@ function renderOwnerBatch(b) {
         <span class="total-label">Total quoted${specialOrderCost(b) ? ` (includes $${specialOrderCost(b).toFixed(2)} special order roll)` : ''}${extraChargesTotal(b) ? ` (includes $${extraChargesTotal(b).toFixed(2)} in added charges)` : ''}</span>
         <span class="total-price">$${total!==null?total.toFixed(2):'—'}</span>
       </div>
-      ${phase === 'delivered' ? `
+      ${phase === 'delivered' || phase === 'ready_to_ship' ? `
         <div class="delivery-meta">
-          <div class="card-title" style="margin-bottom:10px;">Delivered Order Details</div>
+          <div class="card-title" style="margin-bottom:10px;">Shipping details${phase === 'ready_to_ship' ? ' (the customer gets these in the Shipped email)' : ''}</div>
           <div class="row2">
             <div class="field" style="margin-bottom:0;">
-              <label>Delivery Date</label>
+              <label for="ddate-${b.id}">Ship date</label>
               <input type="text" id="ddate-${b.id}" value="${esc(b.deliveryDate || '')}" placeholder="Apr 3, 2026" />
             </div>
             <div class="field" style="margin-bottom:0;">
-              <label>Tracking / Pickup</label>
-              <input type="text" id="dtrack-${b.id}" value="${esc(b.deliveryTracking || '')}" placeholder="Tracking number or pickup note" />
+              <label for="dtrack-${b.id}">Carrier and tracking number</label>
+              <input type="text" id="dtrack-${b.id}" value="${esc(b.deliveryTracking || '')}" placeholder="USPS 9400 1000 0000 0000 0000 00" />
             </div>
           </div>
           <div class="field" style="margin-top:10px;margin-bottom:0;">
-            <label>Delivery Notes</label>
-            <textarea id="dnotes-${b.id}" placeholder="Any details you send with final delivery" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea>
+            <label for="dnotes-${b.id}">Notes for the customer</label>
+            <textarea id="dnotes-${b.id}" placeholder="Anything else they should know" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea>
           </div>
-          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save Delivery Details</button>
+          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save shipping details</button>
         </div>
       ` : ``}
       <button class="btn-secondary" onclick="resetBatch('${b.id}')" style="margin-top:0.75rem;">Edit Quotes</button>
@@ -4569,6 +4572,15 @@ async function updateBatchPhase(batchId, phase) {
   }
   // "Confirming Details" sends an email you write and check first, so choosing it opens that.
   if (phase === 'details_check' && currentPhase !== 'details_check') { openDetailsCheck(batchId); return; }
+  if (phase === 'production' && currentPhase !== 'production' && !['deposit_received', 'payment_received'].includes(b.paymentStatus || 'unpaid') &&
+      !confirm('No deposit is marked received yet. Start printing anyway?')) { render(); return; }
+  if (phase === 'ready_to_ship' && currentPhase !== 'ready_to_ship' && !isPaidInFull(b)) {
+    if (!confirm('The remainder and shipping fee are not marked paid yet. Mark them paid and move to Ready to Ship?')) { render(); return; }
+    b.paymentStatus = 'payment_received';
+    if (!b.paidAt) b.paidAt = new Date().toISOString();
+  }
+  if (phase === 'delivered' && currentPhase !== 'delivered' && !String(b.deliveryTracking || '').trim() &&
+      !confirm('No tracking number is saved. Mark as Shipped anyway? (The customer gets the Shipped email now.)')) { render(); return; }
   b.phase = phase;
   b.status = phase === 'estimate' ? 'pending' : 'quoted';
   stampPhase(b, phase);

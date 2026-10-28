@@ -1452,8 +1452,10 @@ const SITE_TEXT = [
     ['stepInfo_production', 'Step 5 description', 'Your parts are on the printer right now.'],
     ['step_final_payment_needed', 'Step 6 name', 'Printing Complete'],
     ['stepInfo_final_payment_needed', 'Step 6 description', 'Your print is done. We need your final payment and shipping address before we send it out.'],
-    ['step_delivered', 'Step 7 name', 'Delivered'],
-    ['stepInfo_delivered', 'Step 7 description', 'Your order is complete. Enjoy!'],
+    ['step_ready_to_ship', 'Step 7 name', 'Ready to Ship'],
+    ['stepInfo_ready_to_ship', 'Step 7 description', "Your payment and address are in. I'm packing your order and will send the tracking number."],
+    ['step_delivered', 'Step 8 name', 'Shipped'],
+    ['stepInfo_delivered', 'Step 8 description', 'Your order is on its way. The tracking details are below and in your email.'],
     ['pay_unpaid', 'Payment: not asked yet', 'Unpaid'],
     ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
     ['pay_deposit_received', 'Payment: deposit paid', 'Deposit Received'],
@@ -2681,7 +2683,7 @@ function practiceVars() {
     specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left) : '',
     deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder) : '',
     materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
-    delivery: [o.deliveryDate && `Delivery date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking / pickup: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
+    delivery: [o.deliveryDate && `Ship date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking number: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
     photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '', detailsItems: detailsBreakdown(o) };
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   return vars;
@@ -2832,9 +2834,9 @@ function renderPracticeOwner() {
       </div>
       <button class="btn-sm" type="button" id="practice-quote" onclick="practiceSendQuote()">Save &amp; notify (send quote)</button>
     </fieldset>` : ''}
-    ${o.phase === 'delivered' ? `<div class="field"><label for="practice-tracking">Tracking or pickup details</label>
+    ${o.phase === 'delivered' || o.phase === 'ready_to_ship' ? `<div class="field"><label for="practice-tracking">Carrier and tracking number</label>
       <input type="text" id="practice-tracking" value="${esc(p.tracking)}" oninput="state.practice.tracking = this.value" /></div>
-      <button class="btn-sm" type="button" onclick="practiceSaveTracking()">Save delivery details</button>` : ''}
+      <button class="btn-sm" type="button" onclick="practiceSaveTracking()">Save shipping details</button>` : ''}
     <div style="margin-top:8px;"><button class="btn-sm" type="button" id="practice-skip" onclick="practiceSkipAhead()">Skip ahead (send a daily email that's due)</button></div>
     <div class="alert error" id="practice-err"></div>
     ${renderTrackerSteps(o, false)}

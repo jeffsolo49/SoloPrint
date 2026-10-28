@@ -26,7 +26,7 @@ const cases = [
   ['customer approved', 'UPDATE', at({ phase: 'quote_sent', customerApprovedAt: '2026-10-20T16:00:00Z' }), at({ phase: 'quote_sent' }), ['jeffsolo49@gmail.com|Jane approved their quote']],
   ['order confirmed', 'UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }), ['jane@example.com|Your SoloPrint order is confirmed']],
   ['printing', 'UPDATE', at({ phase: 'production' }), at({ phase: 'order_received' }), ['jane@example.com|Your SoloPrint order is printing']],
-  ['delivered', 'UPDATE', at({ phase: 'delivered' }), at({ phase: 'production' }), ['jane@example.com|Your SoloPrint order is complete']],
+  ['delivered', 'UPDATE', at({ phase: 'delivered' }), at({ phase: 'production' }), ['jane@example.com|Your SoloPrint order has shipped']],
   ['payment received', 'UPDATE', at({ paymentStatus: 'payment_received' }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Payment received, thank you!']],
   ['reset to estimate sends nothing', 'UPDATE', at({ phase: 'estimate' }), at({ phase: 'quote_sent' }), []],
   ['unrelated edit sends nothing', 'UPDATE', at({ clientName: 'Janet' }), at({}), []]

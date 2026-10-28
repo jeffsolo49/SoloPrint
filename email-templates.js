@@ -57,12 +57,12 @@ const EMAIL_TEMPLATES = {
     body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${total}. But that is not including your deposit. Since you gave a deposit of ${deposit} the remainder is ${remainder}.\n\nShipping address is also needed at this point. If you are in the USA, shipping costs ${shippingFee} for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50 and anything not spent on postage will be refunded. We charge the extra amount so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nOptionally if you have an account with another shipper you can send me a pre-paid label.\nReply to this email to arrange that option instead.\n\nPay with Venmo: {remainderLink}\nThen reply to this email with your shipping address.\n\n{footer}"
   },
   delivered: {
-    label: 'Order complete', to: 'Customer', when: 'You move the order to Delivered.',
-    subject: 'Your SoloPrint order is complete',
-    body: "Hi {name},\n\nYour order for {title} is complete. Enjoy!\n\nHere's a photo of your print: {photo}\n\n{delivery}\n\n{footer}"
+    label: 'Order shipped', to: 'Customer', when: 'You move the order to Shipped (enter the tracking number first, in Ready to Ship).',
+    subject: 'Your SoloPrint order has shipped',
+    body: "Hi {name},\n\nYour order for {title} is on its way!\n\n{delivery}\n\nHere's a photo of your print: {photo}\n\n{footer}"
   },
   delivery_update: {
-    label: 'Delivery details', to: 'Customer', when: 'You save new delivery details on a delivered order.',
+    label: 'Shipping details', to: 'Customer', when: 'You save changed shipping details on a shipped order.',
     subject: 'Delivery details for your SoloPrint order',
     body: 'Hi {name},\n\nHere are the delivery details for {title}:\n\n{delivery}\n\n{footer}'
   },
@@ -116,7 +116,7 @@ const EMAIL_PLACEHOLDERS = {
   remainderLink: 'Venmo link with the remainder filled in',
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
-  delivery: 'Delivery date, tracking or pickup, and notes',
+  delivery: 'Ship date, tracking number and notes',
   materialNote: 'Your material note from Settings > Wording (e.g. "All prints are PLA...")',
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
   designTermsNote: 'Quotes with a custom design: a reminder that they agree to your design terms when approving',
@@ -187,7 +187,7 @@ const RULE_DEFAULTS = {
   printDaysMin: 1,         // order queue: days to print an existing design, at least...
   printDaysMax: 2,         // ...and at most
   customDesignDays: 7,     // order queue: extra days to design a custom order (at least)
-  depositPercent: 50,      // deposit customers can pay first, % of the total (0 = no deposit option)
+  depositPercent: 75,      // deposit customers can pay first, % of the total (0 = no deposit option)
   shippingFee: 15,         // $ added to the final payment for shipping ($1 envelope + the rest for postage)
   logoPrice: 1,            // $ per print to add the customer's company logo (the "Add my logo" box)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
