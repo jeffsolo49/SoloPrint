@@ -1547,12 +1547,13 @@ function faqSearch(value) {
   if (none) none.hidden = shown > 0;
 }
 // An answer opens in a pop-up over the page (outside #app-root so a redraw can't remove it). X, tap outside or Escape closes it.
-let faqReturnFocus = null;
+let faqReturnFocus = null, faqScrollY = 0;
 function openFaq(id) {
   const f = (state.settings.faq || []).find(x => x.id === id);
   if (!f) return;
   closeFaq();
   faqReturnFocus = document.activeElement;
+  faqScrollY = window.scrollY;
   const m = document.createElement('div');
   m.id = 'faq-modal'; m.className = 'faq-modal';
   m.innerHTML = `<div class="faq-dialog" role="dialog" aria-modal="true" aria-labelledby="faq-modal-title">
@@ -1562,16 +1563,15 @@ function openFaq(id) {
   </div>`;
   m.addEventListener('click', e => { if (e.target === m) closeFaq(); });
   document.body.appendChild(m);
-  document.body.classList.add('faq-open');
   document.getElementById('faq-close').addEventListener('click', closeFaq);
-  document.getElementById('faq-close').focus();
+  document.getElementById('faq-close').focus({ preventScroll: true });
 }
 function closeFaq() {
   const m = document.getElementById('faq-modal');
   if (!m) return;
   m.remove();
-  document.body.classList.remove('faq-open');
-  if (faqReturnFocus && faqReturnFocus.focus) faqReturnFocus.focus();
+  if (faqReturnFocus && faqReturnFocus.focus) faqReturnFocus.focus({ preventScroll: true });
+  window.scrollTo(0, faqScrollY);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFaq(); });
 function renderFaq() {

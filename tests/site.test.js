@@ -1342,10 +1342,13 @@ const STATES = {
     await page.fill('#faq-search', 'usps');
     const vis = await page.$$eval('.faq-card', els => els.filter(e => !e.hidden).map(e => e.dataset.q));
     assert(vis.join() === 'Do you ship?', vis.join());
+    await page.evaluate(() => { document.body.style.minHeight = '3000px'; window.scrollTo(0, 400); });
     await page.click('.faq-card:not([hidden])');
+    const y0 = await page.evaluate(() => window.scrollY);
     assert(/Yes, by USPS/.test(await page.textContent('#faq-modal .faq-answer')), 'answer pops up');
     await page.click('#faq-close');
     assert(!(await page.$('#faq-modal')), 'X closes it');
+    assert(y0 > 0 && Math.abs(await page.evaluate(() => window.scrollY) - y0) < 5, `stays where it was (${y0})`);
     await page.click('.faq-card:not([hidden])');
     await page.mouse.click(5, 5);
     assert(!(await page.$('#faq-modal')), 'tapping outside closes it');
