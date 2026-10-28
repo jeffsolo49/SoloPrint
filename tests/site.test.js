@@ -834,7 +834,7 @@ const STATES = {
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
     await page.fill('#email-body-footer', 'Thanks!\nJeff');
     assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'footer change should show in other previews');
-    assert(/Shown at the end of: Request received, Confirm details, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
+    assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
     assert(groups.join(',') === 'email-footer,Emails to customers,email-customer_received,email-details_check,email-quote,email-reminder,email-confirmed,email-printing,email-final_payment_needed,email-delivered,email-delivery_update,email-deposit,email-payment,email-review_request,email-roll_reminder,email-draft_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
@@ -1672,7 +1672,7 @@ const STATES = {
     await page.click('#details-open-9');
     await page.fill('#details-q-9', 'Which iPad model?');
     const body = await page.inputValue('#details-body-9');
-    assert(/Hi Ana/.test(body) && /Which iPad model\?/.test(body) && /Phone stand x 2/.test(body) && /Notes: Fits an iPad\?/.test(body) && /#order-9/.test(body), body);
+    assert(/Hi Ana/.test(body) && /Which iPad model\?/.test(body) && /Phone stand x 2/.test(body) && /Notes: Fits an iPad\?/.test(body) && /(Estimated )?[Pp]rice: (\$|I'll)/.test(body) && /Jeff Solomon/.test(body), body);
     await page.fill('#details-body-9', body + '\nP.S. Edited by hand.');
     await page.fill('#details-q-9', 'Changed question');
     assert(/Edited by hand/.test(await page.inputValue('#details-body-9')), 'edits to the email are kept');
@@ -1701,6 +1701,8 @@ const STATES = {
     const thread = await owner.textContent('#conv-1');
     assert(/Can it be blue\?/.test(thread) && /by email/.test(thread) && /Your SoloPrint quote/.test(thread), thread);
     assert(await owner.getAttribute('#conv-1 .msg-body a[href="https://example.com/blue"]', 'target') === '_blank', 'links in messages open');
+    await owner.evaluate(() => { const d = document.createElement('div'); d.id = 'link-check'; d.textContent = 'See https://example.com/x, thanks'; document.querySelector('#order-1').append(d); });
+    await owner.waitForSelector('#link-check a.auto-link[href="https://example.com/x"]');
     assert(/^Hi Jane, thanks for your request/.test(await owner.inputValue('#msg-text-1')), 'first reply starts from the default text');
     const grow = await owner.$eval('#msg-text-1', el => { el.value = 'line\n'.repeat(30); el.dispatchEvent(new Event('input')); return el.clientHeight >= el.scrollHeight - 2; });
     assert(grow, 'the message box grows to fit');
