@@ -1532,21 +1532,48 @@ function faqMatches(f, q) {
   const text = (String(f.q || '') + ' ' + String(f.a || '')).toLowerCase();
   return words.every(w => text.includes(w));
 }
-// Typing in the search box hides the questions whose question or answer doesn't have every word, and opens the ones that do.
+// Typing in the search box keeps only the question boxes whose question or answer has every word typed.
 function faqSearch(value) {
   state.faqQuery = value;
   const box = document.getElementById('faq-list');
   if (!box) return;
   let shown = 0;
-  box.querySelectorAll('.faq-item').forEach(el => {
+  box.querySelectorAll('.faq-card').forEach(el => {
     const hit = faqMatches({ q: el.dataset.q, a: el.dataset.a }, value);
     el.hidden = !hit;
     if (hit) shown++;
-    el.open = !!value.trim() && hit;
   });
   const none = document.getElementById('faq-none');
   if (none) none.hidden = shown > 0;
 }
+// An answer opens in a pop-up over the page (outside #app-root so a redraw can't remove it). X, tap outside or Escape closes it.
+let faqReturnFocus = null;
+function openFaq(id) {
+  const f = (state.settings.faq || []).find(x => x.id === id);
+  if (!f) return;
+  closeFaq();
+  faqReturnFocus = document.activeElement;
+  const m = document.createElement('div');
+  m.id = 'faq-modal'; m.className = 'faq-modal';
+  m.innerHTML = `<div class="faq-dialog" role="dialog" aria-modal="true" aria-labelledby="faq-modal-title">
+    <button type="button" class="faq-close" id="faq-close" aria-label="Close">&times;</button>
+    <h3 id="faq-modal-title">${esc(f.q)}</h3>
+    <div class="faq-answer">${renderWriteup(f.a)}</div>
+  </div>`;
+  m.addEventListener('click', e => { if (e.target === m) closeFaq(); });
+  document.body.appendChild(m);
+  document.body.classList.add('faq-open');
+  document.getElementById('faq-close').addEventListener('click', closeFaq);
+  document.getElementById('faq-close').focus();
+}
+function closeFaq() {
+  const m = document.getElementById('faq-modal');
+  if (!m) return;
+  m.remove();
+  document.body.classList.remove('faq-open');
+  if (faqReturnFocus && faqReturnFocus.focus) faqReturnFocus.focus();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFaq(); });
 function renderFaq() {
   const list = (state.settings.faq || []).filter(f => f.live || previewingDrafts());
   if (!featureOn('faq') || !list.length) return '';
@@ -1554,9 +1581,9 @@ function renderFaq() {
   const hits = list.filter(f => faqMatches(f, q)).length;
   return `<div class="card faq">
     <h3 class="card-title">${esc(t('faqTitle'))}</h3>
-    ${list.length > 2 ? `<input type="search" id="faq-search" class="faq-search" placeholder="Search the questions and answers" aria-label="Search the questions and answers" value="${esc(q)}" oninput="faqSearch(this.value)" />` : ''}
-    <div id="faq-list">
-    ${list.map(f => { const hit = faqMatches(f, q); return `<details class="faq-item" data-q="${esc(f.q)}" data-a="${esc(f.a)}" ${hit ? '' : 'hidden'} ${q.trim() && hit ? 'open' : ''}><summary>${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</summary><div class="faq-answer">${renderWriteup(f.a)}</div></details>`; }).join('')}
+    ${list.length > 2 ? `<input type="search" id="faq-search" class="faq-search" placeholder="Search for your question here" aria-label="Search the questions and answers" value="${esc(q)}" oninput="faqSearch(this.value)" />` : ''}
+    <div id="faq-list" class="faq-grid">
+    ${list.map(f => `<button type="button" class="faq-card" data-q="${esc(f.q)}" data-a="${esc(f.a)}" ${faqMatches(f, q) ? '' : 'hidden'} onclick="openFaq('${esc(f.id)}')">${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</button>`).join('')}
     </div>
     <p class="field-help" id="faq-none" ${hits ? 'hidden' : ''}>Nothing matches that. Try another word, or send a request and ask me.</p>
   </div>`;

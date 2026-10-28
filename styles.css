@@ -760,9 +760,6 @@ textarea { resize: vertical; min-height: 70px; }
 .draft-tag.live { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .site-text-row { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .feature-switch { display: flex; margin: 0 0 10px; }
-.faq-item { border-bottom: 1px solid var(--border); padding: 10px 0; }
-.faq-item summary { cursor: pointer; font-weight: 700; }
-.faq-answer { margin-top: 8px; }
 .site-text-row input[type=checkbox], .feature-switch input[type=checkbox] { width: 24px; height: 24px; flex-shrink: 0; }
 .part-add, .part-optional { margin: 0 0 6px; }
 .part-add input, .part-optional input { width: 24px; height: 24px; flex-shrink: 0; }
@@ -873,5 +870,16 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .update-item summary { cursor: pointer; font-weight: 600; }
 .update-body { margin-top: .4rem; }
 
-.faq-search { width: 100%; margin: 4px 0 8px; }
-.faq-item[hidden] { display: none; }
+/* FAQ: big search, question boxes, answer pop-up */
+.faq-search { width: 100%; margin: 0 0 14px; padding: 16px 18px; font-size: 18px; border: 2px solid var(--accent); border-radius: 14px; box-shadow: 0 4px 14px rgba(var(--accent-rgb),0.15); }
+.faq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.faq-card { text-align: left; min-height: 72px; padding: 14px; font: inherit; font-weight: 700; color: var(--text); background: var(--surface2); border: 2px solid var(--border); border-radius: 14px; cursor: pointer; }
+.faq-card:hover, .faq-card:focus-visible { border-color: var(--border-hover); }
+.faq-card[hidden] { display: none; }
+.faq-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 4vh 4vw; background: rgba(var(--ink-rgb),0.6); }
+.faq-dialog { position: relative; width: 100%; max-width: 760px; max-height: 92vh; overflow: auto; padding: 2rem 1.5rem 1.5rem; background: var(--surface); color: var(--text); border: 2px solid var(--border); border-radius: 16px; box-shadow: 0 12px 40px rgba(var(--ink-rgb),0.35); }
+.faq-dialog h3 { margin: 0 2.5rem 1rem 0; font-size: 20px; }
+.faq-answer { font-size: 17px; line-height: 1.55; }
+.faq-close { position: absolute; top: 10px; right: 10px; width: 40px; height: 40px; font-size: 28px; line-height: 1; color: var(--text); background: var(--surface2); border: 2px solid var(--border); border-radius: 50%; cursor: pointer; }
+.faq-close:hover, .faq-close:focus-visible { border-color: var(--border-hover); }
+body.faq-open { overflow: hidden; }
