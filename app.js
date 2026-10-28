@@ -2931,8 +2931,13 @@ function renderOwnerEmailsPage() {
     </div>`;
 }
 
+// Settings > Emails lists emails in the order a customer gets them. New emails not listed go last.
+const EMAIL_FLOW = ['draft_reminder', 'customer_received', 'details_check', 'quote', 'reminder', 'confirmed', 'deposit', 'printing',
+  'final_payment_needed', 'payment', 'delivered', 'delivery_update', 'review_request', 'roll_reminder',
+  'owner_new', 'owner_approved', 'weekly_summary'];
 function emailKeysTo(to) {
-  return Object.keys(EMAIL_TEMPLATES).filter(k => k !== 'footer' && EMAIL_TEMPLATES[k].to === to);
+  const rank = k => { const i = EMAIL_FLOW.indexOf(k); return i < 0 ? 999 : i; };
+  return Object.keys(EMAIL_TEMPLATES).filter(k => k !== 'footer' && EMAIL_TEMPLATES[k].to === to).sort((a, b) => rank(a) - rank(b));
 }
 
 function renderEmailCard(key) {
