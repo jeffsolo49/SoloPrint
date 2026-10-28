@@ -20,8 +20,10 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   owner might want to change.
 - Keeps Claude usage down: don't watch PRs (no `subscribe_pr_activity`, no check-ins); open the PR, turn on
   auto-merge, and say it will be live in a few minutes (the site's "Updated N min ago" corner confirms it).
-  Keep screenshots and repeat test runs to what a change needs. When a request is small (wording, a color,
-  a one-line fix), suggest switching to Sonnet with `/model` before doing it; big features stay on Opus.
+  Keep screenshots and repeat test runs to what a change needs. Whenever a request doesn't need Opus (wording,
+  a color, a one-line fix, a quick question, a lookup, a checklist, a small doc edit), say so in one line at
+  the start of the reply and suggest switching to Sonnet with `/model` (or the app's model picker); big
+  features, tricky bugs and careful planning or research stay on Opus.
 
 ## Open ideas (offered, not started)
 
