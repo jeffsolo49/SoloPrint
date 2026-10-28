@@ -1527,12 +1527,38 @@ function renderPreviewSwitch() {
 }
 
 // Customer FAQ on the home page (live questions only, or drafts while previewing).
+function faqMatches(f, q) {
+  const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const text = (String(f.q || '') + ' ' + String(f.a || '')).toLowerCase();
+  return words.every(w => text.includes(w));
+}
+// Typing in the search box hides the questions whose question or answer doesn't have every word, and opens the ones that do.
+function faqSearch(value) {
+  state.faqQuery = value;
+  const box = document.getElementById('faq-list');
+  if (!box) return;
+  let shown = 0;
+  box.querySelectorAll('.faq-item').forEach(el => {
+    const hit = faqMatches({ q: el.dataset.q, a: el.dataset.a }, value);
+    el.hidden = !hit;
+    if (hit) shown++;
+    el.open = !!value.trim() && hit;
+  });
+  const none = document.getElementById('faq-none');
+  if (none) none.hidden = shown > 0;
+}
 function renderFaq() {
   const list = (state.settings.faq || []).filter(f => f.live || previewingDrafts());
   if (!featureOn('faq') || !list.length) return '';
+  const q = state.faqQuery || '';
+  const hits = list.filter(f => faqMatches(f, q)).length;
   return `<div class="card faq">
     <h3 class="card-title">${esc(t('faqTitle'))}</h3>
-    ${list.map(f => `<details class="faq-item"><summary>${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</summary><div class="faq-answer">${renderWriteup(f.a)}</div></details>`).join('')}
+    ${list.length > 2 ? `<input type="search" id="faq-search" class="faq-search" placeholder="Search the questions and answers" aria-label="Search the questions and answers" value="${esc(q)}" oninput="faqSearch(this.value)" />` : ''}
+    <div id="faq-list">
+    ${list.map(f => { const hit = faqMatches(f, q); return `<details class="faq-item" data-q="${esc(f.q)}" data-a="${esc(f.a)}" ${hit ? '' : 'hidden'} ${q.trim() && hit ? 'open' : ''}><summary>${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</summary><div class="faq-answer">${renderWriteup(f.a)}</div></details>`; }).join('')}
+    </div>
+    <p class="field-help" id="faq-none" ${hits ? 'hidden' : ''}>Nothing matches that. Try another word, or send a request and ask me.</p>
   </div>`;
 }
 
