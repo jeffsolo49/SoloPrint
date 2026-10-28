@@ -1340,9 +1340,15 @@ const STATES = {
     const page = await open(db);
     await page.waitForSelector('#faq-search');
     await page.fill('#faq-search', 'usps');
-    const vis = await page.$$eval('.faq-item', els => els.filter(e => !e.hidden).map(e => e.dataset.q));
+    const vis = await page.$$eval('.faq-card', els => els.filter(e => !e.hidden).map(e => e.dataset.q));
     assert(vis.join() === 'Do you ship?', vis.join());
-    assert(await page.$eval('.faq-item:not([hidden])', e => e.open), 'matching answer opens');
+    await page.click('.faq-card:not([hidden])');
+    assert(/Yes, by USPS/.test(await page.textContent('#faq-modal .faq-answer')), 'answer pops up');
+    await page.click('#faq-close');
+    assert(!(await page.$('#faq-modal')), 'X closes it');
+    await page.click('.faq-card:not([hidden])');
+    await page.mouse.click(5, 5);
+    assert(!(await page.$('#faq-modal')), 'tapping outside closes it');
     await page.fill('#faq-search', 'zzz');
     assert(await page.isVisible('#faq-none'), 'says nothing matches');
     await page.close();
