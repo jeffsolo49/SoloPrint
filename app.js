@@ -3003,10 +3003,11 @@ async function saveEmailsDraft() {
 const SETTINGS_TABS = [
   ['about', 'About & links'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
   ['wording', 'Wording'], ['text', 'Site text'], ['faq', 'FAQ'], ['features', 'Show / hide'],
-  ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails']
+  ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails'], ['updates', 'Updates']
 ];
 function setSettingsTab(tab) {
   state.settingsTab = tab;
+  if (tab === 'updates') loadSiteUpdates();
   if (tab === 'emails') state.emailsDraft = null;
   render();
 }
@@ -3021,6 +3022,7 @@ function renderOwnerSettingsPage() {
     ${SETTINGS_TABS.map(([id, label]) => `<button type="button" class="sub-tab ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" onclick="setSettingsTab('${id}')">${esc(label)}${id === 'colors' && low ? `<span class="nav-badge">${low}</span>` : ''}</button>`).join('')}
   </nav>`;
   if (tab === 'emails') return nav + renderOwnerEmailsPage();
+  if (tab === 'updates') return nav + renderUpdatesSettings();
   const body = {
     about: `
     <div class="card">

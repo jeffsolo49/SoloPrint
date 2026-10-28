@@ -48,6 +48,12 @@ async function mockBackend(page, db) {
     if (url.startsWith('https://api.github.com/repos/jeffsolo49/soloprint/deployments')) {
       return route.fulfill({ json: [{ created_at: new Date(Date.now() - (db.deployedMinsAgo ?? 59) * 60000 - 5000).toISOString() }], headers: { 'Access-Control-Allow-Origin': '*' } });
     }
+    if (url.startsWith('https://api.github.com/repos/jeffsolo49/soloprint/pulls')) {
+      return route.fulfill({ json: [
+        { number: 2, title: 'CLAUDE.md note', merged_at: new Date().toISOString(), body: 'x' },
+        { number: 1, title: 'Links work everywhere', merged_at: new Date().toISOString(), body: '- Links: https://example.com/a\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_abc' }
+      ], headers: { 'Access-Control-Allow-Origin': '*' } });
+    }
     const rest = url.split('/rest/v1')[1] || '';
     if (rest) db.log.push(`${method} ${rest.split('?')[0]} ${owner ? 'owner' : 'anon'}`);
     // Like supabase/messages.sql: the owner reads and writes all messages; customers only through the RPCs.
@@ -1694,6 +1700,12 @@ const STATES = {
       { id: 1, job_id: '1', sender: 'owner', via: 'auto', subject: 'Your SoloPrint quote: $9.28', body: 'Hi Jane, your quote...', created_at: t(60) },
       { id: 2, job_id: '1', sender: 'customer', via: 'email', subject: 'Re: Your SoloPrint quote', body: 'Can it be blue? Like https://example.com/blue.', created_at: t(30) }];
     const owner = await open(db);
+    await owner.evaluate(asOwner('settings/updates'));
+    await owner.waitForSelector('.update-item');
+    assert((await owner.$$('.update-item')).length === 1, 'CLAUDE.md notes are left out of Updates');
+    await owner.click('.update-item summary');
+    const upd = await owner.textContent('.update-body');
+    assert(/Links:/.test(upd) && !/Generated with|claude\.ai/.test(upd), upd);
     await owner.evaluate(asOwner('dashboard'));
     await owner.waitForSelector('.waiting-banner');
     assert(/1 conversation is waiting on you/.test(await owner.textContent('.waiting-banner')), await owner.textContent('.waiting-banner'));

@@ -2813,3 +2813,42 @@ function renderPracticePage() {
     </div>
     ${state.practice ? `<div class="practice-grid">${renderPracticeCustomer()}${renderPracticeOwner()}</div>` : ''}`;
 }
+
+// ── Settings → Updates: merged changes from GitHub, newest first, grouped by day
+async function loadSiteUpdates(force) {
+  if (state.siteUpdatesLoading || (state.siteUpdates && !force)) return;
+  state.siteUpdatesLoading = true; state.siteUpdatesError = false; render();
+  try {
+    const res = await fetch('https://api.github.com/repos/jeffsolo49/soloprint/pulls?state=closed&per_page=100&sort=updated&direction=desc', { cache: 'no-store' });
+    if (!res.ok) throw new Error('bad');
+    const list = await res.json();
+    state.siteUpdates = list.filter(p => p.merged_at && !/^claude\.md/i.test(p.title || ''))
+      .sort((a, b) => new Date(b.merged_at) - new Date(a.merged_at))
+      .map(p => ({ id: p.number, title: p.title, at: p.merged_at, body: updateBodyText(p.body) }));
+  } catch (e) { state.siteUpdatesError = true; }
+  state.siteUpdatesLoading = false; render();
+}
+function updateBodyText(body) {
+  return String(body || '').replace(/\r/g, '')
+    .split('\n').filter(l => !/Generated with|claude\.ai\/code\/session/i.test(l)).join('\n')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+function showOlderUpdates() { state.siteUpdatesAll = true; render(); }
+function renderUpdatesSettings() {
+  if (!state.siteUpdates && !state.siteUpdatesLoading && !state.siteUpdatesError) setTimeout(loadSiteUpdates, 0);
+  let inner;
+  if (state.siteUpdatesError) inner = `<p class="field-help">Couldn't load the list. <button type="button" class="btn-link" onclick="loadSiteUpdates(true)">Try again</button></p>`;
+  else if (!state.siteUpdates) inner = `<p class="field-help">Loading…</p>`;
+  else {
+    const cutoff = Date.now() - 30 * 86400000;
+    const shown = state.siteUpdates.filter(u => state.siteUpdatesAll || new Date(u.at).getTime() >= cutoff);
+    const day = iso => new Date(iso).toLocaleDateString('en-US', { timeZone: AUSTIN_TIMEZONE, month: 'short', day: 'numeric', year: 'numeric' });
+    let last = '';
+    inner = shown.map(u => {
+      const d = day(u.at), head = d !== last ? `<h4 class="updates-day">${esc(d)}</h4>` : ''; last = d;
+      return `${head}<details class="update-item"><summary>${esc(u.title)}</summary>${u.body ? `<div class="update-body" style="white-space:pre-wrap">${esc(u.body)}</div>` : ''}</details>`;
+    }).join('') || '<p class="field-help">No changes in the last 30 days.</p>';
+    if (!state.siteUpdatesAll && shown.length < state.siteUpdates.length) inner += `<p><button type="button" class="btn-secondary" onclick="showOlderUpdates()">Show older changes</button></p>`;
+  }
+  return `<div class="card"><h3 class="card-title">Updates</h3><div class="field-help">Every change made to the site, newest first. Tap one to read the details.</div>${inner}</div>`;
+}

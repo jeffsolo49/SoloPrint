@@ -867,3 +867,8 @@ textarea.autogrow { resize: vertical; overflow-y: auto; min-height: 70px; max-he
 @media (max-width: 900px) { .practice-grid { grid-template-columns: 1fr; } }
 /* Web addresses in any text become links (linkifyPage in features.js). */
 a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; overflow-wrap: anywhere; }
+
+.updates-day { margin: 1rem 0 .4rem; }
+.update-item { padding: .4rem 0; border-top: 1px solid var(--border, #ddd); }
+.update-item summary { cursor: pointer; font-weight: 600; }
+.update-body { margin-top: .4rem; }
