@@ -493,7 +493,7 @@ function weeklySummaryEmail(report, custom, site, now) {
     weekSales: money(sales),
     waitingQuote: String(jobs.filter(j => phase(j) === 'estimate').length),
     waitingApproval: String(jobs.filter(j => phase(j) === 'quote_sent').length),
-    unpaid: String(jobs.filter(j => ['order_received', 'production', 'delivered'].includes(phase(j)) && !isPaidInFull(j)).length),
+    unpaid: String(jobs.filter(j => ['order_received', 'production', 'final_payment_needed', 'ready_to_ship', 'delivered'].includes(phase(j)) && !isPaidInFull(j)).length),
     printing: String(jobs.filter(j => phase(j) === 'production').length),
     newReviews: reviews ? String(reviews) : '',
     lowStock: low.join(', '),
@@ -567,8 +567,9 @@ function emailsFor(type, rec, old, custom, site) {
     if (customer && String(d.body || '').trim()) emails.push({ to: customer, kind: 'details_check', subject: String(d.subject || 'Quick check on your SoloPrint request').replace(/\s+/g, ' ').trim().slice(0, 200), body: String(d.body).slice(0, 10000) });
     else send('details_check', customer);
   } else if (rec.phase !== old.phase) {
-    const key = { quote_sent: 'quote', order_received: 'confirmed', production: 'printing', final_payment_needed: 'final_payment_needed', delivered: 'delivered' }[rec.phase];
-    if (key) send(key, customer);
+    const key = { quote_sent: 'quote', order_received: 'confirmed', final_payment_needed: 'final_payment_needed', delivered: 'delivered' }[rec.phase];
+    // Orders saved as Printing before Confirmed and Printing became one step were already confirmed.
+    if (key && !(old.phase === 'production' && rec.phase === 'order_received')) send(key, customer);
   } else if (rec.phase === 'delivered' && deliveryLines(rec).join() !== deliveryLines(old).join() && deliveryLines(rec).length) {
     send('delivery_update', customer);
   }
@@ -603,6 +604,13 @@ function emailVars(rec, custom, site) {
     amountDue: unpaid ? money(left) : '',
     venmoLink: unpaid ? venmoUrl(rec, left, rules) : '',
     deposit: money(fp.deposit),
+    depositDue: unpaid && rec.paymentStatus !== 'deposit_received' && depositAmount(rec, total, rules) > 0 && depositAmount(rec, total, rules) < total ? money(depositAmount(rec, total, rules)) : '',
+    depositPercent: String(Math.round(Number(rules.depositPercent) || 0)),
+    depositLink: unpaid && rec.paymentStatus !== 'deposit_received' && depositAmount(rec, total, rules) > 0 && depositAmount(rec, total, rules) < total ? venmoUrl(rec, depositAmount(rec, total, rules), rules) : '',
+    shippingDeposit: money(fp.fee),
+    postage: postageRefund(rec, rules) ? money(postageRefund(rec, rules).postage) : '',
+    refund: postageRefund(rec, rules) ? money(postageRefund(rec, rules).refund) : '',
+    refundNote: postageRefund(rec, rules) ? (postageRefund(rec, rules).refund > 0 ? "I'll send your $" + money(postageRefund(rec, rules).refund) + ' shipping deposit refund by Venmo.' : 'Postage used up the whole shipping deposit, so there is no refund this time.') : '',
     remainder: money(fp.remainder),
     shippingFee: money(fp.fee),
     remainderLink: total ? venmoUrl(rec, fp.remainder, rules) : '',
@@ -618,6 +626,7 @@ function emailVars(rec, custom, site) {
   };
   vars.detailsItems = [vars.itemsWithPrices, vars.specialRoll ? 'Special order roll: $' + vars.specialRoll : '', vars.extraCharges,
     vars.total ? 'Total: $' + vars.total : ''].filter(Boolean).join('\n\n');
+  vars.invoiceSummary = invoiceSummary(vars, rec, total || 0, rules);
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   return vars;
 }
@@ -720,24 +729,19 @@ const EMAIL_TEMPLATES = {
     body: '{customerName} ({customerEmail}) approved the quote of ${total} for {title}.\nConfirm the order on your dashboard when you know you can make it.'
   },
   confirmed: {
-    label: 'Order confirmed', to: 'Customer', when: 'You move the order to Confirmed.',
+    label: 'Order confirmed (printing)', to: 'Customer', when: 'You move the order to Confirmed & Printing (after you know you can make it).',
     subject: 'Your SoloPrint order is confirmed',
-    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nPay with Venmo: {venmoLink} (the link fills in the amount and your order number)\n\n{footer}'
-  },
-  printing: {
-    label: 'Printing', to: 'Customer', when: 'You move the order to Printing.',
-    subject: 'Your SoloPrint order is printing',
-    body: "Hi {name},\n\nYour order for {title} is on the printer now. We'll let you know when it's done.\n\n{footer}"
+    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nTo get in line, please pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo: {depositLink}\nOr pay everything now: {venmoLink}\n(The links fill in the amount and your order number.)\n\n{footer}'
   },
   final_payment_needed: {
     label: 'Printing complete', to: 'Customer', when: 'You move the order to Printing Complete.',
     subject: 'Your SoloPrint order is ready — final payment needed',
-    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${total}. But that is not including your deposit. Since you gave a deposit of ${deposit} the remainder is ${remainder}.\n\nShipping address is also needed at this point. If you are in the USA, shipping costs ${shippingFee} for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50 and anything not spent on postage will be refunded. We charge the extra amount so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nOptionally if you have an account with another shipper you can send me a pre-paid label.\nReply to this email to arrange that option instead.\n\nPay with Venmo: {remainderLink}\nThen reply to this email with your shipping address.\n\n{footer}"
+    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${total}. But that is not including your deposit. Since you gave a deposit of ${deposit} the remainder is ${remainder}. That includes a ${shippingDeposit} shipping deposit.\n\nShipping address is also needed at this point. If you are in the USA, shipping is a ${shippingDeposit} deposit for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50. After I mail your package I refund whatever was not spent on postage, and send you a full invoice. We charge the deposit up front so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nOptionally if you have an account with another shipper you can send me a pre-paid label.\nReply to this email to arrange that option instead.\n\nPay with Venmo: {remainderLink}\nThen reply to this email with your shipping address.\n\n{footer}"
   },
   delivered: {
-    label: 'Order shipped', to: 'Customer', when: 'You move the order to Shipped (enter the tracking number first, in Ready to Ship).',
+    label: 'Order shipped', to: 'Customer', when: 'You enter the tracking number on a Ready to Ship order (the order moves to Shipped by itself).',
     subject: 'Your SoloPrint order has shipped',
-    body: "Hi {name},\n\nYour order for {title} is on its way!\n\n{delivery}\n\nHere's a photo of your print: {photo}\n\n{footer}"
+    body: "Hi {name},\n\nYour order for {title} is on its way!\n\n{delivery}\n\nHere's a photo of your print: {photo}\n\nYour invoice:\n{invoiceSummary}\n\n{refundNote}\n\n{footer}"
   },
   delivery_update: {
     label: 'Shipping details', to: 'Customer', when: 'You save changed shipping details on a shipped order.',
@@ -788,9 +792,16 @@ const EMAIL_PLACEHOLDERS = {
   total: 'Order total',
   specialRoll: 'Special order roll cost',
   amountDue: 'Total, only while unpaid',
+  depositDue: 'The deposit to ask for, while no deposit is paid',
+  depositPercent: 'The deposit percent from Settings > Prices',
+  depositLink: 'Venmo link with the deposit filled in',
   deposit: 'The deposit they paid (type it on the order after you get it), 0.00 if none',
   remainder: 'Total minus the deposit, plus the shipping fee from Settings > Prices (for the "printing done" email)',
-  shippingFee: 'Shipping fee added to the final payment (Settings > Prices)',
+  shippingDeposit: 'Shipping deposit added to the final payment (Settings > Prices). Part of it is refunded after mailing.',
+  postage: 'What you actually paid for postage (you type it with the tracking number)',
+  refund: 'Shipping deposit refund: deposit minus packaging minus postage',
+  refundNote: 'A line saying the refund is coming, only once you have entered the postage',
+  invoiceSummary: 'Full invoice: items with prices, total, what they paid, shipping deposit, postage and refund',
   remainderLink: 'Venmo link with the remainder filled in',
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
@@ -866,7 +877,8 @@ const RULE_DEFAULTS = {
   printDaysMax: 2,         // ...and at most
   customDesignDays: 7,     // order queue: extra days to design a custom order (at least)
   depositPercent: 75,      // deposit customers can pay first, % of the total (0 = no deposit option)
-  shippingFee: 15,         // $ added to the final payment for shipping ($1 envelope + the rest for postage)
+  shippingFee: 15,         // shipping DEPOSIT added to the final payment ($1 packaging + the rest for postage); the unused part is refunded
+  packagingFee: 1,         // $ of the shipping deposit kept for the envelope and packaging
   logoPrice: 1,            // $ per print to add the customer's company logo (the "Add my logo" box)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
@@ -1068,11 +1080,29 @@ function amountLeft(order, total, rules) {
   return total;
 }
 
-// Final payment: total minus any deposit already paid, plus the shipping fee.
+// Final payment: total minus any deposit already paid, plus the shipping deposit.
 function finalPayment(order, total, rules) {
   const dep = order && order.paymentStatus === 'deposit_received' ? depositAmount(order, total, rules) : 0;
   const fee = Number(rules && rules.shippingFee) || 0;
   return { deposit: dep, fee, remainder: Math.round((Math.max(0, total - dep) + fee) * 100) / 100 };
+}
+
+// Shipping deposit refund once the owner has typed what postage really cost; null until then.
+function postageRefund(order, rules) {
+  const raw = order && order.postageCost;
+  if (raw === '' || raw === null || raw === undefined || !isFinite(Number(raw)) || Number(raw) < 0) return null;
+  const fee = Number(rules && rules.shippingFee) || 0, pack = Number(rules && rules.packagingFee) || 0, postage = Number(raw);
+  return { fee, packaging: pack, postage, refund: Math.round(Math.max(0, fee - pack - postage) * 100) / 100 };
+}
+// The full invoice as plain text: the order breakdown (vars.detailsItems), what was paid, shipping and any refund.
+function invoiceSummary(vars, order, total, rules) {
+  const fp = finalPayment(order, total || 0, rules), r = postageRefund(order, rules);
+  const m = n => '$' + (Math.round(n * 100) / 100).toFixed(2);
+  const lines = [vars.detailsItems || ''];
+  if (fp.deposit > 0) lines.push('Deposit paid: ' + m(fp.deposit), 'Rest paid: ' + m(Math.max(0, total - fp.deposit)));
+  lines.push('Shipping deposit paid: ' + m(fp.fee), 'Total paid: ' + m(total + fp.fee));
+  if (r) lines.push('', 'Shipping: packaging ' + m(r.packaging) + ', postage ' + m(r.postage) + ', refunded ' + m(r.refund));
+  return lines.filter((l, i) => l || i).join('\n').trim();
 }
 
 function fmtRoll(grams) { return grams % 1000 === 0 ? (grams / 1000) + ' kg' : grams + ' g'; }
@@ -1087,7 +1117,7 @@ function specialOrderPolicy(rules) {
 // Special orders are a color or material the owner doesn't carry: a whole 1 kg roll is bought for the
 // order (when the owner confirms it). For 2 months the customer can print more in that same
 // color/material from it, up to 1000 g in all (the first order included).
-const ROLL_PHASES = ['order_received', 'production', 'delivered'];
+const ROLL_PHASES = ['order_received', 'production', 'final_payment_needed', 'ready_to_ship', 'delivered'];
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function isSpecialOrder(item) {

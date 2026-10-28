@@ -839,11 +839,11 @@ const STATES = {
     await page.fill('#email-subject-quote', 'Quote for {title}: ${total}');
     assert(/Quote for Benchy, Phone stand: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'preview should update while typing');
     await page.fill('#email-body-footer', 'Thanks!\nJeff');
-    assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-printing')), 'footer change should show in other previews');
+    assert(/Thanks!\s+Jeff/.test(await page.textContent('#email-preview-confirmed')), 'footer change should show in other previews');
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-draft_reminder,email-customer_received,email-details_check,email-quote,email-reminder,email-confirmed,email-deposit,email-printing,email-final_payment_needed,email-payment,email-delivered,email-delivery_update,email-review_request,email-roll_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-draft_reminder,email-customer_received,email-details_check,email-quote,email-reminder,email-confirmed,email-deposit,email-final_payment_needed,email-payment,email-delivered,email-delivery_update,email-review_request,email-roll_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
@@ -974,7 +974,7 @@ const STATES = {
     assert(db.reviews['2'].status === 'approved' && db.settings.reviews[0].text === 'Sturdy hook, holds my bag.' && db.settings.reviews[0].name === 'Jane D.', JSON.stringify(db.settings.reviews));
     await owner.close();
   });
-  await check('filament stock: grams come off at Printing, out-of-stock colors hide from customers', async () => {
+  await check('filament stock: grams come off when printing is done, out-of-stock colors hide from customers', async () => {
     const db = fixtures();
     db.private.inventory = { black: { grams: 120, low: 200 } };
     db.jobs['1'].phase = 'order_received';
@@ -982,7 +982,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
     assert(/Running low:\s+Black \(120 g\)/.test(await page.textContent('.stock-alert')), 'no low stock warning');
-    await page.evaluate(() => updateBatchPhase('1', 'production'));
+    await page.evaluate(() => updateBatchPhase('1', 'final_payment_needed'));
     await page.waitForTimeout(300);
     assert(db.private.inventory.black.grams === 20 && db.jobs['1'].stockTaken === true, `stock ${JSON.stringify(db.private.inventory)}`);
     await page.evaluate(() => setStock('black', '0'));
@@ -1334,6 +1334,21 @@ const STATES = {
     assert(data.videos.join() === 'abcdefghijk,ABCDEFGHIJK,zyxwvutsrqp' && data.photos.join() === 'https://img.test/d1.png', JSON.stringify(data));
     await owner.close();
   });
+  await check('Ready to Ship: entering the tracking number ships the order and works out the shipping deposit refund', async () => {
+    const db = fixtures();
+    Object.assign(db.jobs['1'], { phase: 'ready_to_ship', paymentStatus: 'payment_received', paidAt: new Date().toISOString() });
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    await owner.waitForSelector('#dtrack-1');
+    await owner.click('text=Save tracking and mark Shipped', { timeout: 3000 }).catch(() => {});
+    assert(db.jobs['1'].phase === 'ready_to_ship', 'needs a tracking number first');
+    await owner.fill('#dtrack-1', 'USPS 9400 1111');
+    await owner.fill('#dpost-1', '9.50');
+    await owner.click('text=Save tracking and mark Shipped');
+    await owner.waitForTimeout(400);
+    assert(db.jobs['1'].phase === 'delivered' && db.jobs['1'].deliveryTracking === 'USPS 9400 1111' && db.jobs['1'].postageCost === 9.5, JSON.stringify(db.jobs['1']));
+    await owner.close();
+  });
   await check('FAQ search: shows every question whose question or answer has the words', async () => {
     const db = fixtures();
     db.settings = { ...db.settings, faq: [{ id: 'a', q: 'How long?', a: 'About a week.', live: true }, { id: 'b', q: 'Do you ship?', a: 'Yes, by USPS.', live: true }, { id: 'c', q: 'Colors?', a: 'Many.', live: true }] };
@@ -1497,12 +1512,12 @@ const STATES = {
     await later.close();
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
-    assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /1 waiting for a deposit/.test(await owner.textContent('main')), 'owner queue summary');
-    assert(/#2 in line/.test(await owner.textContent('#order-q1')) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
+    assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /2 waiting for a deposit/.test(await owner.textContent('main')), `owner queue summary: ${(await owner.textContent('main')).match(/Queue:[^.]*\./)}`);
+    assert(/#1 in line/.test(await owner.textContent('#order-q1')) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
     await owner.selectOption('#order-1 .owner-batch-controls select >> nth=1', 'deposit_received');
     await owner.waitForTimeout(300);
     assert(db.jobs['1'].depositAt && db.jobs['1'].depositAmount === 6.96, JSON.stringify(db.jobs['1']));
-    assert(/#3 in line/.test(await owner.textContent('#order-1')), 'deposit just now: behind Bo, whose deposit came first');
+    assert(/#2 in line/.test(await owner.textContent('#order-1')), 'deposit just now: behind Bo, whose deposit came first');
     await owner.close();
     const paid = await open(db);
     await paid.evaluate(STATES['my requests']);
@@ -1730,7 +1745,7 @@ const STATES = {
     assert(/Links:/.test(upd) && !/Generated with|claude\.ai/.test(upd), upd);
     await owner.evaluate(asOwner('dashboard'));
     const chip = await owner.evaluate(() => finalPaymentChip({ ...state.batches[0], phase: 'final_payment_needed', paymentStatus: 'deposit_received', depositAmount: 1, ownerPrice: null }));
-    assert(/Waiting for \$\d+\.\d\d \(includes \$15\.00 shipping\)/.test(chip), chip);
+    assert(/Waiting for \$\d+\.\d\d \(includes \$15\.00 shipping deposit\)/.test(chip), chip);
     await owner.waitForSelector('.waiting-banner');
     assert(/1 conversation is waiting on you/.test(await owner.textContent('.waiting-banner')), await owner.textContent('.waiting-banner'));
     assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
@@ -1805,16 +1820,14 @@ const STATES = {
     await page.click('#practice-pay-deposit');
     await page.selectOption('#practice-payment', 'deposit_received');
     assert(/Deposit received/.test(await cust()), 'deposit email');
-    await page.selectOption('#practice-phase', 'production');
     await page.selectOption('#practice-phase', 'final_payment_needed');
     await page.selectOption('#practice-payment', 'payment_received');
     await page.selectOption('#practice-phase', 'ready_to_ship');
     await page.fill('#practice-tracking', 'USPS 9400 1111');
-    await page.click('text=Save shipping details');
-    await page.selectOption('#practice-phase', 'delivered');
+    await page.click('text=Save tracking and mark Shipped');
     await page.click('#practice-skip');
     const all = await cust();
-    ['is printing', 'final payment', 'Payment received', 'is on its way', 'Tracking number: USPS 9400 1111', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
+    ['final payment', 'Payment received', 'is on its way', 'Tracking number: USPS 9400 1111', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
     assert(db.log.every(l => l.startsWith('GET')), `practice must not write anything: ${db.log.filter(l => !l.startsWith('GET'))}`);
     assert(JSON.stringify(db.jobs) === jobsBefore && db.messages.length === messagesBefore, 'real orders and messages untouched');
     await page.close();

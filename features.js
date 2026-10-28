@@ -41,7 +41,8 @@ const RULE_FIELDS = [
     ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
     ['depositPercent', 'Deposit customers can pay first (% of the total, 0 = none)', 5],
     ['logoPrice', 'Company logo add-on ($ per print)', 0.5],
-    ['shippingFee', 'Shipping fee added to the final payment ($, includes $1 envelope)', 1]
+    ['shippingFee', 'Shipping deposit added to the final payment ($; the unused part is refunded)', 1],
+    ['packagingFee', 'Packaging kept from the shipping deposit ($)', 0.5]
   ]],
   ['Special order rolls', [
     ['rollCost', 'Usual roll price ($)', 1],
@@ -1442,20 +1443,18 @@ const SITE_TEXT = [
   ['Order steps customers see', [
     ['step_estimate', 'Step 1 name', 'Request Received'],
     ['stepInfo_estimate', 'Step 1 description', "We've received your request and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs."],
-    ['step_details_check', 'Step 2 name (only when you ask to confirm details)', 'Confirming Details'],
+    ['step_details_check', 'Step 2 name (shown while you wait for the customer to confirm details)', 'Reviewing'],
     ['stepInfo_details_check', 'Step 2 description', "I've sent you a few questions to make sure I get your order right. Please check your email and reply."],
     ['step_quote_sent', 'Step 3 name', 'Quote Ready'],
     ['stepInfo_quote_sent', 'Step 3 description', "Your quote is ready. Review the price below and tap \"Looks good\" if you'd like to go ahead."],
-    ['step_order_received', 'Step 4 name', 'Order Confirmed'],
-    ['stepInfo_order_received', 'Step 4 description', 'Your order is confirmed and queued for the printer.'],
-    ['step_production', 'Step 5 name', 'Printing'],
-    ['stepInfo_production', 'Step 5 description', 'Your parts are on the printer right now.'],
-    ['step_final_payment_needed', 'Step 6 name', 'Printing Complete'],
-    ['stepInfo_final_payment_needed', 'Step 6 description', 'Your print is done. We need your final payment and shipping address before we send it out.'],
-    ['step_ready_to_ship', 'Step 7 name', 'Ready to Ship'],
-    ['stepInfo_ready_to_ship', 'Step 7 description', "Your payment and address are in. I'm packing your order and will send the tracking number."],
-    ['step_delivered', 'Step 8 name', 'Shipped'],
-    ['stepInfo_delivered', 'Step 8 description', 'Your order is on its way. The tracking details are below and in your email.'],
+    ['step_order_received', 'Step 4 name', 'Confirmed & Printing'],
+    ['stepInfo_order_received', 'Step 4 description', 'Your order is confirmed. Once your deposit is in, you have a place in line and it will be printed.'],
+    ['step_final_payment_needed', 'Step 5 name', 'Printing Complete'],
+    ['stepInfo_final_payment_needed', 'Step 5 description', 'Your print is done. We need your final payment, shipping deposit and shipping address before we send it out.'],
+    ['step_ready_to_ship', 'Step 6 name', 'Ready to Ship'],
+    ['stepInfo_ready_to_ship', 'Step 6 description', "Your payment and address are in. I'm packing your order and will send the tracking number."],
+    ['step_delivered', 'Step 7 name', 'Shipped'],
+    ['stepInfo_delivered', 'Step 7 description', 'Your order is on its way. The tracking details are below and in your email.'],
     ['pay_unpaid', 'Payment: not asked yet', 'Unpaid'],
     ['pay_payment_requested', 'Payment: asked', 'Payment Requested'],
     ['pay_deposit_received', 'Payment: deposit paid', 'Deposit Received'],
@@ -2644,7 +2643,7 @@ function openConversation(id) {
 // this page's memory (state.practice): nothing is saved to the database and no email is sent. The emails a
 // real order would send are written from your real email wording and put in the chat instead.
 // Which email goes out when mirrors emailsFor in email/Code.gs; keep the two in step.
-const PRACTICE_PHASE_EMAILS = { quote_sent: 'quote', order_received: 'confirmed', production: 'printing', final_payment_needed: 'final_payment_needed', delivered: 'delivered' };
+const PRACTICE_PHASE_EMAILS = { quote_sent: 'quote', order_received: 'confirmed', final_payment_needed: 'final_payment_needed', delivered: 'delivered' };
 function practiceDesigns() { return state.gallery.filter(g => g.published && g.title); }
 function startPractice(galleryId) {
   const g = state.gallery.find(x => x.id === galleryId);
@@ -2681,10 +2680,17 @@ function practiceVars() {
   const vars = { name: o.clientName, customerName: o.clientName, customerEmail: o.clientEmail, title: orderTitle(o), submitted: formatAustinTime(o.createdAt),
     items: detailsItemsText(o), itemsWithPrices: withPrices, estimate: est ? est.toFixed(2) : '', total: total ? total.toFixed(2) : '',
     specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left) : '',
-    deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder) : '',
+    depositDue: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? depositAmount(o, total, rules).toFixed(2) : '',
+    depositPercent: String(Math.round(Number(rules.depositPercent) || 0)),
+    depositLink: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? venmoPayUrl(o, depositAmount(o, total, rules)) : '',
+    postage: postageRefund(o, rules) ? postageRefund(o, rules).postage.toFixed(2) : '',
+    refund: postageRefund(o, rules) ? postageRefund(o, rules).refund.toFixed(2) : '',
+    refundNote: postageRefund(o, rules) ? (postageRefund(o, rules).refund > 0 ? `I'll send your $${postageRefund(o, rules).refund.toFixed(2)} shipping deposit refund by Venmo.` : 'Postage used up the whole shipping deposit, so there is no refund this time.') : '',
+    deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), shippingDeposit: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder) : '',
     materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
     delivery: [o.deliveryDate && `Ship date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking number: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
     photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '', detailsItems: detailsBreakdown(o) };
+  vars.invoiceSummary = invoiceSummary(vars, o, total || 0, rules);
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   return vars;
 }
@@ -2755,7 +2761,12 @@ function practicePayment(status) {
 }
 function practiceSaveTracking() {
   const p = state.practice;
-  practiceChange(o => { o.deliveryTracking = String(p.tracking || '').trim(); });
+  practiceChange(o => {
+    o.deliveryTracking = String(p.tracking || '').trim();
+    o.postageCost = String(p.postage || '').trim() === '' ? '' : Number(p.postage);
+    // Like the real site: the tracking number on a Ready to Ship order ships it.
+    if (o.phase === 'ready_to_ship' && o.deliveryTracking) { o.phase = 'delivered'; stampPhase(o, 'delivered'); }
+  });
 }
 // The daily emails, without waiting days.
 function practiceSkipAhead() {
@@ -2817,7 +2828,7 @@ function renderPracticeOwner() {
     <div class="row2" style="margin-top:10px;">
       <div class="field"><label for="practice-phase">Order phase</label>
         <select id="practice-phase" class="phase-select" onchange="practicePhase(this.value)">
-          ${ORDER_PHASES.map((ph, idx) => `<option value="${ph.id}" ${o.phase === ph.id ? 'selected' : ''} ${idx === phaseIndex(o.phase) || idx === phaseIndex(o.phase) + 1 || (ph.id === 'quote_sent' && beforeQuote(o.phase)) ? '' : 'disabled'}>${ph.label}</option>`).join('')}
+          ${ORDER_PHASES.filter(ph => ph.id !== 'details_check').map((ph, idx0) => { const idx = phaseIndex(ph.id); return `<option value="${ph.id}" ${o.phase === ph.id ? 'selected' : ''} ${idx === phaseIndex(o.phase) || idx === phaseIndex(o.phase) + 1 || (ph.id === 'quote_sent' && beforeQuote(o.phase)) ? '' : 'disabled'}>${ph.label}</option>`; }).join('')}
         </select></div>
       <div class="field"><label for="practice-payment">Payment status</label>
         <select id="practice-payment" class="phase-select" onchange="practicePayment(this.value)">
@@ -2836,7 +2847,9 @@ function renderPracticeOwner() {
     </fieldset>` : ''}
     ${o.phase === 'delivered' || o.phase === 'ready_to_ship' ? `<div class="field"><label for="practice-tracking">Carrier and tracking number</label>
       <input type="text" id="practice-tracking" value="${esc(p.tracking)}" oninput="state.practice.tracking = this.value" /></div>
-      <button class="btn-sm" type="button" onclick="practiceSaveTracking()">Save shipping details</button>` : ''}
+      <div class="field"><label for="practice-postage">What postage cost ($)</label>
+      <input type="number" step="0.01" min="0" id="practice-postage" value="${esc(p.postage || '')}" oninput="state.practice.postage = this.value" /></div>
+      <button class="btn-sm" type="button" onclick="practiceSaveTracking()">${o.phase === 'ready_to_ship' ? 'Save tracking and mark Shipped' : 'Save shipping details'}</button>` : ''}
     <div style="margin-top:8px;"><button class="btn-sm" type="button" id="practice-skip" onclick="practiceSkipAhead()">Skip ahead (send a daily email that's due)</button></div>
     <div class="alert error" id="practice-err"></div>
     ${renderTrackerSteps(o, false)}

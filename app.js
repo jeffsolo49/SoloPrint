@@ -28,10 +28,9 @@ const NOTIF_ALERTED_KEY = 'soloprint_notif_alerted_v1';
 const NOTIF_PREFS_KEY = 'soloprint_notif_prefs_v1';
 const ORDER_PHASES = [
   { id: 'estimate', label: 'Reviewing' },
-  { id: 'details_check', label: 'Confirming Details' },
+  { id: 'details_check', label: 'Reviewing' },   // same step as Reviewing: asking the customer to confirm details happens inside it
   { id: 'quote_sent', label: 'Quote Ready' },
-  { id: 'order_received', label: 'Confirmed' },
-  { id: 'production', label: 'Printing' },
+  { id: 'order_received', label: 'Confirmed & Printing' },   // Printing ('production') is part of this step; old orders are read as this
   { id: 'final_payment_needed', label: 'Printing Complete' },
   { id: 'ready_to_ship', label: 'Ready to Ship' },
   { id: 'delivered', label: 'Shipped' }
@@ -321,8 +320,8 @@ function renderCustomerOrderAction(batch) {
       const fp = finalPayment(batch, total, rules);
       const left = done ? fp.remainder : amountLeft(batch, total, rules);
       return `<div class="order-action"><strong>Deposit received ($${depositAmount(batch, total, rules).toFixed(2)}).</strong> Thank you!
-        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}" target="_blank" rel="noopener noreferrer">Pay the rest${done ? ' and shipping' : ''}, $${left.toFixed(2)}, with Venmo</a>
-        <div class="order-action-sub">${done ? `Includes $${fp.fee.toFixed(2)} for shipping; whatever isn't spent on postage is refunded.` : 'Due when your order is ready.'}</div>` : ''}
+        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}" target="_blank" rel="noopener noreferrer">Pay the rest${done ? ' and shipping deposit' : ''}, $${left.toFixed(2)}, with Venmo</a>
+        <div class="order-action-sub">${done ? `Includes a $${fp.fee.toFixed(2)} shipping deposit; whatever isn't spent on postage is refunded after your package is mailed.` : 'Due when your order is ready.'}</div>` : ''}
       </div>`;
     }
     if (currentRules().venmo && total) {
@@ -366,9 +365,9 @@ async function customerApproveQuote(batchId) {
 function renderTrackerSteps(batch, withStatus = true) {
   const phase = batch.phase || 'estimate';
   const history = batch.phaseHistory || {};
-  // "Confirming details" only shows for orders that went through it.
-  const phases = ORDER_PHASES.filter(p => p.id !== 'details_check' || history.details_check || phase === 'details_check');
-  const currentIdx = Math.max(0, phases.findIndex(p => p.id === phase));
+  // Confirming details happens inside Reviewing, so it is not a step of its own.
+  const phases = ORDER_PHASES.filter(p => p.id !== 'details_check');
+  const currentIdx = Math.max(0, phases.findIndex(p => p.id === (phase === 'details_check' ? 'estimate' : phase)));
   const shortTime = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const steps = phases.map((p, idx) => {
     const cls = idx < currentIdx || phase === 'delivered' ? 'done' : idx === currentIdx ? 'current' : '';
@@ -542,6 +541,7 @@ function normalizeBatch(batch) {
     deliveryNotes: cleanText(batch.deliveryNotes),
     deliveryTracking: cleanText(batch.deliveryTracking, 200),
     deliveryDate: cleanText(batch.deliveryDate, 100),
+    postageCost: batch.postageCost === '' || batch.postageCost === null || batch.postageCost === undefined || !(Number(batch.postageCost) >= 0) ? '' : Math.min(1000, Math.round(Number(batch.postageCost) * 100) / 100),
     finishedPhotos: (Array.isArray(batch.finishedPhotos) ? batch.finishedPhotos : []).map(safeImageUrl).filter(Boolean).slice(0, 6),
     stockTaken: batch.stockTaken === true,
     paidAt: cleanIso(batch.paidAt),
@@ -567,6 +567,7 @@ function normalizeBatch(batch) {
   if (!phase) {
     phase = legacyStatus === 'quoted' ? 'quote_sent' : 'estimate';
   }
+  if (phase === 'production') phase = 'order_received';
   if (!ORDER_PHASES.find(p => p.id === phase)) phase = 'estimate';
   // Old saved spellings of "paid": 'partial'/'paid' (first version) and 'payment_recieved' (until Oct 2026).
   if (paymentStatus === 'partial' || paymentStatus === 'paid' || paymentStatus === 'payment_recieved') paymentStatus = 'payment_received';
@@ -814,7 +815,7 @@ function sortedLibraryEntries() {
 }
 
 function isSoldPhase(phase) {
-  return ['order_received', 'production', 'delivered'].includes(phase || '');
+  return ['order_received', 'production', 'final_payment_needed', 'ready_to_ship', 'delivered'].includes(phase || '');
 }
 
 function buildModelAnalyticsRows() {
@@ -2078,7 +2079,7 @@ function renderOwnerApp() {
 
 function renderOwnerDashboard() {
   const estimate = state.batches.filter(b => beforeQuote(b.phase));
-  const production = state.batches.filter(b => (b.phase || 'estimate') === 'production');
+  const production = state.batches.filter(b => (b.phase || 'estimate') === 'order_received');
   const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
 
   return `
@@ -2406,10 +2407,11 @@ function renderOwnerBatch(b) {
       <div class="field" style="margin-bottom:0;">
         <label>Order Phase</label>
         <select class="phase-select" onchange="updateBatchPhase('${b.id}', this.value)">
-          ${ORDER_PHASES.map((p, idx) => {
-            const currentIdx = phaseIndex(b.phase || 'estimate');
-            const isAllowed = idx === currentIdx || idx === currentIdx + 1;
-            return `<option value="${p.id}" ${(b.phase||'estimate')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
+          ${ORDER_PHASES.filter(p => p.id !== 'details_check').map(p => {
+            const cur = b.phase === 'details_check' ? 'estimate' : (b.phase || 'estimate');
+            const idx = phaseIndex(p.id), currentIdx = phaseIndex(cur);
+            const isAllowed = idx === currentIdx || idx === currentIdx + 1 || (cur === 'estimate' && p.id === 'quote_sent' && false);
+            return `<option value="${p.id}" ${cur===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
           }).join('')}
         </select>
       </div>
@@ -2492,7 +2494,7 @@ function renderOwnerBatch(b) {
       </div>
       ${phase === 'delivered' || phase === 'ready_to_ship' ? `
         <div class="delivery-meta">
-          <div class="card-title" style="margin-bottom:10px;">Shipping details${phase === 'ready_to_ship' ? ' (the customer gets these in the Shipped email)' : ''}</div>
+          <div class="card-title" style="margin-bottom:10px;">Shipping details${phase === 'ready_to_ship' ? ' (saving the tracking number ships the order and emails the customer)' : ''}</div>
           <div class="row2">
             <div class="field" style="margin-bottom:0;">
               <label for="ddate-${b.id}">Ship date</label>
@@ -2504,10 +2506,15 @@ function renderOwnerBatch(b) {
             </div>
           </div>
           <div class="field" style="margin-top:10px;margin-bottom:0;">
+            <label for="dpost-${b.id}">What postage actually cost ($)</label>
+            <input type="number" step="0.01" min="0" id="dpost-${b.id}" value="${b.postageCost === '' || b.postageCost === undefined ? '' : esc(b.postageCost)}" placeholder="9.50" />
+            ${renderRefundLine(b)}
+          </div>
+          <div class="field" style="margin-top:10px;margin-bottom:0;">
             <label for="dnotes-${b.id}">Notes for the customer</label>
             <textarea id="dnotes-${b.id}" placeholder="Anything else they should know" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea>
           </div>
-          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">Save shipping details</button>
+          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">${phase === 'ready_to_ship' ? 'Save tracking and mark Shipped' : 'Save shipping details'}</button>
         </div>
       ` : ``}
       <button class="btn-secondary" onclick="resetBatch('${b.id}')" style="margin-top:0.75rem;">Edit Quotes</button>
@@ -2881,7 +2888,7 @@ const EMAIL_SAMPLE = {
   itemsWithPrices: '1) Benchy x 2\n   Color: Red\n   Price: $9.28 ($4.64 each)\n\n2) Phone stand\n   Color: Black\n   Price: $6.40\n   Notes: Make it sturdy',
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
   venmoLink: 'https://venmo.com/your-venmo?txn=pay&amount=15.68',
-  deposit: '7.84', remainder: '22.84', shippingFee: '15.00', remainderLink: 'https://venmo.com/your-venmo?txn=pay&amount=22.84',
+  deposit: '7.84', remainder: '22.84', shippingFee: '15.00', shippingDeposit: '15.00', depositDue: '11.76', depositPercent: '75', depositLink: 'https://venmo.com/your-venmo?txn=pay&amount=11.76', postage: '9.50', refund: '4.50', refundNote: "I'll send your $4.50 shipping deposit refund by Venmo.", invoiceSummary: 'Benchy x 2: $9.28\nTotal: $15.68\nShipping deposit paid: $15.00\nTotal paid: $30.68', remainderLink: 'https://venmo.com/your-venmo?txn=pay&amount=22.84',
   orderLink: 'https://soloprint.vercel.app/?requests=jane%40example.com#order-1729',
   delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup',
   photo: `${SUPA_URL}/storage/v1/object/public/gallery/orders/1729-photo.jpg`,
@@ -2936,7 +2943,7 @@ function renderOwnerEmailsPage() {
 }
 
 // Settings > Emails lists emails in the order a customer gets them. New emails not listed go last.
-const EMAIL_FLOW = ['draft_reminder', 'customer_received', 'details_check', 'quote', 'reminder', 'confirmed', 'deposit', 'printing',
+const EMAIL_FLOW = ['draft_reminder', 'customer_received', 'details_check', 'quote', 'reminder', 'confirmed', 'deposit',
   'final_payment_needed', 'payment', 'delivered', 'delivery_update', 'review_request', 'roll_reminder',
   'owner_new', 'owner_approved', 'weekly_summary'];
 function emailKeysTo(to) {
@@ -4572,19 +4579,20 @@ async function updateBatchPhase(batchId, phase) {
   }
   // "Confirming Details" sends an email you write and check first, so choosing it opens that.
   if (phase === 'details_check' && currentPhase !== 'details_check') { openDetailsCheck(batchId); return; }
-  if (phase === 'production' && currentPhase !== 'production' && !['deposit_received', 'payment_received'].includes(b.paymentStatus || 'unpaid') &&
-      !confirm('No deposit is marked received yet. Start printing anyway?')) { render(); return; }
   if (phase === 'ready_to_ship' && currentPhase !== 'ready_to_ship' && !isPaidInFull(b)) {
-    if (!confirm('The remainder and shipping fee are not marked paid yet. Mark them paid and move to Ready to Ship?')) { render(); return; }
+    if (!confirm('The remainder and shipping deposit are not marked paid yet. Mark them paid and move to Ready to Ship?')) { render(); return; }
     b.paymentStatus = 'payment_received';
     if (!b.paidAt) b.paidAt = new Date().toISOString();
   }
-  if (phase === 'delivered' && currentPhase !== 'delivered' && !String(b.deliveryTracking || '').trim() &&
-      !confirm('No tracking number is saved. Mark as Shipped anyway? (The customer gets the Shipped email now.)')) { render(); return; }
+  if (phase === 'delivered' && currentPhase !== 'delivered' && !String(b.deliveryTracking || '').trim()) {
+    alert('Enter the tracking number in the Shipping details box first. Saving it marks the order as Shipped.');
+    render();
+    return;
+  }
   b.phase = phase;
   b.status = phase === 'estimate' ? 'pending' : 'quoted';
   stampPhase(b, phase);
-  if (phase === 'production') await adjustStockForOrder(b, true);
+  if (phase === 'final_payment_needed') await adjustStockForOrder(b, true);   // the print is done, so the filament is used
   await upsertBatch(b);
   render();
 }
@@ -4719,13 +4727,19 @@ function deleteLibraryEntry(encodedKey) {
   render();
 }
 
+// How much of the shipping deposit goes back to the customer once the real postage is typed in.
+function renderRefundLine(b) {
+  const r = postageRefund(b, rulesFor(b));
+  return `<div class="field-help">${r ? `Shipping deposit $${r.fee.toFixed(2)} - packaging $${r.packaging.toFixed(2)} - postage $${r.postage.toFixed(2)} = <strong>refund $${r.refund.toFixed(2)}</strong> by Venmo.` : 'Type it in and the refund works out here and goes in the Shipped email with the invoice.'}</div>`;
+}
+
 // Printing Complete: what the customer owes now (rest + shipping fee) and whether it has come in.
 function finalPaymentChip(b) {
   const total = orderSum(b), fp = finalPayment(b, total, rulesFor(b));
   if (!(total > 0)) return '';
   return isPaidInFull(b)
-    ? `<span class="status delivered" title="Rest and $${fp.fee.toFixed(2)} shipping fee">Final payment and shipping paid</span>`
-    : `<span class="status quoted" title="Total $${total.toFixed(2)}, deposit $${fp.deposit.toFixed(2)}, shipping fee $${fp.fee.toFixed(2)}">Waiting for $${fp.remainder.toFixed(2)} (includes $${fp.fee.toFixed(2)} shipping)</span>`;
+    ? `<span class="status delivered" title="Rest and $${fp.fee.toFixed(2)} shipping deposit">Final payment and shipping deposit paid</span>`
+    : `<span class="status quoted" title="Total $${total.toFixed(2)}, deposit $${fp.deposit.toFixed(2)}, shipping deposit $${fp.fee.toFixed(2)}">Waiting for $${fp.remainder.toFixed(2)} (includes $${fp.fee.toFixed(2)} shipping deposit)</span>`;
 }
 
 // The deposit the customer actually paid; used by {deposit} and {remainder} in the "printing done" email.
@@ -4744,6 +4758,15 @@ async function saveDeliveryInfo(batchId) {
   b.deliveryDate = (document.getElementById(`ddate-${batchId}`) || { value: '' }).value.trim();
   b.deliveryTracking = (document.getElementById(`dtrack-${batchId}`) || { value: '' }).value.trim();
   b.deliveryNotes = (document.getElementById(`dnotes-${batchId}`) || { value: '' }).value.trim();
+  const post = (document.getElementById(`dpost-${batchId}`) || { value: '' }).value.trim();
+  b.postageCost = post === '' ? '' : Math.max(0, Math.round(parseFloat(post) * 100) / 100) || 0;
+  // Entering the tracking number on a Ready to Ship order is what ships it.
+  if ((b.phase || '') === 'ready_to_ship') {
+    if (!b.deliveryTracking) { alert('Enter the carrier and tracking number to mark this order as shipped.'); render(); return; }
+    b.phase = 'delivered';
+    b.status = 'quoted';
+    stampPhase(b, 'delivered');
+  }
   await upsertBatch(b);
   render();
 }
