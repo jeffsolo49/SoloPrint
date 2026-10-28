@@ -1334,6 +1334,19 @@ const STATES = {
     assert(data.videos.join() === 'abcdefghijk,ABCDEFGHIJK,zyxwvutsrqp' && data.photos.join() === 'https://img.test/d1.png', JSON.stringify(data));
     await owner.close();
   });
+  await check('FAQ search: shows every question whose question or answer has the words', async () => {
+    const db = fixtures();
+    db.settings = { ...db.settings, faq: [{ id: 'a', q: 'How long?', a: 'About a week.', live: true }, { id: 'b', q: 'Do you ship?', a: 'Yes, by USPS.', live: true }, { id: 'c', q: 'Colors?', a: 'Many.', live: true }] };
+    const page = await open(db);
+    await page.waitForSelector('#faq-search');
+    await page.fill('#faq-search', 'usps');
+    const vis = await page.$$eval('.faq-item', els => els.filter(e => !e.hidden).map(e => e.dataset.q));
+    assert(vis.join() === 'Do you ship?', vis.join());
+    assert(await page.$eval('.faq-item:not([hidden])', e => e.open), 'matching answer opens');
+    await page.fill('#faq-search', 'zzz');
+    assert(await page.isVisible('#faq-none'), 'says nothing matches');
+    await page.close();
+  });
   await check('site text, FAQ and step names: drafts stay hidden until Live; the owner can preview them', async () => {
     const db = fixtures();
     const owner = await open(db);

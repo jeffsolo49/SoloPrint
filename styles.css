@@ -872,3 +872,6 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .update-item { padding: .4rem 0; border-top: 1px solid var(--border, #ddd); }
 .update-item summary { cursor: pointer; font-weight: 600; }
 .update-body { margin-top: .4rem; }
+
+.faq-search { width: 100%; margin: 4px 0 8px; }
+.faq-item[hidden] { display: none; }
