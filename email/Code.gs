@@ -587,6 +587,7 @@ function emailVars(rec, custom, site) {
   const roll = rollCharge(rec, rules);
   const left = total ? amountLeft(rec, total, rules) : 0;
   const unpaid = left > 0;
+  const fp = finalPayment(rec, total || 0, rules);
   const vars = {
     name: String(rec.clientName || '').trim() || 'there',
     customerName: String(rec.clientName || '').trim() || 'a customer',
@@ -601,6 +602,10 @@ function emailVars(rec, custom, site) {
     extraCharges: extraCharges(rec).map(c => c.label + ': $' + money(c.amount)).join('\n'),
     amountDue: unpaid ? money(left) : '',
     venmoLink: unpaid ? venmoUrl(rec, left, rules) : '',
+    deposit: money(fp.deposit),
+    remainder: money(fp.remainder),
+    shippingFee: money(fp.fee),
+    remainderLink: total ? venmoUrl(rec, fp.remainder, rules) : '',
     materialNote: (site && site.materialNote) || DEFAULT_MATERIAL_NOTE,
     queueNote: queueNote(rec, site),
     designTermsNote: rec.designTerms ? 'This order includes a custom design. When you approve your quote, you will be asked to read and agree to my custom design terms.' : '',
@@ -727,7 +732,7 @@ const EMAIL_TEMPLATES = {
   final_payment_needed: {
     label: 'Printing complete', to: 'Customer', when: 'You move the order to Printing Complete.',
     subject: 'Your SoloPrint order is ready — final payment needed',
-    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${amountDue}.\n\nShipping address is also needed at this point. If you are in the USA, shipping costs $15 for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50 and anything not spent on postage will be refunded. We charge the extra amount so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nPay with Venmo: {venmoLink}\nThen reply to this email with your shipping address.\n\n{footer}"
+    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${total}. But that is not including your deposit. Since you gave a deposit of ${deposit} the remainder is ${remainder}.\n\nShipping address is also needed at this point. If you are in the USA, shipping costs ${shippingFee} for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50 and anything not spent on postage will be refunded. We charge the extra amount so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nOptionally if you have an account with another shipper you can send me a pre-paid label.\nReply to this email to arrange that option instead.\n\nPay with Venmo: {remainderLink}\nThen reply to this email with your shipping address.\n\n{footer}"
   },
   delivered: {
     label: 'Order complete', to: 'Customer', when: 'You move the order to Delivered.',
@@ -783,6 +788,10 @@ const EMAIL_PLACEHOLDERS = {
   total: 'Order total',
   specialRoll: 'Special order roll cost',
   amountDue: 'Total, only while unpaid',
+  deposit: 'The deposit they paid (type it on the order after you get it), 0.00 if none',
+  remainder: 'Total minus the deposit, plus the shipping fee from Settings > Prices (for the "printing done" email)',
+  shippingFee: 'Shipping fee added to the final payment (Settings > Prices)',
+  remainderLink: 'Venmo link with the remainder filled in',
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
   delivery: 'Delivery date, tracking or pickup, and notes',
@@ -857,6 +866,7 @@ const RULE_DEFAULTS = {
   printDaysMax: 2,         // ...and at most
   customDesignDays: 7,     // order queue: extra days to design a custom order (at least)
   depositPercent: 50,      // deposit customers can pay first, % of the total (0 = no deposit option)
+  shippingFee: 15,         // $ added to the final payment for shipping ($1 envelope + the rest for postage)
   logoPrice: 1,            // $ per print to add the customer's company logo (the "Add my logo" box)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
@@ -1056,6 +1066,13 @@ function amountLeft(order, total, rules) {
   if (isPaidInFull(order)) return 0;
   if (order.paymentStatus === 'deposit_received') return Math.max(0, Math.round((total - depositAmount(order, total, rules)) * 100) / 100);
   return total;
+}
+
+// Final payment: total minus any deposit already paid, plus the shipping fee.
+function finalPayment(order, total, rules) {
+  const dep = order && order.paymentStatus === 'deposit_received' ? depositAmount(order, total, rules) : 0;
+  const fee = Number(rules && rules.shippingFee) || 0;
+  return { deposit: dep, fee, remainder: Math.round((Math.max(0, total - dep) + fee) * 100) / 100 };
 }
 
 function fmtRoll(grams) { return grams % 1000 === 0 ? (grams / 1000) + ' kg' : grams + ' g'; }

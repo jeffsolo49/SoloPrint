@@ -73,7 +73,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   (`logSentEmails`) and `collectReplies` (every 5 min, `REPLY_CHECK_MINUTES`; `scheduleReplies` resets the trigger from `healthCheck`; needs Loader v2+ for Gmail) records Gmail replies via secret RPC `record_messages`. Site: messages section of features.js.
   Links: any web address in page text becomes a link (`linkifyPage`, run by a MutationObserver in features.js); every email is sent with an
   `htmlBody` (Code.gs `mail`/`emailHtml`) so links work in all mail apps. `{detailsItems}` = full breakdown with prices or estimates and total
-  (site `detailsBreakdown`, Code.gs `emailVars`); placeholders match in any capitals. Message text goes through `linkifyText` (links tappable); `.autogrow` boxes grow to fit (`growMessageBoxes` after render). The owner's first message on an
+  (site `detailsBreakdown`, Code.gs `emailVars`); the "printing done" email uses `{total}`, `{deposit}` (typed on the order after it's paid, `setDepositAmount`), `{remainder}` = total − deposit + rule `shippingFee` ($15; `finalPayment`) and `{remainderLink}`; placeholders match in any capitals. Message text goes through `linkifyText` (links tappable); `.autogrow` boxes grow to fit (`growMessageBoxes` after render). The owner's first message on an
   order starts from site text `firstReply` (`ownerMessageDraft`). "Edit their request" in the conversation (before the quote) opens the edit form beside it (`.chat-edit`).
   Client notes (Clients page) live in `owner_private` key `clients`, never in orders.
 - Practice tab (owner, `renderPracticePage` in features.js): a pretend order in `state.practice` only, never saved or emailed; its emails are

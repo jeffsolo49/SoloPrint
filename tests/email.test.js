@@ -151,6 +151,13 @@ check('quote and confirmed emails say how far back in line the order is', () => 
   const none = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(!none.includes('in line') && !none.includes('ahead'), 'queue line without queue data');
 });
+check('printing done email: total, deposit, remainder with the shipping fee', () => {
+  const body = emailsFor('UPDATE', at({ phase: 'final_payment_needed', paymentStatus: 'deposit_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64 }),
+    at({ phase: 'production', paymentStatus: 'deposit_received', depositAmount: 4.64 }))[0].body;
+  const m = body.match(/total cost is \$(\d+\.\d\d).*deposit of \$(\d+\.\d\d) the remainder is \$(\d+\.\d\d)/);
+  assert(m && m[2] === '4.64' && Math.abs(Number(m[1]) - 4.64 + 15 - Number(m[3])) < 0.011, body);
+  assert(body.includes('shipping costs $15.00 for USPS') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
+});
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
   assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);
