@@ -2392,6 +2392,7 @@ function renderOwnerBatch(b) {
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
         <span class="status ${phase}">${phaseLabel(phase)}</span>
         <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
+        ${phase === 'final_payment_needed' ? finalPaymentChip(b) : ''}
         ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
         ${phase === 'order_received' ? `<span class="status quoted">${ownerQueuePosition(b) ? `#${ownerQueuePosition(b)} in line` : 'Waiting for deposit'}</span>` : ''}
         ${b.designTerms && !beforeQuote(phase) ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
@@ -4704,6 +4705,15 @@ function deleteLibraryEntry(encodedKey) {
   persistModelLibrary();
   setLibrarySaveState('saved');
   render();
+}
+
+// Printing Complete: what the customer owes now (rest + shipping fee) and whether it has come in.
+function finalPaymentChip(b) {
+  const total = orderSum(b), fp = finalPayment(b, total, rulesFor(b));
+  if (!(total > 0)) return '';
+  return isPaidInFull(b)
+    ? `<span class="status delivered" title="Rest and $${fp.fee.toFixed(2)} shipping fee">Final payment and shipping paid</span>`
+    : `<span class="status quoted" title="Total $${total.toFixed(2)}, deposit $${fp.deposit.toFixed(2)}, shipping fee $${fp.fee.toFixed(2)}">Waiting for $${fp.remainder.toFixed(2)} (includes $${fp.fee.toFixed(2)} shipping)</span>`;
 }
 
 // The deposit the customer actually paid; used by {deposit} and {remainder} in the "printing done" email.

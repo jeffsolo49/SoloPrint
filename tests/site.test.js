@@ -1707,6 +1707,8 @@ const STATES = {
     const upd = await owner.textContent('.update-body');
     assert(/Links:/.test(upd) && !/Generated with|claude\.ai/.test(upd), upd);
     await owner.evaluate(asOwner('dashboard'));
+    const chip = await owner.evaluate(() => finalPaymentChip({ ...state.batches[0], phase: 'final_payment_needed', paymentStatus: 'deposit_received', depositAmount: 1, ownerPrice: null }));
+    assert(/Waiting for \$\d+\.\d\d \(includes \$15\.00 shipping\)/.test(chip), chip);
     await owner.waitForSelector('.waiting-banner');
     assert(/1 conversation is waiting on you/.test(await owner.textContent('.waiting-banner')), await owner.textContent('.waiting-banner'));
     assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
