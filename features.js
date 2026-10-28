@@ -40,7 +40,8 @@ const RULE_FIELDS = [
     ['gramRate', 'Filament, regular colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
     ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
     ['depositPercent', 'Deposit customers can pay first (% of the total, 0 = none)', 5],
-    ['logoPrice', 'Company logo add-on ($ per print)', 0.5]
+    ['logoPrice', 'Company logo add-on ($ per print)', 0.5],
+    ['shippingFee', 'Shipping fee added to the final payment ($, includes $1 envelope)', 1]
   ]],
   ['Special order rolls', [
     ['rollCost', 'Usual roll price ($)', 1],
@@ -2617,6 +2618,7 @@ function practiceVars() {
   const total = priced ? orderSum(o) : null;
   const est = o.items.reduce((s, it) => s + (calcTotal(it.minutes || it.knownMinutes, it.grams, it, it.qty, rules) || 0), 0);
   const left = total ? amountLeft(o, total, rules) : 0;
+  const fp = finalPayment(o, total || 0, rules);
   const withPrices = o.items.map((it, i) => {
     const each = itemPriced(it) ? printPrice(it.minutes, it.grams, it, rules) : null;
     return detailsItemsText({ items: [it] }).replace(/^1\)/, `${i + 1})`) + (each !== null ? `\n   Price: $${(each * it.qty).toFixed(2)}${it.qty > 1 ? ` ($${each.toFixed(2)} each)` : ''}` : '');
@@ -2624,6 +2626,7 @@ function practiceVars() {
   const vars = { name: o.clientName, customerName: o.clientName, customerEmail: o.clientEmail, title: orderTitle(o), submitted: formatAustinTime(o.createdAt),
     items: detailsItemsText(o), itemsWithPrices: withPrices, estimate: est ? est.toFixed(2) : '', total: total ? total.toFixed(2) : '',
     specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left) : '',
+    deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder) : '',
     materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
     delivery: [o.deliveryDate && `Delivery date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking / pickup: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
     photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '', detailsItems: detailsBreakdown(o) };

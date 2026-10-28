@@ -2418,7 +2418,7 @@ function renderOwnerBatch(b) {
             return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
           }).join('')}
         </select>
-        ${b.depositAt ? `<div class="field-help">Deposit $${(Number(b.depositAmount) || 0).toFixed(2)} on ${esc(formatAustinTime(b.depositAt))}</div>` : ''}
+        ${b.depositAt ? `<div class="field-help">Deposit paid on ${esc(formatAustinTime(b.depositAt))}. Amount: $<input type="number" step="0.01" min="0" id="dep-${b.id}" value="${(Number(b.depositAmount) || 0).toFixed(2)}" style="width:6rem" aria-label="Deposit amount paid" onchange="setDepositAmount('${b.id}', this.value)" /></div>` : ''}
       </div>
     </div>
     ${renderTrackerSteps(b, false)}
@@ -2877,6 +2877,7 @@ const EMAIL_SAMPLE = {
   itemsWithPrices: '1) Benchy x 2\n   Color: Red\n   Price: $9.28 ($4.64 each)\n\n2) Phone stand\n   Color: Black\n   Price: $6.40\n   Notes: Make it sturdy',
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
   venmoLink: 'https://venmo.com/your-venmo?txn=pay&amount=15.68',
+  deposit: '7.84', remainder: '22.84', shippingFee: '15.00', remainderLink: 'https://venmo.com/your-venmo?txn=pay&amount=22.84',
   orderLink: 'https://soloprint.vercel.app/?requests=jane%40example.com#order-1729',
   delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup',
   photo: `${SUPA_URL}/storage/v1/object/public/gallery/orders/1729-photo.jpg`,
@@ -4697,6 +4698,16 @@ function deleteLibraryEntry(encodedKey) {
   if (state.libraryEditingKey === key) state.libraryEditingKey = '';
   persistModelLibrary();
   setLibrarySaveState('saved');
+  render();
+}
+
+// The deposit the customer actually paid; used by {deposit} and {remainder} in the "printing done" email.
+async function setDepositAmount(batchId, value) {
+  const b = state.batches.find(x => x.id === batchId);
+  const n = parseFloat(value);
+  if (!b || !(n >= 0)) return;
+  b.depositAmount = Math.round(n * 100) / 100;
+  await upsertBatch(b);
   render();
 }
 
