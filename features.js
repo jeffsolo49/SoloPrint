@@ -1692,6 +1692,7 @@ const SITE_TEXT = [
     ['nameLabel', 'Name and email question', 'Your name and email'],
     ['nameHelp', 'Under name and email', 'Saved as you go, so you can finish later.'],
     ['itemsTitle', 'Items heading', 'Items to print'],
+    ['colorPhotoNote', 'Under a color\'s photo ({color} = the color name)', 'Photo: an example of {color} filament, printed before.'],
     ['modeQuestion', 'First question', 'What would you like printed?'],
     ['modeGallery', 'Choice 1', 'Something from my past work'],
     ['modeGallerySub', 'Choice 1, small text', 'Pick a design I have made before'],
@@ -3203,4 +3204,45 @@ function renderUpdatesSettings() {
     if (!state.siteUpdatesAll && shown.length < state.siteUpdates.length) inner += `<p><button type="button" class="btn-secondary" onclick="showOlderUpdates()">Show older changes</button></p>`;
   }
   return `<div class="card"><h3 class="card-title">Updates</h3><div class="field-help">Every change made to the site, newest first. Tap one to read the details.</div>${inner}</div>`;
+}
+
+
+// A color's photo is an example print, shown bigger on the same page (not a new tab) and closed with the button, Esc or a tap outside.
+function colorPhotoNote(c) {
+  return t('colorPhotoNote').replace(/\{color\}/gi, c.name);
+}
+function openColorPhoto(id) {
+  const c = customerColors().find(x => x.id === id);
+  if (c && c.photo) openPhotoViewer(c.photo, `Example print in ${c.name} filament`, colorPhotoNote(c));
+}
+function openPhotoViewer(url, alt, caption) {
+  closePhotoViewer();
+  const opener = document.activeElement;
+  const box = document.createElement('div');
+  box.id = 'photo-viewer';
+  box.className = 'photo-viewer';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-label', alt);
+  box.innerHTML = `<div class="photo-viewer-card">
+    <img src="${esc(url)}" alt="${esc(alt)}" referrerpolicy="no-referrer" />
+    <p class="photo-viewer-caption">${esc(caption)}</p>
+    <button type="button" class="btn-primary photo-viewer-close" onclick="closePhotoViewer()">Close</button>
+  </div>`;
+  box.addEventListener('click', e => { if (e.target === box) closePhotoViewer(); });
+  box._opener = opener;
+  document.body.appendChild(box);
+  document.addEventListener('keydown', photoViewerKey);
+  box.querySelector('.photo-viewer-close').focus();
+}
+function photoViewerKey(e) {
+  if (e.key === 'Escape') closePhotoViewer();
+}
+function closePhotoViewer() {
+  const box = document.getElementById('photo-viewer');
+  document.removeEventListener('keydown', photoViewerKey);
+  if (!box) return;
+  const opener = box._opener;
+  box.remove();
+  if (opener && document.contains(opener) && opener.focus) opener.focus();
 }
