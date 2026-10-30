@@ -2774,7 +2774,8 @@ function cleanSettings(raw) {
     colors: (Array.isArray(d.colors) ? d.colors : []).slice(0, 30).map(c => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(c && c.id)) ? c.id : '',
       name: cleanText(c && c.name, 40).trim(),
-      hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) ? c.hex : '#888888',
+      // Colors saved without a real hex (the gray placeholder) get one guessed from their name.
+      hex: /^#[0-9a-f]{6}$/i.test(String(c && c.hex)) && String(c.hex).toLowerCase() !== '#888888' ? c.hex : (guessColorHex(c && c.name) || '#888888'),
       special: !!(c && c.special),
       outOfStock: !!(c && c.outOfStock),
       rate: c && c.rate !== '' && c.rate !== null && c.rate !== undefined && Number(c.rate) >= 0 && Number(c.rate) <= 100000 ? Number(c.rate) : null,
