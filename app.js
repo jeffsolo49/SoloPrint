@@ -1546,8 +1546,8 @@ function renderFilamentPills(i, current) {
   if (colors.length) {
     return `<div class="filament-pills" role="group" aria-label="Color">
       ${colors.map(c => `
-        <button type="button" class="fil-pill swatch-pill ${item.colorId === c.id ? 'active-color' : ''}" aria-pressed="${item.colorId === c.id}" onclick="pickColor(${i}, '${esc(c.id)}')">
-          ${swatchHtml(c)}${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}${c.description || c.link || c.photo ? ' <span class="info-mark" aria-hidden="true">ⓘ</span><span class="sr-only"> (has more info)</span>' : ''}
+        <button type="button" class="fil-pill swatch-pill color-pill ${item.colorId === c.id ? 'active-color' : ''}" style="${colorPillStyle(c.hex)}" aria-pressed="${item.colorId === c.id}" onclick="pickColor(${i}, '${esc(c.id)}')">
+          ${esc(c.name)}${c.special ? ' <span class="swatch-note">special</span>' : ''}${c.description || c.link || c.photo ? ' <span class="info-mark" aria-hidden="true">ⓘ</span><span class="sr-only"> (has more info)</span>' : ''}
         </button>`).join('')}
       <button type="button" class="fil-pill ${isSpecialOrder(item) ? 'active-special' : ''}" aria-pressed="${isSpecialOrder(item)}" onclick="pickColor(${i}, '')">Special order (color or material I don't carry)</button>
     </div>
@@ -1572,11 +1572,18 @@ function renderColorInfo(item) {
   const shown = customerColors().filter(c => ids.includes(c.id) && (c.description || c.link || c.photo));
   if (!shown.length) return '';
   return `<div class="color-info">${shown.map(c => `<div class="color-info-row">
-    ${c.photo ? `<a class="color-photo" href="${esc(c.photo)}" target="_blank" rel="noopener noreferrer">${thumbImg(c.photo, `${c.name} filament, real-life photo`, 'thumb')}</a>` : ''}
+    ${c.photo ? `<button type="button" class="color-photo thumb-btn" onclick="openColorPhoto('${esc(c.id)}')" aria-label="Enlarge the example print in ${esc(c.name)}">${thumbImg(c.photo, `Example print in ${c.name} filament`, 'thumb')}</button>` : ''}
     <div>${swatchHtml(c)}<strong>${esc(c.name)}</strong>${c.description ? `: ${esc(c.description)}` : ''}
     ${c.link ? ` <a href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">See this filament ↗</a>` : ''}
-    ${c.photo ? '<div class="field-help" style="margin:2px 0 0;">Tap the photo to see it bigger.</div>' : ''}</div>
+    ${c.photo ? `<div class="field-help" style="margin:2px 0 0;">${esc(colorPhotoNote(c))} Tap the photo to enlarge it.</div>` : ''}</div>
   </div>`).join('')}</div>`;
+}
+// A color choice is a pill filled with its own color; the text is whichever of white or dark reads better on it.
+function colorPillStyle(hex) {
+  const n = parseInt(String(hex).slice(1), 16);
+  const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin(n >> 16) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return `background:${esc(hex)};color:${(L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? '#14152b' : '#ffffff'}`;
 }
 // A color's dot: always the color itself (the real-life photo shows once the color is picked).
 function swatchHtml(c) {
@@ -1612,8 +1619,8 @@ function renderExtraColors(item, i) {
     <div class="filament-pills" role="group" aria-label="Other colors in this print">
       ${extraColorChoices(item).map((c, n) => {
         const on = extras.some(p => sameColorPart(p, c));
-        return `<button type="button" class="fil-pill swatch-pill ${on ? 'active-color' : ''}" aria-pressed="${on}" onclick="toggleExtraColor(${i}, ${n})">
-          ${c.hex ? `<span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>` : ''}${esc(c.name)}${c.roll ? ` <span class="swatch-note">your roll, ${c.roll.left.toFixed(0)} g left</span>` : c.filType === 'special' ? ' <span class="swatch-note">special</span>' : ''}
+        return `<button type="button" class="fil-pill swatch-pill ${c.hex ? 'color-pill' : ''} ${on ? 'active-color' : ''}" ${c.hex ? `style="${colorPillStyle(c.hex)}"` : ''} aria-pressed="${on}" onclick="toggleExtraColor(${i}, ${n})">
+          ${esc(c.name)}${c.roll ? ` <span class="swatch-note">your roll, ${c.roll.left.toFixed(0)} g left</span>` : c.filType === 'special' ? ' <span class="swatch-note">special</span>' : ''}
         </button>`;
       }).join('')}
     </div>

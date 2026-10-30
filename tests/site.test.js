@@ -175,8 +175,8 @@ async function mockBackend(page, db) {
 const requestSent = page => page.waitForFunction(() => /received your request/.test((document.getElementById('submit-ok') || {}).textContent || ''), null, { timeout: 15000 });
 
 let browser;
-async function open(db, { width = 1100, height = 900, suffix = '', init } = {}) {
-  const page = await browser.newPage({ viewport: { width, height } });
+async function open(db, { width = 1100, height = 900, suffix = '', init, colorScheme = 'light' } = {}) {
+  const page = await browser.newPage({ viewport: { width, height }, colorScheme });
   page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   page.on('dialog', d => d.accept());
@@ -234,9 +234,9 @@ const STATES = {
   browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 
   console.log('Pages load cleanly and meet WCAG 2.2 AA (axe-core):');
-  for (const [name, code] of Object.entries(STATES)) {
+  for (const [name, code] of Object.entries(STATES).flatMap(([n, c]) => [[n, c, 'light'], [`${n} (dark mode)`, c, 'dark']]).map(([n, c, scheme]) => [n, c, scheme])) {
     await check(name, async () => {
-      const page = await open(fixtures());
+      const page = await open(fixtures(), { colorScheme: name.endsWith('(dark mode)') ? 'dark' : 'light' });
       await page.evaluate(code);
       await page.waitForTimeout(250);
       await page.addScriptTag({ content: AXE });
@@ -1552,10 +1552,18 @@ const STATES = {
     await owner.close();
     const page = await open(db);
     await page.click('text=I have an idea');
-    assert(!(await page.$('.swatch-pill:has-text("Red") .swatch-photo')), 'the Red choice should show its color, not a busy photo');
-    assert(await page.evaluate(() => /rgb\(2[0-9]{2}, 0, 0\)|rgb\(\d+, \d+, \d+\)/.test(getComputedStyle(document.querySelector('.swatch-pill .swatch')).backgroundColor)), 'a color dot');
+    assert(!(await page.$('.swatch-pill:has-text("Red") .swatch-photo')), 'the Red choice should be colored, not a busy photo');
+    assert(await page.evaluate(() => { const p = [...document.querySelectorAll('.color-pill')].find(b => /Red/.test(b.textContent)); return p && p.style.background.includes('rgb') && getComputedStyle(p).backgroundColor !== getComputedStyle(document.body).backgroundColor; }), 'the whole Red pill should be filled with its color');
     await page.click('.swatch-pill:has-text("Red")');
     assert(await page.$('.color-info .color-photo img'), 'picking Red should show its photo');
+    await page.click('.color-info .color-photo');
+    assert(await page.$('#photo-viewer img') && /example of Red filament, printed before/i.test(await page.textContent('#photo-viewer')), 'tapping the photo should enlarge it on the same page with a note');
+    assert(page.context().pages().length === 1, 'it must not open a new tab');
+    await page.keyboard.press('Escape');
+    assert(!(await page.$('#photo-viewer')), 'Escape should close the enlarged photo');
+    await page.click('.color-info .color-photo');
+    await page.click('#photo-viewer .photo-viewer-close');
+    assert(!(await page.$('#photo-viewer')), 'the Close button should close it');
     await page.close();
   });
   await check('FAQ is at the bottom of the home page; phones get a back-to-top arrow', async () => {
