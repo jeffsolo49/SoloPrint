@@ -272,7 +272,7 @@ textarea { resize: vertical; min-height: 70px; }
 .gallery-meta { font-size: 11px; color: var(--muted); }
 .gallery-thumbs { display: flex; gap: 6px; padding: 10px 14px 0; }
 .gallery-thumbs img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); }
-.bubble-nav { max-width: 900px; margin: 26px auto 0; padding: 0 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.bubble-nav { max-width: 900px; margin: 26px auto 0; padding: 0 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: 16px; }
 .bubble { position: relative; display: flex; align-items: center; gap: 14px; text-align: left; padding: 18px 20px; border-radius: 30px; background: var(--surface); border: 4px solid var(--bezel); color: var(--text); cursor: pointer; box-shadow: 0 10px 24px rgba(55,20,110,0.28); transition: transform 0.15s, box-shadow 0.15s; font-family: var(--sans); }
 .bubble:hover { transform: translateY(-3px); box-shadow: 0 16px 32px rgba(55,20,110,0.36); }
 .bubble:active { transform: translateY(0); }
@@ -286,11 +286,11 @@ textarea { resize: vertical; min-height: 70px; }
 .bubble.active .bubble-icon { background: #ffffff; color: var(--accent); }
 .bubble .nav-badge { position: absolute; top: -8px; right: -6px; min-width: 24px; height: 24px; font-size: 12px; border-radius: 12px; border: 3px solid #ffffff; }
 @media (max-width: 760px) {
-  .bubble-nav { gap: 10px; margin-top: 16px; padding: 0 12px; }
-  .bubble { flex-direction: column; justify-content: center; text-align: center; gap: 8px; padding: 14px 6px; border-radius: 22px; border-width: 3px; }
+  .bubble-nav { gap: 6px; margin-top: 16px; padding: 0 10px; }
+  .bubble { min-width: 0; flex-direction: column; justify-content: center; text-align: center; gap: 8px; padding: 12px 2px; border-radius: 22px; border-width: 3px; }
   .bubble-icon { width: 44px; height: 44px; }
   .bubble-icon svg { width: 22px; height: 22px; }
-  .bubble-label { font-size: 13px; }
+  .bubble-label { font-size: 12px; overflow-wrap: anywhere; }
   .bubble-label .long { display: none; }
   .bubble-label .short { display: inline; }
   .bubble-sub { display: none; }
@@ -884,3 +884,5 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .faq-answer { font-size: 17px; line-height: 1.55; }
 .faq-close { position: absolute; top: 10px; right: 10px; width: 40px; height: 40px; font-size: 28px; line-height: 1; color: var(--text); background: var(--surface2); border: 2px solid var(--border); border-radius: 50%; cursor: pointer; }
 .faq-close:hover, .faq-close:focus-visible { border-color: var(--border-hover); }
+
+.numbers-summary { margin: 8px 0 12px; padding-left: 18px; font-size: 14px; line-height: 1.6; }
