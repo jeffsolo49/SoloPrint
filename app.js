@@ -1270,16 +1270,31 @@ function renderClientApp() {
     </main>`;
 }
 
-function renderOwnerNav() {
+// Clients and Numbers live inside Orders; Calculator & Models inside Designs. Their tab ids still work.
+function ownerSection() {
+  const t = state.ownerTab;
+  if (['clients', 'numbers', 'orders'].includes(t)) return 'dashboard';
+  if (['calculator', 'library'].includes(t)) return 'gallery';
+  return t;
+}
+function renderOwnerSubNav() {
+  const sec = ownerSection(), t = state.ownerTab;
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['clients', 'By customer'], ['numbers', 'Fix numbers']]
+    : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']] : null;
+  if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
+  const cur = tabs.some(x => x[0] === t) ? t : tabs[0][0];
+  return `<nav class="sub-nav" aria-label="${sec === 'dashboard' ? 'Orders' : 'Designs'} sections">
+    ${tabs.map(([id, label]) => `<button type="button" class="sub-tab ${cur === id ? 'active' : ''}" aria-current="${cur === id ? 'page' : 'false'}" onclick="${id === 'numbers' ? 'state.numbersOnly = \'\'; ' : ''}setOwnerTab('${id}')">${esc(label)}${id === 'calculator' && libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>`).join('')}
+  </nav>`;
+}
+
+function renderOwnerNav() {
   return `
     <nav class="nav" aria-label="Owner sections">
-      <button class="nav-tab ${state.ownerTab==='clients'?'active':''}" onclick="setOwnerTab('clients')">Clients</button>
-      <button class="nav-tab ${state.ownerTab==='dashboard'?'active':''}" onclick="setOwnerTab('dashboard')">Orders</button>
-      <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Designs</button>
+      <button class="nav-tab ${ownerSection() === 'dashboard' ? 'active' : ''}" onclick="setOwnerTab('dashboard')">Orders</button>
+      <button class="nav-tab ${ownerSection() === 'gallery' ? 'active' : ''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
-      <button class="nav-tab ${state.ownerTab==='numbers'?'active':''}" onclick="setOwnerTab('numbers')">Numbers</button>
       <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
@@ -2068,6 +2083,7 @@ function renderOwnerApp() {
     <main class="main owner-main" id="main" tabindex="-1">
       <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales', numbers: 'Numbers' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
+      ${renderOwnerSubNav()}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
         : state.ownerTab === 'practice'
@@ -2435,6 +2451,7 @@ function renderOwnerBatch(b) {
             return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
           }).join('')}
         </select>
+        <button type="button" class="btn-sm" style="margin-top:8px;" onclick="fixNumbers('${b.id}')">Fix numbers</button>
         ${b.depositAt ? `<div class="field-help">Deposit paid on ${esc(formatAustinTime(b.depositAt))}. Amount: $<input type="number" step="0.01" min="0" id="dep-${b.id}" value="${(Number(b.depositAmount) || 0).toFixed(2)}" style="width:6rem" aria-label="Deposit amount paid" onchange="setDepositAmount('${b.id}', this.value)" /></div>` : ''}
       </div>
     </div>
@@ -2631,6 +2648,7 @@ async function showClientView() {
 }
 // Saved Models is part of Calculator, Sales Data part of Money (older links and buttons still work).
 const MERGED_TABS = { library: 'calculator', analytics: 'money', emails: 'settings', filament: 'settings' };
+function fixNumbers(id) { state.numbersOnly = id; state.numbersQuery = ''; setOwnerTab('numbers'); }
 function setOwnerTab(tab) {
   if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
   tab = MERGED_TABS[tab] || tab;

@@ -482,15 +482,17 @@ function queueClientNote(email, field, value) {
 function renderNumbersPage() {
   const q = String(state.numbersQuery || '').trim().toLowerCase();
   const all = state.batches.slice().sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
-  const list = (q ? all.filter(b => `${b.clientName} ${b.clientEmail} ${orderTitle(b)} ${b.id}`.toLowerCase().includes(q)) : all).slice(0, q ? 40 : 15);
+  const only = state.numbersOnly && all.find(b => b.id === state.numbersOnly);
+  const list = only ? [only] : (q ? all.filter(b => `${b.clientName} ${b.clientEmail} ${orderTitle(b)} ${b.id}`.toLowerCase().includes(q)) : all).slice(0, q ? 40 : 15);
   return `<div class="card">
     <h2 class="card-title">Numbers</h2>
     <div class="field-help">Fix an amount typed on an order, like a deposit that was entered wrong. Search for the order, change the number and tap Save numbers. Nothing is emailed.</div>
-    <div class="field"><label for="numbers-q">Search by name, email or order</label>
+    ${only ? '<button type="button" class="btn-sm" onclick="state.numbersOnly = \'\'; render();">Show all orders</button>' : ''}
+    <div class="field" ${only ? 'hidden' : ''}><label for="numbers-q">Search by name, email or order</label>
       <input type="search" id="numbers-q" value="${esc(state.numbersQuery || '')}" oninput="state.numbersQuery = this.value; clearTimeout(window.numbersT); window.numbersT = setTimeout(() => { render(); const el = document.getElementById('numbers-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 300)" /></div>
   </div>
   ${list.length ? list.map(renderNumbersCard).join('') : '<div class="card"><div class="field-help">No orders match.</div></div>'}
-  ${!q && all.length > list.length ? '<div class="field-help" style="padding:0 1rem;">Showing the newest 15. Search to find an older order.</div>' : ''}`;
+  ${!only && !q && all.length > list.length ? '<div class="field-help" style="padding:0 1rem;">Showing the newest 15. Search to find an older order.</div>' : ''}`;
 }
 
 const money0 = v => (Number(v) || 0).toFixed(2);

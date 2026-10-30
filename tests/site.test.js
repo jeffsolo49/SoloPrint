@@ -1000,6 +1000,26 @@ const STATES = {
     assert(await page.locator('#faq-list').count() === 1 && await page.locator('.faq').count() === 1, 'FAQ page should show the FAQ once');
     await page.close();
   });
+  await check('owner menu: Clients and Numbers sit inside Orders, Calculator & Models inside Designs', async () => {
+    const owner = await open(fixtures());
+    await owner.evaluate(asOwner('dashboard'));
+    const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
+    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Change Password', tabs.join('|'));
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|By customer|Fix numbers', 'Orders sub-menu');
+    await owner.click('.sub-tab:has-text("By customer")');
+    await owner.waitForSelector('#client-notes');
+    await owner.click('.sub-tab:has-text("Orders")');
+    await owner.locator('button:has-text("Fix numbers")').nth(1).click();
+    await owner.waitForSelector('.card[id^="numbers-"]');
+    assert(await owner.locator('.card[id^="numbers-"]').count() === 1, 'the order card button should open just that order');
+    await owner.click('text=Show all orders');
+    assert(await owner.locator('.card[id^="numbers-"]').count() > 1, 'Show all orders');
+    await owner.click('nav.nav .nav-tab:has-text("Designs")');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '')).join('|') === 'Designs|Calculator & Models', 'Designs sub-menu');
+    await owner.click('.sub-tab:has-text("Calculator")');
+    await owner.waitForSelector('#owner-calc-print-time');
+    await owner.close();
+  });
   await check('Numbers page: fix a deposit amount, postage and an added charge', async () => {
     const db = fixtures();
     Object.assign(db.jobs['1'], { paymentStatus: 'deposit_received', depositAt: new Date().toISOString(), depositAmount: 5, extraCharges: [{ label: 'Sanding', amount: 3 }] });
