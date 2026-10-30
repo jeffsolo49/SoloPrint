@@ -546,6 +546,11 @@ function normalizeBatch(batch) {
     stockTaken: batch.stockTaken === true,
     paidAt: cleanIso(batch.paidAt),
     depositAt: cleanIso(batch.depositAt),
+    balancePaid: Number(batch.balancePaid) > 0 ? Math.round(Number(batch.balancePaid) * 100) / 100 : null,
+    balancePaidAt: cleanIso(batch.balancePaidAt),
+    shippingDepositPaid: Number(batch.shippingDepositPaid) > 0 ? Math.round(Number(batch.shippingDepositPaid) * 100) / 100 : null,
+    refundSent: Number(batch.refundSent) > 0 ? Math.round(Number(batch.refundSent) * 100) / 100 : null,
+    refundSentAt: cleanIso(batch.refundSentAt),
     depositAmount: Number(batch.depositAmount) > 0 ? Math.round(Number(batch.depositAmount) * 100) / 100 : null,
     rates: cleanQuoteRates(batch.rates),
     designTerms: cleanText(batch.designTerms, 4000),
@@ -1254,11 +1259,14 @@ function renderClientApp() {
       ${renderBubble('jobs', t('navJobs'), t('navJobs'), t('navJobsSub'),
         '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M4 5h.01M4 12h.01M4 19h.01"/>',
         hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
+      ${faqList().length && featureOn('faq') ? renderBubble('faq', t('navFaq'), t('navFaq'), t('navFaqSub'),
+        '<circle cx="12" cy="12" r="9.5"/><path d="M9.5 9.5a2.6 2.6 0 1 1 3.6 2.4c-.7.4-1.1.9-1.1 1.6"/><path d="M12 17h.01"/>') : ''}
     </nav>
     <main class="main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? t('navRequest') : state.clientTab === 'gallery' ? galleryName() : t('navJobs'))}</h1>
+      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? t('navRequest') : state.clientTab === 'gallery' ? galleryName() : state.clientTab === 'faq' ? t('navFaq') : t('navJobs'))}</h1>
       ${previewNote()}
-      ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : renderMyJobsTab()}
+      ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : state.clientTab === 'faq' ? '' : renderMyJobsTab()}
+      ${renderFaq()}
     </main>`;
 }
 
@@ -1400,7 +1408,6 @@ function renderSubmitTab() {
     <div class="field-help" style="text-align:center;margin-top:8px;">${esc(t('submitNote'))}${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
     <div class="alert error" id="submit-err"></div>
     <div class="alert success" id="submit-ok"></div>
-    ${renderFaq()}
   `;
 }
 

@@ -497,15 +497,36 @@ const money0 = v => (Number(v) || 0).toFixed(2);
 function renderNumbersCard(b) {
   const total = orderSum(b), rules = rulesFor(b);
   const money = v => (Number(v) || 0).toFixed(2);
-  const input = (id, label, val, help) => `<div class="field"><label for="${id}-${b.id}">${label}</label>
-    <input type="number" inputmode="decimal" min="0" step="0.01" id="${id}-${b.id}" value="${val}" />${help ? `<div class="field-help">${help}</div>` : ''}</div>`;
+  const input = (id, label, val, help, ph) => `<div class="field"><label for="${id}-${b.id}">${label}</label>
+    <input type="number" inputmode="decimal" min="0" step="0.01" id="${id}-${b.id}" value="${val}" ${ph ? `placeholder="${ph}"` : ''} />${help ? `<div class="field-help">${help}</div>` : ''}</div>`;
+  const fee = Number(rules.shippingFee) || 0, pack = Number(rules.packagingFee) || 0;
+  const dep = Number(b.depositAmount) || 0;
+  const bal = Number(b.balancePaid) || 0, shipDep = Number(b.shippingDepositPaid) || 0;
+  const owed = Math.round((total + fee) * 100) / 100, paid = Math.round((dep + bal + shipDep) * 100) / 100;
+  const r = postageRefund(b, rules), refundSent = Number(b.refundSent) || 0;
+  const left = Math.round((owed - paid) * 100) / 100;
+  const summary = [
+    `Owed: $${money(total)} order + $${money(fee)} shipping deposit = $${money(owed)}`,
+    `Paid: $${money(paid)}${left > 0.004 ? ` (still owed $${money(left)})` : left < -0.004 ? ` ($${money(-left)} over)` : ' (paid in full)'}`,
+    r ? `Shipping deposit refund: $${money(r.refund)}${refundSent ? ` (sent $${money(refundSent)}${r.refund - refundSent > 0.004 ? `, still to send $${money(r.refund - refundSent)}` : ''})` : ', not sent yet'}` : 'Shipping deposit refund: enter what postage cost to work it out'
+  ];
   return `<div class="card" id="numbers-${esc(b.id)}">
     <h3 class="card-title">${esc(orderTitle(b))}</h3>
-    <div class="field-help">${esc(b.clientName || '')} · ${esc(b.clientEmail || '')} · ${esc(phaseLabel(b.phase || 'estimate'))} · Total $${money(total)}</div>
-    ${input('num-dep', 'Deposit received ($)', money(b.depositAmount), b.depositAt ? `Paid on ${esc(formatAustinTime(b.depositAt))}.` : 'No deposit is marked paid on this order yet, so this number is not used.')}
-    ${input('num-post', 'What postage cost ($)', b.postageCost === '' || b.postageCost == null ? '' : money(b.postageCost), 'Sets the shipping deposit refund.')}
+    <div class="field-help">${esc(b.clientName || '')} · ${esc(b.clientEmail || '')} · ${esc(phaseLabel(b.phase || 'estimate'))}</div>
+    <ul class="numbers-summary">${summary.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    <fieldset class="owner-edit-item"><legend>Payments received</legend>
+    ${input('num-dep', 'Deposit received ($)', money(b.depositAmount), b.depositAt ? `Paid on ${esc(formatAustinTime(b.depositAt))}.` : 'No deposit is marked paid on this order yet, so it is not counted in the final payment.')}
+    ${input('num-bal', 'Balance paid ($)', b.balancePaid ? money(b.balancePaid) : '', b.balancePaidAt ? `Paid on ${esc(formatAustinTime(b.balancePaidAt))}. ` : `Order total minus the deposit: $${money(Math.max(0, total - dep))}.`, money(Math.max(0, total - dep)))}
+    ${input('num-ship', 'Shipping deposit paid ($)', b.shippingDepositPaid ? money(b.shippingDepositPaid) : '', `Normally $${money(fee)}: $${money(pack)} packaging plus postage, and the unused part is refunded.`, money(fee))}
+    </fieldset>
+    <fieldset class="owner-edit-item"><legend>Shipping and refund</legend>
+    ${input('num-post', 'What postage cost ($)', b.postageCost === '' || b.postageCost == null ? '' : money(b.postageCost), 'Refund = shipping deposit - packaging - postage.')}
+    ${input('num-refund', 'Refund sent to the customer ($)', b.refundSent ? money(b.refundSent) : '', r ? `Refund owed: $${money(r.refund)}.${b.refundSentAt ? ` Sent ${esc(formatAustinTime(b.refundSentAt))}.` : ''}` : '', r ? money(r.refund) : '')}
+    </fieldset>
+    <fieldset class="owner-edit-item"><legend>Order charges</legend>
     ${input('num-roll', 'Special order roll ($)', money(b.specialOrderCost))}
     ${(b.extraCharges || []).map((c, n) => input('num-x' + n, `Added charge: ${esc(c.label)} ($)`, money(c.amount))).join('')}
+    </fieldset>
     <div class="alert error" id="numbers-err-${esc(b.id)}"></div><div class="alert success" id="numbers-ok-${esc(b.id)}"></div>
     <button type="button" class="btn-primary" style="width:auto;" onclick="saveNumbers('${esc(b.id)}')">Save numbers</button>
   </div>`;
@@ -517,10 +538,23 @@ async function saveNumbers(batchId) {
   const read = id => { const el = document.getElementById(`${id}-${batchId}`); return el ? el.value.trim() : null; };
   const num = v => Math.round(parseFloat(v) * 100) / 100;
   const dep = read('num-dep'), post = read('num-post'), roll = read('num-roll');
+  const bal = read('num-bal'), ship = read('num-ship'), refund = read('num-refund');
   const extras = (b.extraCharges || []).map((c, n) => read('num-x' + n));
-  const bad = [dep, roll, ...extras].some(v => v !== null && !(num(v) >= 0)) || (post !== '' && post !== null && !(num(post) >= 0));
+  const bad = [dep, roll, bal, ship, refund, ...extras].some(v => v !== null && v !== '' && !(num(v) >= 0)) || [dep, roll, ...extras].some(v => v !== null && !(num(v) >= 0)) || (post !== '' && post !== null && !(num(post) >= 0));
   if (bad) { showAlert(`numbers-err-${batchId}`, 'Every amount must be a number, 0 or more.', 'error'); return; }
   b.depositAmount = num(dep);
+  const now = new Date().toISOString(), had = x => x !== '' && x !== null && num(x) > 0;
+  b.balancePaid = had(bal) ? num(bal) : null;
+  b.balancePaidAt = had(bal) ? (b.balancePaidAt || now) : '';
+  b.shippingDepositPaid = had(ship) ? num(ship) : null;
+  b.refundSent = had(refund) ? num(refund) : null;
+  b.refundSentAt = had(refund) ? (b.refundSentAt || now) : '';
+  // Everything owed is in: mark the order paid (never moves a paid order back).
+  const rules = rulesFor(b), owedAll = orderSum(b) + (Number(rules.shippingFee) || 0);
+  if (had(bal) && had(ship) && (b.depositAmount || 0) + b.balancePaid + b.shippingDepositPaid >= owedAll - 0.005 && (b.paymentStatus || 'unpaid') !== 'payment_received') {
+    b.paymentStatus = 'payment_received';
+    if (!b.paidAt) b.paidAt = now;
+  }
   b.postageCost = post === '' ? '' : num(post);
   if (roll !== money0(b.specialOrderCost)) b.specialOrderCost = num(roll);
   b.extraCharges = (b.extraCharges || []).map((c, n) => ({ ...c, amount: num(extras[n]) }));
@@ -1485,6 +1519,8 @@ const SITE_TEXT = [
     ['navGallerySub', 'Menu: past work button, small text', "See what I've made"],
     ['navJobs', 'Menu: my requests button (also that page title)', 'My Requests'],
     ['navJobsSub', 'Menu: my requests button, small text', 'Track your orders'],
+    ['navFaq', 'Menu: questions button (also that page title)', 'FAQ'],
+    ['navFaqSub', 'Menu: questions button, small text', 'Quick answers'],
     ['aboutTitle', 'About card heading', 'Hi, welcome to SoloPrint'],
     ['howTitle', '"How it works" heading', 'How it works'],
     ['reviewsTitle', 'Reviews heading', 'What customers say'],
@@ -1655,13 +1691,14 @@ function closeFaq() {
   window.scrollTo(0, faqScrollY);
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFaq(); });
+function faqList() { return (state.settings.faq || []).filter(f => f.live || previewingDrafts()); }
 function renderFaq() {
-  const list = (state.settings.faq || []).filter(f => f.live || previewingDrafts());
+  const list = faqList();
   if (!featureOn('faq') || !list.length) return '';
   const q = state.faqQuery || '';
   const hits = list.filter(f => faqMatches(f, q)).length;
   return `<div class="card faq">
-    <h3 class="card-title">${esc(t('faqTitle'))}</h3>
+    <${state.clientTab === 'faq' ? 'h2' : 'h3'} class="card-title">${esc(t('faqTitle'))}</${state.clientTab === 'faq' ? 'h2' : 'h3'}>
     ${list.length > 2 ? `<input type="search" id="faq-search" class="faq-search" placeholder="Search for your question here" aria-label="Search the questions and answers" value="${esc(q)}" oninput="faqSearch(this.value)" />` : ''}
     <div id="faq-list" class="faq-grid">
     ${list.map(f => `<button type="button" class="faq-card" data-q="${esc(f.q)}" data-a="${esc(f.a)}" ${faqMatches(f, q) ? '' : 'hidden'} onclick="openFaq('${esc(f.id)}')">${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</button>`).join('')}

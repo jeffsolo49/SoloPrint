@@ -214,6 +214,7 @@ const STATES = {
   'owner settings vacation': asOwner('settings/vacation'),
   'owner settings reviews': asOwner('settings/reviews'),
   'owner numbers': asOwner('numbers'),
+  'faq page': "(() => { state.settings.faq = [{ id: 'q1', q: 'How long?', a: 'About a week.', live: true }, { id: 'q2', q: 'Shipping?', a: 'USPS.', live: true }, { id: 'q3', q: 'Pay?', a: 'Venmo.', live: true }]; setTab('faq'); })()",
   'owner settings site text': asOwner('settings/text'),
   'color with a photo picked': "(() => { state.settings.colors.find(c => c.id === 'red').photo = 'https://img.test/red.png'; state.draftItems[0].mode = 'idea'; render(); pickColor(0, 'red'); })()",
   'owner settings faq': "(async () => { await " + asOwner('settings/faq') + "; state.settingsDraft.faq = [{ id: 'f1', q: 'How long?', a: 'About a week.', live: false }]; render(); })()",
@@ -985,6 +986,20 @@ const STATES = {
     assert(await shop.locator('.review-photos img').count() === 2, 'home page should show the review photos');
     await shop.close();
   });
+  await check('FAQ: a fourth menu button next to My Requests, and the FAQ sits at the bottom of every page', async () => {
+    const db = fixtures();
+    db.settings.faq = [{ id: 'q1', q: 'How long?', a: 'About a week.', live: true }];
+    const page = await open(db);
+    assert(await page.locator('.bubble-nav .bubble').count() === 4, 'menu should have 4 buttons');
+    assert(/FAQ/.test(await page.textContent('.bubble-nav .bubble:nth-child(4)')), 'fourth button should be the FAQ');
+    for (const tab of ['submit', 'gallery', 'jobs']) {
+      await page.evaluate(t => setTab(t), tab);
+      assert(await page.locator('#faq-list').count() === 1, `FAQ missing at the bottom of ${tab}`);
+    }
+    await page.click('.bubble-nav .bubble:nth-child(4)');
+    assert(await page.locator('#faq-list').count() === 1 && await page.locator('.faq').count() === 1, 'FAQ page should show the FAQ once');
+    await page.close();
+  });
   await check('Numbers page: fix a deposit amount, postage and an added charge', async () => {
     const db = fixtures();
     Object.assign(db.jobs['1'], { paymentStatus: 'deposit_received', depositAt: new Date().toISOString(), depositAmount: 5, extraCharges: [{ label: 'Sanding', amount: 3 }] });
@@ -999,6 +1014,16 @@ const STATES = {
     await owner.waitForTimeout(300);
     const j = db.jobs['1'];
     assert(j.depositAmount === 8.5 && j.postageCost === 9.25 && j.extraCharges[0].amount === 4 && j.extraCharges[0].label === 'Sanding', JSON.stringify(j));
+    // balance + shipping deposit paid: the summary says paid in full and the order is marked paid
+    const total = await owner.evaluate(() => orderSum(state.batches.find(b => b.id === '1')));
+    await owner.fill('#num-dep-1', '8.5');
+    await owner.fill('#num-bal-1', String((total - 8.5).toFixed(2)));
+    await owner.fill('#num-ship-1', '15');
+    await owner.fill('#num-refund-1', '4.5');
+    await owner.click('#numbers-1 .btn-primary');
+    await owner.waitForTimeout(400);
+    assert(db.jobs['1'].balancePaid > 0 && db.jobs['1'].shippingDepositPaid === 15 && db.jobs['1'].refundSent === 4.5 && db.jobs['1'].refundSentAt && db.jobs['1'].paymentStatus === 'payment_received', JSON.stringify(db.jobs['1']));
+    assert(/paid in full/.test(await owner.textContent('#numbers-1 .numbers-summary')) && /sent \$4\.50/.test(await owner.textContent('#numbers-1 .numbers-summary')), await owner.textContent('#numbers-1 .numbers-summary'));
     await owner.fill('#num-dep-1', '-3');
     await owner.click('#numbers-1 .btn-primary');
     assert(/number/.test(await owner.textContent('#numbers-err-1')), 'a bad amount should be refused');
