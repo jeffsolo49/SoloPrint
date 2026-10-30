@@ -2106,7 +2106,7 @@ function renderOwnerApp() {
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'calculator' || state.ownerTab === 'library'
-          ? renderOwnerCalculatorPage() + renderOwnerLibraryPage()
+          ? renderOwnerCalculatorPage() + renderLinkCompare() + renderOwnerLibraryPage()
           : renderOwnerDashboard()}
     </main>`;
 }
