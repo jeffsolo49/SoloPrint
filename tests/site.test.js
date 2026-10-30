@@ -1020,6 +1020,22 @@ const STATES = {
     await owner.waitForSelector('#owner-calc-print-time');
     await owner.close();
   });
+  await check('emails: a guide on Orders, and every button that emails the customer asks first', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    assert(/Never sends an email/.test(await owner.textContent('#email-guide')) && /Save All & Notify Client/.test(await owner.textContent('#email-guide')), 'guide missing');
+    const asked = [];
+    owner.removeAllListeners('dialog');
+    owner.on('dialog', d => { asked.push(d.message()); d.dismiss(); });
+    const id = await owner.evaluate(() => { const b = state.batches.find(x => x.phase === 'quote_sent' || x.phase === 'order_received'); return b && b.id; });
+    assert(id, 'need an order to move');
+    const before = db.jobs[id].phase;
+    await owner.evaluate(([id]) => { const b = state.batches.find(x => x.id === id); return updateBatchPhase(id, b.phase === 'quote_sent' ? 'order_received' : 'final_payment_needed'); }, [id]);
+    assert(asked.length === 1 && /This emails .*Send it\?/s.test(asked[0]), asked.join('|'));
+    assert(db.jobs[id].phase === before, 'cancelling must change nothing');
+    await owner.close();
+  });
   await check('Numbers page: fix a deposit amount, postage and an added charge', async () => {
     const db = fixtures();
     Object.assign(db.jobs['1'], { paymentStatus: 'deposit_received', depositAt: new Date().toISOString(), depositAmount: 5, extraCharges: [{ label: 'Sanding', amount: 3 }] });
@@ -1042,7 +1058,7 @@ const STATES = {
     await owner.fill('#num-refund-1', '4.5');
     await owner.click('#numbers-1 .btn-primary');
     await owner.waitForTimeout(400);
-    assert(db.jobs['1'].balancePaid > 0 && db.jobs['1'].shippingDepositPaid === 15 && db.jobs['1'].refundSent === 4.5 && db.jobs['1'].refundSentAt && db.jobs['1'].paymentStatus === 'payment_received', JSON.stringify(db.jobs['1']));
+    assert(db.jobs['1'].balancePaid > 0 && db.jobs['1'].shippingDepositPaid === 15 && db.jobs['1'].refundSent === 4.5 && db.jobs['1'].refundSentAt && db.jobs['1'].paymentStatus === 'deposit_received', 'Numbers must not change the payment step (that would email the customer): ' + JSON.stringify(db.jobs['1']));
     assert(/paid in full/.test(await owner.textContent('#numbers-1 .numbers-summary')) && /sent \$4\.50/.test(await owner.textContent('#numbers-1 .numbers-summary')), await owner.textContent('#numbers-1 .numbers-summary'));
     await owner.fill('#num-dep-1', '-3');
     await owner.click('#numbers-1 .btn-primary');
@@ -1415,11 +1431,11 @@ const STATES = {
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
     await owner.waitForSelector('#dtrack-1');
-    await owner.click('text=Save tracking and mark Shipped', { timeout: 3000 }).catch(() => {});
+    await owner.click('button:has-text("Save tracking and mark Shipped")', { timeout: 3000 }).catch(() => {});
     assert(db.jobs['1'].phase === 'ready_to_ship', 'needs a tracking number first');
     await owner.fill('#dtrack-1', 'USPS 9400 1111');
     await owner.fill('#dpost-1', '9.50');
-    await owner.click('text=Save tracking and mark Shipped');
+    await owner.click('button:has-text("Save tracking and mark Shipped")');
     await owner.waitForTimeout(400);
     assert(db.jobs['1'].phase === 'delivered' && db.jobs['1'].deliveryTracking === 'USPS 9400 1111' && db.jobs['1'].postageCost === 9.5, JSON.stringify(db.jobs['1']));
     await owner.close();
@@ -1896,6 +1912,11 @@ const STATES = {
     await page.selectOption('#practice-payment', 'deposit_received');
     assert(/Deposit received/.test(await cust()), 'deposit email');
     await page.selectOption('#practice-phase', 'final_payment_needed');
+    const payBtn = await page.textContent('#practice-pay-all');
+    assert(/Pay the rest and shipping deposit/.test(payBtn), payBtn);
+    const sums = await page.evaluate(() => { const o = state.practice.order; return finalPayment(o, orderSum(o), rulesFor(o)).remainder; });
+    assert(payBtn.includes(`$${sums.toFixed(2)}`) && sums > 15, `practice balance should include the $15 shipping deposit: ${payBtn}`);
+    assert(/\$1\.00 for packaging and \$14\.00 toward postage/.test(await page.textContent('.practice-side .order-action')), 'shipping deposit breakdown');
     await page.selectOption('#practice-payment', 'payment_received');
     await page.selectOption('#practice-phase', 'ready_to_ship');
     await page.fill('#practice-tracking', 'USPS 9400 1111');
@@ -1905,6 +1926,16 @@ const STATES = {
     ['final payment', 'Payment received', 'is on its way', 'Tracking number: USPS 9400 1111', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
     assert(db.log.every(l => l.startsWith('GET')), `practice must not write anything: ${db.log.filter(l => !l.startsWith('GET'))}`);
     assert(JSON.stringify(db.jobs) === jobsBefore && db.messages.length === messagesBefore, 'real orders and messages untouched');
+    await page.close();
+  });
+  await check('customer balance after printing includes the shipping deposit, with or without a deposit', async () => {
+    const db = fixtures();
+    Object.assign(db.jobs['1'], { phase: 'final_payment_needed', paymentStatus: 'unpaid' });
+    const page = await open(db);
+    await page.evaluate(async () => { state.historyEmail = state.batches[0] ? state.historyEmail : 'jane@example.com'; await loadBatches('jane@example.com'); state.historyEmail = 'jane@example.com'; state.clientTab = 'jobs'; render(); });
+    const total = await page.evaluate(() => orderSum(state.batches.find(b => b.id === '1')));
+    const card = await page.textContent('#order-1');
+    assert(card.includes(`Pay the rest and shipping deposit, $${(total + 15).toFixed(2)}`) && /\$1\.00 for packaging and \$14\.00 toward postage/.test(card), card);
     await page.close();
   });
   await check('installable as an app: manifest and icons', async () => {

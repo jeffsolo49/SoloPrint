@@ -893,3 +893,9 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .faq-close:hover, .faq-close:focus-visible { border-color: var(--border-hover); }
 
 .numbers-summary { margin: 8px 0 12px; padding-left: 18px; font-size: 14px; line-height: 1.6; }
+
+.email-guide { margin-bottom: 14px; }
+.email-guide summary { cursor: pointer; }
+.email-guide-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.5; margin: 10px 0; }
+.email-guide-table th, .email-guide-table td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--border); overflow-wrap: anywhere; }
+.email-guide-table thead th { background: var(--surface2); }
