@@ -27,6 +27,8 @@ create table if not exists public.customer_reviews (
   created_at timestamptz not null default now()
 );
 
+alter table public.customer_reviews add column if not exists photos text[] not null default '{}';
+
 alter table public.customer_reviews enable row level security;
 
 -- Start both tables' rules from scratch so re-running this file never leaves an old rule behind.
@@ -54,17 +56,24 @@ create policy "owner manages customer reviews" on public.customer_reviews
 
 -- A customer can review a delivered order of theirs (matched by email), once; they can rewrite it until
 -- the owner has looked at it.
-create or replace function public.submit_review(p_job_id text, p_email text, p_name text, p_text text, p_rating int)
+drop function if exists public.submit_review(text, text, text, text, int);
+create or replace function public.submit_review(p_job_id text, p_email text, p_name text, p_text text, p_rating int, p_photos text[] default '{}')
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare ph text;
 begin
   if length(trim(coalesce(p_text, ''))) < 3 or length(p_text) > 600 or length(coalesce(p_name, '')) > 60
      or (p_rating is not null and p_rating not between 1 and 5) then
     raise exception 'invalid review';
   end if;
+  -- Up to 2 photos, each one a file the customer uploaded to the gallery bucket's reviews/ folder.
+  if coalesce(array_length(p_photos, 1), 0) > 2 then raise exception 'invalid review'; end if;
+  foreach ph in array coalesce(p_photos, '{}') loop
+    if ph !~ '^https://[a-z0-9.-]+/storage/v1/object/public/gallery/reviews/[A-Za-z0-9_.-]+\.jpg$' then raise exception 'invalid review'; end if;
+  end loop;
   if not exists (
     select 1 from public.jobs
     where id = p_job_id
@@ -74,16 +83,23 @@ begin
   ) then
     raise exception 'order not found';
   end if;
-  insert into public.customer_reviews (job_id, name, text, rating)
-  values (p_job_id, trim(coalesce(p_name, '')), trim(p_text), p_rating)
+  insert into public.customer_reviews (job_id, name, text, rating, photos)
+  values (p_job_id, trim(coalesce(p_name, '')), trim(p_text), p_rating, coalesce(p_photos, '{}'))
   on conflict (job_id) do update
-    set name = excluded.name, text = excluded.text, rating = excluded.rating, created_at = now()
+    set name = excluded.name, text = excluded.text, rating = excluded.rating, photos = excluded.photos, created_at = now()
     where customer_reviews.status = 'new';
 end;
 $$;
 
-revoke all on function public.submit_review(text, text, text, text, int) from public;
-grant execute on function public.submit_review(text, text, text, text, int) to anon, authenticated;
+revoke all on function public.submit_review(text, text, text, text, int, text[]) from public;
+grant execute on function public.submit_review(text, text, text, text, int, text[]) to anon, authenticated;
+
+-- Customers may add review photos (only into the reviews/ folder, only small jpg files). The gallery
+-- bucket already limits size and file type; nobody but the owner can change or delete what's uploaded.
+drop policy if exists "customers add review photos" on storage.objects;
+create policy "customers add review photos" on storage.objects
+  for insert to anon, authenticated
+  with check (bucket_id = 'gallery' and name like 'reviews/%' and name not like '%/%/%' and name ~ '\.jpg$');
 
 -- 3. For the Google script (same secret as the email trigger): delivered orders due a review request,
 --    marked as asked in the same step so each customer is asked once.

@@ -43,7 +43,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | --- | --- |
 | `index.html` | Page shell, link-preview tags, app manifest. Loads `email-templates.js`, `app.js`, `features.js`. |
 | `email-templates.js` | **Shared with the email script.** Default email text (`EMAIL_TEMPLATES`, `{placeholders}`), shop rules and pricing (`RULE_DEFAULTS`, `shopRules`, `orderRules`, `printPrice`, `rollCharge`), leftover rolls (`leftoverRolls`, `itemParts`), `vacationText`. |
-| `app.js` | Everything else on the site: state, Supabase calls, customer request form, My Requests. Owner tabs: Orders (`dashboard`), Designs (`gallery`), Calculator & Models (`calculator` + saved models), Money & Sales (`money` + sales data), Settings (`settings`, sub-tabs in `SETTINGS_TABS`: about, colors (+ stock), prices, wording, vacation, reviews, emails, updates). Old tab ids map through `MERGED_TABS`. Global functions called from inline `onclick`; `render()` redraws the whole page from `state`. |
+| `app.js` | Everything else on the site: state, Supabase calls, customer request form, My Requests. Owner tabs: Orders (`dashboard`), Designs (`gallery`), Calculator & Models (`calculator` + saved models), Money & Sales (`money` + sales data), Numbers (`numbers`, `renderNumbersPage` in features.js: fix typed amounts on any order: deposit received, postage, special order roll, added charges), Settings (`settings`, sub-tabs in `SETTINGS_TABS`: about, colors (+ stock), prices, wording, vacation, reviews, emails, updates). Old tab ids map through `MERGED_TABS`. Global functions called from inline `onclick`; `render()` redraws the whole page from `state`. |
 | `features.js` | Newer features: Settings → Updates (`loadSiteUpdates`, merged PRs from GitHub), vacation mode, Order again, leftover-roll card, finished-print photos, reviews (form + owner approval), private notes, Filament tab, Money tab, Prices/Wording settings cards, site text/FAQ/show-hide settings, service worker registration. |
 | `styles.css` | Theme variables on `:root` (retro purple). Contrast is checked by the tests (WCAG 2.2 AA). |
 | `api/design.js` | Vercel function: `/?design=<name>` links (rewritten here by `vercel.json`) get that design's title, description and photo in the link-preview tags. Its `designSlug` must match app.js (a test checks). Tested by `tests/share.test.js`. |
@@ -56,7 +56,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 ## Data
 
 - `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job`, `customer_jobs(email)`,
-  `customer_approve_quote`, `submit_review`. Anything in an order's data is visible to that customer, so
+  `customer_approve_quote`, `submit_review` (up to 2 review photos: customers upload into the gallery bucket's `reviews/` folder, allowed for anon by a storage policy in owner-tools.sql; `customer_reviews.photos`, copied to the site review on approval). Anything in an order's data is visible to that customer, so
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
   `emails` (edited email text), colors may have `photo` (real-life picture, `swatchHtml`), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`

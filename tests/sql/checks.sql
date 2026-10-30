@@ -60,6 +60,9 @@ do $$ begin
   if (select count(*) from public.model_library) <> 1 then raise exception 'visitors should be able to read saved models'; end if;
 end $$;
 select pg_temp.expect_denied($q$insert into storage.objects (bucket_id, name) values ('gallery', 'evil.jpg')$q$, 'anon uploading photos');
+select pg_temp.expect_denied($q$insert into storage.objects (bucket_id, name) values ('gallery', 'reviews/sub/evil.jpg')$q$, 'anon uploading into a review subfolder');
+select pg_temp.expect_denied($q$insert into storage.objects (bucket_id, name) values ('gallery', 'reviews/evil.html')$q$, 'anon uploading a non-jpg review file');
+insert into storage.objects (bucket_id, name) values ('gallery', 'reviews/d-2-1.jpg');
 reset role;
 
 -- Email trigger: new orders, stage changes and approvals call the script; other edits don't.
@@ -130,7 +133,9 @@ set role anon;
 select pg_temp.expect_denied($q$select public.submit_review('d-1', 'someone@example.com', 'X', 'Great print', 5)$q$, 'reviewing someone else''s order');
 select pg_temp.expect_denied($q$select public.submit_review('100', 'jane@example.com', 'Jane', 'Great print', 5)$q$, 'reviewing an order that is not delivered');
 select pg_temp.expect_denied($q$select public.submit_review('d-1', 'dee@example.com', 'Dee', 'x', 9)$q$, 'an invalid review');
-select public.submit_review('d-2', 'DEE@example.com', 'Dee', 'Came out great', 5);
+select pg_temp.expect_denied($q$select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Came out great', 5, array['https://evil.example/x.jpg'])$q$, 'a review photo from outside the reviews folder');
+select pg_temp.expect_denied($q$select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/a.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/b.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/c.jpg'])$q$, 'three review photos');
+select public.submit_review('d-2', 'DEE@example.com', 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/d-2-1.jpg']);
 select pg_temp.expect_denied($q$select public.due_review_requests('wrong-secret')$q$, 'review requests with a wrong secret');
 select pg_temp.expect_denied($q$select public.owner_report_data('wrong-secret')$q$, 'report data with a wrong secret');
 do $$ declare ids text; begin
@@ -144,6 +149,7 @@ reset role;
 do $$ begin
   if (select count(*) from net.calls) <> (select n from calls_before_reviews) then raise exception 'review requests should not send order emails'; end if;
   if (select text from public.customer_reviews where job_id = 'd-2') <> 'Came out great' then raise exception 'review not saved'; end if;
+  if (select array_length(photos, 1) from public.customer_reviews where job_id = 'd-2') <> 1 then raise exception 'review photo not saved'; end if;
 end $$;
 update public.customer_reviews set status = 'approved' where job_id = 'd-2';
 set role anon;
