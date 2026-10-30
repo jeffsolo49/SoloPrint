@@ -476,6 +476,47 @@ function queueClientNote(email, field, value) {
   }, 700);
 }
 
+// ── WHEN EMAILS GO OUT (owner guidance) ───────────────────────────────────
+// What a phase or payment change emails the customer (matches Code.gs emailsFor); '' = no email.
+function emailForPhase(b, phase) {
+  if ((b.phase || '') === 'production' && phase === 'order_received') return '';
+  return { quote_sent: 'your quote', order_received: 'the "order confirmed" email, which asks for the deposit',
+    final_payment_needed: 'the "printing is done" email, which asks for the rest and the shipping deposit',
+    delivered: 'the "order shipped" email with tracking, invoice and refund note' }[phase] || '';
+}
+function emailForPayment(b, status) {
+  if (isPaidInFull(b)) return '';
+  return { deposit_received: 'a "deposit received" receipt', payment_received: 'a "payment received" receipt' }[status] || '';
+}
+// Asks before anything that emails the customer goes out. True = go ahead.
+function confirmEmail(b, what) {
+  if (!what || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.clientEmail || ''))) return true;
+  return confirm(`This emails ${b.clientName || b.clientEmail} (${b.clientEmail}) ${what}.\n\nSend it?`);
+}
+
+function renderEmailGuide() {
+  const row = (when, button, gets) => `<tr><th scope="row">${button}</th><td>${when}</td><td>${gets}</td></tr>`;
+  return `<details class="card email-guide" id="email-guide">
+    <summary><strong>When do emails go out? When should I press each button?</strong></summary>
+    <p class="field-help">Nothing goes out by accident: before any button that emails a customer, you get a question to confirm. Cancel and nothing is sent or changed.</p>
+    <div class="table-scroll"><table class="email-guide-table">
+      <thead><tr><th scope="col">Button</th><th scope="col">Press it when</th><th scope="col">The customer gets</th></tr></thead>
+      <tbody>
+      ${row('You have read the request and the quote is right.', 'Save All &amp; Notify Client', 'The quote email, with a link to approve.')}
+      ${row('You need answers before you can quote (optional).', 'Confirm details with the customer, then Send email', 'The email you wrote and checked, exactly as shown.')}
+      ${row('They approved the quote and you can make it.', 'Order Phase: Confirmed &amp; Printing', 'The order-confirmed email, asking for the deposit.')}
+      ${row('Their Venmo deposit shows in your Venmo app.', 'Payment Status: Deposit Received', 'A deposit receipt. Their place in line starts now.')}
+      ${row('The print is finished and photographed.', 'Order Phase: Printing Complete', 'The printing-done email: the rest plus the shipping deposit, and a request for their shipping address.')}
+      ${row('Their Venmo for the rest and the shipping deposit shows in your Venmo app, and you have their address.', 'Payment Status: Payment Received, then Order Phase: Ready to Ship', 'A payment receipt (one email, however you get there).')}
+      ${row('You have mailed the package and have the tracking number.', 'Ready to Ship box: enter tracking and postage, then Save tracking and mark Shipped', 'The order-shipped email with tracking, invoice and refund note. Then send the refund by Venmo yourself.')}
+      ${row('Tracking or the ship date changed after shipping.', 'Save shipping details on a Shipped order', 'A short shipping update email.')}
+      ${row('You just want to say something, ask a question or answer one.', 'Conversation: Send message', 'Your own words by email (with your footer) and on their order page. It never changes the order or sends a form email.')}
+      </tbody></table></div>
+    <p class="field-help"><strong>Never sends an email:</strong> Fix numbers, typing the deposit amount, Edit request, notes, filament stock, the Practice tab, and approving or hiding a review.</p>
+    <p class="field-help"><strong>Not sure?</strong> Use Send message for anything that isn't one of the steps above. Try a step first in the Practice tab; nothing there is ever sent.</p>
+  </details>`;
+}
+
 // ── NUMBERS PAGE (owner) ──────────────────────────────────────────────────
 // One place to fix the amounts typed on an order: the deposit received, what postage cost, the special
 // order roll and the added charges. Saving changes only those numbers.
@@ -486,7 +527,7 @@ function renderNumbersPage() {
   const list = only ? [only] : (q ? all.filter(b => `${b.clientName} ${b.clientEmail} ${orderTitle(b)} ${b.id}`.toLowerCase().includes(q)) : all).slice(0, q ? 40 : 15);
   return `<div class="card">
     <h2 class="card-title">Numbers</h2>
-    <div class="field-help">Fix an amount typed on an order, like a deposit that was entered wrong. Search for the order, change the number and tap Save numbers. Nothing is emailed.</div>
+    <div class="field-help">Fix an amount typed on an order, like a deposit that was entered wrong. Search for the order, change the number and tap Save numbers. This never sends an email or changes the order's steps.</div>
     ${only ? '<button type="button" class="btn-sm" onclick="state.numbersOnly = \'\'; render();">Show all orders</button>' : ''}
     <div class="field" ${only ? 'hidden' : ''}><label for="numbers-q">Search by name, email or order</label>
       <input type="search" id="numbers-q" value="${esc(state.numbersQuery || '')}" oninput="state.numbersQuery = this.value; clearTimeout(window.numbersT); window.numbersT = setTimeout(() => { render(); const el = document.getElementById('numbers-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 300)" /></div>
@@ -551,12 +592,6 @@ async function saveNumbers(batchId) {
   b.shippingDepositPaid = had(ship) ? num(ship) : null;
   b.refundSent = had(refund) ? num(refund) : null;
   b.refundSentAt = had(refund) ? (b.refundSentAt || now) : '';
-  // Everything owed is in: mark the order paid (never moves a paid order back).
-  const rules = rulesFor(b), owedAll = orderSum(b) + (Number(rules.shippingFee) || 0);
-  if (had(bal) && had(ship) && (b.depositAmount || 0) + b.balancePaid + b.shippingDepositPaid >= owedAll - 0.005 && (b.paymentStatus || 'unpaid') !== 'payment_received') {
-    b.paymentStatus = 'payment_received';
-    if (!b.paidAt) b.paidAt = now;
-  }
   b.postageCost = post === '' ? '' : num(post);
   if (roll !== money0(b.specialOrderCost)) b.specialOrderCost = num(roll);
   b.extraCharges = (b.extraCharges || []).map((c, n) => ({ ...c, amount: num(extras[n]) }));
@@ -2685,7 +2720,8 @@ function renderOwnerConversation(b) {
     <summary><strong>Conversation</strong> ${list.filter(m => m.via !== 'auto').length ? `(${list.filter(m => m.via !== 'auto').length})` : ''} ${conversationChip(b.id)}</summary>
     ${renderThread(list, 'owner', b.clientName)}
     <div class="field" style="margin-top:10px;"><label for="msg-text-${b.id}">Message to ${esc(b.clientName || 'the customer')}</label>
-      <textarea id="msg-text-${b.id}" class="autogrow" rows="3" spellcheck="true" maxlength="5000" placeholder="They get this by email and on their order page." oninput="state.msgDrafts['${b.id}'] = this.value; autoGrow(this)">${esc(draft)}</textarea></div>
+      <textarea id="msg-text-${b.id}" class="autogrow" rows="3" spellcheck="true" maxlength="5000" placeholder="They get this by email and on their order page." oninput="state.msgDrafts['${b.id}'] = this.value; autoGrow(this)">${esc(draft)}</textarea>
+      <div class="field-help">Sends only your words as a plain email, and shows on their order page. It doesn't change the order. The official emails (quote, confirmed, printing done, payment, shipped) go out from the Order Phase, Payment Status and shipping buttons instead.</div></div>
     <div class="alert error" id="msg-err-${b.id}"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn-sm" type="button" id="msg-send-${b.id}" onclick="sendOwnerMessage('${b.id}')">Send message</button>
@@ -2917,11 +2953,13 @@ function renderPracticeCustomer() {
       : `<div class="order-action"><button class="btn-primary" type="button" id="practice-approve" onclick="practiceApprove()">Looks good, I'd like to order</button>
         <div class="order-action-sub">Total $${total !== null ? total.toFixed(2) : '—'}. Nothing is charged yet.</div></div>`;
   } else if (phaseIndex(o.phase) >= phaseIndex('order_received') && total && !isPaidInFull(o)) {
-    const left = amountLeft(o, total, rules), deposit = depositAmount(o, total, rules);
+    const left = balanceDue(o, total, rules), deposit = depositAmount(o, total, rules);
+    const shipIn = phaseIndex(o.phase) >= phaseIndex('final_payment_needed');
     const offerDeposit = o.paymentStatus !== 'deposit_received' && o.phase === 'order_received' && deposit > 0 && deposit < total;
     action = `<div class="order-action">
       ${offerDeposit ? `<button class="btn-sm" type="button" id="practice-pay-deposit" onclick="practicePay(${deposit})">Pay the deposit, $${deposit.toFixed(2)} (pretend)</button>` : ''}
-      <button class="btn-sm" type="button" id="practice-pay-all" onclick="practicePay(${left})">Pay $${left.toFixed(2)} (pretend)</button>
+      <button class="btn-sm" type="button" id="practice-pay-all" onclick="practicePay(${left})">${shipIn ? 'Pay the rest and shipping deposit' : 'Pay'}, $${left.toFixed(2)} (pretend)</button>
+      ${shipIn ? `<div class="order-action-sub">${esc(shippingDepositNote(rules))}</div>` : ''}
       <div class="order-action-sub">On the real site these open Venmo. Here they just tell you in the chat.</div></div>`;
   } else if (isPaidInFull(o)) action = '<div class="order-action"><strong>Payment received.</strong> Thank you!</div>';
   return `<section class="card practice-side" aria-labelledby="practice-cust-h">
