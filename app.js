@@ -1850,7 +1850,7 @@ function renderTimeSection(item, i) {
           <div class="field" style="margin:12px 0 0;max-width:220px;">
             <label>Grams (est.)</label>
             <input type="number" id="grams-${i}" value="${item.grams || ''}" placeholder="Auto"
-              min="0" step="0.1" oninput="clearEstimateSource(${i}); updateDraft(${i},'grams',parseFloat(this.value)||null)" />
+              min="0" step="0.1" oninput="clearEstimateSource(${i}); takeOverSavedEstimate(${i}); updateDraft(${i},'grams',parseFloat(this.value)||null)" />
           </div>`;
 }
 
@@ -1928,7 +1928,7 @@ function renderItemBlock(item, i) {
           <input type="number" id="qty-${i}" value="${item.qty}" min="1" max="999" step="1"
             oninput="updateDraft(${i},'qty',parseInt(this.value)||1)" />
         </div>
-        ${item.knownFromLibrary ? `<div class="price-preview-box" style="margin-bottom:10px;">
+        ${item.knownFromLibrary ? `<div class="price-preview-box" id="saved-estimate-${i}" style="margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:6px;">Saved Estimate</div>
           <div style="font-size:12px;color:var(--muted);">Filled in from a previous print: ${fmtMinutesWithHours(item.knownMinutes)}, ${item.grams}g. I'll still review your request before sending a quote.</div>
         </div>` : ``}
@@ -2696,9 +2696,23 @@ function clearEstimateSource(i) {
   rerenderModelPreview(i);
 }
 
+// A saved estimate is only a guess: once the customer types their own time or weight, theirs is used
+// (the owner checks every request and sets the real numbers when quoting).
+function takeOverSavedEstimate(i) {
+  const item = state.draftItems[i];
+  if (!item || !item.knownFromLibrary) return;
+  item.printHours = hoursFromMinutes(item.knownMinutes);
+  item.printMinutes = minuteRemainder(item.knownMinutes);
+  item.knownFromLibrary = false;
+  item.knownMinutes = null;
+  const box = document.getElementById(`saved-estimate-${i}`);
+  if (box) box.remove();
+}
+
 function updateDraftPrintTime(i, field, value) {
   if (!state.draftItems[i]) return;
   clearEstimateSource(i);
+  takeOverSavedEstimate(i);
   state.draftItems[i][field === 'hours' ? 'printHours' : 'printMinutes'] = value;
   const printTimeInput = document.getElementById(`print-time-${i}`);
   const total = totalPrintMinutes(state.draftItems[i].printHours, state.draftItems[i].printMinutes);
