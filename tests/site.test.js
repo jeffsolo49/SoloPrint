@@ -598,6 +598,15 @@ const STATES = {
     await stale.waitForSelector('#part-add-0-1');
     assert(!(await stale.isChecked('#part-add-0-1')) && await stale.evaluate(() => state.draftItems[0].grams === 60 && !state.draftItems[0].extraColors.length), 'old draft still treats the add-on as required');
     await stale.close();
+    // A saved estimate is only a guess: what the customer types wins.
+    const typed = await open(db);
+    await typed.evaluate(() => {
+      state.draftItems[0] = { ...blankItem(), mode: 'link', link: 'https://makerworld.com/en/models/1', name: 'X', grams: 50, knownMinutes: 150, knownFromLibrary: true, showTime: true };
+      render();
+    });
+    await typed.fill('#hours-0', '5');
+    assert(await typed.evaluate(() => { const it = state.draftItems[0]; return !it.knownFromLibrary && totalPrintMinutes(it.printHours, it.printMinutes) === 330; }), 'typed hours should replace the saved time (5 h + the 30 min that was filled in)');
+    await typed.close();
     // A design with a set price: the add-on adds its own price, re-read from the gallery when quoting.
     db.gallery.g1.data.price = 20;
     const shop = await open(db, { suffix: '?design=dragon-organizer' });
