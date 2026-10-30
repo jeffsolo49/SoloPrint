@@ -1552,7 +1552,8 @@ const STATES = {
     await owner.close();
     const page = await open(db);
     await page.click('text=I have an idea');
-    assert(await page.$('.swatch-pill:has-text("Red") .swatch-photo'), 'the Red choice should show its photo');
+    assert(!(await page.$('.swatch-pill:has-text("Red") .swatch-photo')), 'the Red choice should show its color, not a busy photo');
+    assert(await page.evaluate(() => /rgb\(2[0-9]{2}, 0, 0\)|rgb\(\d+, \d+, \d+\)/.test(getComputedStyle(document.querySelector('.swatch-pill .swatch')).backgroundColor)), 'a color dot');
     await page.click('.swatch-pill:has-text("Red")');
     assert(await page.$('.color-info .color-photo img'), 'picking Red should show its photo');
     await page.close();

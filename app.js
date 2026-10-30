@@ -1578,11 +1578,9 @@ function renderColorInfo(item) {
     ${c.photo ? '<div class="field-help" style="margin:2px 0 0;">Tap the photo to see it bigger.</div>' : ''}</div>
   </div>`).join('')}</div>`;
 }
-// A color's dot: its real-life photo when there is one, else its color.
+// A color's dot: always the color itself (the real-life photo shows once the color is picked).
 function swatchHtml(c) {
-  return c.photo
-    ? `<span class="swatch swatch-photo" style="background-color:${esc(c.hex)};background-image:url('${esc(thumbUrl(c.photo))}')" aria-hidden="true"></span>`
-    : `<span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>`;
+  return `<span class="swatch" style="background:${esc(c.hex)}" aria-hidden="true"></span>`;
 }
 
 // Colors a customer can add to a multi-color print: stocked colors, plus their leftover rolls.
