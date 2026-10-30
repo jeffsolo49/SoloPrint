@@ -118,7 +118,7 @@ async function mockBackend(page, db) {
       const r = JSON.parse(req.postData());
       const job = db.jobs[r.p_job_id];
       if (!job || job.phase !== 'delivered' || String(job.clientEmail).toLowerCase() !== String(r.p_email).toLowerCase()) return route.fulfill({ status: 400, json: { message: 'order not found' } });
-      db.reviews[r.p_job_id] = { job_id: r.p_job_id, name: r.p_name, text: r.p_text, rating: r.p_rating, status: 'new' };
+      db.reviews[r.p_job_id] = { job_id: r.p_job_id, name: r.p_name, text: r.p_text, rating: r.p_rating, photos: r.p_photos || [], status: 'new' };
       return route.fulfill({ status: 204, body: '' });
     }
     if (rest.startsWith('/rpc/order_queue')) {
@@ -154,7 +154,7 @@ async function mockBackend(page, db) {
       return route.fulfill({ body: file ? file.body : PNG, contentType: file ? file.type : 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } });
     }
     if (url.includes('/storage/v1/object/')) {
-      if (!owner) return route.fulfill({ status: 401, json: {} });
+      if (!owner && !url.includes('/object/gallery/reviews/')) return route.fulfill({ status: 401, json: {} });
       db.uploads.push(url.split('/storage/v1/object/')[1]);
       (db.files = db.files || {})[url.split('/storage/v1/object/')[1]] = { body: req.postDataBuffer(), type: req.headers()['content-type'] };
       return route.fulfill({ json: { Key: 'ok' } });
@@ -213,6 +213,7 @@ const STATES = {
   'owner settings wording': asOwner('settings/wording'),
   'owner settings vacation': asOwner('settings/vacation'),
   'owner settings reviews': asOwner('settings/reviews'),
+  'owner numbers': asOwner('numbers'),
   'owner settings site text': asOwner('settings/text'),
   'color with a photo picked': "(() => { state.settings.colors.find(c => c.id === 'red').photo = 'https://img.test/red.png'; state.draftItems[0].mode = 'idea'; render(); pickColor(0, 'red'); })()",
   'owner settings faq': "(async () => { await " + asOwner('settings/faq') + "; state.settingsDraft.faq = [{ id: 'f1', q: 'How long?', a: 'About a week.', live: false }]; render(); })()",
@@ -959,8 +960,12 @@ const STATES = {
     assert(await page.inputValue('#review-name') === 'Jane D.', 'name should default to first name and initial');
     await page.click('.review-stars button[aria-label="5 stars"]');
     await page.fill('#review-text', 'Sturdy hook, holds my bag.');
+    const img = n => ({ name: `p${n}.png`, mimeType: 'image/png', buffer: PNG });
+    await page.setInputFiles('#review-photos', [img(1), img(2), img(3)]);
+    assert(/first 2/.test(await page.textContent('#review-photo-status')), 'should say only 2 photos are sent');
     await page.click('#review-send');
     await page.waitForSelector('text=Thank you for the review');
+    assert((db.reviews['2'].photos || []).length === 2 && db.reviews['2'].photos.every(u => /\/gallery\/reviews\/2-\d+-\d\.jpg$/.test(u)), JSON.stringify(db.reviews['2']));
     assert(db.reviews['2'] && db.reviews['2'].rating === 5 && db.reviews['2'].status === 'new', JSON.stringify(db.reviews));
     assert(!db.settings.reviews.some(r => r.text.includes('Sturdy')), 'review shown before approval');
     await page.close();
@@ -972,6 +977,31 @@ const STATES = {
     await owner.click('text=Approve and show');
     await owner.waitForTimeout(300);
     assert(db.reviews['2'].status === 'approved' && db.settings.reviews[0].text === 'Sturdy hook, holds my bag.' && db.settings.reviews[0].name === 'Jane D.', JSON.stringify(db.settings.reviews));
+    assert(db.settings.reviews[0].photos.length === 2, 'approved review should keep its photos');
+    await owner.evaluate(() => { state.ownerTab = 'dashboard'; });
+    await owner.close();
+    const shop = await open(db);
+    await shop.waitForSelector('.review-photos img');
+    assert(await shop.locator('.review-photos img').count() === 2, 'home page should show the review photos');
+    await shop.close();
+  });
+  await check('Numbers page: fix a deposit amount, postage and an added charge', async () => {
+    const db = fixtures();
+    Object.assign(db.jobs['1'], { paymentStatus: 'deposit_received', depositAt: new Date().toISOString(), depositAmount: 5, extraCharges: [{ label: 'Sanding', amount: 3 }] });
+    const owner = await open(db);
+    await owner.evaluate(asOwner('numbers'));
+    await owner.waitForSelector('#num-dep-1');
+    await owner.fill('#num-dep-1', '8.5');
+    await owner.fill('#num-post-1', '9.25');
+    await owner.fill('#num-x0-1', '4');
+    await owner.click('#numbers-1 .btn-primary');
+    await owner.waitForSelector('#numbers-ok-1');
+    await owner.waitForTimeout(300);
+    const j = db.jobs['1'];
+    assert(j.depositAmount === 8.5 && j.postageCost === 9.25 && j.extraCharges[0].amount === 4 && j.extraCharges[0].label === 'Sanding', JSON.stringify(j));
+    await owner.fill('#num-dep-1', '-3');
+    await owner.click('#numbers-1 .btn-primary');
+    assert(/number/.test(await owner.textContent('#numbers-err-1')), 'a bad amount should be refused');
     await owner.close();
   });
   await check('filament stock: grams come off when printing is done, out-of-stock colors hide from customers', async () => {

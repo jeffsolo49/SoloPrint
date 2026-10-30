@@ -1271,6 +1271,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='calculator'?'active':''}" onclick="setOwnerTab('calculator')">Calculator &amp; Models${libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='gallery'?'active':''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
+      <button class="nav-tab ${state.ownerTab==='numbers'?'active':''}" onclick="setOwnerTab('numbers')">Numbers</button>
       <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
@@ -1344,6 +1345,7 @@ function renderReviews(reviews, title = t('reviewsTitle')) {
       const design = r.designId && state.gallery.find(g => g.id === r.designId && g.published);
       return `<figure class="review">
         <blockquote>“${esc(r.text)}”</blockquote>
+        ${(r.photos || []).length ? `<div class="review-photos">${r.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><img src="${esc(u)}" alt="Photo of the print from this review" loading="lazy" /></a>`).join('')}</div>` : ''}
         <figcaption>${esc(r.name || 'A customer')}${design ? ` · <button class="btn-link" type="button" onclick="openWork('${esc(design.id)}')">${esc(design.title)}</button>` : ''}</figcaption>
       </figure>`;
     }).join('')}</div>
@@ -2057,12 +2059,14 @@ function renderOwnerApp() {
   return `
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
+      <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales', numbers: 'Numbers' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
         : state.ownerTab === 'practice'
         ? renderPracticePage()
+        : state.ownerTab === 'numbers'
+        ? renderNumbersPage()
         : state.ownerTab === 'clients'
         ? renderClientsPage()
         : state.ownerTab === 'orders'
@@ -2624,7 +2628,7 @@ function setOwnerTab(tab) {
   if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
   tab = MERGED_TABS[tab] || tab;
   state.ownerTab = tab;
-  if ((tab === 'analytics' || tab === 'money') && !state.ownerHistoryAll) { loadAllOrders(); return; }
+  if ((tab === 'analytics' || tab === 'money' || tab === 'numbers') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
   if (tab === 'settings') { state.settingsDraft = null; state.emailsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
@@ -2747,7 +2751,8 @@ function cleanSettings(raw) {
       id: /^[a-z0-9-]{1,40}$/.test(String(r && r.id)) ? r.id : '',
       name: cleanText(r && r.name, 60).trim(),
       text: cleanText(r && r.text, 600).trim(),
-      designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : ''
+      designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : '',
+      photos: (Array.isArray(r && r.photos) ? r.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 2)
     })).filter(r => r.id && r.text),
     emails: cleanEmails(d.emails),
     rules: cleanRules(d.rules),

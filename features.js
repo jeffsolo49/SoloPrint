@@ -476,6 +476,58 @@ function queueClientNote(email, field, value) {
   }, 700);
 }
 
+// ── NUMBERS PAGE (owner) ──────────────────────────────────────────────────
+// One place to fix the amounts typed on an order: the deposit received, what postage cost, the special
+// order roll and the added charges. Saving changes only those numbers.
+function renderNumbersPage() {
+  const q = String(state.numbersQuery || '').trim().toLowerCase();
+  const all = state.batches.slice().sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  const list = (q ? all.filter(b => `${b.clientName} ${b.clientEmail} ${orderTitle(b)} ${b.id}`.toLowerCase().includes(q)) : all).slice(0, q ? 40 : 15);
+  return `<div class="card">
+    <h2 class="card-title">Numbers</h2>
+    <div class="field-help">Fix an amount typed on an order, like a deposit that was entered wrong. Search for the order, change the number and tap Save numbers. Nothing is emailed.</div>
+    <div class="field"><label for="numbers-q">Search by name, email or order</label>
+      <input type="search" id="numbers-q" value="${esc(state.numbersQuery || '')}" oninput="state.numbersQuery = this.value; clearTimeout(window.numbersT); window.numbersT = setTimeout(() => { render(); const el = document.getElementById('numbers-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 300)" /></div>
+  </div>
+  ${list.length ? list.map(renderNumbersCard).join('') : '<div class="card"><div class="field-help">No orders match.</div></div>'}
+  ${!q && all.length > list.length ? '<div class="field-help" style="padding:0 1rem;">Showing the newest 15. Search to find an older order.</div>' : ''}`;
+}
+
+const money0 = v => (Number(v) || 0).toFixed(2);
+function renderNumbersCard(b) {
+  const total = orderSum(b), rules = rulesFor(b);
+  const money = v => (Number(v) || 0).toFixed(2);
+  const input = (id, label, val, help) => `<div class="field"><label for="${id}-${b.id}">${label}</label>
+    <input type="number" inputmode="decimal" min="0" step="0.01" id="${id}-${b.id}" value="${val}" />${help ? `<div class="field-help">${help}</div>` : ''}</div>`;
+  return `<div class="card" id="numbers-${esc(b.id)}">
+    <h3 class="card-title">${esc(orderTitle(b))}</h3>
+    <div class="field-help">${esc(b.clientName || '')} · ${esc(b.clientEmail || '')} · ${esc(phaseLabel(b.phase || 'estimate'))} · Total $${money(total)}</div>
+    ${input('num-dep', 'Deposit received ($)', money(b.depositAmount), b.depositAt ? `Paid on ${esc(formatAustinTime(b.depositAt))}.` : 'No deposit is marked paid on this order yet, so this number is not used.')}
+    ${input('num-post', 'What postage cost ($)', b.postageCost === '' || b.postageCost == null ? '' : money(b.postageCost), 'Sets the shipping deposit refund.')}
+    ${input('num-roll', 'Special order roll ($)', money(b.specialOrderCost))}
+    ${(b.extraCharges || []).map((c, n) => input('num-x' + n, `Added charge: ${esc(c.label)} ($)`, money(c.amount))).join('')}
+    <div class="alert error" id="numbers-err-${esc(b.id)}"></div><div class="alert success" id="numbers-ok-${esc(b.id)}"></div>
+    <button type="button" class="btn-primary" style="width:auto;" onclick="saveNumbers('${esc(b.id)}')">Save numbers</button>
+  </div>`;
+}
+
+async function saveNumbers(batchId) {
+  const b = state.batches.find(x => x.id === batchId);
+  if (!b) return;
+  const read = id => { const el = document.getElementById(`${id}-${batchId}`); return el ? el.value.trim() : null; };
+  const num = v => Math.round(parseFloat(v) * 100) / 100;
+  const dep = read('num-dep'), post = read('num-post'), roll = read('num-roll');
+  const extras = (b.extraCharges || []).map((c, n) => read('num-x' + n));
+  const bad = [dep, roll, ...extras].some(v => v !== null && !(num(v) >= 0)) || (post !== '' && post !== null && !(num(post) >= 0));
+  if (bad) { showAlert(`numbers-err-${batchId}`, 'Every amount must be a number, 0 or more.', 'error'); return; }
+  b.depositAmount = num(dep);
+  b.postageCost = post === '' ? '' : num(post);
+  if (roll !== money0(b.specialOrderCost)) b.specialOrderCost = num(roll);
+  b.extraCharges = (b.extraCharges || []).map((c, n) => ({ ...c, amount: num(extras[n]) }));
+  try { await upsertBatch(b); render(); showAlert(`numbers-ok-${batchId}`, 'Saved.', 'success'); }
+  catch (e) { showAlert(`numbers-err-${batchId}`, "Couldn't save. Check you're logged in.", 'error'); }
+}
+
 // ── REVIEWS FROM CUSTOMERS ────────────────────────────────────────────────
 function openReviewForm(id) {
   state.reviewFor = { id, email: state.historyEmail, sent: false };
@@ -506,6 +558,11 @@ function renderReviewForm() {
       <label for="review-text">Your review</label>
       <textarea id="review-text" rows="4" maxlength="600" placeholder="How did it turn out?" oninput="state.reviewFor.text = this.value">${esc(r.text || '')}</textarea>
     </div>
+    <div class="field">
+      <label for="review-photos">Photos of your print (optional, up to 2)</label>
+      <input type="file" id="review-photos" accept="image/*" multiple onchange="pickReviewPhotos(this.files)" />
+      <div class="field-help" id="review-photo-status">${(r.photos || []).length ? `${r.photos.length} photo${r.photos.length > 1 ? 's' : ''} chosen.` : ''}</div>
+    </div>
     <div class="alert error" id="review-err"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button type="button" class="btn-primary" id="review-send" style="width:auto;" onclick="sendReview()">Send review</button>
@@ -519,6 +576,14 @@ function firstNameAndInitial(name) {
   return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.` : (parts[0] || '');
 }
 
+// Keeps the (at most 2) chosen files; they are shrunk and uploaded when the review is sent.
+function pickReviewPhotos(files) {
+  const list = Array.from(files || []);
+  state.reviewFor.photos = list.slice(0, 2);
+  const el = document.getElementById('review-photo-status');
+  if (el) el.textContent = list.length > 2 ? 'Only the first 2 photos will be sent.' : list.length ? `${list.length} photo${list.length > 1 ? 's' : ''} chosen.` : '';
+}
+
 async function sendReview() {
   const r = state.reviewFor;
   const b = state.batches.find(x => x.id === r.id) || {};
@@ -527,8 +592,22 @@ async function sendReview() {
   const btn = document.getElementById('review-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
   try {
+    const urls = [];
+    for (const file of (r.photos || []).slice(0, 2)) {
+      try {
+        const blob = await resizePhoto(file, 1200);
+        const path = `reviews/${String(r.id).replace(/[^A-Za-z0-9_-]/g, '')}-${Date.now()}-${urls.length}.jpg`;
+        await uploadStoredPhoto(path, blob, SUPA_KEY);
+        urls.push(GALLERY_PUBLIC_PREFIX + path);
+      } catch (e) { console.error('Review photo error:', e); }
+    }
+    if ((r.photos || []).length && urls.length < Math.min(2, r.photos.length) && !urls.length) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Send review'; }
+      showAlert('review-err', "Couldn't upload your photos. Try JPG or PNG pictures, or send the review without them.", 'error');
+      return;
+    }
     await supaFetch('/rpc/submit_review', { method: 'POST', body: JSON.stringify({
-      p_job_id: r.id, p_email: r.email || state.historyEmail, p_name: String(r.name ?? firstNameAndInitial(b.clientName)).trim(), p_text: text, p_rating: r.rating || null
+      p_job_id: r.id, p_email: r.email || state.historyEmail, p_name: String(r.name ?? firstNameAndInitial(b.clientName)).trim(), p_text: text, p_rating: r.rating || null, p_photos: urls
     }) });
     state.reviewFor.sent = true;
     render();
@@ -557,6 +636,7 @@ function renderReviewApprovals() {
     <div class="owner-order-summary-label">New from customers (${list.length})</div>
     ${list.map(r => `<div class="review-approval">
       <div>${r.rating ? `<span aria-label="${r.rating} stars">${'★'.repeat(r.rating)}</span> ` : ''}"${esc(r.text)}"${r.name ? ` <span class="field-help">- ${esc(r.name)}</span>` : ''}</div>
+      ${(r.photos || []).length ? `<div class="finished-photo-row">${r.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><img src="${esc(u)}" alt="Photo from the customer" loading="lazy" /></a>`).join('')}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button type="button" class="btn-sm" onclick="decideReview('${esc(r.job_id)}', true)">Approve and show</button>
         <button type="button" class="btn-sm danger" onclick="decideReview('${esc(r.job_id)}', false)">Don't show</button>
@@ -570,7 +650,7 @@ async function decideReview(jobId, approve) {
   if (!r) return;
   try {
     if (approve) {
-      const reviews = [{ id: settingsId(), name: r.name || '', text: r.text, designId: '' }].concat(state.settings.reviews || []);
+      const reviews = [{ id: settingsId(), name: r.name || '', text: r.text, designId: '', photos: r.photos || [] }].concat(state.settings.reviews || []);
       await saveSettings({ ...state.settings, reviews });
       state.settingsDraft = null;
     }

@@ -561,6 +561,8 @@ textarea { resize: vertical; min-height: 70px; }
 @media (max-width: 420px) { .how-steps { grid-template-columns: 1fr; } .how-steps li { flex-direction: row; } .how-num { flex-shrink: 0; } }
 .reviews { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .review { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--surface2); border-left: 4px solid var(--accent); }
+.review-photos { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.review-photos img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); display: block; }
 .review blockquote { margin: 0; font-size: 14px; line-height: 1.6; }
 .review figcaption { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .home-gallery.compact { grid-template-columns: repeat(var(--cols, 4), 1fr); }
