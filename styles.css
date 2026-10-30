@@ -900,9 +900,14 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .email-guide-table th, .email-guide-table td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--border); overflow-wrap: anywhere; }
 .email-guide-table thead th { background: var(--surface2); }
 
-.compare-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+.compare-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; margin-top: 12px; }
 .compare-row { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface); }
 .compare-row.cheapest { border-color: var(--green, #1a7f4b); border-width: 2px; }
 .compare-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
 .compare-name { min-width: 0; overflow-wrap: anywhere; }
 .compare-price { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin: 4px 0 8px; font-size: 20px; font-weight: 700; }
+/* The calculator form sits in a narrower card than the saved-models grid, so its fields wrap instead of spilling out. */
+.calc-form-card .lib-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.calc-form-card .lib-grid .field { min-width: 0; }
+.calc-form-card .lib-grid label { overflow-wrap: anywhere; }
+.calc-form-card .lib-grid input, .calc-form-card .lib-grid select { width: 100%; min-width: 0; }
