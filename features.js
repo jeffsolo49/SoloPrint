@@ -2923,12 +2923,12 @@ function practiceSaveTracking() {
     if (o.phase === 'ready_to_ship' && o.deliveryTracking) { o.phase = 'delivered'; stampPhase(o, 'delivered'); }
   });
 }
-// The daily emails, without waiting days.
+// The automatic follow-up emails (quote reminder, review request), without waiting days.
 function practiceSkipAhead() {
   const p = state.practice, o = p.order;
   if (o.phase === 'quote_sent' && !o.customerApprovedAt && !p.remindedAt) { practiceEmail('reminder'); p.remindedAt = new Date().toISOString(); }
   else if (o.phase === 'delivered' && !p.reviewAskedAt) { practiceEmail('review_request'); p.reviewAskedAt = new Date().toISOString(); }
-  else { showAlert('practice-err', 'No daily email is due at this step.', 'error'); return; }
+  else { showAlert('practice-err', 'Nothing to send yet. Use this once the quote is sent and not approved (a reminder), or once the order is Shipped (a review request).', 'error'); return; }
   render();
 }
 function practiceMessage(sender) {
@@ -3007,7 +3007,8 @@ function renderPracticeOwner() {
       <div class="field"><label for="practice-postage">What postage cost ($)</label>
       <input type="number" step="0.01" min="0" id="practice-postage" value="${esc(p.postage || '')}" oninput="state.practice.postage = this.value" /></div>
       <button class="btn-sm" type="button" onclick="practiceSaveTracking()">${o.phase === 'ready_to_ship' ? 'Save tracking and mark Shipped' : 'Save shipping details'}</button>` : ''}
-    <div style="margin-top:8px;"><button class="btn-sm" type="button" id="practice-skip" onclick="practiceSkipAhead()">Skip ahead (send a daily email that's due)</button></div>
+    <div style="margin-top:8px;"><button class="btn-sm" type="button" id="practice-skip" onclick="practiceSkipAhead()">Pretend a few days have passed</button>
+      <div class="field-help">The real shop sends two emails on its own as days go by: a reminder if the customer hasn't approved their quote, and a review request about a week after shipping. This button shows you that email now instead of making you wait. It only does something when the quote is sent but not approved, or when the order is Shipped.</div></div>
     <div class="alert error" id="practice-err"></div>
     ${renderTrackerSteps(o, false)}
     <div class="conversation"><div class="card-title" style="margin-bottom:6px;">Conversation</div>
