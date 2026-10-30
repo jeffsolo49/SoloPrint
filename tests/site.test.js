@@ -1036,6 +1036,29 @@ const STATES = {
     assert(db.jobs[id].phase === before, 'cancelling must change nothing');
     await owner.close();
   });
+  await check('calculator: paste several links and compare the costs', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('calculator'));
+    await owner.fill('#cmp-text', 'https://makerworld.com/en/models/111-dragon\nhttps://makerworld.com/en/models/222-vase https://www.printables.com/model/333-hook');
+    await owner.click('#cmp-go');
+    await owner.waitForSelector('#cmp-row-2');
+    await owner.waitForFunction(() => !/Looking up/.test(document.getElementById('cmp-results').textContent));
+    assert(await owner.locator('.compare-row').count() === 3, 'three rows');
+    const priced = await owner.textContent('#cmp-price-0');
+    const expected = await owner.evaluate(() => '$' + calcPerPrint(150, 85.4, calcItem({ color: 'white' })).toFixed(2));
+    assert(priced === expected, `${priced} vs ${expected}`);
+    assert(/Enter time and grams/.test(await owner.textContent('#cmp-price-2')) && /Printables/.test(await owner.textContent('#cmp-row-2')), 'Printables needs typed numbers');
+    await owner.fill('#cmp-min-2', '30');
+    await owner.fill('#cmp-g-2', '10');
+    assert(/^\$/.test(await owner.textContent('#cmp-price-2')) && await owner.locator('.compare-row.cheapest').count() === 1, 'typed numbers are priced and the cheapest is marked');
+    await owner.fill('#cmp-qty', '3');
+    const three = await owner.textContent('#cmp-price-0');
+    assert(Math.abs(parseFloat(three.slice(1)) - 3 * parseFloat(priced.slice(1))) < 0.02, `quantity: ${three}`);
+    await owner.click('#cmp-row-2 button:has-text("Use in the calculator")');
+    assert(await owner.inputValue('#owner-calc-grams') === '10' && await owner.inputValue('#owner-calc-qty') === '3', 'row moves into the calculator');
+    await owner.close();
+  });
   await check('Numbers page: fix a deposit amount, postage and an added charge', async () => {
     const db = fixtures();
     Object.assign(db.jobs['1'], { paymentStatus: 'deposit_received', depositAt: new Date().toISOString(), depositAmount: 5, extraCharges: [{ label: 'Sanding', amount: 3 }] });

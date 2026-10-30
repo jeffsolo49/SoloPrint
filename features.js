@@ -476,6 +476,129 @@ function queueClientNote(email, field, value) {
   }, 700);
 }
 
+// ── COMPARE SEVERAL LINKS (owner calculator) ─────────────────────────────
+// Paste several model links; each is looked up (saved models first, then MakerWorld / Thingiverse) and priced
+// exactly like a single calculator quote, side by side. Print time and grams can be typed in for any row.
+function cmpState() {
+  if (!state.compare) state.compare = { text: '', color: 'white', qty: 1, rows: [], busy: false };
+  return state.compare;
+}
+function cmpPerPrint(r) {
+  const c = cmpState();
+  const mins = Number(r.minutes), grams = Number(r.grams);
+  if (!(mins > 0) || !(grams > 0)) return null;
+  return calcPerPrint(mins, grams, calcItem({ color: c.color }));
+}
+function renderLinkCompare() {
+  const c = cmpState();
+  return `<div class="card" id="link-compare">
+    <h3 class="card-title">Compare several links</h3>
+    <div class="field-help">Paste model links, one per line (up to 12). I look up the print time and filament for each and price them the same way as the calculator above, so you can compare the costs. Printables links can't be looked up, so type their numbers in. Nothing here is saved.</div>
+    <div class="field"><label for="cmp-text">Model links</label>
+      <textarea id="cmp-text" rows="4" spellcheck="false" placeholder="https://makerworld.com/en/models/...&#10;https://www.thingiverse.com/thing:..." oninput="cmpState().text = this.value">${esc(c.text)}</textarea></div>
+    <div class="row2">
+      <div class="field"><label for="cmp-color">Color</label><select id="cmp-color" onchange="cmpState().color = this.value; cmpRefresh()">${calcColorOptions(c.color)}</select></div>
+      <div class="field"><label for="cmp-qty">Quantity</label><input type="number" id="cmp-qty" min="1" step="1" value="${esc(c.qty)}" oninput="cmpState().qty = this.value; cmpRefresh()" /></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="btn-sm" id="cmp-go" onclick="compareLinks()" ${c.busy ? 'disabled' : ''}>${c.busy ? 'Looking up...' : 'Look up and compare'}</button>
+      <button type="button" class="btn-sm" onclick="state.compare = null; render();">Clear</button>
+    </div>
+    <div class="alert error" id="cmp-err"></div>
+    <div id="cmp-results">${renderCompareResults()}</div>
+  </div>`;
+}
+function renderCompareResults() {
+  const c = cmpState();
+  if (!c.rows.length) return '';
+  const qty = Math.max(1, parseInt(c.qty, 10) || 1);
+  const prices = c.rows.map(cmpPerPrint).filter(v => v !== null);
+  const low = prices.length ? Math.min(...prices) : null, high = prices.length ? Math.max(...prices) : null;
+  return `${prices.length > 1 ? `<div class="calc-match" id="cmp-summary"><strong>Cheapest $${(low * qty).toFixed(2)}</strong>, most expensive $${(high * qty).toFixed(2)} (${qty} print${qty === 1 ? '' : 's'} each, ${esc(calcPart(c.color).name)}).</div>` : ''}
+    <div class="compare-list">${c.rows.map((r, i) => {
+      const per = cmpPerPrint(r);
+      return `<div class="compare-row ${per !== null && per === low && prices.length > 1 ? 'cheapest' : ''}" id="cmp-row-${i}">
+        <div class="compare-head">
+          ${safeImageUrl(r.image) ? `<img class="model-thumb" src="${esc(r.image)}" alt="" loading="lazy" onerror="this.remove()" />` : ''}
+          <div class="compare-name"><strong>${esc(r.name || 'Model')}</strong>
+            <div class="field-help"><a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.link.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</a></div>
+            <div class="field-help">${r.status === 'loading' ? 'Looking up...' : esc(r.note || '')}</div></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="cmp-min-${i}">Print time (minutes)</label><input type="number" id="cmp-min-${i}" min="0" step="1" value="${r.minutes || ''}" oninput="cmpEdit(${i}, 'minutes', this.value)" /></div>
+          <div class="field"><label for="cmp-g-${i}">Filament (g)</label><input type="number" id="cmp-g-${i}" min="0" step="0.1" value="${r.grams || ''}" oninput="cmpEdit(${i}, 'grams', this.value)" /></div>
+        </div>
+        <div class="compare-price"><span id="cmp-price-${i}">${per !== null ? `$${(per * qty).toFixed(2)}` : 'Enter time and grams'}</span>
+          ${per !== null ? `<span class="field-help" id="cmp-per-${i}">$${per.toFixed(2)} per print</span>` : ''}
+          ${per !== null && per === low && prices.length > 1 ? '<span class="status delivered">Cheapest</span>' : ''}</div>
+        <button type="button" class="btn-sm" onclick="cmpUse(${i})">Use in the calculator</button>
+      </div>`;
+    }).join('')}</div>`;
+}
+// Re-draws just the results (keeps what's typed in the link box).
+function cmpRefresh() {
+  const el = document.getElementById('cmp-results');
+  if (el) el.innerHTML = renderCompareResults();
+}
+function cmpEdit(i, field, value) {
+  const r = cmpState().rows[i];
+  if (!r) return;
+  r[field] = Number(value) > 0 ? Number(value) : 0;
+  // Only the prices change while typing, so the boxes keep focus.
+  const c = cmpState(), qty = Math.max(1, parseInt(c.qty, 10) || 1);
+  const prices = c.rows.map(cmpPerPrint);
+  const real = prices.filter(v => v !== null), low = real.length ? Math.min(...real) : null;
+  c.rows.forEach((row, n) => {
+    const pe = document.getElementById(`cmp-price-${n}`), card = document.getElementById(`cmp-row-${n}`);
+    if (pe) pe.textContent = prices[n] !== null ? `$${(prices[n] * qty).toFixed(2)}` : 'Enter time and grams';
+    if (card) card.classList.toggle('cheapest', prices[n] !== null && prices[n] === low && real.length > 1);
+  });
+}
+async function compareLinks() {
+  const c = cmpState();
+  const links = [...new Set(String(c.text || '').match(/https?:\/\/[^\s,<>"']+/g) || [])].slice(0, 12);
+  if (!links.length) { showAlert('cmp-err', 'Paste at least one model link that starts with https://', 'error'); return; }
+  c.rows = links.map(link => ({ link, name: nameFromUrl(link) || '', minutes: 0, grams: 0, image: '', note: '', status: 'loading' }));
+  c.busy = true;
+  render();
+  await Promise.all(c.rows.map(async r => {
+    try {
+      const known = getKnownEstimate({ link: r.link, name: r.name });
+      if (known && known.minutes && known.grams) {
+        Object.assign(r, { minutes: known.minutes, grams: known.grams, status: 'ok', note: 'From your Saved Models.' });
+      } else if (/(makerworld\.com|thingiverse\.com)/i.test(r.link)) {
+        const found = await lookupModelEstimate(r.link).catch(() => null);
+        if (found) {
+          r.image = safeImageUrl(found.image);
+          if (found.name && !r.name) r.name = cleanText(found.name, 200);
+        }
+        const mins = cleanNumber(found && found.minutes), grams = cleanNumber(found && found.grams);
+        if (found && found.ok && mins && grams) Object.assign(r, { minutes: Math.round(mins), grams, status: 'ok', note: `From ${found.source || 'the model page'}${found.profile ? ` profile "${cleanText(found.profile, 80)}"` : ''}. An automated estimate; change it if you know better.` });
+        else Object.assign(r, { status: 'manual', note: "Couldn't find a print time for this link. Type the minutes and grams in." });
+      } else {
+        const files = printablesFilesUrl(r.link);
+        Object.assign(r, { status: 'manual', note: files ? "Printables can't be looked up. Open its Files tab, copy the print time and grams in." : "Can't look this site up. Type the minutes and grams in." });
+      }
+    } catch (e) {
+      Object.assign(r, { status: 'manual', note: "Couldn't look this up. Type the minutes and grams in." });
+    }
+    cmpRefresh();
+  }));
+  c.busy = false;
+  const btn = document.getElementById('cmp-go');
+  if (btn) { btn.disabled = false; btn.textContent = 'Look up and compare'; }
+  cmpRefresh();
+}
+function cmpUse(i) {
+  const r = cmpState().rows[i], c = cmpState();
+  if (!r) return;
+  const calc = state.ownerCalculator = blankOwnerCalculator();
+  Object.assign(calc, { link: r.link, name: r.name, hours: String(Math.floor((r.minutes || 0) / 60) || ''), minutes: String((r.minutes || 0) % 60 || ''),
+    grams: r.grams ? String(r.grams) : '', qty: Math.max(1, parseInt(c.qty, 10) || 1), filType: calcPart(c.color).filType, color: state.settings.colors.some(x => x.id === c.color) ? c.color : '' });
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 // ── WHEN EMAILS GO OUT (owner guidance) ───────────────────────────────────
 // What a phase or payment change emails the customer (matches Code.gs emailsFor); '' = no email.
 function emailForPhase(b, phase) {

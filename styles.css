@@ -899,3 +899,10 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .email-guide-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.5; margin: 10px 0; }
 .email-guide-table th, .email-guide-table td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--border); overflow-wrap: anywhere; }
 .email-guide-table thead th { background: var(--surface2); }
+
+.compare-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+.compare-row { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface); }
+.compare-row.cheapest { border-color: var(--green, #1a7f4b); border-width: 2px; }
+.compare-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.compare-name { min-width: 0; overflow-wrap: anywhere; }
+.compare-price { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin: 4px 0 8px; font-size: 20px; font-weight: 700; }
