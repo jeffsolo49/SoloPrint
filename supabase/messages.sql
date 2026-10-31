@@ -3,7 +3,7 @@
 --
 -- Messages come from four places:
 --   owner + site:   you write on the order card; the email script emails it to the customer
---   customer + site: the customer writes on their order page; the email script emails it to you
+--   customer + site: the customer writes on their order page (order-links.sql); the email script emails it to you
 --   email:          replies found in your Gmail (customers' replies, and your replies from Gmail)
 --   auto:           the shop's own emails (quote, confirmed, ...), logged as they're sent
 
@@ -28,45 +28,7 @@ create policy "owner full access" on public.order_messages
   using ((auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com')
   with check ((auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
 
--- Customer: the messages on one of their own orders (same check as customer_jobs: the order's email).
-create or replace function public.customer_messages(p_job_id text, p_email text)
-returns setof jsonb
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select jsonb_build_object('id', m.id, 'sender', m.sender, 'via', m.via, 'subject', m.subject, 'body', m.body, 'at', m.created_at)
-  from public.order_messages m
-  join public.jobs j on j.id::text = m.job_id
-  where m.job_id = p_job_id
-    and length(trim(coalesce(p_email, ''))) > 3
-    and lower(j.data->>'clientEmail') = lower(trim(p_email))
-  order by m.created_at, m.id;
-$$;
-
--- Customer: send a message on one of their own orders. At most 20 a day per order.
-create or replace function public.customer_send_message(p_job_id text, p_email text, p_body text)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if length(trim(coalesce(p_body, ''))) < 1 or length(p_body) > 5000 then
-    raise exception 'message must be 1 to 5000 characters';
-  end if;
-  if not exists (select 1 from public.jobs where id::text = p_job_id
-                 and length(trim(coalesce(p_email, ''))) > 3 and lower(data->>'clientEmail') = lower(trim(p_email))) then
-    raise exception 'order not found';
-  end if;
-  if (select count(*) from public.order_messages where job_id = p_job_id and sender = 'customer'
-      and created_at > now() - interval '1 day') >= 20 then
-    raise exception 'too many messages today';
-  end if;
-  insert into public.order_messages (job_id, sender, via, body) values (p_job_id, 'customer', 'site', trim(p_body));
-end;
-$$;
+-- Customers read and send messages through order-links.sql (they need their order's private link).
 
 -- Email script only (needs the shared secret): record replies found in Gmail and the shop's own emails.
 -- Each row: { job_id (may be blank), email (the customer's address), sender, via ('email' or 'auto'),
@@ -117,11 +79,7 @@ begin
 end;
 $$;
 
-revoke all on function public.customer_messages(text, text) from public;
-revoke all on function public.customer_send_message(text, text, text) from public;
 revoke all on function public.record_messages(text, jsonb) from public;
-grant execute on function public.customer_messages(text, text) to anon, authenticated;
-grant execute on function public.customer_send_message(text, text, text) to anon, authenticated;
 grant execute on function public.record_messages(text, jsonb) to anon;
 
 -- Messages written on the site are emailed by the email script: yours to the customer, theirs to you.

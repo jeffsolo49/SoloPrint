@@ -16,7 +16,8 @@ function load(stubs = {}) {
 
 const base = { id: '1729', clientName: 'Jane', clientEmail: 'jane@example.com', createdAt: '2026-10-20T15:00:00Z', phase: 'estimate', paymentStatus: 'unpaid',
   items: [{ name: 'Benchy', qty: 2, filType: 'black', minutes: 90, grams: 20, imageLinks: ['https://img.test/a.png'] }] };
-const at = o => ({ ...base, ...o });
+const KEY = 'k7Qp2xVn9RtLm4Wc8ZaB3dFg6HjY1sUe5NoXi0VbTqCyA2Mw';   // an order's private key (64 random characters in the database)
+const at = o => ({ ...base, accessToken: KEY, ...o });
 
 console.log('Order emails:');
 const { emailsFor, parseMakerWorldDesign, parsePagePreview } = load();
@@ -170,7 +171,15 @@ check('confirmed email asks for the deposit with a Venmo link', () => {
 });
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
-  assert(body.includes('https://soloprint.vercel.app/?requests=jane%40example.com#order-1729'), body);
+  assert(body.includes('https://soloprint.vercel.app/?order=' + KEY + '#order-1729') && !body.includes('requests=') && !body.includes('jane%40example.com'), body);
+});
+check('order links hold a long private key, never the customer\'s email', () => {
+  const { orderLink } = load();
+  assert(orderLink(at({})) === 'https://soloprint.vercel.app/?order=' + KEY + '#order-1729', orderLink(at({})));
+  // An order with no key yet (before supabase/order-links.sql is run) opens the "email me my links" page, not the order.
+  const nokey = orderLink(at({ accessToken: undefined }));
+  assert(!nokey.includes('?order=') && nokey.includes('?links='), nokey);
+  assert(!orderLink(at({ accessToken: 'short' })).includes('?order=short'), 'a short key was used');
 });
 check('quote reminders: one per valid customer, with the order link', () => {
   const { reminderEmails } = load();
@@ -184,6 +193,22 @@ check('webhook accepts the saved secret and refuses anything else', () => {
   const post = secret => ctx.doPost({ postData: { contents: JSON.stringify({ secret, type: 'INSERT', record: at({}) }) } }).text;
   assert(post('wrong') === 'forbidden' && sent.length === 0, 'wrong secret was accepted');
   assert(post('0123456789abcdef0123456789abcdef') === 'sent 2' && sent.length === 2, 'right secret was refused');
+});
+check('"email me my links" sends one email with each order\'s private link, only to the address on the orders', () => {
+  const { linksEmail } = load();
+  const m = linksEmail([at({}), at({ id: '1730', accessToken: KEY.split('').reverse().join(''), items: [{ name: 'Hook', qty: 1, filType: 'white', minutes: 10, grams: 4 }] }), at({ id: '9', clientEmail: 'other@example.com' })], 'JANE@example.com');
+  assert(m && m.to === 'jane@example.com' && m.subject === 'Your SoloPrint order links', JSON.stringify(m));
+  assert(m.body.includes('?order=' + KEY + '#order-1729') && m.body.includes('#order-1730') && !m.body.includes('order-9'), m.body);
+  assert(linksEmail([at({})], 'nobody@example.com') === null && linksEmail([], 'jane@example.com') === null && linksEmail([at({ accessToken: '' })], 'jane@example.com') === null, 'sent links it should not have');
+});
+check('the LINKS webhook asks the database for that address\'s orders and emails the links', () => {
+  const sent = [], calls = [];
+  const ctx = load({ MailApp: { sendEmail: m => sent.push(m) }, UrlFetchApp: { fetch: (url, opt) => { calls.push(url.split('/rpc/')[1]);
+    return { getResponseCode: () => 200, getContentText: () => JSON.stringify(/order_links_for_email/.test(url) ? [at({})] : []) }; } } });
+  const post = (secret, email) => ctx.doPost({ postData: { contents: JSON.stringify({ secret, type: 'LINKS', email }) } }).text;
+  assert(post('wrong', 'jane@example.com') === 'forbidden' && sent.length === 0, 'wrong secret was accepted');
+  assert(post('0123456789abcdef0123456789abcdef', 'jane@example.com') === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].body.includes('?order=' + KEY), JSON.stringify(sent));
+  assert(post('0123456789abcdef0123456789abcdef', 'nobody@example.com') === 'sent 0', 'emailed an address with no orders');
 });
 check('secret saved as lowercase "secret", with quotes or a semicolon, still works', () => {
   const ctx = load({ PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ secret: " '0123456789abcdef0123456789abcdef'; " }) }) } });
@@ -332,7 +357,7 @@ check('order-complete email links the finished-print photo', () => {
 check('review request links to the review form', () => {
   const [m] = ctxD.reviewRequestEmails([at({ phase: 'delivered' })], {}, {});
   assert(m.to === 'jane@example.com' && m.subject === 'How did your SoloPrint order turn out?', m.subject);
-  assert(m.body.includes('https://soloprint.vercel.app/?requests=jane%40example.com&review=1729#order-1729'), m.body);
+  assert(m.body.includes('https://soloprint.vercel.app/?order=' + KEY + '&review=1729#order-1729'), m.body);
 });
 check('leftover roll reminder: about 2 weeks before it expires, once per roll', () => {
   const roll = (id, boughtDaysAgo, grams) => ({ id, clientName: 'Lee', clientEmail: 'lee@example.com', phase: 'delivered', createdAt: daysAgo(boughtDaysAgo + 1),

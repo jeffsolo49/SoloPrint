@@ -31,7 +31,6 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Automatic Supabase updates: a GitHub job running `supabase/*.sql` on merge via a `SUPABASE_ACCESS_TOKEN`
   secret; `email-trigger.sql` would first need to keep the saved webhook URL/secret when its placeholders are blank.
 - Photos in order messages (site uploads both ways; Gmail attachments saved to the owner's Drive).
-- My Requests opens with just an email address; require the order link or an emailed code.
 - Order-flow problems from the diagram (https://claude.ai/artifact/5tgxMcnutahHxZ6FkbpBpu): "Quote Ready" in the
   phase list skips the quote checks; "Payment Requested" set at quote time; no warning when printing unpaid;
   confirmed email lacks the deposit; "final payment" email sent when already paid and asks pickups for an address;
@@ -51,13 +50,19 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `previews/*.jpg`, `tests/make-previews.js` | Small "where this shows" pictures in the Settings tabs (`AREA_PREVIEWS`, `areaPreview` in features.js), taken with sample content. Re-run the script after a big change to one of those areas. |
 | `email/Code.gs` | The Apps Script: order emails (`emailsFor`), daily jobs (`sendQuoteReminders` runs quote reminders, review requests, roll reminders, Monday summary), weekly Drive backup, MakerWorld lookups, `healthCheck`. Contains an exact copy of `email-templates.js` between the `SHARED EMAIL TEMPLATES` markers. |
 | `email/Loader.gs` | The only code pasted into Apps Script. Runs the latest `email/Code.gs` from GitHub `main` (checked every 15 min), keeps a saved copy, emails the owner on problems. |
-| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`, `queue`, `messages`. All must stay safe to re-run. |
+| `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`, `queue`, `messages`, `order-links` (last: it holds every function customers can call). All must stay safe to re-run. |
 
 ## Data
 
-- `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job`, `customer_jobs(email)`,
+- `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job` (returns the new order's key), `customer_orders(keys)`,
   `customer_approve_quote`, `submit_review` (up to 2 review photos: customers upload into the gallery bucket's `reviews/` folder, allowed for anon by a storage policy in owner-tools.sql; `customer_reviews.photos`, copied to the site review on approval). Anything in an order's data is visible to that customer, so
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
+- Private order links (supabase/order-links.sql): each order has a 64-character random key (`jobs.access_token`, never changed; a trigger also
+  copies it into the order's data as `accessToken`). Emails link to `/?order=<key>#order-<id>` (Code.gs `orderLink`; site `orderLinkFor`); the site
+  keeps the keys it has seen in localStorage (`state.tokens`, `addOrderKey`) and removes the key from the address bar. Customers see, approve, message
+  and review only with a key; an email address alone opens nothing. Lost links: "Email me my links" (`request_order_links` -> `LINKS` webhook ->
+  Code.gs `linksEmail`; one a day per address-hour, same answer for every address). Old `?requests=email` links open nothing and offer that form.
+  Never put a customer's email in a URL, and never add a customer function that takes an email as proof.
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
   `emails` (edited email text), colors may have `photo` (real-life picture, `swatchHtml`), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
   (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads).
@@ -69,7 +74,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
   `queueTime` (deposit or full-payment time; null = waiting for a deposit, last in line; deposit % is rule `depositPercent`, default 75 so later price rises rarely need a second deposit);
   `queueEstimate` in email-templates.js turns it into orders ahead and days (rules printDaysMin/Max, customDesignDays).
 - `order_messages` (supabase/messages.sql): one conversation per order (`sender` owner/customer, `via` site/email/auto). Owner reads/writes the table;
-  customers use `customer_messages`/`customer_send_message`; site messages fire a `MESSAGE` webhook (Code.gs `messageEmail`); Code.gs logs its emails
+  customers use `customer_messages(key)`/`customer_send_message(key, body)`; site messages fire a `MESSAGE` webhook (Code.gs `messageEmail`); Code.gs logs its emails
   (`logSentEmails`) and `collectReplies` (every 5 min, `REPLY_CHECK_MINUTES`; `scheduleReplies` resets the trigger from `healthCheck`; needs Loader v2+ for Gmail) records Gmail replies via secret RPC `record_messages`. Site: messages section of features.js.
   Links: any web address in page text becomes a link (`linkifyPage`, run by a MutationObserver in features.js); every email is sent with an
   `htmlBody` (Code.gs `mail`/`emailHtml`) so links work in all mail apps. `{detailsItems}` = full breakdown with prices or estimates and total

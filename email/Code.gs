@@ -59,6 +59,12 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) { return reply('bad request'); }
   const secret = getSecret();
   if (secret.length < 20 || body.secret !== secret) return reply('forbidden');
+  if (body.type === 'LINKS') {
+    const m = linksEmail(callSupabase('order_links_for_email', { p_email: String(body.email || '') }), body.email);
+    if (!m) return reply('sent 0');
+    mail(m, OWNER_EMAIL);
+    return reply('sent 1');
+  }
   const site = loadSiteData();
   if (body.type === 'MESSAGE') {
     const m = messageEmail(body.message || {}, body.record || {}, site);
@@ -506,9 +512,26 @@ function reminderEmails(records, custom, site) {
   return (records || []).filter(rec => validEmail(rec.clientEmail)).map(rec => renderEmail('reminder', String(rec.clientEmail), emailVars(rec, custom, site), custom));
 }
 
-// Link that opens the customer's requests with this order in view.
+// The customer's private link to this order. The long random key in it (made by the database, supabase/order-links.sql)
+// is what opens the order; an email address alone opens nothing. Without a key it opens the "email me my links" page.
+const ORDER_KEY = /^[A-Za-z0-9_-]{32,128}$/;
 function orderLink(rec) {
-  return SITE_URL + '/?requests=' + encodeURIComponent(String(rec.clientEmail || '')) + (rec.id ? '#order-' + encodeURIComponent(String(rec.id)) : '');
+  const at = rec.id ? '#order-' + encodeURIComponent(String(rec.id)) : '';
+  return ORDER_KEY.test(String(rec.accessToken || ''))
+    ? SITE_URL + '/?order=' + String(rec.accessToken) + at
+    : SITE_URL + '/?links=' + encodeURIComponent(String(rec.clientEmail || '')) + at;
+}
+
+// "Email me my links": one email listing the private link of each order on that address.
+function linksEmail(recs, email) {
+  const addr = String(email || '').trim().toLowerCase();
+  const list = (recs || []).filter(r => r && r.id && ORDER_KEY.test(String(r.accessToken || '')) && String(r.clientEmail || '').trim().toLowerCase() === addr);
+  if (!validEmail(addr) || !list.length) return null;
+  const name = String(list[0].clientName || '').trim() || 'there';
+  const lines = list.map(r => '- ' + orderTitle(r) + ' (' + formatDate(r.createdAt) + ')\n' + orderLink(r));
+  return { to: addr, kind: 'order_links', subject: 'Your SoloPrint order links',
+    body: 'Hi ' + name + ',\n\nYou asked for the links to your SoloPrint orders. Each link opens that order and is private to you, so please keep it to yourself.\n\n' + lines.join('\n\n') +
+      '\n\nIf you did not ask for this, you can ignore this email: nobody can open your orders without these links.\n\nThanks,\nSoloPrint' };
 }
 
 function backupToDrive() {
@@ -766,7 +789,7 @@ const EMAIL_TEMPLATES = {
   roll_reminder: {
     label: 'Leftover roll reminder', to: 'Customer', when: 'About 2 weeks before a leftover special order roll expires (sent once per roll).',
     subject: 'Your {rollColor} roll is yours until {rollExpires}',
-    body: "Hi {name},\n\nYou have about {rollGrams} g left on the {rollColor} roll I ordered for you. It's yours to use until {rollExpires}, and the material is free in another order. After that, I keep any leftover.\n\nWant to use it? Start a request and choose \"Use my leftover roll\": {siteLink}\n\n{footer}"
+    body: "Hi {name},\n\nYou have about {rollGrams} g left on the {rollColor} roll I ordered for you. It's yours to use until {rollExpires}, and the material is free in another order. After that, I keep any leftover.\n\nWant to use it? Open your order and tap \"Use it in a new request\": {orderLink}\n\n{footer}"
   },
   draft_reminder: {
     label: 'Unfinished request', to: 'Customer', when: "A week after someone starts a request but doesn't send it (sent once; the days are in Prices and rules).",
@@ -1245,4 +1268,4 @@ function formatDate(iso) {
   return isNaN(d) ? '' : d.toLocaleString('en-US', { timeZone: 'America/Chicago' });
 }
 
-if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview, reminderEmails, orderLink };
+if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview, reminderEmails, orderLink, linksEmail };

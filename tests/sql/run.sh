@@ -24,6 +24,7 @@ for pass in 1 2; do
   run -f ../../supabase/drafts.sql
   run -f ../../supabase/queue.sql
   run -f ../../supabase/messages.sql
+  run -f ../../supabase/order-links.sql
 done
 psql -q -X -v ON_ERROR_STOP=1 -o /dev/null -d "$DB" -f checks.sql
 rm -f /tmp/stubs.$$.sql

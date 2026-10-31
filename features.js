@@ -724,7 +724,7 @@ async function saveNumbers(batchId) {
 
 // ── REVIEWS FROM CUSTOMERS ────────────────────────────────────────────────
 function openReviewForm(id) {
-  state.reviewFor = { id, email: state.historyEmail, sent: false };
+  state.reviewFor = { id, sent: false };
   render();
   document.getElementById('review-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -801,7 +801,7 @@ async function sendReview() {
       return;
     }
     await supaFetch('/rpc/submit_review', { method: 'POST', body: JSON.stringify({
-      p_job_id: r.id, p_email: r.email || state.historyEmail, p_name: String(r.name ?? firstNameAndInitial(b.clientName)).trim(), p_text: text, p_rating: r.rating || null, p_photos: urls
+      p_token: b.accessToken, p_name: String(r.name ?? firstNameAndInitial(b.clientName)).trim(), p_text: text, p_rating: r.rating || null, p_photos: urls
     }) });
     state.reviewFor.sent = true;
     render();
@@ -2642,7 +2642,7 @@ function detailsBreakdown(b) {
 }
 function detailsEmailFor(b, questions) {
   const custom = state.settings.emails || {};
-  const orderLink = `${location.origin}/?requests=${encodeURIComponent(b.clientEmail || '')}#order-${encodeURIComponent(b.id)}`;
+  const orderLink = orderLinkFor(b);
   const vars = { name: String(b.clientName || '').trim() || 'there', title: orderTitle(b), detailsQuestions: questions,
     items: detailsItemsText(b), detailsItems: detailsBreakdown(b), orderLink, siteLink: location.origin };
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
@@ -2742,8 +2742,8 @@ async function loadOwnerMessages() {
     state.messagesReady = false;   // supabase/messages.sql not run yet
   }
 }
-async function loadCustomerMessages(email) {
-  const lists = await Promise.all(state.batches.map(b => supaFetch('/rpc/customer_messages', { method: 'POST', body: JSON.stringify({ p_job_id: b.id, p_email: email }) })
+async function loadCustomerMessages() {
+  const lists = await Promise.all(state.batches.map(b => supaFetch('/rpc/customer_messages', { method: 'POST', body: JSON.stringify({ p_token: b.accessToken }) })
     .then(rows => (rows || []).map(m => cleanMessage(m, b.id)).filter(Boolean)).catch(() => null)));
   state.messages = lists.flatMap(l => l || []);
   state.messagesReady = lists.some(l => l !== null);
@@ -2888,13 +2888,13 @@ function renderCustomerConversation(b) {
 }
 async function sendCustomerMessage(jobId) {
   const text = String((state.msgDrafts || {})[jobId] || '').trim();
-  const email = String(state.historyEmail || '').trim().toLowerCase();
+  const token = (state.batches.find(b => b.id === jobId) || {}).accessToken || '';
   if (!text) { showAlert(`cmsg-err-${jobId}`, 'Write a message first.', 'error'); return; }
   const btn = document.getElementById(`cmsg-send-${jobId}`);
   if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
   try {
-    await supaFetch('/rpc/customer_send_message', { method: 'POST', body: JSON.stringify({ p_job_id: jobId, p_email: email, p_body: text }) });
-    const rows = await supaFetch('/rpc/customer_messages', { method: 'POST', body: JSON.stringify({ p_job_id: jobId, p_email: email }) });
+    await supaFetch('/rpc/customer_send_message', { method: 'POST', body: JSON.stringify({ p_token: token, p_body: text }) });
+    const rows = await supaFetch('/rpc/customer_messages', { method: 'POST', body: JSON.stringify({ p_token: token }) });
     state.messages = (state.messages || []).filter(m => m.jobId !== jobId).concat((rows || []).map(m => cleanMessage(m, jobId)).filter(Boolean));
     state.msgDrafts[jobId] = '';
     render();

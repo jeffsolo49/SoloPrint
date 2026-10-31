@@ -11,6 +11,10 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const OWNER = 'Bearer OWNER-TOKEN';
 const now = Date.now();
 const ago = mins => new Date(now - mins * 60000).toISOString();
+// Each order's private key, like the 64-character ones the database makes (the site only needs 32 to 128 letters, digits, - or _).
+const keyOf = id => 'KEY' + String(id).replace(/[^A-Za-z0-9_-]/g, '_').padEnd(40, 'x');
+const keysFor = (db, email) => Object.values(db.jobs).filter(j => j.clientEmail === email).map(j => keyOf(j.id));
+const asCustomer = keys => `state.tokens = ${JSON.stringify(keys)}; await loadBatches(true);`;
 
 function fixtures() {
   return {
@@ -33,7 +37,7 @@ function fixtures() {
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
       reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
-    private: {}, reviews: {}, uploads: [], drafts: {}, messages: [],
+    private: {}, reviews: {}, uploads: [], drafts: {}, messages: [], linkRequests: [],
     log: []
   };
 }
@@ -67,33 +71,35 @@ async function mockBackend(page, db) {
         return route.fulfill({ status: 201, json: [row] });
       }
     }
+    // Like supabase/order-links.sql: customers get in with an order's private key, never with an email.
+    const jobByKey = key => Object.values(db.jobs).find(j => keyOf(j.id) === key);
     if (rest.startsWith('/rpc/customer_messages') || rest.startsWith('/rpc/customer_send_message')) {
       const a = JSON.parse(req.postData());
-      const job = db.jobs[a.p_job_id];
-      const mine = job && String(job.clientEmail).toLowerCase() === String(a.p_email).trim().toLowerCase();
+      const job = jobByKey(a.p_token);
       if (rest.startsWith('/rpc/customer_send_message')) {
-        if (!mine || !String(a.p_body || '').trim()) return route.fulfill({ status: 400, json: {} });
-        db.messages.push({ id: db.messages.length + 1, job_id: a.p_job_id, sender: 'customer', via: 'site', subject: '', body: a.p_body.trim(), created_at: new Date().toISOString() });
+        if (!job || !String(a.p_body || '').trim()) return route.fulfill({ status: 400, json: {} });
+        db.messages.push({ id: db.messages.length + 1, job_id: job.id, sender: 'customer', via: 'site', subject: '', body: a.p_body.trim(), created_at: new Date().toISOString() });
         return route.fulfill({ status: 204, body: '' });
       }
-      return route.fulfill({ json: mine ? db.messages.filter(m => m.job_id === a.p_job_id).map(m => ({ id: m.id, sender: m.sender, via: m.via, subject: m.subject, body: m.body, at: m.created_at })) : [] });
+      return route.fulfill({ json: job ? db.messages.filter(m => m.job_id === job.id).map(m => ({ id: m.id, sender: m.sender, via: m.via, subject: m.subject, body: m.body, at: m.created_at })) : [] });
     }
-    if (rest.startsWith('/rpc/customer_jobs')) {
-      const { email } = JSON.parse(req.postData());
-      return route.fulfill({ json: Object.values(db.jobs).filter(j => j.clientEmail === email) });
+    if (rest.startsWith('/rpc/customer_orders')) {
+      const { p_tokens } = JSON.parse(req.postData());
+      return route.fulfill({ json: p_tokens.slice(0, 25).map(jobByKey).filter(Boolean).map(j => ({ ...j, accessToken: keyOf(j.id) })) });
     }
+    if (rest.startsWith('/rpc/request_order_links')) { db.linkRequests.push(JSON.parse(req.postData()).p_email); return route.fulfill({ status: 204, body: '' }); }
     if (rest.startsWith('/rpc/submit_job')) {
       // Like supabase/security.sql: prices, charges and order records are the owner's to set.
       const { job } = JSON.parse(req.postData());
       ['extraCharges', 'rates', 'specialOrderCost', 'designTerms', 'stockTaken', 'paidAt', 'finishedPhotos', 'ownerEditedAt', 'depositAt', 'depositAmount', 'customerApprovedAt', 'status'].forEach(k => delete job[k]);
       job.phase = 'estimate'; job.paymentStatus = 'unpaid';
       job.items = job.items.map(it => { const { ownerPrice, ...rest } = it; return rest; });
-      db.jobs[job.id] = job; return route.fulfill({ status: 204, body: '' });
+      db.jobs[job.id] = job; return route.fulfill({ json: keyOf(job.id) });
     }
-    if (rest.startsWith('/rpc/customer_approve_quote')) { const { job_id } = JSON.parse(req.postData()); db.jobs[job_id].customerApprovedAt = new Date().toISOString(); return route.fulfill({ status: 204, body: '' }); }
+    if (rest.startsWith('/rpc/customer_approve_quote')) { const job = jobByKey(JSON.parse(req.postData()).p_token); if (job && job.phase === 'quote_sent') job.customerApprovedAt = new Date().toISOString(); return route.fulfill({ status: 204, body: '' }); }
     if (rest.startsWith('/jobs')) {
       if (!owner) return route.fulfill({ status: 401, json: {} });
-      if (method === 'GET') return route.fulfill({ json: Object.values(db.jobs).map(data => ({ data })) });
+      if (method === 'GET') return route.fulfill({ json: Object.values(db.jobs).map(data => ({ data: { ...data, accessToken: keyOf(data.id) } })) });
       if (method === 'POST') { const row = JSON.parse(req.postData()); db.jobs[row.id] = row.data; return route.fulfill({ json: [row] }); }
       if (method === 'DELETE') return route.fulfill({ status: 204, body: '' });
     }
@@ -116,9 +122,9 @@ async function mockBackend(page, db) {
     }
     if (rest.startsWith('/rpc/submit_review')) {
       const r = JSON.parse(req.postData());
-      const job = db.jobs[r.p_job_id];
-      if (!job || job.phase !== 'delivered' || String(job.clientEmail).toLowerCase() !== String(r.p_email).toLowerCase()) return route.fulfill({ status: 400, json: { message: 'order not found' } });
-      db.reviews[r.p_job_id] = { job_id: r.p_job_id, name: r.p_name, text: r.p_text, rating: r.p_rating, photos: r.p_photos || [], status: 'new' };
+      const job = jobByKey(r.p_token);
+      if (!job || job.phase !== 'delivered') return route.fulfill({ status: 400, json: { message: 'order not found' } });
+      db.reviews[job.id] = { job_id: job.id, name: r.p_name, text: r.p_text, rating: r.p_rating, photos: r.p_photos || [], status: 'new' };
       return route.fulfill({ status: 204, body: '' });
     }
     if (rest.startsWith('/rpc/order_queue')) {
@@ -195,12 +201,12 @@ const STATES = {
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
   'home with a multi-color print': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); })()",
   'home with color info': "(() => { state.settings.colors[2].description = 'Shimmery gold'; state.settings.colors[2].link = 'https://example.com/silk'; state.draftItems[0].mode = 'idea'; pickColor(0, 'silk'); render(); })()",
-  'quote with design terms': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.batches.find(b => b.id === '1').designTerms = DEFAULT_DESIGN_TERMS; state.clientTab = 'jobs'; render(); })()",
+  'quote with design terms': "(async () => { " + asCustomer(keysFor(fixtures(), 'jane@example.com')) + " state.batches.find(b => b.id === '1').designTerms = DEFAULT_DESIGN_TERMS; state.clientTab = 'jobs'; render(); })()",
   'home picking past work': "(async () => { await loadGallery(); setItemMode(0, 'gallery'); })()",
   'home with a special order color': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A vase'); pickColor(0, ''); render(); })()",
   'design work': "(async () => { await loadGallery(); setTab('gallery'); })()",
   'design page': "(async () => { await loadGallery(); openWork('g1'); })()",
-  'my requests': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.clientTab = 'jobs'; render(); })()",
+  'my requests': "(async () => { " + asCustomer(keysFor(fixtures(), 'jane@example.com')) + " state.clientTab = 'jobs'; render(); })()",
   'owner login': "(() => { state.view = 'owner'; render(); })()",
   'owner dashboard': asOwner('dashboard'),
   'owner calculator': asOwner('calculator'),
@@ -226,7 +232,8 @@ const STATES = {
   'request with a color per part': "(async () => { await loadGallery(); requestGalleryItem('g2'); })()",
   'owner gallery parts': "(async () => { await " + asOwner('gallery') + "; editGalleryItem('g2'); })()",
   'owner editing a request': "(async () => { await " + asOwner('dashboard') + "; startOwnerEdit('3'); })()",
-  'leftover rolls and a review form': "(async () => { state.historyEmail = 'jane@example.com'; await loadBatches('jane@example.com'); state.batches[1].phase = 'delivered'; state.clientTab = 'jobs'; state.reviewFor = { id: '2', email: 'jane@example.com' }; render(); })()",
+  'leftover rolls and a review form': "(async () => { " + asCustomer(keysFor(fixtures(), 'jane@example.com')) + " state.batches[1].phase = 'delivered'; state.clientTab = 'jobs'; state.reviewFor = { id: '2' }; render(); })()",
+  'my requests: no links on this device yet': "(() => { state.clientTab = 'jobs'; render(); })()",
   'home in vacation mode': "(() => { state.settings.vacation = { on: true, until: 'Nov 3' }; render(); })()"
 };
 
@@ -387,12 +394,55 @@ const STATES = {
     assert(!(await page.evaluate(() => localStorage.getItem('soloprint_request_draft_v1'))), 'draft not cleared after sending');
     await page.close();
   });
-  await check('email links open the order, and never load other customers on the owner\'s device', async () => {
+  await check('private order links open just that order, and never load other customers on the owner\'s device', async () => {
     const db = fixtures();
-    const page = await open(db, { suffix: '?requests=jane%40example.com#order-2', init: () => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 })) });
-    assert(await page.evaluate(() => state.clientTab === 'jobs' && state.historyEmail === 'jane@example.com'), 'did not open My Requests for the linked email');
+    const page = await open(db, { suffix: '?order=' + keyOf('2') + '#order-2', init: () => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 })) });
+    assert(await page.evaluate(k => state.clientTab === 'jobs' && state.tokens[0] === k && state.historyEmail === 'jane@example.com', keyOf('2')), 'did not open My Requests for the linked order');
     assert(!db.log.includes('GET /jobs owner'), 'customer view loaded every order');
     assert(await page.locator('#order-2').count() === 1, 'linked order not shown');
+    assert(await page.locator('#order-1').count() === 0 && await page.locator('#order-3').count() === 0, 'a link to one order also showed the same email\'s other orders');
+    assert(!(await page.evaluate(() => location.search + location.href)).includes(keyOf('2')), 'the private key was left in the address bar');
+    await page.close();
+  });
+  await check('order links: the key is remembered on the device, a guessed or old-style link opens nothing, and "email me my links" works', async () => {
+    const db = fixtures();
+    // The key is remembered: a later visit with no link still shows the order.
+    const page = await open(db, { suffix: '?order=' + keyOf('1') });
+    assert(await page.locator('#order-1').count() === 1, 'order not shown after the link');
+    await page.reload(); await page.waitForFunction(() => !state.loading); await page.waitForTimeout(250);
+    await page.evaluate(() => { state.clientTab = 'jobs'; render(); });
+    assert(await page.locator('#order-1').count() === 1 && await page.locator('#order-2').count() === 0, 'the order was not remembered on this device (or others appeared)');
+    await page.close();
+    // Guessing: a made-up key, an order number and an email open nothing.
+    const bad = await open(db, { suffix: '?order=' + keyOf('nope') });
+    await bad.evaluate(() => { state.clientTab = 'jobs'; render(); });
+    assert(await bad.locator('.job-card').count() === 0 && /Email me my links/.test(await bad.textContent('body')), 'a made-up key showed orders');
+    await bad.evaluate(async () => { state.tokens = ['1', 'jane@example.com', '%']; await loadBatches(true); });
+    assert(await bad.evaluate(() => state.batches.length) === 0, 'an order number or email was accepted as a key');
+    await bad.close();
+    // The old kind of link (just an email) opens nothing and says so.
+    const db2 = fixtures();
+    const old = await open(db2, { suffix: '?requests=jane%40example.com#order-2' });
+    assert(await old.locator('.job-card').count() === 0 && !db2.log.some(l => /customer_orders/.test(l)), 'an email-only link opened orders');
+    assert(/before I made order links private/.test(await old.textContent('body')) && await old.inputValue('#history-email') === 'jane@example.com', 'old link did not offer a fresh one');
+    await old.click('#links-send');
+    await old.waitForFunction(() => /I've sent your links/.test(document.body.textContent));
+    assert(db2.linkRequests.join() === 'jane@example.com', 'links were not requested: ' + db2.linkRequests);
+    assert(/If there are requests under that email/.test(await old.textContent('body')), 'the answer should not say whether the email has orders');
+    await old.close();
+  });
+  await check('a new request gets its own private key and shows in My Requests straight away', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.fill('#client-name', 'Sam');
+    await page.fill('#client-email', 'sam@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'A stand for my phone on the desk');
+    await page.click('#submit-btn');
+    await requestSent(page);
+    const sam = Object.values(db.jobs).find(j => j.clientName === 'Sam');
+    assert(await page.evaluate(k => state.tokens[0] === k && ORDER_KEY.test(k), keyOf(sam.id)), 'the new order\'s key was not remembered');
+    assert(await page.evaluate(() => JSON.parse(localStorage.getItem('soloprint_order_keys_v1')).length === 1), 'the key was not saved on the device');
     await page.close();
   });
 
@@ -440,6 +490,7 @@ const STATES = {
     const page = await open(db);
     await page.fill('#client-name', 'Lee');
     await page.fill('#client-email', 'lee@example.com');
+    await page.evaluate(keys => { state.tokens = keys; }, keysFor(db, 'lee@example.com'));   // as if they had opened a link from an email
     await page.click('text=I have an idea');
     await page.fill('#notes-0', 'Another case');
     await page.click('button:has-text("Special order")');
@@ -674,11 +725,25 @@ const STATES = {
     assert(job.items[0].colorId === 'silk' && job.items[0].mainParts === 'Body' && job.items[0].extraColors[0].name === 'Black' && job.items[0].extraColors[0].parts === 'Eyes', JSON.stringify(job.items[0]));
     await page.close();
   });
+  await check('leftover rolls need the customer\'s order link: an email alone finds nothing', async () => {
+    const db = withRolls(fixtures());
+    const page = await open(db);
+    await page.fill('#client-name', 'Lee');
+    await page.fill('#client-email', 'lee@example.com');
+    await page.click('text=I have an idea');
+    await page.fill('#notes-0', 'Another case');
+    await page.click('button:has-text("Special order")');
+    await page.click('#special-leftover-0');
+    await page.waitForFunction(() => /Open the link in one of my emails/.test(document.querySelector('#leftover-msg-0').textContent));
+    assert(!db.log.some(l => /customer_orders/.test(l)), 'looked up rolls without a key');
+    await page.close();
+  });
   await check('multi-color print can mix stocked colors with a leftover roll', async () => {
     const db = withRolls(fixtures());
     const page = await open(db);
     await page.fill('#client-name', 'Lee');
     await page.fill('#client-email', 'lee@example.com');
+    await page.evaluate(keys => { state.tokens = keys; }, keysFor(db, 'lee@example.com'));
     await page.click('text=I have an idea');
     await page.fill('#notes-0', 'Two-tone case');
     await page.click('.swatch-pill:has-text("Black")');
@@ -924,7 +989,7 @@ const STATES = {
   await check('customers see their leftover rolls and can start a request with one', async () => {
     const db = withRolls(fixtures());
     const page = await open(db);
-    await page.evaluate(async () => { state.historyEmail = 'lee@example.com'; await loadBatches('lee@example.com'); state.clientTab = 'jobs'; render(); });
+    await page.evaluate(async (keys) => { state.tokens = keys; await loadBatches(true); state.clientTab = 'jobs'; render(); }, keysFor(db, 'lee@example.com'));
     const card = await page.textContent('.rolls-card');
     assert(/Red TPU: about 500 g left, until/.test(card) && !/Blue PLA|Green PETG/.test(card), card);
     await page.click('.rolls-card >> text=Use it in a new request');
@@ -965,7 +1030,7 @@ const STATES = {
     const db = fixtures();
     db.jobs['2'].phase = 'delivered';
     db.jobs['2'].clientName = 'Jane Doe';
-    const page = await open(db, { suffix: '?requests=jane%40example.com&review=2#order-2' });
+    const page = await open(db, { suffix: '?order=' + keyOf('2') + '&review=2#order-2' });
     await page.waitForSelector('#review-card');
     assert(await page.inputValue('#review-name') === 'Jane D.', 'name should default to first name and initial');
     await page.click('.review-stars button[aria-label="5 stars"]');
@@ -1288,7 +1353,7 @@ const STATES = {
     assert(/Custom design terms/.test(db.jobs['c1'].designTerms) && /I own the design/.test(db.jobs['c1'].designTerms), 'terms not saved on the quote');
     await owner.close();
     const page = await open(db);
-    await page.evaluate(STATES['my requests']);
+    await page.evaluate("(async () => { " + asCustomer(keysFor(db, 'jane@example.com')) + " state.clientTab = 'jobs'; render(); })()");
     assert(/I may make, sell and share prints of the design/.test(await page.textContent('#order-c1 .design-terms-text')), 'terms not shown to the customer');
     await page.click('#customer-approve-c1');
     await page.waitForTimeout(300);
@@ -1415,7 +1480,7 @@ const STATES = {
     assert(await owner.evaluate(() => batchTotal(state.batches.find(b => b.id === 'e1'))) === 57.5, 'total should be 3 x 7.50 + 20 roll + 15 charge');
     await owner.close();
     const page = await open(db);
-    await page.evaluate(async () => { state.historyEmail = 'pat@example.com'; await loadBatches('pat@example.com'); state.clientTab = 'jobs'; render(); });
+    await page.evaluate(async (keys) => { state.tokens = keys; await loadBatches(true); state.clientTab = 'jobs'; render(); }, keysFor(db, 'pat@example.com'));
     const card = await page.textContent('#order-e1');
     assert(/Special costs/.test(card) && /\$15\.00/.test(card) && /\$57\.50/.test(card) && !/added by you|Your price/.test(card), card);
     // A customer can't send their own price or charges.
@@ -1857,7 +1922,7 @@ const STATES = {
     assert(job.phase === 'details_check' && /Edited by hand/.test(job.detailsEmail.body) && job.detailsEmail.subject && job.detailsQuestions === 'Changed question' && job.phaseHistory.details_check, JSON.stringify(job));
     assert(await page.$('#approve-btn-9'), 'the quote can still be sent from Confirming Details');
     await page.close();
-    const customer = await open(db, { suffix: '?requests=ana%40example.com' });
+    const customer = await open(db, { suffix: '?order=' + keyOf('9') });
     await customer.waitForSelector('.details-questions');
     assert(/Changed question/.test(await customer.textContent('.details-questions')), 'customer sees the questions');
     await customer.close();
@@ -1915,7 +1980,7 @@ const STATES = {
     assert(notes && notes.notes === 'Prefers pickup.' && notes.issues === 'Paid late once.', JSON.stringify(db.private));
     assert(!JSON.stringify(db.jobs).includes('Paid late once'), 'client notes must never be saved in an order');
     await owner.close();
-    const page = await open(db, { suffix: '?requests=jane%40example.com' });
+    const page = await open(db, { suffix: '?order=' + keyOf('1') });
     await page.waitForSelector('#conv-1 .thread');
     assert(/Yes, blue works\./.test(await page.textContent('#conv-1')), 'customer sees your message');
     await page.fill('#cmsg-text-1', 'Great, thanks!');
@@ -1973,7 +2038,7 @@ const STATES = {
     const db = fixtures();
     Object.assign(db.jobs['1'], { phase: 'final_payment_needed', paymentStatus: 'unpaid' });
     const page = await open(db);
-    await page.evaluate(async () => { state.historyEmail = state.batches[0] ? state.historyEmail : 'jane@example.com'; await loadBatches('jane@example.com'); state.historyEmail = 'jane@example.com'; state.clientTab = 'jobs'; render(); });
+    await page.evaluate(async (keys) => { state.tokens = keys; await loadBatches(true); state.clientTab = 'jobs'; render(); }, keysFor(db, 'jane@example.com'));
     const total = await page.evaluate(() => orderSum(state.batches.find(b => b.id === '1')));
     const card = await page.textContent('#order-1');
     assert(card.includes(`Pay the rest and shipping deposit, $${(total + 15).toFixed(2)}`) && /\$1\.00 for packaging and \$14\.00 toward postage/.test(card), card);

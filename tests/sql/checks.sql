@@ -9,6 +9,11 @@ exception when insufficient_privilege or raise_exception or check_violation or u
 end $$;
 grant execute on function pg_temp.expect_denied(text, text) to anon, authenticated;
 
+-- Each order's private key, for the checks that run as a visitor.
+create temp table tok (id text, tk text);
+grant select on tok to anon;
+insert into tok select id::text, access_token from public.jobs;
+
 -- Visitors (anon)
 set role anon;
 select pg_temp.expect_denied('select count(*) from public.jobs', 'anon reading jobs');
@@ -21,14 +26,19 @@ select pg_temp.expect_denied($q$insert into public.gallery_items (id) values ('x
 select pg_temp.expect_denied($q$select public.backup_export('wrong-secret')$q$, 'backup with a wrong secret');
 select pg_temp.expect_denied('select * from private.email_settings', 'anon reading the email secret');
 select public.submit_job('{"id":"300","clientName":"Sam","clientEmail":"sam@example.com","phase":"estimate","paymentStatus":"unpaid","items":[]}');
-do $$ begin
-  if (select count(*) from public.customer_jobs('JANE@example.com')) <> 1 then raise exception 'exact email lookup should return 1 order'; end if;
-  if (select count(*) from public.customer_jobs('%@%.%')) <> 0 then raise exception 'wildcard email lookup returned orders'; end if;
+do $$ declare jane text := (select tk from tok where id = '100'); begin
+  if (select count(*) from public.customer_orders(array[jane])) <> 1 then raise exception 'a private key should open exactly its order'; end if;
+  if length(jane) < 60 then raise exception 'order keys should be long and random, got % characters', length(jane); end if;
+  if (select count(*) from public.customer_orders(array['jane@example.com', '%', '%@%.%', '100', substr(jane, 1, 30)])) <> 0 then raise exception 'an email, wildcard, order number or partial key opened an order'; end if;
+  if (select count(*) from public.customer_orders(array[jane, (select tk from tok where id = '100')])) <> 1 then raise exception 'the same key twice should still be one order'; end if;
 end $$;
-select public.customer_approve_quote('100', 'bob@example.com');
-do $$ begin if exists (select 1 from public.customer_jobs('jane@example.com') d where d->>'customerApprovedAt' <> '') then raise exception 'another email approved Jane''s quote'; end if; end $$;
-select public.customer_approve_quote('100', 'jane@example.com');
-do $$ begin if not exists (select 1 from public.customer_jobs('jane@example.com') d where d->>'customerApprovedAt' <> '') then raise exception 'Jane could not approve her own quote'; end if; end $$;
+select public.customer_approve_quote('not-the-key');
+do $$ begin if exists (select 1 from public.customer_orders(array[(select tk from tok where id = '100')]) d where d->>'customerApprovedAt' <> '') then raise exception 'a wrong key approved Jane''s quote'; end if; end $$;
+select public.customer_approve_quote((select tk from tok where id = '100'));
+do $$ begin if not exists (select 1 from public.customer_orders(array[(select tk from tok where id = '100')]) d where d->>'customerApprovedAt' <> '') then raise exception 'Jane could not approve her own quote with her key'; end if; end $$;
+do $$ begin if exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
+    and (p.proname = 'customer_jobs' or (p.proname in ('customer_approve_quote', 'customer_messages', 'customer_send_message', 'submit_review') and pg_get_function_arguments(p.oid) ~* 'email'))) then
+  raise exception 'an old email-only customer function still exists'; end if; end $$;
 do $$ begin if (select count(*) from public.model_library) < 0 then raise exception 'unreachable'; end if; end $$;
 do $$ begin
   if jsonb_typeof(public.backup_export('0123456789abcdef0123456789abcdef')->'jobs') <> 'array' then raise exception 'backup with the right secret failed'; end if;
@@ -120,22 +130,25 @@ set role authenticated;
 set request.jwt.claims = '{"email":"stranger@example.com"}';
 do $$ begin if (select count(*) from public.owner_private) <> 0 then raise exception 'a stranger account can read private owner data'; end if; end $$;
 reset role;
-do $$ begin if exists (select 1 from public.customer_jobs('jane@example.com') d where d::text like '%secret note%') then raise exception 'private notes leaked into customer orders'; end if; end $$;
+do $$ begin if exists (select 1 from public.customer_orders(array[(select tk from tok where id = '100')]) d where d::text like '%secret note%') then raise exception 'private notes leaked into customer orders'; end if; end $$;
 
 -- Reviews: only for the customer's own delivered order; reviewing doesn't touch the order.
 insert into public.jobs (id, data) values
   ('d-1', jsonb_build_object('id','d-1','clientEmail','dee@example.com','phase','delivered','phaseHistory', jsonb_build_object('delivered', (now() - interval '8 days')::text))),
   ('d-2', jsonb_build_object('id','d-2','clientEmail','dee@example.com','phase','delivered','phaseHistory', jsonb_build_object('delivered', (now() - interval '2 days')::text))),
   ('d-3', jsonb_build_object('id','d-3','clientEmail','old@example.com','phase','delivered','phaseHistory', jsonb_build_object('delivered', (now() - interval '90 days')::text)));
+truncate tok;
+insert into tok select id::text, access_token from public.jobs;
 create temp table calls_before_reviews as select count(*) as n from net.calls;
 grant select on calls_before_reviews to anon;
 set role anon;
-select pg_temp.expect_denied($q$select public.submit_review('d-1', 'someone@example.com', 'X', 'Great print', 5)$q$, 'reviewing someone else''s order');
-select pg_temp.expect_denied($q$select public.submit_review('100', 'jane@example.com', 'Jane', 'Great print', 5)$q$, 'reviewing an order that is not delivered');
-select pg_temp.expect_denied($q$select public.submit_review('d-1', 'dee@example.com', 'Dee', 'x', 9)$q$, 'an invalid review');
-select pg_temp.expect_denied($q$select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Came out great', 5, array['https://evil.example/x.jpg'])$q$, 'a review photo from outside the reviews folder');
-select pg_temp.expect_denied($q$select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/a.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/b.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/c.jpg'])$q$, 'three review photos');
-select public.submit_review('d-2', 'DEE@example.com', 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/d-2-1.jpg']);
+select pg_temp.expect_denied($q$select public.submit_review('not-the-key', 'X', 'Great print', 5)$q$, 'reviewing with a wrong key');
+select pg_temp.expect_denied($q$select public.submit_review('dee@example.com', 'X', 'Great print', 5)$q$, 'reviewing with just an email');
+select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = '100'), 'Jane', 'Great print', 5)$q$, 'reviewing an order that is not delivered');
+select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-1'), 'Dee', 'x', 9)$q$, 'an invalid review');
+select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 5, array['https://evil.example/x.jpg'])$q$, 'a review photo from outside the reviews folder');
+select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/a.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/b.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/c.jpg'])$q$, 'three review photos');
+select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/d-2-1.jpg']);
 select pg_temp.expect_denied($q$select public.due_review_requests('wrong-secret')$q$, 'review requests with a wrong secret');
 select pg_temp.expect_denied($q$select public.owner_report_data('wrong-secret')$q$, 'report data with a wrong secret');
 do $$ declare ids text; begin
@@ -153,7 +166,7 @@ do $$ begin
 end $$;
 update public.customer_reviews set status = 'approved' where job_id = 'd-2';
 set role anon;
-select public.submit_review('d-2', 'dee@example.com', 'Dee', 'Changed my mind', 1);
+select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Changed my mind', 1);
 reset role;
 do $$ begin if (select text from public.customer_reviews where job_id = 'd-2') <> 'Came out great' then raise exception 'an approved review was rewritten'; end if; end $$;
 
@@ -204,8 +217,11 @@ reset role;
 
 -- submit_job drops prices and charges only the owner sets
 set role anon;
-select public.submit_job('{"id":"303","clientEmail":"cut@example.com","extraCharges":[{"label":"Discount","amount":5}],"rates":{"baseFee":0},"specialOrderCost":0,"depositAt":"2000-01-01T00:00:00.000Z","depositAmount":1,"items":[{"name":"A","ownerPrice":0},{"name":"B"}]}');
-do $$ declare d jsonb := (select d from public.customer_jobs('cut@example.com') d); begin
+do $$ declare
+  tk text := public.submit_job('{"id":"303","clientEmail":"cut@example.com","accessToken":"mine","extraCharges":[{"label":"Discount","amount":5}],"rates":{"baseFee":0},"specialOrderCost":0,"depositAt":"2000-01-01T00:00:00.000Z","depositAmount":1,"items":[{"name":"A","ownerPrice":0},{"name":"B"}]}');
+  d jsonb := (select d from public.customer_orders(array[tk]) d);
+begin
+  if tk = 'mine' or length(tk) < 60 or d->>'accessToken' <> tk then raise exception 'submit_job should give the new order its own long random key (got %)', tk; end if;
   if d ? 'extraCharges' or d ? 'rates' or d ? 'specialOrderCost' or d ? 'depositAt' or d ? 'depositAmount' then raise exception 'submit_job kept owner-only fields'; end if;
   if d->'items'->0 ? 'ownerPrice' or d->'items'->0->>'name' <> 'A' or d->'items'->1->>'name' <> 'B' then raise exception 'submit_job kept an item price or lost item order: %', d->'items'; end if;
 end $$;
@@ -217,12 +233,13 @@ reset role;
 set role anon;
 select pg_temp.expect_denied('select count(*) from public.order_messages', 'anon reading messages');
 select pg_temp.expect_denied($q$insert into public.order_messages (job_id, sender, body) values ('100', 'owner', 'x')$q$, 'anon writing messages');
-select public.customer_send_message('100', 'jane@example.com', 'Can it be blue?');
-select pg_temp.expect_denied($q$select public.customer_send_message('100', 'nobody@example.com', 'hi')$q$, 'messaging someone else''s order');
-select pg_temp.expect_denied($q$select public.customer_send_message('100', 'jane@example.com', '   ')$q$, 'an empty message');
+select public.customer_send_message((select tk from tok where id = '100'), 'Can it be blue?');
+select pg_temp.expect_denied($q$select public.customer_send_message('not-the-key', 'hi')$q$, 'messaging with a wrong key');
+select pg_temp.expect_denied($q$select public.customer_send_message('jane@example.com', 'hi')$q$, 'messaging with just an email');
+select pg_temp.expect_denied($q$select public.customer_send_message((select tk from tok where id = '100'), '   ')$q$, 'an empty message');
 do $$ begin
-  if (select count(*) from public.customer_messages('100', 'JANE@example.com')) <> 1 then raise exception 'Jane should see her message'; end if;
-  if (select count(*) from public.customer_messages('100', 'nobody@example.com')) <> 0 then raise exception 'another email can read Jane''s messages'; end if;
+  if (select count(*) from public.customer_messages((select tk from tok where id = '100'))) <> 1 then raise exception 'Jane should see her message'; end if;
+  if (select count(*) from public.customer_messages('jane@example.com')) <> 0 or (select count(*) from public.customer_messages('not-the-key')) <> 0 then raise exception 'an email or wrong key can read Jane''s messages'; end if;
 end $$;
 select pg_temp.expect_denied($q$select public.record_messages('wrong-secret', '[]')$q$, 'recording messages with a wrong secret');
 do $$ declare n int; begin
@@ -247,3 +264,35 @@ reset role;
 do $$ begin
   if (select count(*) from net.calls where body->>'type' = 'MESSAGE') <> 2 then raise exception 'site messages (customer and owner) should be sent to the email script'; end if;
 end $$;
+
+-- Private order links
+-- Keys are permanent: an owner save (which sends the order without its key) can't change or drop it.
+update public.jobs set data = data - 'accessToken', access_token = 'tampered' where id = '100';
+do $$ begin
+  if (select access_token from public.jobs where id = '100') = 'tampered' or length((select access_token from public.jobs where id = '100')) < 60 then raise exception 'an order key was changed by an update'; end if;
+  if (select data->>'accessToken' from public.jobs where id = '100') is distinct from (select access_token from public.jobs where id = '100') then raise exception 'the key was not kept in the order data'; end if;
+  if exists (select 1 from public.jobs where coalesce(data->>'accessToken', '') <> access_token) then raise exception 'some orders carry the wrong key in their data'; end if;
+  if (select count(distinct access_token) from public.jobs) <> (select count(*) from public.jobs) then raise exception 'two orders share a key'; end if;
+end $$;
+
+-- "Email me my links": answers the same for every address, one email an hour, only for addresses with orders.
+create temp table links_before as select count(*) as n from net.calls where body->>'type' = 'LINKS';
+grant select on links_before to anon;
+set role anon;
+select pg_temp.expect_denied('select count(*) from public.link_requests', 'anon reading link requests');
+select pg_temp.expect_denied($q$select public.order_links_for_email('wrong-secret', 'jane@example.com')$q$, 'order links with a wrong secret');
+select public.request_order_links('nobody-has-this@example.com');
+select public.request_order_links('not an email');
+select public.request_order_links('JANE@example.com');
+select public.request_order_links('jane@example.com');
+reset role;
+do $$ begin
+  if (select count(*) from net.calls where body->>'type' = 'LINKS') - (select n from links_before) <> 1 then raise exception 'exactly one links email should be requested (unknown and repeat requests send nothing)'; end if;
+  if (select body->>'email' from net.calls where body->>'type' = 'LINKS' order by id desc limit 1) <> 'jane@example.com' then raise exception 'the links email should go to the address on the orders'; end if;
+end $$;
+set role anon;
+do $$ begin
+  if (select count(*) from public.order_links_for_email('0123456789abcdef0123456789abcdef', 'jane@example.com') d where length(d->>'accessToken') >= 60) < 1 then raise exception 'the email script should get Jane''s orders with their keys'; end if;
+  if (select count(*) from public.order_links_for_email('0123456789abcdef0123456789abcdef', 'nobody@example.com')) <> 0 then raise exception 'links returned for an unknown address'; end if;
+end $$;
+reset role;
