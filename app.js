@@ -13,7 +13,11 @@ const SUPA_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 const FIL_LABEL = { black: 'Black', white: 'White', color: 'Color', special: 'Special Request', special_order: 'Special order (own roll)' };
 const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
-const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';
+const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';   // old key: customers used to be recognized by email alone
+const ORDER_KEYS_KEY = 'soloprint_order_keys_v1';
+// Each order has a long random private key (64 characters, made by the database). A customer's links carry it, and it
+// is the only thing that opens an order: an email address alone shows nothing.
+const ORDER_KEY = /^[A-Za-z0-9_-]{32,128}$/;
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
 // Name of the customer tab that shows finished work with prices.
@@ -63,7 +67,7 @@ let state = {
   batches: [], clientTab: 'submit', ownerTab: 'dashboard', selectedClient: null, ordersTab: 'pending',
   gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null, galleryOpen: '',
   draftItems: [blankItem()],
-  clientName: '', clientEmail: '', historyEmail: '',
+  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '',
   modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
   synced: false, loading: true
 };
@@ -121,15 +125,22 @@ async function loadAllOrders() {
   render();
 }
 
-async function loadBatches(filterEmail = '') {
+// The owner's view loads every order. A customer's view (asCustomer) loads only the orders whose private keys this browser holds.
+async function loadBatches(asCustomer = false) {
   try {
-    const email = String(filterEmail || '').trim().toLowerCase();
-    const rows = email
-      ? (await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || []).map(data => ({ data }))
+    const rows = asCustomer
+      ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!email) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages()]); syncTopWork(); }
-    else await loadCustomerMessages(email);
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages()]); syncTopWork(); }
+    else {
+      // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
+      const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));
+      if (keep.length !== state.tokens.length) { state.tokens = keep; persistOrderKeys(); }
+      const last = state.batches[state.batches.length - 1];
+      if (last && last.clientEmail) state.historyEmail = String(last.clientEmail).trim().toLowerCase();
+      await loadCustomerMessages();
+    }
     state.synced = true;
   } catch(e) {
     console.error('Load error:', e);
@@ -153,7 +164,7 @@ async function upsertBatch(batch) {
   }
 }
 
-// Customers can only create new requests; returns false if the save failed.
+// Customers can only create new requests; returns the new order's private key, or false if the save failed.
 async function submitBatchRemote(batch) {
   try {
     // The owner's own prices and charges are never set by a customer (the database drops them too).
@@ -161,8 +172,8 @@ async function submitBatchRemote(batch) {
     job.extraCharges = [];
     delete job.depositAt; delete job.depositAmount; delete job.paidAt;
     job.items.forEach(it => { it.ownerPrice = null; });
-    await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job }) });
-    return true;
+    const key = await supaFetch('/rpc/submit_job', { method: 'POST', body: JSON.stringify({ job }) });
+    return typeof key === 'string' && ORDER_KEY.test(key) ? key : false;
   } catch (e) {
     console.error('Submit error:', e);
     return false;
@@ -353,11 +364,11 @@ async function customerApproveQuote(batchId) {
   }
   const btn = document.getElementById(`customer-approve-${batchId}`);
   if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
-  await loadBatches(state.historyEmail);
+  await loadBatches(true);
   const b = state.batches.find(x => x.id === batchId);
   if (b && b.phase === 'quote_sent' && !b.customerApprovedAt) {
     try {
-      await supaFetch('/rpc/customer_approve_quote', { method: 'POST', body: JSON.stringify({ job_id: b.id, email: state.historyEmail }) });
+      await supaFetch('/rpc/customer_approve_quote', { method: 'POST', body: JSON.stringify({ p_token: b.accessToken }) });
     } catch (e) {
       if (btn) { btn.disabled = false; btn.textContent = "Looks good, I'd like to order"; }
       alert("We couldn't send your approval. Please try again in a moment.");
@@ -716,18 +727,29 @@ async function syncModelLibrary() {
   }
 }
 
-function loadClientHistoryEmail() {
+function loadOrderKeys() {
+  state.historyEmail = '';
   try {
-    state.historyEmail = localStorage.getItem(CLIENT_HISTORY_EMAIL_KEY) || '';
+    localStorage.removeItem(CLIENT_HISTORY_EMAIL_KEY);   // an email alone no longer opens anything
+    const saved = JSON.parse(localStorage.getItem(ORDER_KEYS_KEY) || '[]');
+    state.tokens = (Array.isArray(saved) ? saved : []).filter(k => ORDER_KEY.test(String(k))).slice(0, 25);
   } catch (e) {
-    state.historyEmail = '';
+    state.tokens = [];
   }
 }
 
-function persistClientHistoryEmail() {
+function persistOrderKeys() {
   try {
-    localStorage.setItem(CLIENT_HISTORY_EMAIL_KEY, state.historyEmail || '');
+    localStorage.setItem(ORDER_KEYS_KEY, JSON.stringify(state.tokens));
   } catch (e) {}
+}
+
+// Remembers an order's private key on this device, so My Requests shows it next time.
+function addOrderKey(key) {
+  key = String(key || '');
+  if (!ORDER_KEY.test(key)) return;
+  state.tokens = [key].concat(state.tokens.filter(k => k !== key)).slice(0, 25);
+  persistOrderKeys();
 }
 
 function persistOwnerSession(session) {
@@ -1186,7 +1208,7 @@ async function init() {
   startUpdateBadge();
   loadPreviewDrafts();
   loadModelLibrary();
-  loadClientHistoryEmail();
+  loadOrderKeys();
   restoreDraft();
   const linkedOrder = handleRequestsLink();
   const resumeId = handleResumeLink();
@@ -1199,7 +1221,7 @@ async function init() {
     loadSettings(),
     loadRemoteLibrary(),
     // The customer view only ever loads the looked-up customer's orders, even on the owner's device.
-    state.ownerUnlocked && state.view === 'owner' ? loadBatches() : state.historyEmail ? loadBatches(state.historyEmail) : null
+    state.ownerUnlocked && state.view === 'owner' ? loadBatches() : state.tokens.length ? loadBatches(true) : null
   ]);
   state.loading = false;
   render();
@@ -1256,7 +1278,7 @@ function renderBubble(tab, label, shortLabel, sub, iconPaths, badge = 0) {
 }
 
 function renderClientApp() {
-  const hasHistoryEmail = !!String(state.historyEmail || '').trim();
+  const hasHistoryEmail = state.tokens.length > 0;
   return `
     <nav class="bubble-nav" aria-label="Main">
       ${renderBubble('submit', t('navRequest'), t('navRequest'), t('navRequestSub'),
@@ -1463,7 +1485,8 @@ async function findLeftoverRolls(i, forExtras = false) {
   if (!email.includes('@')) { if (msg) msg.textContent = 'Enter your email at the top first, so I can find your roll.'; return; }
   if (msg) msg.textContent = 'Looking up your rolls...';
   try {
-    const rows = await supaFetch('/rpc/customer_jobs', { method: 'POST', body: JSON.stringify({ email }) }) || [];
+    if (!state.tokens.length) { if (msg) msg.textContent = 'Open the link in one of my emails about your order first. Then your leftover rolls show up here.'; return; }
+    const rows = await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [];
     const now = new Date();
     state.leftoverRolls = leftoverRolls(rows.map(normalizeBatch).filter(Boolean), '', currentRules())
       .filter(r => r.email === email && r.left > 0 && new Date(r.expiresAt) > now).sort((a, b) => byName({ name: a.color }, { name: b.color }));
@@ -1943,73 +1966,45 @@ function renderItemBlock(item, i) {
     </div>`;
 }
 
+// "Email me my links": the way back in for a customer whose browser doesn't hold their order links.
+function renderLinksForm() {
+  return `<div class="field">
+      <label for="history-email">The email you used for your request</label>
+      <input type="email" id="history-email" value="${esc(state.linksEmail)}" placeholder="you@email.com" oninput="state.linksEmail=this.value" />
+    </div>
+    <button class="btn-primary" id="links-send" onclick="sendMyLinks()">Email me my links</button>
+    <div class="alert error" id="history-err"></div>
+    ${state.linksNote === 'sent' ? `<div class="alert success" style="display:block;">If there are requests under that email, I've sent your links. Check your inbox (and spam). It can take a few minutes.</div>` : ''}`;
+}
+
 function renderMyJobsTab() {
-  const historyEmail = String(state.historyEmail || '').trim();
-  if (!historyEmail) return `
+  const header = `
     <div class="section-header">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
       </div>
       <div>
         <h2 class="section-title">${esc(t('navJobs'))}</h2>
-        <div class="section-sub">Enter your email to view your personal request history</div>
+        <div class="section-sub">${state.tokens.length ? 'Your requests on this device' : 'Your requests open from the private link in my emails'}</div>
       </div>
-    </div>
+    </div>`;
+  if (!state.tokens.length || !state.batches.length) return `${header}
     <div class="card">
-      <div class="field">
-        <label>Your email</label>
-        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
-      </div>
-      <button class="btn-primary" onclick="lookupMyRequests()">View My Requests</button>
-      <div class="alert error" id="history-err"></div>
+      ${state.linksNote === 'old' ? `<div class="alert error" style="display:block;">That link is from before I made order links private, so it doesn't open anything. Enter your email and I'll send you a fresh one.</div>` : ''}
+      <p class="field-help" style="margin-top:0;">Every email I send about your request has a private link to it. Open that link and your request shows up here. Lost the email? I'll send your links again.</p>
+      ${renderLinksForm()}
     </div>`;
 
-  if (!state.batches.length) return `
-    <div class="section-header">
-      <div class="section-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
-      </div>
-      <div>
-        <h2 class="section-title">${esc(t('navJobs'))}</h2>
-        <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
-      </div>
-    </div>
+  return `${header}
     <div class="card">
-      <div class="field">
-        <label>Your email</label>
-        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
-      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="btn-sm" onclick="lookupMyRequests()">Refresh</button>
-        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Use a different email</button>
+        <button class="btn-sm" onclick="refreshMyRequests()">Refresh</button>
+        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Forget my requests on this device</button>
       </div>
-    </div>
-    <div class="empty-state">
-      <div class="empty-state-icon">📋</div>
-      <div class="empty-state-text">No requests found</div>
-      <div class="empty-state-sub">We couldn't find request history for ${esc(historyEmail)}</div>
-    </div>`;
-
-  return `
-    <div class="section-header">
-      <div class="section-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="m4 8 8 6 8-6"/></svg>
-      </div>
-      <div>
-        <h2 class="section-title">${esc(t('navJobs'))}</h2>
-        <div class="section-sub">Showing request history for ${esc(historyEmail)}</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="field">
-        <label>Your email</label>
-        <input type="email" id="history-email" value="${esc(state.historyEmail)}" placeholder="you@email.com" oninput="state.historyEmail=this.value" />
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="btn-sm" onclick="lookupMyRequests()">Refresh</button>
-        <button class="btn-sm danger" onclick="clearMyRequestsLookup()">Use a different email</button>
-      </div>
-      <div class="alert error" id="history-err"></div>
+      <details style="margin-top:10px;"><summary>Open my requests on another device</summary>
+        <p class="field-help">I'll email you the private link to each request. Open one on the other device.</p>
+        ${renderLinksForm()}
+      </details>
     </div>
     ${featureOn('reviews') ? renderReviewForm() : ''}
     ${renderRollsCard()}
@@ -2658,7 +2653,7 @@ async function switchToOwner() {
 async function showClientView() {
   state.view = 'client';
   state.batches = [];
-  if (state.historyEmail) await loadBatches(state.historyEmail);
+  if (state.tokens.length) await loadBatches(true);
   render();
 }
 // Saved Models is part of Calculator, Sales Data part of Money (older links and buttons still work).
@@ -2740,16 +2735,29 @@ function updateOwnerItemPrintTime(batchId, i) {
   previewOwnerItem(batchId, i);
 }
 
-async function lookupMyRequests() {
-  const email = String((document.getElementById('history-email') || { value: state.historyEmail }).value || '').trim().toLowerCase();
+async function refreshMyRequests() {
+  await loadBatches(true);
+  render();
+}
+
+// Asks the database to email this address its order links. It answers the same for every address.
+async function sendMyLinks() {
+  const email = String((document.getElementById('history-email') || { value: state.linksEmail }).value || '').trim().toLowerCase();
   if (!email || !email.includes('@') || !email.includes('.')) {
-    showAlert('history-err', 'Please enter a valid email to view your request history.', 'error');
+    showAlert('history-err', 'Please enter the email you used for your request.', 'error');
     return;
   }
-  state.historyEmail = email;
-  persistClientHistoryEmail();
-  await loadBatches(email);
-  render();
+  state.linksEmail = email;
+  const btn = document.getElementById('links-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  try {
+    await supaFetch('/rpc/request_order_links', { method: 'POST', body: JSON.stringify({ p_email: email }) });
+    state.linksNote = 'sent';
+    render();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Email me my links'; }
+    showAlert('history-err', "Couldn't send that right now. Please try again in a moment.", 'error');
+  }
 }
 
 // ── SITE SETTINGS ─────────────────────────────────────────────────────────
@@ -2949,10 +2957,10 @@ const EMAIL_SAMPLE = {
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
   venmoLink: 'https://venmo.com/your-venmo?txn=pay&amount=15.68',
   deposit: '7.84', remainder: '22.84', shippingFee: '15.00', shippingDeposit: '15.00', depositDue: '11.76', depositPercent: '75', depositLink: 'https://venmo.com/your-venmo?txn=pay&amount=11.76', postage: '9.50', refund: '4.50', refundNote: "I'll send your $4.50 shipping deposit refund by Venmo.", invoiceSummary: 'Benchy x 2: $9.28\nTotal: $15.68\nShipping deposit paid: $15.00\nTotal paid: $30.68', remainderLink: 'https://venmo.com/your-venmo?txn=pay&amount=22.84',
-  orderLink: 'https://soloprint.vercel.app/?requests=jane%40example.com#order-1729',
+  orderLink: 'https://soloprint.vercel.app/?order=k7Qp2xVn9RtLm4Wc8ZaB3dFg6HjY1sUe5NoXi0VbTqCyA2Mw#order-1729',
   delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup',
   photo: `${SUPA_URL}/storage/v1/object/public/gallery/orders/1729-photo.jpg`,
-  reviewLink: 'https://soloprint.vercel.app/?requests=jane%40example.com&review=1729#order-1729',
+  reviewLink: 'https://soloprint.vercel.app/?order=k7Qp2xVn9RtLm4Wc8ZaB3dFg6HjY1sUe5NoXi0VbTqCyA2Mw&review=1729#order-1729',
   rollColor: 'Red TPU', rollGrams: '500', rollExpires: 'Dec 21', siteLink: 'https://soloprint.vercel.app',
   weekSales: '64.50', waitingQuote: '2', waitingApproval: '1', unpaid: '1', printing: '1', newReviews: '1', lowStock: 'Black (150 g)'
 };
@@ -3931,9 +3939,8 @@ function buildNotifications() {
         body: `Ready for you to confirm: ${orderTitle(b)}` });
     });
   } else {
-    const email = String(state.historyEmail || '').trim().toLowerCase();
-    if (!email) return [];
-    state.batches.filter(b => String(b.clientEmail || '').toLowerCase() === email).forEach(b => {
+    if (!state.tokens.length) return [];
+    state.batches.forEach(b => {
       const history = { estimate: b.createdAt, ...(b.phaseHistory || {}) };
       ORDER_PHASES.forEach(p => {
         if (!history[p.id]) return;
@@ -3979,8 +3986,8 @@ function renderNotifPanel(items, unread) {
   else if (Notification.permission === 'denied') footer = `<span>Browser alerts are blocked in your browser settings.</span>`;
   else footer = `<span>${browserAlertsOn() ? 'Browser alerts are on.' : 'Get a pop-up when something changes.'}</span>
     <button type="button" onclick="toggleBrowserAlerts()">${browserAlertsOn() ? 'Turn off' : 'Turn on alerts'}</button>`;
-  const empty = notifScope() === 'client' && !state.historyEmail
-    ? 'Look up your email under My Requests to get updates on your orders here.'
+  const empty = notifScope() === 'client' && !state.tokens.length
+    ? 'Open the link in one of my emails to see updates on your orders here.'
     : "You're all caught up. Updates will show up here.";
   return `<div class="notif-panel" role="dialog" aria-label="Notifications">
     <div class="notif-head"><span>Notifications</span>${unread ? `<button type="button" onclick="markAllNotifsRead()">Mark all read</button>` : ''}</div>
@@ -4070,10 +4077,10 @@ document.addEventListener('click', e => {
 setInterval(async () => {
   const scope = notifScope();
   if (state.loading || (state.view === 'owner' && !state.ownerUnlocked)) return;
-  if (scope === 'client' && !state.historyEmail) return;
+  if (scope === 'client' && !state.tokens.length) return;
   if (document.hidden && !browserAlertsOn()) return;
   const before = JSON.stringify(state.batches);
-  await loadBatches(scope === 'client' ? state.historyEmail : '');
+  await loadBatches(scope === 'client');
   sendBrowserAlerts();
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
   // Only the customer tracker re-renders; owner pages hold unsaved form values in the DOM.
@@ -4083,30 +4090,40 @@ setInterval(async () => {
 
 function clearMyRequestsLookup() {
   state.historyEmail = '';
+  state.tokens = [];
   state.batches = [];
-  persistClientHistoryEmail();
+  state.messages = [];
+  persistOrderKeys();
   render();
+}
+
+// The private link to an order, as a customer would get in an email.
+function orderLinkFor(b) {
+  const at = b && b.id ? `#order-${encodeURIComponent(b.id)}` : '';
+  return b && ORDER_KEY.test(String(b.accessToken || '')) ? `${location.origin}/?order=${b.accessToken}${at}` : `${location.origin}/?links=${encodeURIComponent((b && b.clientEmail) || '')}${at}`;
 }
 
 // ── EMAIL LINKS (magic link / password reset) ─────────────────────────────
 // Supabase sends the owner back to this page with the session in the URL fragment
 // (#access_token=...&type=magiclink|recovery). Finish the login and, for resets, ask for a new password.
-// Links in emails (?requests=email#order-id) open that customer's requests with the order in view.
+// Links in emails (?order=<private key>#order-id) open that order, and the key is remembered on this device.
+// A link with only an email (the old kind, ?requests=email) opens nothing: it offers to email a fresh link instead.
 function handleRequestsLink() {
   const params = new URLSearchParams(location.search);
-  const email = String(params.get('requests') || '').trim().toLowerCase();
-  if (!email || !email.includes('@') || email.length > 200) return '';
+  const key = String(params.get('order') || '').trim();
+  const email = String(params.get('links') || params.get('requests') || '').trim().toLowerCase();
+  const hasKey = ORDER_KEY.test(key), hasEmail = email.includes('@') && email.length <= 200;
+  if (!hasKey && !hasEmail) return '';
   const order = (String(location.hash).match(/^#order-([A-Za-z0-9_-]{1,64})$/) || [])[1] || '';
   const review = String(params.get('review') || '');
-  if (/^[A-Za-z0-9_-]{1,64}$/.test(review)) state.reviewFor = { id: review, email, sent: false };
-  params.delete('requests');
-  params.delete('review');
-  history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : ''));
-  state.historyEmail = email;
-  persistClientHistoryEmail();
+  if (/^[A-Za-z0-9_-]{1,64}$/.test(review)) state.reviewFor = { id: review, sent: false };
+  if (hasKey) addOrderKey(key);
+  else { state.linksEmail = email; state.linksNote = 'old'; }
+  ['order', 'links', 'requests', 'review'].forEach(k => params.delete(k));
+  history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : ''));   // keeps the key out of the address bar
   state.view = 'client';
   state.clientTab = 'jobs';
-  return order;
+  return hasKey ? order : '';
 }
 
 function handleAuthRedirect() {
@@ -4227,7 +4244,7 @@ function logoutOwner() {
   state.view = 'client';
   clearOwnerSession();
   state.batches = [];
-  if (state.historyEmail) loadBatches(state.historyEmail).then(() => render());
+  if (state.tokens.length) loadBatches(true).then(() => render());
   render();
 }
 
@@ -4557,12 +4574,14 @@ async function submitBatch() {
   };
   batch.phaseHistory = { estimate: batch.createdAt };
   state.historyEmail = clientEmail.toLowerCase();
-  persistClientHistoryEmail();
-  if (!(await submitBatchRemote(batch))) {
+  const orderKey = await submitBatchRemote(batch);
+  if (!orderKey) {
     showAlert('submit-err', "We couldn't save your request. Please check your connection and try again.", 'error');
     btn.disabled = false; btn.textContent = 'Submit Quote Request';
     return;
   }
+  batch.accessToken = orderKey;
+  addOrderKey(orderKey);
   state.batches.push(normalizeBatch(batch));
 
   showAlert('submit-ok', `Thanks! We've received your request for ${items.length} item${items.length>1?'s':''} and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs. We'll email ${clientEmail} with your confirmed quote.`, 'success');
