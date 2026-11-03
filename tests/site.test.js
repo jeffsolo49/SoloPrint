@@ -496,17 +496,17 @@ const STATES = {
     // a real amount is saved with the status, so the email can say it
     await owner.fill('#step-amount-2', '12.34');
     await owner.click('#order-2 button:has-text("Deposit received")');
-    await owner.waitForFunction(() => /deposit_received/.test(JSON.stringify(state.batches.find(b => b.id === '2'))));
+    await owner.waitForSelector('#order-2 button:has-text("Printing done")');
     assert(db.jobs['2'].paymentStatus === 'deposit_received' && db.jobs['2'].depositAmount === 12.34 && db.jobs['2'].depositAt, JSON.stringify(db.jobs['2']));
     assert(db.jobs['2'].quietEmails && db.jobs['2'].quietEmails.keys.length === 0, 'emailing is the default');
     // now it's the printing step; printing done moves to the final payment (stock is taken then)
     await owner.click('#order-2 button:has-text("Printing done")');
-    await owner.waitForFunction(() => state.batches.find(b => b.id === '2').phase === 'final_payment_needed');
+    await owner.waitForSelector('#order-2 button:has-text("Payment received")');
     // final payment with Email unticked: paid, ready to ship, and the receipt is quiet
     await owner.fill('#step-amount-2', '30');
     await owner.uncheck('#step-mail-2');
     await owner.click('#order-2 button:has-text("Payment received")');
-    await owner.waitForFunction(() => state.batches.find(b => b.id === '2').phase === 'ready_to_ship');
+    await owner.waitForFunction(() => /Paid in full/.test((document.getElementById('conv-2') || {}).textContent || ''));
     const j = db.jobs['2'];
     assert(j.paymentStatus === 'payment_received' && j.balancePaid === 30 && j.balancePaidAt && j.paidAt && j.quietEmails.keys.join() === 'payment', JSON.stringify(j));
     // the feed lists the steps between the messages
@@ -524,14 +524,14 @@ const STATES = {
     assert(/Step 2 of 6/.test(await owner.textContent('#order-1 .desk-stepname')), 'step bar');
     await owner.uncheck('#step-mail-1');
     await owner.click('#step-go-1');
-    await owner.waitForFunction(() => state.batches.find(b => b.id === '1').phase === 'order_received');
+    await owner.waitForSelector('#order-1 .order-menu-list button:has-text("Print without a deposit")', { state: 'attached' });
     assert(db.jobs['1'].quietEmails.keys.join() === 'confirmed', JSON.stringify(db.jobs['1'].quietEmails));
     // More menu: printing without a deposit asks first and sends nothing
     owner.removeAllListeners('dialog');
     owner.on('dialog', d => d.accept());
     await owner.click('#order-1 .order-menu > summary');
     await owner.click('#order-1 .order-menu-list button:has-text("Print without a deposit")');
-    await owner.waitForFunction(() => state.batches.find(b => b.id === '1').printWithoutDeposit);
+    await owner.waitForSelector('#order-1 .next-step .warn-note');
     assert(/No deposit has come in/.test(await owner.textContent('#order-1 .next-step')), 'printing unpaid shows a warning');
     await owner.close();
   });
