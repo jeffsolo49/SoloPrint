@@ -64,10 +64,10 @@ function blankOwnerCalculator() {
 
 let state = {
   view: 'client', ownerUnlocked: false,
-  batches: [], clientTab: 'submit', ownerTab: 'dashboard', selectedClient: null, ordersTab: 'pending',
+  batches: [], clientTab: 'submit', ownerTab: 'dashboard', ordersTab: 'pending',
   gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null, galleryOpen: '',
   draftItems: [blankItem()],
-  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '', pendingOwnerOrder: '', pendingReview: false, customerOpen: false, customerFilter: 'need', customerQuery: '', finishedOpen: {}, notesOpen: {}, overviewOpen: false,
+  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '', pendingOwnerOrder: '', pendingReview: false, deskOpen: false, deskTab: 'need', deskOrder: '', customerQuery: '', notesOpen: {}, overviewOpen: false,
   modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
   synced: false, loading: true
 };
@@ -1244,6 +1244,8 @@ async function init() {
 // ── RENDER ────────────────────────────────────────────────────────────────
 function render() {
   if (state.loading) return;
+  // Owner mode has its own plain, calm colors (styles.css html.owner-mode), so it never looks like the shop.
+  document.documentElement.classList.toggle('owner-mode', state.view === 'owner');
   document.getElementById('app-root').innerHTML = `
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="header">
@@ -1316,7 +1318,7 @@ function ownerSection() {
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
-  const tabs = sec === 'dashboard' ? [['dashboard', 'Customers'], ['numbers', 'Fix numbers']]
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['numbers', 'Fix numbers']]
     : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
@@ -2115,9 +2117,10 @@ function renderOwnerApp() {
     </main>`;
 }
 
-// ── CUSTOMERS (owner: the Orders tab) ─────────────────────────────────────
-// One page: customers on the left (on a phone, a list you tap), the chosen customer's notes and orders on the right.
-// A red number counts what needs you; grey means the order is waiting on the customer.
+// ── ORDERS (owner: the Orders tab, "order desk") ──────────────────────────
+// A list of orders in three tabs (Needs me, Waiting on them, Done); tap one to open it. On a wide screen the
+// chosen order sits beside the list, on a phone they are separate screens. Each order shows one next step
+// with one button (renderNextStep), one feed of messages, emails and steps, and folded details.
 function ownerClientKey(b) { return String(b.clientEmail || '').trim().toLowerCase() || `no-email-${b.id}`; }
 // [label, tone] for what an order is waiting on. 'red' needs you; 'slate' is waiting on the customer.
 function orderNeeds(b) {
@@ -2125,87 +2128,72 @@ function orderNeeds(b) {
   if (phase === 'estimate') out.push(['New request', 'red']);
   else if (phase === 'details_check') out.push(['Waiting for answers', 'slate']);
   else if (phase === 'quote_sent') out.push(b.customerApprovedAt ? ['Confirm order', 'red'] : ['Quote sent', 'slate']);
-  else if (phase === 'order_received') out.push(b.paymentStatus === 'deposit_received' || paid ? ['Print it', 'red'] : ['Waiting for deposit', 'slate']);
+  else if (phase === 'order_received') out.push(b.paymentStatus === 'deposit_received' || paid || b.printWithoutDeposit ? ['Print it', 'red'] : ['Waiting for deposit', 'slate']);
   else if (phase === 'final_payment_needed') out.push(paid ? ['Ship it', 'red'] : ['Waiting for final payment', 'slate']);
   else if (phase === 'ready_to_ship') out.push(['Ship it', 'red']);
   if (conversationStatus(b.id) === 'you') out.push(['Customer wrote', 'red']);
   return out;
 }
-function ownerCustomers() {
-  const map = {};
-  state.batches.forEach(b => { (map[ownerClientKey(b)] = map[ownerClientKey(b)] || []).push(b); });
-  return Object.keys(map).map(email => {
-    const orders = map[email].slice().sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
-    const needs = orders.flatMap(orderNeeds), chips = [];
-    needs.forEach(n => { if (!chips.some(ch => ch[0] === n[0])) chips.push(n); });
-    return { email, name: orders[0].clientName || orders[0].clientEmail || 'No name', orders, chips, latest: orders[0].createdAt,
-      need: needs.filter(n => n[1] === 'red').length,
-      open: orders.filter(b => (b.phase || 'estimate') !== 'delivered'), done: orders.filter(b => (b.phase || 'estimate') === 'delivered') };
-  }).sort((x, y) => y.need - x.need || new Date(y.latest) - new Date(x.latest));
+// Which tab an order sits in.
+function deskTone(b) {
+  if ((b.phase || 'estimate') === 'delivered') return conversationStatus(b.id) === 'you' ? 'need' : 'done';
+  return orderNeeds(b).some(n => n[1] === 'red') ? 'need' : 'wait';
 }
-function ownerNeedCount() { return ownerCustomers().reduce((n, cu) => n + cu.need, 0); }
+function ownerNeedCount() { return state.batches.filter(b => deskTone(b) === 'need').length; }
+// Every order of one customer, newest first (for "Their other orders").
+function customerOrders(b) {
+  const key = ownerClientKey(b);
+  return state.batches.filter(x => ownerClientKey(x) === key).sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+}
+const DESK_TABS = [['need', 'Needs me'], ['wait', 'Waiting on them'], ['done', 'Done']];
 
-function openCustomer(email) { state.selectedClient = email; state.customerOpen = true; render(); window.scrollTo(0, 0); }
-function setCustomerFilter(f) { state.customerFilter = f; render(); }
-// Opens an order in owner mode: its customer, with the order in view (a delivered order's folded list is opened too).
+function openDeskOrder(id) { state.deskOrder = id; state.deskOpen = true; state.ownerEdit = null; render(); window.scrollTo(0, 0); }
+function setDeskTab(tab) { state.deskTab = tab; state.deskOpen = false; render(); }
+// Opens an order in owner mode (used by ?admin= links, notifications and Money & Sales).
 function focusOwnerOrder(id) {
   const b = state.batches.find(x => x.id === id);
   if (b && state.view === 'owner' && state.ownerUnlocked) {
     state.ownerTab = 'dashboard';
-    state.selectedClient = ownerClientKey(b);
-    state.customerOpen = true;
-    if ((b.phase || 'estimate') === 'delivered') state.finishedOpen[state.selectedClient] = true;
+    state.deskOrder = id;
+    state.deskOpen = true;
+    state.deskTab = deskTone(b);
   }
   render();
-  const el = document.getElementById(`conv-${id}`) || document.getElementById(`order-${id}`);
+  const el = document.getElementById(`order-${id}`);
   if (el) el.scrollIntoView({ block: 'start' });
 }
 
-function renderCustomerRow(cu, selected) {
-  const tone = { red: 'cust-red', amber: 'cust-amber', slate: 'cust-slate' };
-  return `<button type="button" class="cust-row ${cu.need ? 'need' : ''} ${selected ? 'active' : ''}" aria-pressed="${selected}" onclick="openCustomer('${esc(cu.email)}')">
-    <span class="cust-who"><span class="cust-name">${esc(cu.name)}</span><span class="cust-email">${esc(cu.email.startsWith('no-email-') ? 'No email' : cu.email)}</span></span>
-    <span class="cust-dot ${cu.need ? '' : 'grey'}" aria-label="${cu.need ? `${cu.need} need${cu.need === 1 ? 's' : ''} you` : 'nothing needs you'}">${cu.need || '–'}</span>
-    <span class="cust-chips">${cu.chips.length ? cu.chips.map(ch => `<span class="cust-chip ${tone[ch[1]]}">${esc(ch[0])}</span>`).join('') : `<span class="cust-chip cust-slate">Finished</span>`}</span>
+function renderDeskRow(b, selected) {
+  const tone = { red: 'cust-red', slate: 'cust-slate' };
+  const chips = (b.phase || 'estimate') === 'delivered' && !orderNeeds(b).length ? [['Finished', 'slate']] : orderNeeds(b);
+  return `<button type="button" class="desk-row tone-${deskTone(b)} ${selected ? 'active' : ''}" aria-pressed="${selected}" onclick="openDeskOrder('${esc(b.id)}')">
+    <span class="desk-name">${esc(b.clientName || b.clientEmail || 'No name')}</span>
+    <span class="desk-when">${esc(new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</span>
+    <span class="desk-item">${esc(orderTitle(b))} · ${esc(b.clientEmail || 'No email')}</span>
+    <span class="cust-chips">${chips.map(ch => `<span class="cust-chip ${tone[ch[1]]}">${esc(ch[0])}</span>`).join('')}</span>
   </button>`;
 }
 
-function renderCustomerDetail(cu) {
-  const own = clientNotes()[cu.email] || {};
-  const hasNotes = !!(own.notes || own.issues);
-  const k = esc(cu.email).replace(/'/g, '&#39;');
-  return `<button type="button" class="btn-sm cust-back" onclick="state.customerOpen = false; render(); window.scrollTo(0, 0);">← All customers</button>
-    <h2 class="cust-title">${esc(cu.name)}</h2>
-    <p class="field-help">${esc(cu.email.startsWith('no-email-') ? 'No email on this request' : cu.email)} · ${cu.orders.length} order${cu.orders.length === 1 ? '' : 's'}</p>
-    <details class="card client-notes" ${state.notesOpen[cu.email] || hasNotes ? 'open' : ''} ontoggle="state.notesOpen['${k}'] = this.open">
-      <summary><strong>Notes and payment issues</strong> (only you see these)${hasNotes ? ' · has notes' : ''}</summary>
-      <div class="field-help"><span id="client-note-status" role="status"></span></div>
-      <div class="field"><label for="client-notes">Notes</label><textarea id="client-notes" style="width:100%;min-height:100px;" spellcheck="true" data-email="${esc(cu.email)}" oninput="queueClientNote(this.dataset.email, 'notes', this.value)">${esc(own.notes || '')}</textarea></div>
-      <div class="field"><label for="client-issues">Payment Issues</label><textarea id="client-issues" style="width:100%;min-height:80px;" spellcheck="true" data-email="${esc(cu.email)}" oninput="queueClientNote(this.dataset.email, 'issues', this.value)">${esc(own.issues || '')}</textarea></div>
-    </details>
-    ${cu.open.map(b => renderOwnerBatch(b)).join('')}
-    ${cu.done.length ? `<details class="finished-orders" ${state.finishedOpen[cu.email] ? 'open' : ''} ontoggle="state.finishedOpen['${k}'] = this.open">
-      <summary>Finished orders (${cu.done.length})</summary>${cu.done.map(b => renderOwnerBatch(b)).join('')}</details>` : ''}`;
-}
-
 function renderOwnerDashboard() {
-  const customers = ownerCustomers();
   const q = String(state.customerQuery || '').trim().toLowerCase();
-  const needMe = customers.filter(cu => cu.need > 0);
-  const shown = customers.filter(cu => (state.customerFilter === 'all' || cu.need > 0)
-    && (!q || `${cu.name} ${cu.email} ${cu.orders.map(orderTitle).join(' ')}`.toLowerCase().includes(q)));
-  const sel = customers.find(cu => cu.email === state.selectedClient) || shown[0] || customers[0] || null;
+  const sorted = state.batches.slice().sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+  const count = tab => sorted.filter(b => deskTone(b) === tab).length;
+  const tab = DESK_TABS.some(t => t[0] === state.deskTab) ? state.deskTab : 'need';
+  // Searching looks through every order, whatever the tab.
+  const shown = q ? sorted.filter(b => `${b.clientName} ${b.clientEmail} ${orderTitle(b)} ${b.items.map(it => it.name).join(' ')}`.toLowerCase().includes(q))
+    : sorted.filter(b => deskTone(b) === tab);
+  const sel = state.batches.find(b => b.id === state.deskOrder) || shown[0] || null;
+  const need = count('need');
   const estimate = state.batches.filter(b => beforeQuote(b.phase));
   const production = state.batches.filter(b => (b.phase || 'estimate') === 'order_received');
   const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
-
   return `
     <div class="owner-page-header">
       <div class="section-header">
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 13h6v7H4zM14 4h6v16h-6zM9 9h6v11H9z"/></svg>
         </div>
-        <div><h2 class="section-title">Customers</h2><div class="section-sub">${needMe.length ? `${needMe.length} customer${needMe.length === 1 ? '' : 's'} need${needMe.length === 1 ? 's' : ''} you` : 'Nothing needs you right now'}</div></div>
+        <div><h2 class="section-title">Orders</h2><div class="section-sub">${need ? `${need} order${need === 1 ? '' : 's'} need${need === 1 ? 's' : ''} you` : 'Nothing needs you right now'}</div></div>
       </div>
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
@@ -2222,18 +2210,17 @@ function renderOwnerDashboard() {
     </details>
     ${!state.batches.length
       ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
-      : `<div class="cust-layout ${state.customerOpen ? 'open' : ''}">
-        <div class="cust-list">
+      : `<div class="desk-layout ${state.deskOpen ? 'open' : ''}">
+        <div class="desk-list">
+          <div class="cust-filters desk-tabs" role="group" aria-label="Which orders">
+            ${DESK_TABS.map(([id, label]) => `<button type="button" class="cust-filter ${!q && tab === id ? 'on' : ''}" aria-pressed="${!q && tab === id}" onclick="setDeskTab('${id}')">${label} (${count(id)})</button>`).join('')}
+          </div>
           <div class="field"><label for="cust-q">Search name, email or item</label>
             <input type="search" id="cust-q" value="${esc(state.customerQuery || '')}" oninput="state.customerQuery = this.value; clearTimeout(window.custT); window.custT = setTimeout(() => { render(); const el = document.getElementById('cust-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250)" /></div>
-          <div class="cust-filters" role="group" aria-label="Which customers">
-            <button type="button" class="cust-filter ${state.customerFilter !== 'all' ? 'on' : ''}" aria-pressed="${state.customerFilter !== 'all'}" onclick="setCustomerFilter('need')">Needs me (${needMe.length})</button>
-            <button type="button" class="cust-filter ${state.customerFilter === 'all' ? 'on' : ''}" aria-pressed="${state.customerFilter === 'all'}" onclick="setCustomerFilter('all')">All (${customers.length})</button>
-          </div>
-          ${shown.length ? shown.map(cu => renderCustomerRow(cu, !!sel && cu.email === sel.email)).join('')
-            : `<p class="field-help">${state.customerFilter === 'all' ? 'No customers match.' : 'Nobody needs you right now.'} <button type="button" class="btn-link" onclick="setCustomerFilter('all')">Show all customers</button></p>`}
+          ${shown.length ? shown.map(b => renderDeskRow(b, !!sel && b.id === sel.id)).join('')
+            : `<p class="field-help">${q ? 'No orders match.' : tab === 'need' ? 'Nothing needs you right now.' : 'No orders here.'}</p>`}
         </div>
-        <div class="cust-detail">${sel ? renderCustomerDetail(sel) : ''}</div>
+        <div class="desk-detail">${sel ? `<button type="button" class="btn-sm desk-back" onclick="state.deskOpen = false; render(); window.scrollTo(0, 0);">← All orders</button>${renderOwnerBatch(sel)}` : ''}</div>
       </div>`}
   `;
 }
@@ -2466,154 +2453,183 @@ function renderOwnerAnalyticsPage() {
   `;
 }
 
+// Where an order is: step n of 6, what it's waiting on, and whether that's you.
+const DESK_STEPS = ['New request', 'Quote', 'Deposit', 'Printing', 'Final payment', 'Ship'];
+function deskStep(b) {
+  const p = b.phase || 'estimate', paid = isPaidInFull(b);
+  if (beforeQuote(p)) return { n: 1, key: 'quote', mine: true, label: p === 'details_check' ? 'Waiting for their answers (you can still send the quote)' : 'New request: price it and send the quote' };
+  if (p === 'quote_sent') return b.customerApprovedAt ? { n: 2, key: 'confirm', mine: true, label: 'They approved: confirm the order' } : { n: 2, key: 'approve', mine: false, label: 'Waiting for them to approve the quote' };
+  if (p === 'order_received') return b.paymentStatus === 'deposit_received' || paid || b.printWithoutDeposit ? { n: 4, key: 'print', mine: true, label: 'Print it' } : { n: 3, key: 'deposit', mine: false, label: 'Waiting for deposit' };
+  if (p === 'final_payment_needed' && !paid) return { n: 5, key: 'final', mine: false, label: 'Waiting for final payment' };
+  if (p !== 'delivered') return { n: 6, key: 'ship', mine: true, label: 'Ship it or hand it over' };
+  return { n: 7, key: 'done', mine: false, label: 'Finished' };
+}
+// One line about the money: what's paid so far.
+function deskMoneyLine(b) {
+  if (beforeQuote(b.phase || 'estimate') || !b.items.every(itemPriced)) return '';
+  const total = orderSum(b);
+  if (isPaidInFull(b)) return `$${total.toFixed(2)} · paid in full`;
+  if (b.paymentStatus === 'deposit_received') return `$${total.toFixed(2)} · $${(Number(b.depositAmount) || 0).toFixed(2)} deposit paid`;
+  return `$${total.toFixed(2)} · nothing paid yet`;
+}
+const firstNameOf = b => esc(String(b.clientName || '').trim().split(/\s+/)[0] || 'the customer');
+const fmtShort = iso => iso ? esc(new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : '';
+
 function renderOwnerBatch(b) {
-  const phase = b.phase || 'estimate';
-  const allDone = b.items.every(itemPriced);
-  const total = allDone ? orderSum(b) : null;
+  const phase = b.phase || 'estimate', st = deskStep(b);
+  const editing = state.ownerEdit && state.ownerEdit.id === b.id;
+  return `<div class="job-card desk-order ${phase} ${conversationStatus(b.id) === 'you' ? 'waiting-you' : ''}" id="order-${b.id}">
+    <div class="desk-head">
+      <div class="desk-head-top">
+        <div style="min-width:0;">
+          <div class="job-title">${esc(b.clientName)} ${conversationChip(b.id)}</div>
+          <div class="job-meta">${esc(orderTitle(b))} · <a href="mailto:${esc(b.clientEmail)}">${esc(b.clientEmail)}</a> · ${fmtShort(b.createdAt)}</div>
+        </div>
+        ${renderOrderMenu(b, st)}
+      </div>
+      <div class="desk-bar" aria-hidden="true">${DESK_STEPS.map((s, i) => `<i class="${i + 1 < st.n ? 'done' : i + 1 === st.n ? 'now' : ''}"></i>`).join('')}</div>
+      ${b.designTerms && !beforeQuote(phase) ? `<div><span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting for them to agree'}</span></div>` : ''}
+      <div class="desk-stepname">${st.n > 6 ? 'Finished' : `Step ${st.n} of 6 · ${esc(st.label)}`}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
+    </div>
+    ${editing ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>` : `${renderNextStep(b, st)}${renderOwnerConversation(b)}`}
+    ${renderOrderFolds(b, st)}
+  </div>`;
+}
+
+// Rare actions, in one menu so they never sit beside the main button.
+function renderOrderMenu(b, st) {
+  const phase = b.phase || 'estimate', id = esc(b.id);
+  const items = [
+    !beforeQuote(phase) && phase !== 'delivered' ? `<button type="button" onclick="deskChangeQuote('${id}')">Change the quote</button>` : '',
+    phaseIndex(phase) > phaseIndex('quote_sent') ? `<button type="button" onclick="deskBack('${id}')">Go back a step</button>` : '',
+    st.key === 'deposit' ? `<button type="button" onclick="deskPrintAnyway('${id}')">Print without a deposit…</button>` : '',
+    `<button type="button" onclick="fixNumbers('${id}')">Fix numbers</button>`,
+    `<button type="button" class="danger" onclick="deleteBatch('${id}')">Delete order…</button>`
+  ].filter(Boolean);
+  return `<details class="order-menu"><summary class="btn-sm">More</summary><div class="order-menu-list">${items.join('')}</div></details>`;
+}
+
+// The one thing to do next, with the email it sends spelled out (and a box to not send it).
+function renderNextStep(b, st) {
+  const id = esc(b.id), name = firstNameOf(b), rules = rulesFor(b);
+  const total = b.items.every(itemPriced) ? orderSum(b) : 0;
+  const hasEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.clientEmail || ''));
+  const mailBox = text => hasEmail ? `<label class="step-mail"><input type="checkbox" id="step-mail-${id}" checked /> <span>Email ${name} ${text}</span></label>` : '<div class="field-help">No email address on this order, so nothing is emailed.</div>';
+  const amount = status => `<div class="field step-amount"><label for="step-amount-${id}">Amount in your Venmo ($)</label>
+    <input type="number" inputmode="decimal" min="0" step="0.01" id="step-amount-${id}" value="${Math.max(0, expectedPayment(b, status)).toFixed(2)}" /></div>`;
+  const box = (title, body, mine = st.mine) => `<section class="next-step ${mine ? 'mine' : 'theirs'}" aria-label="Next step">
+    <div class="next-step-label">${title}</div>${body}<div class="alert error" id="step-err-${id}"></div></section>`;
+  const go = (label, fn) => `<button type="button" class="btn-primary step-go" id="step-go-${id}" onclick="${fn}">${label}</button>`;
+  switch (st.key) {
+    case 'quote': return box('Next step: price it and send the quote', renderQuoteForm(b));
+    case 'approve': return box(`Waiting on ${name}`, `<p>Quote sent ${fmtShort((b.phaseHistory || {}).quote_sent)}. When ${name} taps "Looks good", the order comes back to Needs me for you to confirm.</p>
+      ${featureOn('autoDeposit') ? `<p class="field-help">Right now orders confirm themselves (and ask for the deposit) when the customer approves. <button type="button" class="btn-link" onclick="deskManualConfirm()">Let me confirm each order myself</button></p>` : ''}`);
+    case 'confirm': {
+      const dep = depositAmount(b, total, rules);
+      return box('Next step: confirm the order', `<p>${name} approved the quote${b.customerApprovedAt ? ` on ${esc(formatAustinTime(b.customerApprovedAt))}` : ''}. Read the conversation below and answer anything first if you need to.</p>
+        ${mailBox(`the "order confirmed" email asking for the $${dep.toFixed(2)} deposit`)}${go('Confirm order', `deskConfirm('${id}')`)}`);
+    }
+    case 'deposit': return box(`Waiting on ${name}: the deposit`, `<p>Deposit asked: $${depositAmount(b, total, rules).toFixed(2)} of $${total.toFixed(2)}. When it shows in your Venmo, type the amount and tap Deposit received.</p>
+      ${amount('deposit_received')}${mailBox('a receipt for that amount')}
+      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`)}<button type="button" class="btn-secondary" onclick="deskPayment('${id}', 'payment_received')">They paid it all</button></div>`, true);
+    case 'print': {
+      const pos = ownerQueuePosition(b), paid = isPaidInFull(b), fp = finalPayment(b, total, rules);
+      return box('Next step: print it', `${pos ? `<p>#${pos} in line.</p>` : ''}
+        ${b.printWithoutDeposit && b.paymentStatus !== 'deposit_received' && !paid ? `<div class="warn-note">No deposit has come in for this order.</div>` : ''}
+        <p class="field-help">Add a photo of the finished print in "Notes and photos" below first: the customer sees it, and the first one goes in the email.</p>
+        ${paid ? `<p>${name} has paid in full, so no payment email goes out: the order moves to Ready to ship. If you're mailing it, message them for their address and the $${fp.fee.toFixed(2)} shipping deposit.</p>`
+          : mailBox(`the "printing is done" email asking for $${fp.remainder.toFixed(2)} (includes the $${fp.fee.toFixed(2)} shipping deposit) and their address`)}
+        ${go('Printing done', `deskPrinted('${id}')`)}`);
+    }
+    case 'final': return box(`Waiting on ${name}: the final payment`, `<p>${finalPaymentChip(b)}</p>
+      ${amount('payment_received')}${mailBox('a receipt for that amount')}
+      ${go('Payment received', `deskPayment('${id}', 'payment_received')`)}`, true);
+    case 'ship': return box('Next step: ship it or hand it over', `${renderShippingFields(b)}
+      ${mailBox('the "order shipped" email with tracking, invoice and refund note')}
+      <div class="step-buttons">${go('Save tracking and mark Shipped', `saveDeliveryInfo('${id}')`)}<button type="button" class="btn-secondary" onclick="deskHandOver('${id}')">Handed over in person</button></div>`);
+    default: return box('Finished', `<p>${(b.phaseHistory || {}).delivered ? `Done on ${fmtShort(b.phaseHistory.delivered)}. ` : ''}${b.deliveryTracking ? `Tracking: ${esc(b.deliveryTracking)}` : ''}</p>
+      <details class="desk-fold"><summary>Change shipping details</summary>${renderShippingFields(b)}
+      <button type="button" class="btn-secondary" onclick="saveDeliveryInfo('${id}')" style="margin-top:10px;">Save shipping details</button>
+      <div class="field-help">Changing them emails ${name} a short shipping update (you're asked first).</div></details>`, false);
+  }
+}
+
+function renderShippingFields(b) {
+  return `<div class="delivery-meta">
+    <div class="row2">
+      <div class="field" style="margin-bottom:0;"><label for="ddate-${b.id}">Ship date</label>
+        <input type="text" id="ddate-${b.id}" value="${esc(b.deliveryDate || '')}" placeholder="Apr 3, 2026" /></div>
+      <div class="field" style="margin-bottom:0;"><label for="dtrack-${b.id}">Carrier and tracking number</label>
+        <input type="text" id="dtrack-${b.id}" value="${esc(b.deliveryTracking || '')}" placeholder="USPS 9400 1000 0000 0000 0000 00" /></div>
+    </div>
+    <div class="field" style="margin-top:10px;margin-bottom:0;"><label for="dpost-${b.id}">What postage actually cost ($)</label>
+      <input type="number" step="0.01" min="0" id="dpost-${b.id}" value="${b.postageCost === '' || b.postageCost === undefined ? '' : esc(b.postageCost)}" placeholder="9.50" />
+      ${renderRefundLine(b)}</div>
+    <div class="field" style="margin-top:10px;margin-bottom:0;"><label for="dnotes-${b.id}">Notes for the customer</label>
+      <textarea id="dnotes-${b.id}" placeholder="Anything else they should know" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea></div>
+  </div>`;
+}
+
+// Step 1: price each item and send the quote.
+function renderQuoteForm(b) {
   const hasSpecial = b.items.some(usesRolls);
   const checks = b.items.some(it => rollParts(it).length) ? leftoverChecks(b) : [];
   const rollProblem = checks.some(list => list.some(c => !c.ok));
-  const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  return `<div class="job-card ${phase} ${conversationStatus(b.id) === 'you' ? 'waiting-you' : ''}" id="order-${b.id}">
-    <div class="job-header">
-      <div>
-        <div class="job-title">${esc(b.clientName)} ${conversationChip(b.id)}</div>
-        <div class="job-meta">
-          <a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a>
-          · ${b.items.length} item${b.items.length>1?'s':''}
-          · ${createdLabel}
-        </div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-        <span class="status ${phase}">${phaseLabel(phase)}</span>
-        <span class="status ${b.paymentStatus || 'unpaid'}">${paymentLabel(b.paymentStatus || 'unpaid')}</span>
-        ${phase === 'final_payment_needed' ? finalPaymentChip(b) : ''}
-        ${phase === 'quote_sent' && b.customerApprovedAt ? `<span class="status quoted" title="Approved ${esc(formatAustinTime(b.customerApprovedAt))}">Customer approved</span>` : ''}
-        ${phase === 'order_received' ? `<span class="status quoted">${ownerQueuePosition(b) ? `#${ownerQueuePosition(b)} in line` : 'Waiting for deposit'}</span>` : ''}
-        ${b.designTerms && !beforeQuote(phase) ? `<span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting'}</span>` : ''}
-        <button class="btn-sm danger" onclick="deleteBatch('${b.id}')">✕</button>
-      </div>
-    </div>
-    <div class="owner-batch-controls">
-      <div class="field" style="margin-bottom:0;">
-        <label>Order Phase</label>
-        <select class="phase-select" onchange="updateBatchPhase('${b.id}', this.value)">
-          ${ORDER_PHASES.filter(p => p.id !== 'details_check').map(p => {
-            const cur = b.phase === 'details_check' ? 'estimate' : (b.phase || 'estimate');
-            const idx = phaseIndex(p.id), currentIdx = phaseIndex(cur);
-            const isAllowed = idx === currentIdx || idx === currentIdx + 1 || (cur === 'estimate' && p.id === 'quote_sent' && false);
-            return `<option value="${p.id}" ${cur===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
-          }).join('')}
-        </select>
-        <div class="field-help">Quote Sent, Confirmed &amp; Printing, Printing Complete and Shipped email the customer.</div>
-      </div>
-      <div class="field" style="margin-bottom:0;">
-        <label>Payment Status</label>
-        <select class="phase-select" onchange="updatePaymentStatus('${b.id}', this.value)">
-          ${PAYMENT_PHASES.map((p, idx) => {
-            const currentIdx = paymentIndex(b.paymentStatus || 'unpaid');
-            const isAllowed = idx >= currentIdx;
-            return `<option value="${p.id}" ${(b.paymentStatus||'unpaid')===p.id?'selected':''} ${isAllowed ? '' : 'disabled'}>${p.label}</option>`;
-          }).join('')}
-        </select>
-        <div class="field-help">Deposit Received and Payment Received email a receipt. Only change it once the money is in your Venmo.</div>
-        <button type="button" class="btn-sm" style="margin-top:8px;" onclick="fixNumbers('${b.id}')">Fix numbers</button>
-        ${b.depositAt ? `<div class="field-help">Deposit paid on ${esc(formatAustinTime(b.depositAt))}. Amount: $<input type="number" step="0.01" min="0" id="dep-${b.id}" value="${(Number(b.depositAmount) || 0).toFixed(2)}" style="width:6rem" aria-label="Deposit amount paid" onchange="setDepositAmount('${b.id}', this.value)" /></div>` : ''}
-      </div>
-    </div>
-    ${renderTrackerSteps(b, false)}
-    ${state.ownerEdit && state.ownerEdit.id === b.id
-      ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>`
-      : renderOwnerConversation(b)}
-    <div class="owner-order-summary">
-      <div class="card-title" style="margin-bottom:10px;">Submitted Order Summary</div>
-      <div class="owner-order-summary-grid">
-        <div>
-          <div class="owner-order-summary-label">Customer</div>
-          <div class="owner-order-summary-value">${esc(b.clientName)}</div>
-        </div>
-        <div>
-          <div class="owner-order-summary-label">Email</div>
-          <div class="owner-order-summary-value"><a href="mailto:${esc(b.clientEmail)}" style="color:var(--accent);">${esc(b.clientEmail)}</a></div>
-        </div>
-        <div>
-          <div class="owner-order-summary-label">Submitted</div>
-          <div class="owner-order-summary-value">${createdLabel}</div>
-        </div>
-        <div>
-          <div class="owner-order-summary-label">Items</div>
-          <div class="owner-order-summary-value">${b.items.length}</div>
-        </div>
-      </div>
-      <div class="owner-item-summary-list">
-        ${b.items.map((it, i) => `
-          <div class="owner-item-summary">
-            <div class="owner-order-summary-label">Item ${i + 1}</div>
-            <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
-            <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
-            ${colorPartsText(it) ? `<div class="owner-order-summary-value">Which parts: ${esc(colorPartsText(it))}</div>` : ''}
-            ${(checks[i] || []).map(c => `<div class="owner-order-summary-value roll-check ${c.ok ? 'ok' : 'bad'}">${c.ok ? '' : '⚠ '}${esc(c.text)}</div>`).join('')}
-            <div class="owner-order-summary-value">Submitted grams: ${it.grams ? `${parseFloat(it.grams).toFixed(1)}g` : 'Not provided'}</div>
-            ${it.logo ? '<div class="owner-order-summary-value"><strong>Add their company logo</strong> (ask for the logo file)</div>' : ''}
-            <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Open model</a>` : esc(it.link || 'Not provided')}</div>
-            <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-    <div class="job-divider"></div>
-    ${state.ownerEdit && state.ownerEdit.id === b.id ? '<div class="field-help">Editing this request next to the conversation above.</div>' : `
-    ${beforeQuote(phase) ? `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit request</button>` : `<div class="field-help">To change this request, use Edit Quotes below first.</div>`}
+  return `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit their request</button>
     ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
-    ${renderOwnerCharges(b)}`}
-    ${state.ownerEdit && state.ownerEdit.id === b.id ? '' : beforeQuote(phase) ? `
-      ${renderDetailsCheck(b)}
-      ${hasSpecial ? `
-        <div class="field special-order">
-          <label for="special-cost-${b.id}">Special order roll cost ($)</label>
-          <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? currentRules().rollCost : specialOrderCost(b)).toFixed(2)}" />
-          <div class="field-help">The full ${fmtRoll(currentRules().rollGrams)} roll, charged instead of material. Usually about $${currentRules().rollCost}. Use 0 when they're printing from their own leftover roll (within ${currentRules().rollMonths} months).</div>
-        </div>` : ''}
-      <label class="special-order-check" style="font-size:14px;margin-top:10px;"><input type="checkbox" id="terms-${b.id}" ${hasCustomDesign(b) ? 'checked' : ''} />
-        Custom design: the customer must agree to my design terms before approving</label>
-      <div class="alert error" id="batch-err-${b.id}"></div>
-      <div class="alert success" id="batch-ok-${b.id}"></div>
-      <button class="btn-primary" id="approve-btn-${b.id}" onclick="approveBatch('${b.id}')" style="margin-top:1rem;">
-        Save All &amp; Notify Client
-      </button>
-    ` : `
-      <div class="total-box">
-        <span class="total-label">Total quoted${specialOrderCost(b) ? ` (includes $${specialOrderCost(b).toFixed(2)} special order roll)` : ''}${extraChargesTotal(b) ? ` (includes $${extraChargesTotal(b).toFixed(2)} in added charges)` : ''}</span>
-        <span class="total-price">$${total!==null?total.toFixed(2):'—'}</span>
+    ${checks.flat().filter(c => !c.ok).map(c => `<div class="roll-check bad">⚠ ${esc(c.text)}</div>`).join('')}
+    ${renderOwnerCharges(b)}
+    ${renderDetailsCheck(b)}
+    ${hasSpecial ? `
+      <div class="field special-order">
+        <label for="special-cost-${b.id}">Special order roll cost ($)</label>
+        <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? currentRules().rollCost : specialOrderCost(b)).toFixed(2)}" />
+        <div class="field-help">The full ${fmtRoll(currentRules().rollGrams)} roll, charged instead of material. Usually about $${currentRules().rollCost}. Use 0 when they're printing from their own leftover roll (within ${currentRules().rollMonths} months).</div>
+      </div>` : ''}
+    <label class="special-order-check" style="font-size:14px;margin-top:10px;"><input type="checkbox" id="terms-${b.id}" ${hasCustomDesign(b) ? 'checked' : ''} />
+      Custom design: the customer must agree to my design terms before approving</label>
+    <div class="alert error" id="batch-err-${b.id}"></div>
+    <div class="alert success" id="batch-ok-${b.id}"></div>
+    <div class="field-help" style="margin-top:1rem;">Emails ${firstNameOf(b)} the quote with a link to approve it.</div>
+    <button class="btn-primary step-go" id="approve-btn-${b.id}" onclick="approveBatch('${b.id}')">Send quote</button>`;
+}
+
+// Everything else about the order, folded.
+function renderOrderFolds(b, st) {
+  const phase = b.phase || 'estimate', rules = rulesFor(b);
+  const createdLabel = new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const others = customerOrders(b).filter(x => x.id !== b.id);
+  const own = clientNotes()[ownerClientKey(b)] || {};
+  const k = esc(ownerClientKey(b)).replace(/'/g, '&#39;');
+  const total = b.items.every(itemPriced) ? orderSum(b) : null;
+  return `<div class="desk-folds">
+    <details class="desk-fold"><summary>Their request (${b.items.length} item${b.items.length === 1 ? '' : 's'}, sent ${esc(createdLabel)})</summary>
+      <div class="owner-item-summary-list">
+        ${b.items.map((it, i) => `<div class="owner-item-summary">
+          <div class="owner-order-summary-label">Item ${i + 1}</div>
+          <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
+          <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
+          ${colorPartsText(it) ? `<div class="owner-order-summary-value">Which parts: ${esc(colorPartsText(it))}</div>` : ''}
+          ${it.logo ? '<div class="owner-order-summary-value"><strong>Add their company logo</strong> (ask for the logo file)</div>' : ''}
+          <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">Open model</a>` : esc(it.link || 'Not provided')}</div>
+          <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
+        </div>`).join('')}
       </div>
-      ${phase === 'delivered' || phase === 'ready_to_ship' ? `
-        <div class="delivery-meta">
-          <div class="card-title" style="margin-bottom:10px;">Shipping details${phase === 'ready_to_ship' ? ' (saving the tracking number ships the order and emails the customer)' : ''}</div>
-          <div class="row2">
-            <div class="field" style="margin-bottom:0;">
-              <label for="ddate-${b.id}">Ship date</label>
-              <input type="text" id="ddate-${b.id}" value="${esc(b.deliveryDate || '')}" placeholder="Apr 3, 2026" />
-            </div>
-            <div class="field" style="margin-bottom:0;">
-              <label for="dtrack-${b.id}">Carrier and tracking number</label>
-              <input type="text" id="dtrack-${b.id}" value="${esc(b.deliveryTracking || '')}" placeholder="USPS 9400 1000 0000 0000 0000 00" />
-            </div>
-          </div>
-          <div class="field" style="margin-top:10px;margin-bottom:0;">
-            <label for="dpost-${b.id}">What postage actually cost ($)</label>
-            <input type="number" step="0.01" min="0" id="dpost-${b.id}" value="${b.postageCost === '' || b.postageCost === undefined ? '' : esc(b.postageCost)}" placeholder="9.50" />
-            ${renderRefundLine(b)}
-          </div>
-          <div class="field" style="margin-top:10px;margin-bottom:0;">
-            <label for="dnotes-${b.id}">Notes for the customer</label>
-            <textarea id="dnotes-${b.id}" placeholder="Anything else they should know" spellcheck="true">${esc(b.deliveryNotes || '')}</textarea>
-          </div>
-          <button class="btn-secondary" onclick="saveDeliveryInfo('${b.id}')" style="margin-top:10px;">${phase === 'ready_to_ship' ? 'Save tracking and mark Shipped' : 'Save shipping details'}</button>
-        </div>
-      ` : ``}
-      <button class="btn-secondary" onclick="resetBatch('${b.id}')" style="margin-top:0.75rem;">Edit Quotes</button>
-    `}
-    ${renderOwnerExtras(b)}
+    </details>
+    ${beforeQuote(phase) ? '' : `<details class="desk-fold"><summary>Price${total !== null ? `: $${total.toFixed(2)}` : ''}</summary>
+      <ul class="desk-lines">${b.items.map(it => { const t = calcTotal(it.minutes, it.grams, it, it.qty, rules); return `<li><span>${esc(it.name || 'Unnamed')}${it.qty > 1 ? ` × ${it.qty}` : ''}</span><span>${t ? `$${t.toFixed(2)}` : '—'}</span></li>`; }).join('')}
+        ${specialOrderCost(b) ? `<li><span>Special order roll</span><span>$${specialOrderCost(b).toFixed(2)}</span></li>` : ''}</ul>
+      ${renderOwnerCharges(b)}
+      <div class="field-help">To change the prices, use More › Change the quote.</div>
+    </details>`}
+    <details class="desk-fold" ${st.key === 'print' || (b.finishedPhotos || []).length || ownerNotes()[b.id] ? 'open' : ''}><summary>Notes and photos</summary>${renderOwnerExtras(b)}</details>
+    <details class="desk-fold client-notes" ${state.notesOpen[ownerClientKey(b)] || own.notes || own.issues ? 'open' : ''} ontoggle="state.notesOpen['${k}'] = this.open">
+      <summary>About ${esc(b.clientName || 'this customer')}${own.notes || own.issues ? ' · has notes' : ''}${others.length ? ` · ${others.length} other order${others.length === 1 ? '' : 's'}` : ''}</summary>
+      <div class="field-help">Only you see these. <span id="client-note-status" role="status"></span></div>
+      <div class="field"><label for="client-notes">Notes</label><textarea id="client-notes" style="width:100%;min-height:80px;" spellcheck="true" data-email="${esc(ownerClientKey(b))}" oninput="queueClientNote(this.dataset.email, 'notes', this.value)">${esc(own.notes || '')}</textarea></div>
+      <div class="field"><label for="client-issues">Payment Issues</label><textarea id="client-issues" style="width:100%;min-height:60px;" spellcheck="true" data-email="${esc(ownerClientKey(b))}" oninput="queueClientNote(this.dataset.email, 'issues', this.value)">${esc(own.issues || '')}</textarea></div>
+      ${others.length ? `<div class="owner-order-summary-label">Their other orders</div><div class="desk-others">${others.map(x => `<button type="button" class="btn-sm" onclick="openDeskOrder('${esc(x.id)}')">${esc(orderTitle(x))} · ${esc(phaseLabel(x.phase || 'estimate'))}</button>`).join('')}</div>` : ''}
+    </details>
   </div>`;
 }
 
@@ -4789,6 +4805,110 @@ async function updatePaymentStatus(batchId, paymentStatus) {
   render();
 }
 
+// ── ORDER STEPS (the buttons on the order screen) ─────────────────────────
+// Emails go out from Code.gs when the order changes. Unticking "Email ..." saves quietEmails { at, keys } with
+// the change: Code.gs skips those emails for that one save only (keys are email names: confirmed, deposit, ...).
+function quietIfUnticked(b, keys) {
+  const box = document.getElementById(`step-mail-${b.id}`);
+  b.quietEmails = { at: new Date().toISOString(), keys: box && !box.checked ? keys : [] };
+}
+function stepBusy(b, on) {
+  const btn = document.getElementById(`step-go-${b.id}`);
+  if (btn) btn.disabled = on;
+}
+async function deskConfirm(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b || b.phase !== 'quote_sent') return;
+  stepBusy(b, true);
+  quietIfUnticked(b, ['confirmed']);
+  b.phase = 'order_received';
+  b.status = 'quoted';
+  stampPhase(b, 'order_received');
+  await upsertBatch(b);
+  render();
+}
+// The amount comes from the box on the step: the receipt says it, so no amount, no change.
+async function deskPayment(id, status) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  const el = document.getElementById(`step-amount-${id}`);
+  const amount = Math.round(parseFloat(String(el ? el.value : '').replace(/[$,\s]/g, '')) * 100) / 100;
+  if (!(amount > 0)) { showAlert(`step-err-${id}`, 'Type the amount they paid, like 45.00. Nothing was changed.', 'error'); return; }
+  stepBusy(b, true);
+  const now = new Date().toISOString();
+  quietIfUnticked(b, [status === 'deposit_received' ? 'deposit' : 'payment']);
+  b.paymentStatus = status;
+  if (status === 'deposit_received') { if (!b.depositAt) b.depositAt = now; b.depositAmount = amount; }
+  else {
+    b.balancePaid = amount;
+    if (!b.balancePaidAt) b.balancePaidAt = now;
+    if (!b.paidAt) b.paidAt = now;
+    // The final payment is in, so it's ready to ship: one save, one email (the receipt).
+    if (b.phase === 'final_payment_needed') { b.phase = 'ready_to_ship'; stampPhase(b, 'ready_to_ship'); }
+  }
+  await upsertBatch(b);
+  render();
+}
+async function deskPrinted(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b || b.phase !== 'order_received') return;
+  stepBusy(b, true);
+  stampPhase(b, 'final_payment_needed');
+  // Already paid in full: no "final payment" email, straight to Ready to ship.
+  if (isPaidInFull(b)) { b.phase = 'ready_to_ship'; stampPhase(b, 'ready_to_ship'); b.quietEmails = { at: new Date().toISOString(), keys: [] }; }
+  else { b.phase = 'final_payment_needed'; quietIfUnticked(b, ['final_payment_needed']); }
+  await adjustStockForOrder(b, true);   // the print is done, so the filament is used
+  await upsertBatch(b);
+  render();
+}
+// Picked up or handed over: finished, with no shipping email.
+async function deskHandOver(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  b.deliveryTracking = (document.getElementById(`dtrack-${id}`) || { value: '' }).value.trim() || 'Handed over in person';
+  b.deliveryDate = (document.getElementById(`ddate-${id}`) || { value: '' }).value.trim() || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  b.deliveryNotes = (document.getElementById(`dnotes-${id}`) || { value: '' }).value.trim();
+  b.quietEmails = { at: new Date().toISOString(), keys: ['delivered', 'delivery_update'] };
+  b.phase = 'delivered';
+  b.status = 'quoted';
+  stampPhase(b, 'delivered');
+  await upsertBatch(b);
+  render();
+}
+async function deskPrintAnyway(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  if (!confirm(`No deposit has come in from ${b.clientName || 'this customer'}. Start printing anyway? Nothing is emailed.`)) return;
+  b.printWithoutDeposit = true;
+  await upsertBatch(b);
+  render();
+}
+async function deskChangeQuote(id) {
+  if (!confirm('Take this order back to New request so you can change the prices? Nothing is emailed until you send the new quote.')) return;
+  await resetBatch(id);
+}
+// One step back, never emailing. Printing done -> printing also puts the filament back in stock.
+async function deskBack(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  const back = { order_received: 'quote_sent', final_payment_needed: 'order_received', ready_to_ship: isPaidInFull(b) && !(b.phaseHistory || {}).final_payment_needed ? 'order_received' : 'final_payment_needed', delivered: 'ready_to_ship' }[b.phase];
+  if (!back) return;
+  if (!confirm(`Move this order back to "${phaseLabel(back)}"? Nothing is emailed.`)) return;
+  b.quietEmails = { at: new Date().toISOString(), keys: ['quote', 'confirmed', 'final_payment_needed', 'delivered'] };
+  if (b.phaseHistory) delete b.phaseHistory[b.phase];
+  if (back === 'order_received' && b.phaseHistory) { delete b.phaseHistory.final_payment_needed; delete b.phaseHistory.ready_to_ship; await adjustStockForOrder(b, false); }
+  b.phase = back;
+  await upsertBatch(b);
+  render();
+}
+// Stops orders confirming themselves when the customer approves (Settings > Show or hide has the same switch).
+async function deskManualConfirm() {
+  try {
+    await saveSettings({ ...state.settings, features: { ...(state.settings.features || {}), autoDeposit: false } });
+  } catch (e) { alert("Couldn't save. If you were logged out, log in again and retry."); }
+  render();
+}
+
 function addLibraryEntry() {
   const link = (document.getElementById('lib-link') || { value: '' }).value.trim();
   const name = (document.getElementById('lib-name') || { value: '' }).value.trim();
@@ -4945,7 +5065,7 @@ async function saveDeliveryInfo(batchId) {
   // Entering the tracking number on a Ready to Ship order is what ships it.
   if ((b.phase || '') === 'ready_to_ship') {
     if (!b.deliveryTracking) { alert('Enter the carrier and tracking number to mark this order as shipped.'); render(); return; }
-    if (!confirmEmail(b, 'with the "order shipped" email (tracking, invoice and refund note)')) { render(); return; }
+    quietIfUnticked(b, ['delivered']);   // the order screen says which email goes out, with a box to not send it
     b.phase = 'delivered';
     b.status = 'quoted';
     stampPhase(b, 'delivered');

@@ -639,21 +639,22 @@ function renderEmailGuide() {
   const row = (when, button, gets) => `<tr><th scope="row">${button}</th><td>${when}</td><td>${gets}</td></tr>`;
   return `<details class="card email-guide" id="email-guide">
     <summary><strong>When do emails go out? When should I press each button?</strong></summary>
-    <p class="field-help">Nothing goes out by accident: before any button that emails a customer, you get a question to confirm. Cancel and nothing is sent or changed.</p>
+    <p class="field-help">Each order shows one next step with one button. The box above the button says which email it sends; untick "Email ..." to do the step without sending it.</p>
     <div class="table-scroll"><table class="email-guide-table">
       <thead><tr><th scope="col">Button</th><th scope="col">Press it when</th><th scope="col">The customer gets</th></tr></thead>
       <tbody>
-      ${row('You have read the request and the quote is right.', 'Save All &amp; Notify Client', 'The quote email, with a link to approve.')}
+      ${row('You have read the request and the quote is right.', 'Send quote', 'The quote email, with a link to approve.')}
       ${row('You need answers before you can quote (optional).', 'Confirm details with the customer, then Send email', 'The email you wrote and checked, exactly as shown.')}
-      ${row('They tap Looks good on their quote.', 'Nothing: it happens by itself (Settings > Show or hide can turn this off)', 'The order-confirmed email, asking for the deposit. You get a notice with a link to the order.')}
-      ${row('Their Venmo deposit shows in your Venmo app.', 'Payment Status: Deposit Received, then type the amount they paid', 'A deposit receipt that says how much they paid. Their place in line starts now. No amount, no email.')}
-      ${row('The print is finished and photographed.', 'Order Phase: Printing Complete', 'The printing-done email: the rest plus the shipping deposit, and a request for their shipping address.')}
-      ${row('Their Venmo for the rest and the shipping deposit shows in your Venmo app, and you have their address.', 'Payment Status: Payment Received (type the amount they paid), then Order Phase: Ready to Ship', 'A payment receipt that says how much they paid (one email, however you get there). No amount, no email.')}
-      ${row('You have mailed the package and have the tracking number.', 'Ready to Ship box: enter tracking and postage, then Save tracking and mark Shipped', 'The order-shipped email with tracking, invoice and refund note. Then send the refund by Venmo yourself.')}
-      ${row('Tracking or the ship date changed after shipping.', 'Save shipping details on a Shipped order', 'A short shipping update email.')}
-      ${row('You just want to say something, ask a question or answer one.', 'Conversation: Send message', 'Your own words by email (with your footer) and on their order page. It never changes the order or sends a form email.')}
+      ${row('They tapped Looks good and you are happy to go ahead.', 'Confirm order', 'The order-confirmed email, asking for the deposit (if ticked).')}
+      ${row('Their Venmo deposit shows in your Venmo app.', 'Deposit received (type the amount they paid)', 'A deposit receipt that says how much they paid. Their place in line starts now.')}
+      ${row('The print is finished and photographed.', 'Printing done', 'The printing-done email: the rest plus the shipping deposit, and a request for their address. Nothing if they already paid in full.')}
+      ${row('Their Venmo for the rest and the shipping deposit shows in your Venmo app.', 'Payment received (type the amount they paid)', 'A payment receipt that says how much they paid. The order moves to Ready to ship.')}
+      ${row('You have mailed the package and have the tracking number.', 'Save tracking and mark Shipped', 'The order-shipped email with tracking, invoice and refund note. Then send the refund by Venmo yourself.')}
+      ${row('They picked it up or you handed it over.', 'Handed over in person', 'Nothing.')}
+      ${row('Tracking or the ship date changed after shipping.', 'Change shipping details on a finished order', 'A short shipping update email.')}
+      ${row('You just want to say something, ask a question or answer one.', 'Send message', 'Your own words by email (with your footer) and on their order page. It never changes the order or sends a form email.')}
       </tbody></table></div>
-    <p class="field-help"><strong>Never sends an email:</strong> Fix numbers, typing the deposit amount, Edit request, notes, filament stock, the Practice tab, and approving or hiding a review.</p>
+    <p class="field-help"><strong>Never sends an email:</strong> everything in an order's More menu (change the quote, go back a step, print without a deposit, fix numbers, delete), Edit their request, notes, filament stock, the Practice tab, and approving or hiding a review.</p>
     <p class="field-help"><strong>Not sure?</strong> Use Send message for anything that isn't one of the steps above. Try a step first in the Practice tab; nothing there is ever sent.</p>
   </details>`;
 }
@@ -2878,6 +2879,7 @@ function renderThread(list, viewer, customerName) {
   if (!shown.length) return '<div class="field-help">No messages yet.</div>';
   return `<ol class="thread">${shown.map(m => {
     const when = m.at ? formatAustinTime(m.at) : '';
+    if (m.event) return `<li class="msg msg-event">${esc(m.body)} <span class="msg-when">${esc(when)}</span></li>`;
     if (m.toOwner) {
       return `<li class="msg msg-note"><details><summary>Email to you: ${esc(m.subject)} <span class="msg-when">${esc(when)}</span></summary><div class="msg-body">${linkifyText(m.body)}</div></details></li>`;
     }
@@ -2892,25 +2894,37 @@ function renderThread(list, viewer, customerName) {
     return `<li class="msg ${side}"><div class="msg-who">${esc(who)} <span class="msg-when">${esc(when)}${m.via === 'email' ? ' · by email' : ''}</span></div><div class="msg-body">${linkifyText(m.body)}</div></li>`;
   }).join('')}</ol>`;
 }
+// Steps the order went through, as quiet lines in the owner's feed (between the messages, by time).
+function orderEvents(b) {
+  const h = b.phaseHistory || {}, out = [];
+  const add = (at, body) => { if (at) out.push({ event: true, at, body }); };
+  const amt = v => Number(v) > 0 ? ` $${Number(v).toFixed(2)}` : '';
+  add(b.createdAt, 'Request received');
+  add(h.details_check, 'Asked them to check the details');
+  add(h.quote_sent, 'Quote sent');
+  add(b.customerApprovedAt, 'They approved the quote');
+  add(h.order_received, 'Order confirmed');
+  add(b.depositAt, 'Deposit received' + amt(b.depositAmount));
+  add(h.final_payment_needed, 'Printing done');
+  add(b.balancePaidAt || b.paidAt, 'Paid in full' + amt(b.balancePaid));
+  add(h.delivered, String(b.deliveryTracking || '') === 'Handed over in person' ? 'Handed over' : 'Shipped');
+  return out;
+}
+// The order's one feed: messages, the shop's emails and the steps, oldest first, with the reply box under it.
 function renderOwnerConversation(b) {
   if (!state.messagesReady) return '';
   const list = messagesFor(b.id);
-  const status = conversationStatus(b.id);
-  const editing = state.ownerEdit && state.ownerEdit.id === b.id;
   const draft = ownerMessageDraft(b);
-  return `<details class="conversation" id="conv-${b.id}" ${status === 'you' || state.openConversation === b.id || editing ? 'open' : ''}>
-    <summary><strong>Conversation</strong> ${list.filter(m => m.via !== 'auto').length ? `(${list.filter(m => m.via !== 'auto').length})` : ''} ${conversationChip(b.id)}</summary>
-    ${renderThread(list, 'owner', b.clientName)}
+  const feed = list.concat(orderEvents(b)).sort((x, y) => String(x.at || '').localeCompare(String(y.at || '')));
+  const count = list.filter(m => m.via !== 'auto').length;
+  return `<details class="conversation" id="conv-${b.id}" open>
+    <summary><strong>Messages and updates</strong> ${count ? `(${count})` : ''} ${conversationChip(b.id)}</summary>
+    ${renderThread(feed, 'owner', b.clientName)}
     <div class="field" style="margin-top:10px;"><label for="msg-text-${b.id}">Message to ${esc(b.clientName || 'the customer')}</label>
       <textarea id="msg-text-${b.id}" class="autogrow" rows="3" spellcheck="true" maxlength="5000" placeholder="They get this by email and on their order page." oninput="state.msgDrafts['${b.id}'] = this.value; autoGrow(this)">${esc(draft)}</textarea>
-      <div class="field-help">Sends only your words as a plain email, and shows on their order page. It doesn't change the order. The official emails (quote, confirmed, printing done, payment, shipped) go out from the Order Phase, Payment Status and shipping buttons instead.</div></div>
+      <div class="field-help">Sends only your words, by email and on their order page. It never changes the order.</div></div>
     <div class="alert error" id="msg-err-${b.id}"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <button class="btn-sm" type="button" id="msg-send-${b.id}" onclick="sendOwnerMessage('${b.id}')">Send message</button>
-      ${editing ? '' : beforeQuote(b.phase || 'estimate')
-        ? `<button class="btn-sm" type="button" id="chat-edit-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit their request</button>`
-        : '<span class="field-help">To change their request, use Edit Quotes below first.</span>'}
-    </div>
+    <button class="btn-sm" type="button" id="msg-send-${b.id}" onclick="sendOwnerMessage('${b.id}')">Send message</button>
   </details>`;
 }
 async function sendOwnerMessage(jobId) {
