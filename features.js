@@ -1881,6 +1881,9 @@ function faqSearch(value) {
   });
   const none = document.getElementById('faq-none');
   if (none) none.hidden = shown > 0;
+  // Folded at the bottom of a page: searching opens the list, clearing the box folds it again.
+  const all = document.getElementById('faq-all');
+  if (all && !state.faqOpen) { const typing = !!String(value).trim(); box.hidden = !typing; all.hidden = typing; if (none && !typing) none.hidden = true; }
 }
 // An answer opens in a pop-up over the page (outside #app-root so a redraw can't remove it). X, tap outside or Escape closes it.
 let faqReturnFocus = null, faqScrollY = 0;
@@ -1916,10 +1919,14 @@ function renderFaq() {
   if (!featureOn('faq') || !list.length) return '';
   const q = state.faqQuery || '';
   const hits = list.filter(f => faqMatches(f, q)).length;
+  const searchable = list.length > 2;
+  // At the bottom of other pages the questions stay folded to the title and search box until you search or tap Show all.
+  const folded = searchable && state.clientTab !== 'faq' && !q.trim() && !state.faqOpen;
   return `<div class="card faq">
     <${state.clientTab === 'faq' ? 'h2' : 'h3'} class="card-title">${esc(t('faqTitle'))}</${state.clientTab === 'faq' ? 'h2' : 'h3'}>
-    ${list.length > 2 ? `<input type="search" id="faq-search" class="faq-search" placeholder="Search for your question here" aria-label="Search the questions and answers" value="${esc(q)}" oninput="faqSearch(this.value)" />` : ''}
-    <div id="faq-list" class="faq-grid">
+    ${searchable ? `<input type="search" id="faq-search" class="faq-search" placeholder="Search for your question here" aria-label="Search the questions and answers" value="${esc(q)}" oninput="faqSearch(this.value)" />` : ''}
+    ${searchable && state.clientTab !== 'faq' ? `<button type="button" class="btn-link faq-all" id="faq-all" ${folded ? '' : 'hidden'} onclick="state.faqOpen = true; document.getElementById('faq-list').hidden = false; this.hidden = true;">Show all ${list.length} questions</button>` : ''}
+    <div id="faq-list" class="faq-grid" ${folded ? 'hidden' : ''}>
     ${list.map(f => `<button type="button" class="faq-card" data-q="${esc(f.q)}" data-a="${esc(f.a)}" ${faqMatches(f, q) ? '' : 'hidden'} onclick="openFaq('${esc(f.id)}')">${esc(f.q)}${f.live ? '' : ' <span class="draft-tag">Draft</span>'}</button>`).join('')}
     </div>
     <p class="field-help" id="faq-none" ${hits ? 'hidden' : ''}>Nothing matches that. Try another word, or send a request and ask me.</p>

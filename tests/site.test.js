@@ -1735,7 +1735,9 @@ const STATES = {
     db.settings = { ...db.settings, faq: [{ id: 'a', q: 'How long?', a: 'About a week.', live: true }, { id: 'b', q: 'Do you ship?', a: 'Yes, by USPS.', live: true }, { id: 'c', q: 'Colors?', a: 'Many.', live: true }] };
     const page = await open(db);
     await page.waitForSelector('#faq-search');
+    assert(!(await page.isVisible('#faq-list')) && await page.isVisible('#faq-all'), 'at the bottom of a page the questions start folded');
     await page.fill('#faq-search', 'usps');
+    assert(await page.isVisible('#faq-list'), 'searching opens them');
     const vis = await page.$$eval('.faq-card', els => els.filter(e => !e.hidden).map(e => e.dataset.q));
     assert(vis.join() === 'Do you ship?', vis.join());
     await page.evaluate(() => { document.body.style.minHeight = '3000px'; window.scrollTo(0, 400); });

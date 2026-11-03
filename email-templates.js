@@ -9,7 +9,7 @@
 const EMAIL_TEMPLATES = {
   footer: {
     label: 'Footer', to: 'Customer', when: 'The ending of customer emails (wherever {footer} appears). Change it here once and every email uses it.',
-    body: 'Track your order any time: {orderLink}\nQuestions? Just reply to this email.\n\nThanks,\nSoloPrint'
+    body: 'Track your order and message me any time: {orderLink}\nThat page is also where we chat: send me a message there, or just reply to this email.\n\nThanks,\nSoloPrint'
   },
   owner_new: {
     label: 'New request', to: 'You', when: 'A customer sends a request.',
