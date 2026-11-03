@@ -67,7 +67,7 @@ let state = {
   batches: [], clientTab: 'submit', ownerTab: 'dashboard', selectedClient: null, ordersTab: 'pending',
   gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null, galleryOpen: '',
   draftItems: [blankItem()],
-  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '', pendingOwnerOrder: '', pendingReview: false,
+  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '', pendingOwnerOrder: '', pendingReview: false, customerOpen: false, customerFilter: 'need', customerQuery: '', finishedOpen: {}, notesOpen: {}, overviewOpen: false,
   modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
   synced: false, loading: true
 };
@@ -1316,7 +1316,7 @@ function ownerSection() {
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
-  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['clients', 'By customer'], ['numbers', 'Fix numbers']]
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Customers'], ['numbers', 'Fix numbers']]
     : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
@@ -1329,7 +1329,7 @@ function renderOwnerSubNav() {
 function renderOwnerNav() {
   return `
     <nav class="nav" aria-label="Owner sections">
-      <button class="nav-tab ${ownerSection() === 'dashboard' ? 'active' : ''}" onclick="setOwnerTab('dashboard')">Orders</button>
+      <button class="nav-tab ${ownerSection() === 'dashboard' ? 'active' : ''}" onclick="setOwnerTab('dashboard')">Orders${ownerNeedCount() ? `<span class="nav-badge" aria-label="${ownerNeedCount()} need you">${ownerNeedCount()}</span>` : ''}</button>
       <button class="nav-tab ${ownerSection() === 'gallery' ? 'active' : ''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
       <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
@@ -2105,12 +2105,8 @@ function renderOwnerApp() {
         ? renderPracticePage()
         : state.ownerTab === 'numbers'
         ? renderNumbersPage()
-        : state.ownerTab === 'clients'
-        ? renderClientsPage()
-        : state.ownerTab === 'orders'
-        ? renderOrdersPage()
         : state.ownerTab === 'money' || state.ownerTab === 'analytics'
-        ? renderOwnerMoneyPage() + renderOwnerAnalyticsPage()
+        ? renderOwnerMoneyPage() + renderOwnerOrdersList() + renderOwnerAnalyticsPage()
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'calculator' || state.ownerTab === 'library'
@@ -2119,7 +2115,86 @@ function renderOwnerApp() {
     </main>`;
 }
 
+// ── CUSTOMERS (owner: the Orders tab) ─────────────────────────────────────
+// One page: customers on the left (on a phone, a list you tap), the chosen customer's notes and orders on the right.
+// A red number counts what needs you; grey means the order is waiting on the customer.
+function ownerClientKey(b) { return String(b.clientEmail || '').trim().toLowerCase() || `no-email-${b.id}`; }
+// [label, tone] for what an order is waiting on. 'red' needs you; 'slate' is waiting on the customer.
+function orderNeeds(b) {
+  const phase = b.phase || 'estimate', paid = isPaidInFull(b), out = [];
+  if (phase === 'estimate') out.push(['New request', 'red']);
+  else if (phase === 'details_check') out.push(['Waiting for answers', 'slate']);
+  else if (phase === 'quote_sent') out.push(b.customerApprovedAt ? ['Confirm order', 'red'] : ['Quote sent', 'slate']);
+  else if (phase === 'order_received') out.push(b.paymentStatus === 'deposit_received' || paid ? ['Print it', 'red'] : ['Waiting for deposit', 'slate']);
+  else if (phase === 'final_payment_needed') out.push(paid ? ['Ship it', 'red'] : ['Waiting for final payment', 'slate']);
+  else if (phase === 'ready_to_ship') out.push(['Ship it', 'red']);
+  if (conversationStatus(b.id) === 'you') out.push(['Customer wrote', 'red']);
+  return out;
+}
+function ownerCustomers() {
+  const map = {};
+  state.batches.forEach(b => { (map[ownerClientKey(b)] = map[ownerClientKey(b)] || []).push(b); });
+  return Object.keys(map).map(email => {
+    const orders = map[email].slice().sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+    const needs = orders.flatMap(orderNeeds), chips = [];
+    needs.forEach(n => { if (!chips.some(ch => ch[0] === n[0])) chips.push(n); });
+    return { email, name: orders[0].clientName || orders[0].clientEmail || 'No name', orders, chips, latest: orders[0].createdAt,
+      need: needs.filter(n => n[1] === 'red').length,
+      open: orders.filter(b => (b.phase || 'estimate') !== 'delivered'), done: orders.filter(b => (b.phase || 'estimate') === 'delivered') };
+  }).sort((x, y) => y.need - x.need || new Date(y.latest) - new Date(x.latest));
+}
+function ownerNeedCount() { return ownerCustomers().reduce((n, cu) => n + cu.need, 0); }
+
+function openCustomer(email) { state.selectedClient = email; state.customerOpen = true; render(); window.scrollTo(0, 0); }
+function setCustomerFilter(f) { state.customerFilter = f; render(); }
+// Opens an order in owner mode: its customer, with the order in view (a delivered order's folded list is opened too).
+function focusOwnerOrder(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (b && state.view === 'owner' && state.ownerUnlocked) {
+    state.ownerTab = 'dashboard';
+    state.selectedClient = ownerClientKey(b);
+    state.customerOpen = true;
+    if ((b.phase || 'estimate') === 'delivered') state.finishedOpen[state.selectedClient] = true;
+  }
+  render();
+  const el = document.getElementById(`conv-${id}`) || document.getElementById(`order-${id}`);
+  if (el) el.scrollIntoView({ block: 'start' });
+}
+
+function renderCustomerRow(cu, selected) {
+  const tone = { red: 'cust-red', amber: 'cust-amber', slate: 'cust-slate' };
+  return `<button type="button" class="cust-row ${cu.need ? 'need' : ''} ${selected ? 'active' : ''}" aria-pressed="${selected}" onclick="openCustomer('${esc(cu.email)}')">
+    <span class="cust-who"><span class="cust-name">${esc(cu.name)}</span><span class="cust-email">${esc(cu.email.startsWith('no-email-') ? 'No email' : cu.email)}</span></span>
+    <span class="cust-dot ${cu.need ? '' : 'grey'}" aria-label="${cu.need ? `${cu.need} need${cu.need === 1 ? 's' : ''} you` : 'nothing needs you'}">${cu.need || '–'}</span>
+    <span class="cust-chips">${cu.chips.length ? cu.chips.map(ch => `<span class="cust-chip ${tone[ch[1]]}">${esc(ch[0])}</span>`).join('') : `<span class="cust-chip cust-slate">Finished</span>`}</span>
+  </button>`;
+}
+
+function renderCustomerDetail(cu) {
+  const own = clientNotes()[cu.email] || {};
+  const hasNotes = !!(own.notes || own.issues);
+  const k = esc(cu.email).replace(/'/g, '&#39;');
+  return `<button type="button" class="btn-sm cust-back" onclick="state.customerOpen = false; render(); window.scrollTo(0, 0);">← All customers</button>
+    <h2 class="cust-title">${esc(cu.name)}</h2>
+    <p class="field-help">${esc(cu.email.startsWith('no-email-') ? 'No email on this request' : cu.email)} · ${cu.orders.length} order${cu.orders.length === 1 ? '' : 's'}</p>
+    <details class="card client-notes" ${state.notesOpen[cu.email] || hasNotes ? 'open' : ''} ontoggle="state.notesOpen['${k}'] = this.open">
+      <summary><strong>Notes and payment issues</strong> (only you see these)${hasNotes ? ' · has notes' : ''}</summary>
+      <div class="field-help"><span id="client-note-status" role="status"></span></div>
+      <div class="field"><label for="client-notes">Notes</label><textarea id="client-notes" style="width:100%;min-height:100px;" spellcheck="true" data-email="${esc(cu.email)}" oninput="queueClientNote(this.dataset.email, 'notes', this.value)">${esc(own.notes || '')}</textarea></div>
+      <div class="field"><label for="client-issues">Payment Issues</label><textarea id="client-issues" style="width:100%;min-height:80px;" spellcheck="true" data-email="${esc(cu.email)}" oninput="queueClientNote(this.dataset.email, 'issues', this.value)">${esc(own.issues || '')}</textarea></div>
+    </details>
+    ${cu.open.map(b => renderOwnerBatch(b)).join('')}
+    ${cu.done.length ? `<details class="finished-orders" ${state.finishedOpen[cu.email] ? 'open' : ''} ontoggle="state.finishedOpen['${k}'] = this.open">
+      <summary>Finished orders (${cu.done.length})</summary>${cu.done.map(b => renderOwnerBatch(b)).join('')}</details>` : ''}`;
+}
+
 function renderOwnerDashboard() {
+  const customers = ownerCustomers();
+  const q = String(state.customerQuery || '').trim().toLowerCase();
+  const needMe = customers.filter(cu => cu.need > 0);
+  const shown = customers.filter(cu => (state.customerFilter === 'all' || cu.need > 0)
+    && (!q || `${cu.name} ${cu.email} ${cu.orders.map(orderTitle).join(' ')}`.toLowerCase().includes(q)));
+  const sel = customers.find(cu => cu.email === state.selectedClient) || shown[0] || customers[0] || null;
   const estimate = state.batches.filter(b => beforeQuote(b.phase));
   const production = state.batches.filter(b => (b.phase || 'estimate') === 'order_received');
   const delivered = state.batches.filter(b => (b.phase || 'estimate') === 'delivered');
@@ -2130,12 +2205,12 @@ function renderOwnerDashboard() {
         <div class="section-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 13h6v7H4zM14 4h6v16h-6zM9 9h6v11H9z"/></svg>
         </div>
-        <div><h2 class="section-title">Owner Dashboard</h2><div class="section-sub">Track quotes, production, and delivered orders</div></div>
+        <div><h2 class="section-title">Customers</h2><div class="section-sub">${needMe.length ? `${needMe.length} customer${needMe.length === 1 ? '' : 's'} need${needMe.length === 1 ? 's' : ''} you` : 'Nothing needs you right now'}</div></div>
       </div>
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
-      ${renderEmailGuide()}
-      ${renderWaitingOnYou()}
+    <details class="card overview" ${state.overviewOpen ? 'open' : ''} ontoggle="state.overviewOpen = this.open">
+      <summary><strong>Overview</strong> · stock alerts, queue, counts and the email guide</summary>
       ${renderStockAlerts()}
       ${renderOwnerQueue()}
       <div class="stats-row">
@@ -2143,51 +2218,24 @@ function renderOwnerDashboard() {
         <div class="stat-card"><div class="stat-val">${production.length}</div><div class="stat-label">Production</div></div>
         <div class="stat-card"><div class="stat-val green">${delivered.length}</div><div class="stat-label">Delivered</div></div>
       </div>
-      ${!state.batches.length
-        ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
-        : [...state.batches].reverse().map(b => renderOwnerBatch(b)).join('')}
+      ${renderEmailGuide()}
+    </details>
+    ${!state.batches.length
+      ? `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No requests yet</div></div>`
+      : `<div class="cust-layout ${state.customerOpen ? 'open' : ''}">
+        <div class="cust-list">
+          <div class="field"><label for="cust-q">Search name, email or item</label>
+            <input type="search" id="cust-q" value="${esc(state.customerQuery || '')}" oninput="state.customerQuery = this.value; clearTimeout(window.custT); window.custT = setTimeout(() => { render(); const el = document.getElementById('cust-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250)" /></div>
+          <div class="cust-filters" role="group" aria-label="Which customers">
+            <button type="button" class="cust-filter ${state.customerFilter !== 'all' ? 'on' : ''}" aria-pressed="${state.customerFilter !== 'all'}" onclick="setCustomerFilter('need')">Needs me (${needMe.length})</button>
+            <button type="button" class="cust-filter ${state.customerFilter === 'all' ? 'on' : ''}" aria-pressed="${state.customerFilter === 'all'}" onclick="setCustomerFilter('all')">All (${customers.length})</button>
+          </div>
+          ${shown.length ? shown.map(cu => renderCustomerRow(cu, !!sel && cu.email === sel.email)).join('')
+            : `<p class="field-help">${state.customerFilter === 'all' ? 'No customers match.' : 'Nobody needs you right now.'} <button type="button" class="btn-link" onclick="setCustomerFilter('all')">Show all customers</button></p>`}
+        </div>
+        <div class="cust-detail">${sel ? renderCustomerDetail(sel) : ''}</div>
+      </div>`}
   `;
-}
-
-function renderOrdersPage() {
-  const pending = state.batches.filter(b => (b.phase||'estimate') !== 'delivered');
-  const completed = state.batches.filter(b => (b.phase||'estimate') === 'delivered');
-  const orders = state.ordersTab === 'pending' ? pending : completed;
-  const html = renderOwnerDashboard();
-  // Replace the dashboard content with tabs
-  return `<div>
-    <div style="margin-bottom:1rem;">
-      <button class="nav-tab ${state.ordersTab==='pending'?'active':''}" onclick="state.ordersTab='pending';render()">Pending (${pending.length})</button>
-      <button class="nav-tab ${state.ordersTab==='completed'?'active':''}" onclick="state.ordersTab='completed';render()">Completed (${completed.length})</button>
-    </div>
-    ${state.ordersTab==='pending' ? html : '<div>' + orders.map(b => `<div style="padding:1rem;border:1px solid var(--border);margin-bottom:0.5rem;border-radius:4px;"><strong>${esc(b.clientName)}</strong> - ${b.items.map(i=>esc(i.name)).join(', ')}<br><span style="color:var(--muted);">${b.phase} • ${new Date(b.createdAt).toLocaleDateString()}</span></div>`).join('') + '</div>'}
-  </div>`;
-}
-
-function renderClientsPage() {
-  const clients = [...new Set(state.batches.map(b => b.clientEmail))].filter(Boolean).map(email => {
-    const orders = state.batches.filter(b => b.clientEmail === email);
-    const name = orders[0]?.clientName || email;
-    const own = clientNotes()[String(email).toLowerCase()] || {};
-    return { email, name, orders, notes: own.notes || '', issues: own.issues || '' };
-  }).sort((a, b) => a.name.localeCompare(b.name));
-
-  if (!state.selectedClient && clients.length) state.selectedClient = clients[0].email;
-  const selected = clients.find(c => c.email === state.selectedClient);
-
-  return `<div style="display:grid;grid-template-columns:250px 1fr;gap:1rem;height:100%;">
-    <div style="border-right:1px solid var(--border);overflow-y:auto;">
-      ${clients.map(c => `<button type="button" class="client-row ${c.email===state.selectedClient?'active':''}" aria-pressed="${c.email===state.selectedClient}" onclick="state.selectedClient='${esc(c.email)}';render()">${esc(c.name)}<br><span style="font-size:12px;color:var(--muted);">${c.orders.length} order${c.orders.length!==1?'s':''}</span>${c.orders.some(o => conversationStatus(o.id) === 'you') ? ' <span class="status waiting-you">Waiting on you</span>' : ''}</button>`).join('')}
-    </div>
-    <div style="overflow-y:auto;padding:1rem;">
-      ${selected ? `<h2>${esc(selected.name)}</h2>
-      <p style="color:var(--muted);">${selected.email}</p>
-      <div class="field-help">Only you can see these notes. <span id="client-note-status" role="status"></span></div>
-      <div class="field"><label for="client-notes">Notes</label><textarea id="client-notes" style="width:100%;min-height:100px;" spellcheck="true" data-email="${esc(selected.email)}" oninput="queueClientNote(this.dataset.email, 'notes', this.value)">${esc(selected.notes)}</textarea></div>
-      <div class="field"><label for="client-issues">Payment Issues</label><textarea id="client-issues" style="width:100%;min-height:80px;" spellcheck="true" data-email="${esc(selected.email)}" oninput="queueClientNote(this.dataset.email, 'issues', this.value)">${esc(selected.issues)}</textarea></div>
-      <div style="margin-top:1rem;"><strong>Orders:</strong><ul>${selected.orders.map(o=>`<li>${esc(o.items[0]?.name||'(unnamed)')} - ${o.phase}</li>`).join('')}</ul></div>` : '<p>No clients yet</p>'}
-    </div>
-  </div>`;
 }
 
 function renderOwnerLibraryPage() {
@@ -2665,7 +2713,7 @@ async function showClientView() {
   render();
 }
 // Saved Models is part of Calculator, Sales Data part of Money (older links and buttons still work).
-const MERGED_TABS = { library: 'calculator', analytics: 'money', emails: 'settings', filament: 'settings' };
+const MERGED_TABS = { library: 'calculator', analytics: 'money', emails: 'settings', filament: 'settings', clients: 'dashboard', orders: 'dashboard' };
 function fixNumbers(id) { state.numbersOnly = id; state.numbersQuery = ''; setOwnerTab('numbers'); }
 function setOwnerTab(tab) {
   if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
@@ -4041,8 +4089,8 @@ function markAllNotifsRead() {
 function openNotif(id, batchId) {
   markNotifsRead([id]);
   state.notifOpen = false;
-  if (notifScope() === 'owner') state.ownerTab = 'dashboard';
-  else state.clientTab = 'jobs';
+  if (notifScope() === 'owner') { focusOwnerOrder(batchId); return; }
+  state.clientTab = 'jobs';
   render();
   const card = document.getElementById(`order-${batchId}`);
   if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -4151,10 +4199,9 @@ async function showPendingOwnerOrder() {
   if (!id || !state.ownerUnlocked) return;
   state.pendingOwnerOrder = '';
   if (!state.batches.some(b => b.id === id) && !state.ownerHistoryAll) { state.ownerHistoryAll = true; await loadBatches(); }
-  state.ownerTab = 'dashboard';
-  render();
+  focusOwnerOrder(id);
   const el = document.getElementById(`order-${id}`);
-  if (el) { el.scrollIntoView({ block: 'start' }); el.classList.add('flash'); }
+  if (el) el.classList.add('flash');
 }
 
 function handleAuthRedirect() {

@@ -14,6 +14,8 @@ const ago = mins => new Date(now - mins * 60000).toISOString();
 // Each order's private key, like the 64-character ones the database makes (the site only needs 32 to 128 letters, digits, - or _).
 const keyOf = id => 'KEY' + String(id).replace(/[^A-Za-z0-9_-]/g, '_').padEnd(40, 'x');
 const keysFor = (db, email) => Object.values(db.jobs).filter(j => j.clientEmail === email).map(j => keyOf(j.id));
+// Opens an order the way a link in your email does: its customer, with the order in view.
+const showOrder = id => `focusOwnerOrder(${JSON.stringify(id)})`;
 const asCustomer = keys => `state.tokens = ${JSON.stringify(keys)}; await loadBatches(true);`;
 
 function fixtures() {
@@ -305,7 +307,7 @@ const STATES = {
     assert(/Incorrect/.test(await page.textContent('#pw-err')), 'no error for a wrong password');
     await page.fill('#owner-pw', 'right-password');
     await page.click('#owner-login-btn');
-    await page.waitForSelector('.stats-row');
+    await page.waitForSelector('.cust-layout');
     assert(db.log.includes('GET /jobs owner'), 'dashboard did not load orders with the owner token');
     await page.close();
   });
@@ -511,6 +513,74 @@ const STATES = {
     assert(db.jobs['2'].paymentStatus === 'payment_received' && db.jobs['2'].balancePaid === 30 && db.jobs['2'].balancePaidAt && db.jobs['2'].paidAt, JSON.stringify(db.jobs['2']));
     await owner.close();
   });
+  await check('Customers: red numbers for what needs you, grey for what waits on them, finished orders folded, search and filters', async () => {
+    const db = fixtures();   // Jane: new request + a quote + an order in production
+    db.jobs['lee1'] = { id: 'lee1', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(500), phase: 'ready_to_ship', paymentStatus: 'payment_received', items: [{ name: 'Armor', qty: 1, filType: 'black' }] };
+    db.jobs['lee2'] = { id: 'lee2', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(900), phase: 'delivered', paymentStatus: 'payment_received', items: [{ name: 'Old mount', qty: 1, filType: 'black' }] };
+    db.jobs['pri'] = { id: 'pri', clientName: 'Priya', clientEmail: 'priya@example.com', createdAt: ago(300), phase: 'quote_sent', paymentStatus: 'unpaid', items: [{ name: 'Plant pot', qty: 1, filType: 'black', minutes: 30, grams: 10 }] };
+    db.jobs['pay'] = { id: 'pay', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(200), phase: 'order_received', paymentStatus: 'deposit_received', depositAt: ago(100), items: [{ name: 'Bracket', qty: 1, filType: 'black' }] };
+    db.jobs['wait'] = { id: 'wait', clientName: 'Wes', clientEmail: 'wes@example.com', createdAt: ago(200), phase: 'order_received', paymentStatus: 'payment_requested', items: [{ name: 'Hook', qty: 1, filType: 'black' }] };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    const row = email => owner.textContent(`.cust-row:has-text("${email}")`);
+    // "Needs me" is the starting view: Priya (quote sent) and Wes (waiting for a deposit) only wait on their customers
+    const listed = await owner.$$eval('.cust-row', rows => rows.map(r => r.textContent));
+    assert(listed.length === 3 && !listed.some(t => /priya|wes@/.test(t)), 'only customers who need me should be listed at first: ' + listed.join(' | '));
+    assert(/Ship it/.test(await row('lee@example.com')) && /2|1/.test(await owner.textContent('.cust-row:has-text("lee@example.com") .cust-dot')), 'Lee: ship it');
+    assert(/Print it/.test(await row('pat@example.com')), 'Pat: deposit paid, so print it');
+    assert(/New request/.test(await row('jane@example.com')), 'Jane: new request');
+    // sorted: most things needing you first
+    assert(await owner.$eval('.cust-row', r => /jane@example\.com/.test(r.textContent)), 'the customer with the most red should come first');
+    const nav = await owner.textContent('nav.nav .nav-badge');
+    assert(Number(nav) === (await owner.$$eval('.cust-dot:not(.grey)', ds => ds.reduce((n, d) => n + Number(d.textContent), 0))), 'the Orders tab number should add up the red numbers');
+    // All: grey rows with a dash and no number
+    await owner.click('.cust-filter:has-text("All")');
+    assert((await owner.$$('.cust-row')).length === 5 && /Quote sent/.test(await row('priya@example.com')) && (await owner.textContent('.cust-row:has-text("priya@example.com") .cust-dot')) === '–', 'All should list everyone; waiting-on-them customers show a dash');
+    assert(/Waiting for deposit/.test(await row('wes@example.com')), 'Wes waits on a deposit');
+    // search
+    await owner.fill('#cust-q', 'plant');
+    await owner.waitForFunction(() => document.querySelectorAll('.cust-row').length === 1);
+    assert(/priya/.test(await owner.textContent('.cust-row')), 'searching an item name finds its customer');
+    await owner.fill('#cust-q', '');
+    await owner.waitForFunction(() => document.querySelectorAll('.cust-row').length === 5);
+    // opening a customer shows their notes and their orders as full cards; finished ones are folded
+    await owner.click('.cust-row:has-text("lee@example.com")');
+    assert(await owner.locator('#order-lee1').isVisible() && !(await owner.locator('#order-lee2').isVisible()), 'open orders show, finished orders are folded');
+    await owner.click('.finished-orders > summary');
+    assert(await owner.locator('#order-lee2').isVisible(), 'the Finished orders fold opens');
+    await owner.close();
+  });
+  await check('Customers on a phone: the list first, a customer on tap, a way back; a link to an order opens its customer', async () => {
+    const db = fixtures();
+    db.jobs['lee2'] = { id: 'lee2', clientName: 'Lee', clientEmail: 'lee@example.com', createdAt: ago(900), phase: 'delivered', paymentStatus: 'payment_received', items: [{ name: 'Old mount', qty: 1, filType: 'black' }] };
+    const owner = await open(db, { width: 390, height: 800 });
+    await owner.evaluate(asOwner('dashboard'));
+    assert(await owner.locator('.cust-list').isVisible() && !(await owner.locator('.cust-detail').isVisible()), 'a phone starts on the list');
+    await owner.click('.cust-row >> nth=0');
+    assert(!(await owner.locator('.cust-list').isVisible()) && await owner.locator('.cust-detail').isVisible(), 'tapping a customer shows them');
+    await owner.click('.cust-back');
+    assert(await owner.locator('.cust-list').isVisible(), 'the back button returns to the list');
+    // a link (or notification) to a finished order opens its customer and the folded list
+    await owner.evaluate(showOrder('lee2'));
+    assert(await owner.locator('#order-lee2').isVisible() && !(await owner.locator('.cust-list').isVisible()), 'an order link opens that customer with the order in view');
+    assert(await owner.evaluate(() => !document.documentElement.scrollWidth || document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), 'no sideways scrolling on a phone');
+    await owner.close();
+  });
+  await check('Money & Sales lists every order by date, newest first, and Open jumps to the customer', async () => {
+    const db = fixtures();
+    db.jobs['old'] = { id: 'old', clientName: 'Olive', clientEmail: 'olive@example.com', createdAt: ago(60 * 24 * 40), phase: 'delivered', paymentStatus: 'payment_received', items: [{ name: 'Old coaster', qty: 1, filType: 'black', minutes: 20, grams: 8 }] };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('money'));
+    await owner.waitForSelector('#all-orders');
+    const dates = await owner.$$eval('#all-orders tbody tr td:first-child', tds => tds.map(t => Date.parse(t.textContent)));
+    assert(dates.length >= 4 && dates.every((d, i) => i === 0 || d <= dates[i - 1] + 864e5), 'newest first: ' + dates.join());
+    await owner.fill('#all-orders-q', 'coaster');
+    await owner.waitForFunction(() => document.querySelectorAll('#all-orders tbody tr').length === 1);
+    await owner.click('#all-orders tbody button');
+    await owner.waitForSelector('#order-old');
+    assert(await owner.evaluate(() => state.ownerTab === 'dashboard' && state.selectedClient === 'olive@example.com') && await owner.locator('#order-old').isVisible(), 'Open should show the order inside its customer');
+    await owner.close();
+  });
   await check('a new request gets its own private key and shows in My Requests straight away', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -660,6 +730,7 @@ const STATES = {
         extraColors: [{ name: 'Red', filType: 'color', colorId: 'red', grams: 5, parts: 'Letters' }],
         designParts: [{ id: 'p1', name: 'Plate', grams: 30, colorId: 'black', include: true }, { id: 'p2', name: 'Letters', grams: 5, colorId: 'red', include: true }] }] };
     await owner.evaluate(asOwner('dashboard'));
+    await owner.evaluate(showOrder('pe'));
     const card = await owner.textContent('#order-pe');
     assert(/Red: 5\.0 g × \$0\.044/.test(card) && /Black: 30\.0 g × \$0\.024/.test(card), 'order card should show each color and its price');
     await owner.click('#edit-request-pe');
@@ -887,6 +958,7 @@ const STATES = {
     const redItem = { filType: 'color', colorId: 'red', color: 'Red' };
     assert(await price(redItem) === 6.84 && await price({ filType: 'color', colorId: 'black', color: 'Black' }) === 5.84, 'red should cost 0.034/g, black 0.024/g');
     await page.evaluate(asOwner('dashboard'));
+    await page.evaluate(showOrder('e2'));
     assert(/\$0\.034\/g/.test(await page.textContent('#order-e2')), 'owner card should show the color rate');
     await page.click('#approve-btn-e2');
     await page.waitForTimeout(300);
@@ -910,11 +982,12 @@ const STATES = {
     db.jobs['bad3'] = { id: 'bad3', clientName: 'Sam', clientEmail: 'sam@example.com', createdAt: ago(30), phase: 'estimate', items: [{ ...item, grams: 10 }] };
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
-    const text = id => page.textContent(`#order-${id} .roll-check`);
+    const text = async id => { await page.evaluate(i => focusOwnerOrder(i), id); return page.textContent(`#order-${id} .roll-check`); };
     // ok1 and bad1 both draw on r1 (500 g left after r2); each is checked against the other's use too.
     assert(/Needs 600 g but their Red TPU roll has 50 g left/.test(await text('bad1')), await text('bad1'));
     assert(/No Blue PLA roll|expired/.test(await text('bad2')), await text('bad2'));
     assert(/No Red TPU roll found/.test(await text('bad3')), await text('bad3'));
+    await page.evaluate(showOrder('bad1'));
     assert(await page.inputValue('#special-cost-bad1') === '20.00', 'a roll problem should pre-fill a new roll charge');
     await page.close();
   });
@@ -924,6 +997,7 @@ const STATES = {
       items: [{ name: 'Vase', qty: 1, filType: 'special_order', specialColor: 'Red TPU', grams: 10 }] };
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
+    await page.evaluate(showOrder('s1'));
     assert(await page.inputValue('#special-cost-s1') === '20.00', 'cost should default to $20');
     await page.fill('#hours-s1-0', '1');
     await page.fill('#special-cost-s1', '18');
@@ -1095,6 +1169,7 @@ const STATES = {
     db.jobs['2'].phase = 'delivered';
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
+    await page.evaluate(showOrder('2'));
     await page.setInputFiles('#finished-2', { name: 'done.png', mimeType: 'image/png', buffer: PNG });
     for (let t = 0; t < 40 && !(db.jobs['2'].finishedPhotos || []).length; t++) await page.waitForTimeout(100);
     assert(db.uploads.some(u => u.startsWith('gallery/orders/2-')) && db.jobs['2'].finishedPhotos[0].includes('/storage/v1/object/public/gallery/orders/2-'), JSON.stringify(db.jobs['2'].finishedPhotos));
@@ -1156,15 +1231,13 @@ const STATES = {
     assert(await page.locator('#faq-list').count() === 1 && await page.locator('.faq').count() === 1, 'FAQ page should show the FAQ once');
     await page.close();
   });
-  await check('owner menu: Clients and Numbers sit inside Orders, Calculator & Models inside Designs', async () => {
+  await check('owner menu: Customers and Fix numbers sit inside Orders, Calculator & Models inside Designs', async () => {
     const owner = await open(fixtures());
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
     assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Change Password', tabs.join('|'));
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|By customer|Fix numbers', 'Orders sub-menu');
-    await owner.click('.sub-tab:has-text("By customer")');
-    await owner.waitForSelector('#client-notes');
-    await owner.click('.sub-tab:has-text("Orders")');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Customers|Fix numbers', 'Orders sub-menu');
+    await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.locator('button:has-text("Fix numbers")').nth(1).click();
     await owner.waitForSelector('.card[id^="numbers-"]');
     assert(await owner.locator('.card[id^="numbers-"]').count() === 1, 'the order card button should open just that order');
@@ -1312,6 +1385,7 @@ const STATES = {
     const quoted = await page.evaluate(() => batchTotal(state.batches.find(b => b.id === '1')));
     assert(Math.abs(quoted - 9.28) < 1e-9, `a quote sent before the change moved to ${quoted}`);
     await page.evaluate(() => setOwnerTab('dashboard'));
+    await page.evaluate(showOrder('s1'));
     await page.fill('#hours-s1-0', '1');
     await page.click('#approve-btn-s1');
     await page.waitForTimeout(300);
@@ -1525,6 +1599,7 @@ const STATES = {
       items: [{ name: 'Bracket', mode: 'idea', notes: 'Can it be red TPU?', qty: 1, filType: 'color', colorId: 'black', color: 'Black' }] };
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
+    await owner.evaluate(showOrder('e1'));
     await owner.click('#edit-request-e1');
     await owner.fill('#oe-name-0', 'Wall bracket');
     await owner.fill('#oe-notes-0', 'Red TPU, thicker arm');
@@ -1792,7 +1867,10 @@ const STATES = {
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
     assert(/Queue:\s+3 confirmed orders \(1 custom\)/.test(await owner.textContent('main')) && /2 waiting for a deposit/.test(await owner.textContent('main')), `owner queue summary: ${(await owner.textContent('main')).match(/Queue:[^.]*\./)}`);
-    assert(/#1 in line/.test(await owner.textContent('#order-q1')) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
+    await owner.evaluate(showOrder('q1'));
+    const q1card = await owner.textContent('#order-q1');
+    await owner.evaluate(showOrder('1'));
+    assert(/#1 in line/.test(q1card) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
     await owner.selectOption('#order-1 .owner-batch-controls select >> nth=1', 'deposit_received');
     await owner.waitForTimeout(300);
     assert(db.jobs['1'].depositAt && db.jobs['1'].depositAmount === 6.96, JSON.stringify(db.jobs['1']));
@@ -1991,6 +2069,7 @@ const STATES = {
       items: [{ name: 'Phone stand', qty: 2, filType: 'black', notes: 'Fits an iPad?' }] };
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
+    await page.evaluate(showOrder('9'));
     await page.click('#details-open-9');
     await page.fill('#details-q-9', 'Which iPad model?');
     const body = await page.inputValue('#details-body-9');
@@ -2025,8 +2104,11 @@ const STATES = {
     await owner.evaluate(asOwner('dashboard'));
     const chip = await owner.evaluate(() => finalPaymentChip({ ...state.batches[0], phase: 'final_payment_needed', paymentStatus: 'deposit_received', depositAmount: 1, ownerPrice: null }));
     assert(/Waiting for \$\d+\.\d\d \(includes \$15\.00 shipping deposit\)/.test(chip), chip);
-    await owner.waitForSelector('.waiting-banner');
-    assert(/1 conversation is waiting on you/.test(await owner.textContent('.waiting-banner')), await owner.textContent('.waiting-banner'));
+    await owner.waitForSelector('.cust-row.need');
+    const janeRow = await owner.textContent('.cust-row.need');
+    assert(/jane@example\.com/.test(janeRow) && /Customer wrote/.test(janeRow), 'the customer who wrote should have a red number and a Customer wrote chip: ' + janeRow);
+    assert(/1 customer needs you/.test(await owner.textContent('.owner-page-header')) && await owner.locator('nav.nav .nav-badge').count() === 1, 'the Orders tab and header should say who needs you');
+    await owner.evaluate(showOrder('1'));
     assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
     const thread = await owner.textContent('#conv-1');
     assert(/Can it be blue\?/.test(thread) && /by email/.test(thread) && /Your SoloPrint quote/.test(thread), thread);
@@ -2041,7 +2123,7 @@ const STATES = {
     await owner.waitForTimeout(300);
     const sent = db.messages[db.messages.length - 1];
     assert(sent.sender === 'owner' && sent.via === 'site' && sent.job_id === '1' && sent.body === 'Yes, blue works.', JSON.stringify(sent));
-    assert(/Waiting on customer/.test(await owner.textContent('#order-1 .job-title')) && !(await owner.$('.waiting-banner')), 'now waiting on the customer');
+    assert(/Waiting on customer/.test(await owner.textContent('#order-1 .job-title')) && !/Customer wrote/.test(await owner.textContent('.cust-list')), 'now waiting on the customer');
     assert(await owner.inputValue('#msg-text-1') === '', 'no default text once you have written');
     const editable = Object.keys(db.jobs).find(id => ['estimate', 'details_check', undefined].includes(db.jobs[id].phase));
     if (await owner.$(`#chat-edit-${editable}`)) {
@@ -2053,7 +2135,9 @@ const STATES = {
       await owner.waitForTimeout(300);
       assert(!(await owner.$('.chat-edit')), 'saving closes the edit form');
     } else throw new Error('no order with an "Edit their request" button');
-    await owner.evaluate(asOwner('clients'));
+    await owner.evaluate(asOwner('clients'));   // the old tab name still opens Customers
+    await owner.evaluate(showOrder('1'));
+    await owner.click('.client-notes > summary');
     await owner.waitForSelector('#client-notes');
     await owner.fill('#client-notes', 'Prefers pickup.');
     await owner.fill('#client-issues', 'Paid late once.');
