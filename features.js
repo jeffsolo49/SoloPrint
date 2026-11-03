@@ -607,6 +607,24 @@ function emailForPhase(b, phase) {
     final_payment_needed: 'the "printing is done" email, which asks for the rest and the shipping deposit',
     delivered: 'the "order shipped" email with tracking, invoice and refund note' }[phase] || '';
 }
+// What a payment is expected to be: the starting amount offered when you mark it received (you can change it).
+function expectedPayment(b, status) {
+  const total = orderSum(b), rules = rulesFor(b);
+  if (status === 'deposit_received') return depositAmount(b, total, rules);
+  if (Number(b.balancePaid) > 0) return Number(b.balancePaid);
+  const done = phaseIndex(b.phase || 'estimate') >= phaseIndex('final_payment_needed');
+  if (b.paymentStatus === 'deposit_received') return done ? finalPayment(b, total, rules).remainder : amountLeft(b, total, rules);
+  return done ? balanceDue(b, total, rules) : total;
+}
+// Asks how much they paid. The customer's receipt email says this amount, so it has to be right. null = cancelled, NaN = not an amount.
+function askPaymentAmount(b, status) {
+  const what = status === 'deposit_received' ? 'deposit' : 'payment';
+  const start = Math.max(0, Math.round(expectedPayment(b, status) * 100) / 100);
+  const answer = prompt(`How much did ${b.clientName || 'the customer'} pay? Copy the amount from your Venmo app. Their ${what} receipt email says this amount.`, start.toFixed(2));
+  if (answer === null) return null;
+  const n = Math.round(parseFloat(String(answer).replace(/[$,\s]/g, '')) * 100) / 100;
+  return n > 0 ? n : NaN;
+}
 function emailForPayment(b, status) {
   if (isPaidInFull(b)) return '';
   return { deposit_received: 'a "deposit received" receipt', payment_received: 'a "payment received" receipt' }[status] || '';
@@ -627,10 +645,10 @@ function renderEmailGuide() {
       <tbody>
       ${row('You have read the request and the quote is right.', 'Save All &amp; Notify Client', 'The quote email, with a link to approve.')}
       ${row('You need answers before you can quote (optional).', 'Confirm details with the customer, then Send email', 'The email you wrote and checked, exactly as shown.')}
-      ${row('They approved the quote and you can make it.', 'Order Phase: Confirmed &amp; Printing', 'The order-confirmed email, asking for the deposit.')}
-      ${row('Their Venmo deposit shows in your Venmo app.', 'Payment Status: Deposit Received', 'A deposit receipt. Their place in line starts now.')}
+      ${row('They tap Looks good on their quote.', 'Nothing: it happens by itself (Settings > Show or hide can turn this off)', 'The order-confirmed email, asking for the deposit. You get a notice with a link to the order.')}
+      ${row('Their Venmo deposit shows in your Venmo app.', 'Payment Status: Deposit Received, then type the amount they paid', 'A deposit receipt that says how much they paid. Their place in line starts now. No amount, no email.')}
       ${row('The print is finished and photographed.', 'Order Phase: Printing Complete', 'The printing-done email: the rest plus the shipping deposit, and a request for their shipping address.')}
-      ${row('Their Venmo for the rest and the shipping deposit shows in your Venmo app, and you have their address.', 'Payment Status: Payment Received, then Order Phase: Ready to Ship', 'A payment receipt (one email, however you get there).')}
+      ${row('Their Venmo for the rest and the shipping deposit shows in your Venmo app, and you have their address.', 'Payment Status: Payment Received (type the amount they paid), then Order Phase: Ready to Ship', 'A payment receipt that says how much they paid (one email, however you get there). No amount, no email.')}
       ${row('You have mailed the package and have the tracking number.', 'Ready to Ship box: enter tracking and postage, then Save tracking and mark Shipped', 'The order-shipped email with tracking, invoice and refund note. Then send the refund by Venmo yourself.')}
       ${row('Tracking or the ship date changed after shipping.', 'Save shipping details on a Shipped order', 'A short shipping update email.')}
       ${row('You just want to say something, ask a question or answer one.', 'Conversation: Send message', 'Your own words by email (with your footer) and on their order page. It never changes the order or sends a form email.')}
@@ -1149,6 +1167,15 @@ function oeItemSet(i, field, value, redraw) {
   it[field] = value;
   if (redraw) render(); else updateOeEstimate(i);
 }
+// Print time is typed as hours and minutes, like everywhere else on the site; the item keeps the total minutes.
+function oeTime(i) {
+  const it = oeItem(i);
+  if (!it) return;
+  const h = (document.getElementById(`oe-hours-${i}`) || { value: '' }).value;
+  const m = (document.getElementById(`oe-minutes-${i}`) || { value: '' }).value;
+  it.minutes = totalPrintMinutes(h, m);
+  updateOeEstimate(i);
+}
 function oeMode(i, mode) {
   const it = oeItem(i);
   if (!it) return;
@@ -1266,9 +1293,15 @@ function renderOwnerEditItem(it, i, count) {
         <input type="number" id="oe-grams-${i}" value="${esc(it.grams || '')}" min="0" step="0.1" oninput="oeItemSet(${i}, 'grams', this.value)" />
       </div>
     </div>
-    <div class="field" style="max-width:220px;">
-      <label for="oe-minutes-${i}">Print time, minutes (optional)</label>
-      <input type="number" id="oe-minutes-${i}" value="${esc(it.minutes || it.knownMinutes || '')}" min="0" step="1" oninput="oeItemSet(${i}, 'minutes', this.value)" />
+    <div class="row2" style="max-width:340px;">
+      <div class="field">
+        <label for="oe-hours-${i}">Print time: hours (optional)</label>
+        <input type="number" id="oe-hours-${i}" value="${esc(hoursFromMinutes(it.minutes || it.knownMinutes))}" min="0" step="1" oninput="oeTime(${i})" />
+      </div>
+      <div class="field">
+        <label for="oe-minutes-${i}">Minutes</label>
+        <input type="number" id="oe-minutes-${i}" value="${esc(minuteRemainder(it.minutes || it.knownMinutes))}" min="0" max="59" step="1" oninput="oeTime(${i})" />
+      </div>
     </div>
     ${(it.designParts || []).length ? renderOePartColors(it, i) : `<div class="field">
       <label for="oe-color-${i}">Color</label>
@@ -1751,6 +1784,7 @@ const FEATURE_SWITCHES = [
   ['reviews', 'Reviews (home page, design pages, and the review form)'],
   ['faq', 'FAQ at the bottom of the home page'],
   ['queue', 'Order queue and wait estimates'],
+  ['autoDeposit', 'Send the deposit request as soon as a customer taps "Looks good" (off: you confirm each order yourself first)'],
   ['orderAgain', '"Order again" button'],
   ['leftoverRolls', '"Your leftover rolls" card on My Requests'],
   ['videos', 'Videos on design pages'],
@@ -2004,6 +2038,7 @@ function renderOeEstimate(it) {
   const per = printPrice(minutes, grams, it, rules);
   return `<div class="price-big">$${(per * qty).toFixed(2)}</div>
     <div class="field-help">$${per.toFixed(2)} each${qty > 1 ? ` × ${qty}` : ''} · ${fmtTime(minutes)} · today's prices, including each color's own price per gram${usesSpecialSpool(it) ? ' (plus the special order roll)' : ''}.</div>
+    <div class="price-breakdown">${priceBreakdown(minutes, grams, colorsRate(it, rules, grams), qty, rules)}</div>
     ${renderColorLines(it, grams, rules)}`;
 }
 function updateOeEstimate(i) {
@@ -2974,7 +3009,11 @@ function practiceVars() {
   return vars;
 }
 function practiceEmail(key, toOwner = false) {
-  const tpl = emailTemplate(key, state.settings.emails || {}), vars = practiceVars();
+  const tpl = emailTemplate(key, state.settings.emails || {}), vars = practiceVars(), o = state.practice.order;
+  vars.ownerLink = '(link that opens this order in owner mode)';
+  vars.approvalNote = o.phase === 'order_received' ? 'I sent them the deposit request automatically, so there is nothing to confirm.' : 'Confirm the order on your dashboard when you know you can make it.';
+  if (key === 'deposit') vars.amountPaid = (Number(o.depositAmount) || 0).toFixed(2);
+  if (key === 'payment') vars.amountPaid = (Number(o.balancePaid) || 0).toFixed(2);
   practiceSay('owner', 'auto', renderEmailText(tpl.body, vars), renderEmailText(tpl.subject, vars).replace(/\s*\n\s*/g, ' '), toOwner);
 }
 // Every change goes through here, so the emails it would send appear in the chat.
@@ -3032,10 +3071,15 @@ function practicePhase(phase) {
 function practicePayment(status) {
   const o = state.practice && state.practice.order;
   if (!o || !canAdvancePayment(o.paymentStatus, status)) { render(); return; }
+  let amount = 0;
+  if (status === 'deposit_received' || status === 'payment_received') {
+    amount = askPaymentAmount(o, status);
+    if (!(amount > 0)) { if (amount !== null) alert('Type the amount they paid, like 45.00. Nothing was changed and no email was sent.'); render(); return; }
+  }
   practiceChange(x => {
     x.paymentStatus = status;
-    if (status === 'deposit_received' && !x.depositAt) { x.depositAt = new Date().toISOString(); x.depositAmount = depositAmount(x, orderSum(x), rulesFor(x)); }
-    if (status === 'payment_received' && !x.paidAt) x.paidAt = new Date().toISOString();
+    if (status === 'deposit_received') { if (!x.depositAt) x.depositAt = new Date().toISOString(); x.depositAmount = amount; }
+    if (status === 'payment_received') { x.balancePaid = amount; if (!x.paidAt) x.paidAt = new Date().toISOString(); }
   });
 }
 function practiceSaveTracking() {
@@ -3065,7 +3109,12 @@ function practiceMessage(sender) {
   document.getElementById(id)?.focus();
 }
 // Customer side
-function practiceApprove() { practiceChange(o => { o.customerApprovedAt = new Date().toISOString(); }); }
+function practiceApprove() {
+  practiceChange(o => {
+    o.customerApprovedAt = new Date().toISOString();
+    if (featureOn('autoDeposit') && o.phase === 'quote_sent') { o.phase = 'order_received'; stampPhase(o, 'order_received'); }   // like the real site
+  });
+}
 function practicePay(amount) { practiceSay('customer', 'site', `I just sent $${amount.toFixed(2)} on Venmo.`); render(); }
 
 function renderPracticeCustomer() {

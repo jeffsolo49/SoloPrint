@@ -96,7 +96,7 @@ function messageEmail(msg, rec, site) {
   }
   const name = String(rec.clientName || '').trim() || 'A customer';
   return { to: OWNER_EMAIL, replyTo: customer || OWNER_EMAIL, subject: messageTag(rec) + ' Message from ' + name + ': ' + orderTitle(rec),
-    body: name + (customer ? ' (' + customer + ')' : '') + ' wrote on their order page:\n\n' + text + '\n\nReply to this email, or on the order in your dashboard: ' + SITE_URL };
+    body: name + (customer ? ' (' + customer + ')' : '') + ' wrote on their order page:\n\n' + text + '\n\nReply to this email, or open the order in owner mode: ' + ownerLink(rec) };
 }
 // The shop's emails to the customer go on the order's conversation. Never stops an email from sending.
 function logSentEmails(rec, emails) {
@@ -514,12 +514,15 @@ function reminderEmails(records, custom, site) {
 
 // The customer's private link to this order. The long random key in it (made by the database, supabase/order-links.sql)
 // is what opens the order; an email address alone opens nothing. Without a key it opens the "email me my links" page.
-const ORDER_KEY = /^[A-Za-z0-9_-]{32,128}$/;
+const ORDER_KEY = /^[A-Za-z0-9_-]{10,128}$/;
 function orderLink(rec) {
-  const at = rec.id ? '#order-' + encodeURIComponent(String(rec.id)) : '';
   return ORDER_KEY.test(String(rec.accessToken || ''))
-    ? SITE_URL + '/?order=' + String(rec.accessToken) + at
-    : SITE_URL + '/?links=' + encodeURIComponent(String(rec.clientEmail || '')) + at;
+    ? SITE_URL + '/?o=' + String(rec.accessToken)
+    : SITE_URL + '/?links=' + encodeURIComponent(String(rec.clientEmail || ''));
+}
+// Opens this order in owner mode. It grants nothing: the site still asks for your password first.
+function ownerLink(rec) {
+  return SITE_URL + '/?admin=' + encodeURIComponent(String(rec.id || ''));
 }
 
 // "Email me my links": one email listing the private link of each order on that address.
@@ -570,10 +573,18 @@ function emailsFor(type, rec, old, custom, site) {
   const emails = [];
   const customer = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(rec.clientEmail || '')) ? String(rec.clientEmail) : '';
   const vars = emailVars(rec, custom, site);
-  const send = (key, to) => {
+  const send = (key, to, extra) => {
     if (!to) return;
     const t = emailTemplate(key, custom);
-    emails.push({ to, kind: key, subject: renderEmailText(t.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, vars) });
+    const v = extra ? Object.assign({}, vars, extra) : vars;
+    emails.push({ to, kind: key, subject: renderEmailText(t.subject, v).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, v) });
+  };
+  // A payment receipt must say how much they paid. Without an amount on the order nothing is sent to the customer, and you are told.
+  const sendPaid = (key, amount, what) => {
+    if (!customer) return;
+    if (Number(amount) > 0) { send(key, customer, { amountPaid: money(Number(amount)) }); return; }
+    emails.push({ to: OWNER_EMAIL, kind: 'owner_notice', subject: 'The ' + what + ' email was NOT sent: no amount on the order',
+      body: 'I did not email ' + (String(rec.clientName || '').trim() || 'the customer') + ' about their ' + what + ' because no amount is on the order.\nOpen it and send them a message with the amount instead:\n' + ownerLink(rec) });
   };
 
   if (type === 'INSERT') {
@@ -599,8 +610,8 @@ function emailsFor(type, rec, old, custom, site) {
 
   if (rec.customerApprovedAt && !old.customerApprovedAt) send('owner_approved', OWNER_EMAIL);
 
-  if (rec.paymentStatus === 'deposit_received' && old.paymentStatus !== 'deposit_received' && !isPaidInFull(old)) send('deposit', customer);
-  if (isPaidInFull(rec) && !isPaidInFull(old)) send('payment', customer);
+  if (rec.paymentStatus === 'deposit_received' && old.paymentStatus !== 'deposit_received' && !isPaidInFull(old)) sendPaid('deposit', rec.depositAmount, 'deposit received');
+  if (isPaidInFull(rec) && !isPaidInFull(old)) sendPaid('payment', rec.balancePaid, 'payment received');
   return emails;
 }
 
@@ -644,7 +655,9 @@ function emailVars(rec, custom, site) {
     delivery: deliveryLines(rec).filter(Boolean).join('\n'),
     photo: (Array.isArray(rec.finishedPhotos) ? rec.finishedPhotos : []).filter(u => /^https:\/\//.test(String(u)))[0] || '',
     vacationNote: vacationText(site && site.vacation),
-    reviewLink: orderLink(rec).replace('#order-', '&review=' + encodeURIComponent(String(rec.id || '')) + '#order-'),
+    reviewLink: orderLink(rec) + '&review=1',
+    ownerLink: ownerLink(rec),
+    approvalNote: rec.customerApprovedAt && rec.phase === 'order_received' ? 'I sent them the deposit request automatically, so there is nothing to confirm.' : 'Confirm the order on your dashboard when you know you can make it.',
     siteLink: SITE_URL
   };
   vars.detailsItems = [vars.itemsWithPrices, vars.specialRoll ? 'Special order roll: $' + vars.specialRoll : '', vars.extraCharges,
@@ -724,12 +737,12 @@ const EMAIL_TEMPLATES = {
   owner_new: {
     label: 'New request', to: 'You', when: 'A customer sends a request.',
     subject: 'New SoloPrint request from {customerName}',
-    body: 'Customer: {customerName}\nEmail: {customerEmail}\nSubmitted: {submitted}\nAutomated estimate: ${estimate} (review and send the quote from your dashboard)\n\n{items}'
+    body: 'Customer: {customerName}\nEmail: {customerEmail}\nSubmitted: {submitted}\nAutomated estimate: ${estimate} (review and send the quote from your dashboard)\n\n{items}\n\nOpen it in owner mode (you log in with your password): {ownerLink}'
   },
   customer_received: {
     label: 'Request received', to: 'Customer', when: 'Right after they send a request.',
     subject: 'We received your SoloPrint request',
-    body: "Hi {name},\n\nThanks for your request for {title}. We've received your submission and will respond promptly after reviewing it.\n\n{vacationNote}\n\n{items}\n\nAutomated estimate: ${estimate}\nAny prices shown on the site are automated estimates, not exact costs. We'll email your confirmed quote once we've reviewed your request.\n\n{footer}"
+    body: "Hi {name},\n\nThanks for your request for {title}. We've received your submission and will respond promptly after reviewing it.\n\n{vacationNote}\n\n{items}\n\nAutomated estimate: ${estimate}\nAny prices shown on the site are automated estimates, not exact costs. Shipping is not included: it depends on where you live, and I work it out when your order is done. We'll email your confirmed quote once we've reviewed your request.\n\n{footer}"
   },
   details_check: {
     label: 'Confirm details', to: 'Customer', when: 'You tap "Confirm details" on a request. You see the email and can edit it before it sends.',
@@ -739,20 +752,20 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nShipping is not included in this total. It depends on where you live: with your final payment I collect a ${shippingDeposit} shipping deposit and refund whatever the postage doesn\'t use.\n\nIf it looks good, tap "Looks good" here: {orderLink}\nTapping it confirms your details, and I\'ll send you the deposit request right away. Nothing is charged until you pay it. Questions? Just reply to this email.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
     subject: 'Still interested? Your SoloPrint quote is waiting',
-    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until we\'ve both confirmed the order.\n\n{footer}'
+    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until you tap Looks good and pay the deposit.\n\n{footer}'
   },
   owner_approved: {
     label: 'Quote approved', to: 'You', when: 'The customer taps "Looks good" on their quote.',
     subject: '{customerName} approved their quote',
-    body: '{customerName} ({customerEmail}) approved the quote of ${total} for {title}.\nConfirm the order on your dashboard when you know you can make it.'
+    body: '{customerName} ({customerEmail}) approved the quote of ${total} for {title}.\n{approvalNote}\n\nOpen it in owner mode (you log in with your password): {ownerLink}'
   },
   confirmed: {
-    label: 'Order confirmed (printing)', to: 'Customer', when: 'You move the order to Confirmed & Printing (after you know you can make it).',
+    label: 'Order confirmed (printing)', to: 'Customer', when: 'The customer taps "Looks good" (or you move the order to Confirmed & Printing yourself).',
     subject: 'Your SoloPrint order is confirmed',
     body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nTo get in line, please pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo: {depositLink}\nOr pay everything now: {venmoLink}\n(The links fill in the amount and your order number.)\n\n{footer}'
   },
@@ -772,14 +785,14 @@ const EMAIL_TEMPLATES = {
     body: 'Hi {name},\n\nHere are the delivery details for {title}:\n\n{delivery}\n\n{footer}'
   },
   deposit: {
-    label: 'Deposit received', to: 'Customer', when: 'You mark the deposit received. Their place in line is set now.',
+    label: 'Deposit received', to: 'Customer', when: 'You mark the deposit received and confirm how much they paid (no email goes out until you do). Their place in line is set now.',
     subject: 'Deposit received for your SoloPrint order',
-    body: 'Hi {name},\n\nWe received your deposit for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready. Pay with Venmo: {venmoLink}\n\n{footer}'
+    body: 'Hi {name},\n\nWe received your deposit of ${amountPaid} for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready. Pay with Venmo: {venmoLink}\n\n{footer}'
   },
   payment: {
-    label: 'Payment received', to: 'Customer', when: 'You mark the payment received.',
-    subject: 'Payment received, thank you!',
-    body: 'Hi {name},\n\nWe received your payment for {title}. Thank you!\n\n{footer}'
+    label: 'Payment received', to: 'Customer', when: 'You mark the payment received and confirm how much they paid (no email goes out until you do).',
+    subject: 'Payment of ${amountPaid} received, thank you!',
+    body: 'Hi {name},\n\nWe received your payment of ${amountPaid} for {title}. Thank you!\n\n{footer}'
   },
   review_request: {
     label: 'Review request', to: 'Customer', when: "A week after an order is delivered (sent once). Reviews wait for your approval in Settings > Reviews.",
@@ -828,6 +841,9 @@ const EMAIL_PLACEHOLDERS = {
   remainderLink: 'Venmo link with the remainder filled in',
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
+  ownerLink: 'Link that opens this order in owner mode (you still log in with your password)',
+  amountPaid: 'Deposit and payment received emails: how much they paid (you confirm it when you mark the payment)',
+  approvalNote: 'Quote approved email: says whether the deposit request was sent automatically',
   delivery: 'Ship date, tracking number and notes',
   materialNote: 'Your material note from Settings > Wording (e.g. "All prints are PLA...")',
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',
@@ -1268,4 +1284,4 @@ function formatDate(iso) {
   return isNaN(d) ? '' : d.toLocaleString('en-US', { timeZone: 'America/Chicago' });
 }
 
-if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview, reminderEmails, orderLink, linksEmail };
+if (typeof module !== 'undefined') module.exports = { emailsFor, parseMakerWorldDesign, parsePagePreview, reminderEmails, orderLink, ownerLink, linksEmail };

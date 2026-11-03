@@ -2,22 +2,41 @@
 -- Run after all the other files (it replaces the customer functions that used to look orders up by email).
 -- Safe to re-run.
 --
--- Every order gets its own long random key (jobs.access_token, 64 characters). The link in each email
--- carries it (https://.../?order=<key>), and everything a customer does with an order (see it, approve the
--- quote, message you, review it) needs that key. An email address alone no longer opens anything.
+-- Every order gets its own random key (jobs.access_token, 12 characters from a 57-letter alphabet with no look-alikes,
+-- about 70 bits). The link in each email carries it (https://.../?o=<key>), and everything a customer does with an
+-- order (see it, approve the quote, message you, review it) needs that key. An email address alone opens nothing.
 -- A customer who lost their links asks for them by email; only the address on the order receives them.
+-- Earlier, longer keys (old_access_token) keep working so links already sent still open.
+--
+-- When a customer taps "Looks good" the order moves straight to Confirmed & Printing, which sends them the
+-- deposit request (turn this off in Settings > Show or hide: "Send the deposit request automatically").
 
--- 1. A key for every order, new and old. The key can't be changed afterwards, and it is copied into the
+-- 1. A key for every order, new and old. A key can't be changed afterwards, and it is copied into the
 --    order's data (as accessToken) so the email script can build links from the order it is given.
-alter table public.jobs add column if not exists access_token text;
-update public.jobs
-  set access_token = replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '')
-  where access_token is null;
-alter table public.jobs alter column access_token set default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
-alter table public.jobs alter column access_token set not null;
-create unique index if not exists jobs_access_token_key on public.jobs (access_token);
-
 create schema if not exists private;
+
+create or replace function private.new_order_key()
+returns text
+language plpgsql
+volatile
+as $$
+declare
+  alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  bytes bytea := decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
+  out text := '';
+  i int;
+begin
+  for i in 0..11 loop
+    out := out || substr(alphabet, (get_byte(bytes, i) % length(alphabet)) + 1, 1);
+  end loop;
+  return out;
+end;
+$$;
+
+alter table public.jobs add column if not exists access_token text;
+alter table public.jobs add column if not exists old_access_token text;
+alter table public.jobs alter column access_token drop default;
+
 create or replace function private.keep_access_token()
 returns trigger
 language plpgsql
@@ -27,8 +46,9 @@ as $$
 begin
   if tg_op = 'UPDATE' then
     new.access_token := old.access_token;
+    new.old_access_token := old.old_access_token;
   elsif coalesce(new.access_token, '') = '' then
-    new.access_token := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+    new.access_token := private.new_order_key();
   end if;
   new.data := new.data::jsonb || jsonb_build_object('accessToken', new.access_token);
   return new;
@@ -40,9 +60,25 @@ create trigger keep_access_token
   before insert or update on public.jobs
   for each row execute function private.keep_access_token();
 
--- Make sure every existing order's data carries its key too.
+-- Orders with no key, or with an earlier long key, get a 12-character key (the long one is kept so old links still open).
+alter table public.jobs disable trigger keep_access_token;
+update public.jobs j
+  set old_access_token = case when length(coalesce(j.access_token, '')) > 12 then j.access_token else j.old_access_token end,
+      access_token = k.key,
+      data = j.data::jsonb || jsonb_build_object('accessToken', k.key)
+  from (select id, private.new_order_key() as key from public.jobs where coalesce(access_token, '') = '' or length(access_token) > 12) k
+  where j.id = k.id;
+alter table public.jobs enable trigger keep_access_token;
+
+alter table public.jobs alter column access_token set not null;
+create unique index if not exists jobs_access_token_key on public.jobs (access_token);
+create index if not exists jobs_old_access_token_key on public.jobs (old_access_token) where old_access_token is not null;
+
+-- Make sure every order's data carries its key too.
+alter table public.jobs disable trigger keep_access_token;
 update public.jobs set data = data::jsonb || jsonb_build_object('accessToken', access_token)
   where coalesce(data->>'accessToken', '') is distinct from access_token;
+alter table public.jobs enable trigger keep_access_token;
 
 -- 2. Close the old email-only doors.
 drop function if exists public.customer_jobs(text);
@@ -95,23 +131,31 @@ set search_path = public
 as $$
   select data::jsonb
   from public.jobs
-  where access_token = any (p_tokens[1:25])
+  where access_token = any (p_tokens[1:25]) or old_access_token = any (p_tokens[1:25])
   order by created_at;
 $$;
 
--- 5. Customer: approve their own quote. Only works while the order is at "Quote Sent".
+-- 5. Customer: approve their own quote ("Looks good"). Only works while the order is at "Quote Sent". Unless the
+--    owner switched it off, the order moves straight to Confirmed & Printing, which emails the deposit request.
 create or replace function public.customer_approve_quote(p_token text)
 returns void
-language sql
+language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  auto boolean := coalesce((select (data->'features'->>'autoDeposit') is distinct from 'false' from public.site_settings where id = 1), true);
+  stamp text := to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+begin
   update public.jobs
-  set data = jsonb_set(data::jsonb, '{customerApprovedAt}',
-                       to_jsonb(to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
-  where access_token = p_token
+  set data = data::jsonb || jsonb_build_object('customerApprovedAt', stamp)
+    || case when auto then jsonb_build_object('phase', 'order_received',
+         'phaseHistory', coalesce(data->'phaseHistory', '{}'::jsonb) || jsonb_build_object('order_received', stamp))
+       else '{}'::jsonb end
+  where (access_token = p_token or old_access_token = p_token)
     and data->>'phase' = 'quote_sent'
     and coalesce(data->>'customerApprovedAt', '') = '';
+end;
 $$;
 
 -- 6. Customer: the messages on their order, and sending one (at most 20 a day per order).
@@ -125,7 +169,7 @@ as $$
   select jsonb_build_object('id', m.id, 'sender', m.sender, 'via', m.via, 'subject', m.subject, 'body', m.body, 'at', m.created_at)
   from public.order_messages m
   join public.jobs j on j.id::text = m.job_id
-  where j.access_token = p_token
+  where (j.access_token = p_token or j.old_access_token = p_token)
   order by m.created_at, m.id;
 $$;
 
@@ -140,7 +184,7 @@ begin
   if length(trim(coalesce(p_body, ''))) < 1 or length(p_body) > 5000 then
     raise exception 'message must be 1 to 5000 characters';
   end if;
-  select id::text into jid from public.jobs where access_token = p_token;
+  select id::text into jid from public.jobs where access_token = p_token or old_access_token = p_token;
   if jid is null then
     raise exception 'order not found';
   end if;
@@ -170,7 +214,7 @@ begin
   foreach ph in array coalesce(p_photos, '{}') loop
     if ph !~ '^https://[a-z0-9.-]+/storage/v1/object/public/gallery/reviews/[A-Za-z0-9_.-]+\.jpg$' then raise exception 'invalid review'; end if;
   end loop;
-  select id::text into jid from public.jobs where access_token = p_token and data->>'phase' = 'delivered';
+  select id::text into jid from public.jobs where (access_token = p_token or old_access_token = p_token) and data->>'phase' = 'delivered';
   if jid is null then
     raise exception 'order not found';
   end if;

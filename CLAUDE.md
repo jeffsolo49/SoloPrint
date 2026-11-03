@@ -57,12 +57,19 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job` (returns the new order's key), `customer_orders(keys)`,
   `customer_approve_quote`, `submit_review` (up to 2 review photos: customers upload into the gallery bucket's `reviews/` folder, allowed for anon by a storage policy in owner-tools.sql; `customer_reviews.photos`, copied to the site review on approval). Anything in an order's data is visible to that customer, so
   private owner data goes in `owner_private` (keys: `notes`, `inventory`, `money`).
-- Private order links (supabase/order-links.sql): each order has a 64-character random key (`jobs.access_token`, never changed; a trigger also
-  copies it into the order's data as `accessToken`). Emails link to `/?order=<key>#order-<id>` (Code.gs `orderLink`; site `orderLinkFor`); the site
-  keeps the keys it has seen in localStorage (`state.tokens`, `addOrderKey`) and removes the key from the address bar. Customers see, approve, message
-  and review only with a key; an email address alone opens nothing. Lost links: "Email me my links" (`request_order_links` -> `LINKS` webhook ->
-  Code.gs `linksEmail`; same answer for every address; one email per address per hour). Old `?requests=email` links open nothing and offer that form.
+- Private order links (supabase/order-links.sql): each order has a 12-character random key (`jobs.access_token`, alphabet without look-alikes,
+  never changed; a trigger also copies it into the order's data as `accessToken`; earlier long keys are kept in `old_access_token` and still open).
+  Emails link to `/?o=<key>` (Code.gs `orderLink`; site `orderLinkFor`; `&review=1` opens the review form); the site keeps the keys it has seen in
+  localStorage (`state.tokens`, `addOrderKey`) and removes the key from the address bar. Customers see, approve, message and review only with a key;
+  an email address alone opens nothing. Lost links: "Email me my links" (`request_order_links` -> `LINKS` webhook -> Code.gs `linksEmail`; same answer
+  for every address; one email per address per hour). Old `?requests=email` links open nothing and offer that form.
   Never put a customer's email in a URL, and never add a customer function that takes an email as proof.
+- Emails to the owner link to `/?admin=<order number>` (Code.gs `ownerLink`; site `handleOwnerLink`/`showPendingOwnerOrder`): it opens owner mode and,
+  after the normal password login, the order. It grants nothing by itself.
+- "Looks good" confirms the order: `customer_approve_quote` also moves it to order_received (which emails the deposit request) unless the owner switched off
+  `features.autoDeposit` (Settings > Show or hide). The Practice tab mirrors this (`practiceApprove`).
+- Payment receipts say how much was paid: marking Deposit Received or Payment Received asks for the amount first (`askPaymentAmount`; saved as
+  `depositAmount` / `balancePaid`); Code.gs `emailsFor` sends the receipt only when that amount is on the order (else it emails the owner a notice).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,
   `emails` (edited email text), colors may have `photo` (real-life picture, `swatchHtml`), `vacation`, `rules`, `materialNote`, `howItWorks`, `designTerms`, `galleryNote`, `topWork`
   (best-selling gallery ids for the home page, recomputed by `syncTopWork` when the owner dashboard loads).

@@ -28,8 +28,8 @@ select pg_temp.expect_denied('select * from private.email_settings', 'anon readi
 select public.submit_job('{"id":"300","clientName":"Sam","clientEmail":"sam@example.com","phase":"estimate","paymentStatus":"unpaid","items":[]}');
 do $$ declare jane text := (select tk from tok where id = '100'); begin
   if (select count(*) from public.customer_orders(array[jane])) <> 1 then raise exception 'a private key should open exactly its order'; end if;
-  if length(jane) < 60 then raise exception 'order keys should be long and random, got % characters', length(jane); end if;
-  if (select count(*) from public.customer_orders(array['jane@example.com', '%', '%@%.%', '100', substr(jane, 1, 30)])) <> 0 then raise exception 'an email, wildcard, order number or partial key opened an order'; end if;
+  if jane !~ '^[A-HJ-NP-Za-km-z2-9]{12}$' then raise exception 'order keys should be 12 random characters from the 57-letter alphabet, got %', jane; end if;
+  if (select count(*) from public.customer_orders(array['jane@example.com', '%', '%@%.%', '100', substr(jane, 1, 11), jane || 'x'])) <> 0 then raise exception 'an email, wildcard, order number or partial key opened an order'; end if;
   if (select count(*) from public.customer_orders(array[jane, (select tk from tok where id = '100')])) <> 1 then raise exception 'the same key twice should still be one order'; end if;
 end $$;
 select public.customer_approve_quote('not-the-key');
@@ -206,11 +206,11 @@ insert into public.jobs (id, data) values
 set role anon;
 do $$ declare q jsonb; begin
   q := public.order_queue();
-  if jsonb_array_length(q) <> 3 then raise exception 'queue should list the 3 confirmed/printing orders, got %', q; end if;
+  if jsonb_array_length(q) <> 4 then raise exception 'queue should list the 3 confirmed/printing orders plus Jane''s, which her approval confirmed, got %', q; end if;
   if q::text like '%Secret%' or q::text like '%example.com%' or q::text like '%Hook%' then raise exception 'queue leaks order details: %', q; end if;
   -- In line by deposit time (q-3 was confirmed first but paid its deposit later); no deposit yet = no time, last.
-  if q->0->>'at' <> '2026-10-05T10:00:00.000Z' or q->1->>'at' <> '2026-10-06T10:00:00.000Z' or q->2->>'at' is not null then raise exception 'queue not ordered by deposit: %', q; end if;
-  if (q->0->>'custom')::boolean or not (q->2->>'custom')::boolean or not (q->2->>'printing')::boolean then raise exception 'queue flags wrong: %', q; end if;
+  if q->0->>'at' <> '2026-10-05T10:00:00.000Z' or q->1->>'at' <> '2026-10-06T10:00:00.000Z' or q->2->>'at' is not null or q->3->>'at' is not null then raise exception 'queue not ordered by deposit: %', q; end if;
+  if (q->0->>'custom')::boolean or not exists (select 1 from jsonb_array_elements(q) e where (e->>'custom')::boolean and (e->>'printing')::boolean) then raise exception 'queue flags wrong: %', q; end if;
 end $$;
 reset role;
 
@@ -221,7 +221,7 @@ do $$ declare
   tk text := public.submit_job('{"id":"303","clientEmail":"cut@example.com","accessToken":"mine","extraCharges":[{"label":"Discount","amount":5}],"rates":{"baseFee":0},"specialOrderCost":0,"depositAt":"2000-01-01T00:00:00.000Z","depositAmount":1,"items":[{"name":"A","ownerPrice":0},{"name":"B"}]}');
   d jsonb := (select d from public.customer_orders(array[tk]) d);
 begin
-  if tk = 'mine' or length(tk) < 60 or d->>'accessToken' <> tk then raise exception 'submit_job should give the new order its own long random key (got %)', tk; end if;
+  if tk = 'mine' or tk !~ '^[A-HJ-NP-Za-km-z2-9]{12}$' or d->>'accessToken' <> tk then raise exception 'submit_job should give the new order its own random key (got %)', tk; end if;
   if d ? 'extraCharges' or d ? 'rates' or d ? 'specialOrderCost' or d ? 'depositAt' or d ? 'depositAmount' then raise exception 'submit_job kept owner-only fields'; end if;
   if d->'items'->0 ? 'ownerPrice' or d->'items'->0->>'name' <> 'A' or d->'items'->1->>'name' <> 'B' then raise exception 'submit_job kept an item price or lost item order: %', d->'items'; end if;
 end $$;
@@ -269,7 +269,7 @@ end $$;
 -- Keys are permanent: an owner save (which sends the order without its key) can't change or drop it.
 update public.jobs set data = data - 'accessToken', access_token = 'tampered' where id = '100';
 do $$ begin
-  if (select access_token from public.jobs where id = '100') = 'tampered' or length((select access_token from public.jobs where id = '100')) < 60 then raise exception 'an order key was changed by an update'; end if;
+  if (select access_token from public.jobs where id = '100') = 'tampered' or (select access_token from public.jobs where id = '100') !~ '^[A-HJ-NP-Za-km-z2-9]{12}$' then raise exception 'an order key was changed by an update'; end if;
   if (select data->>'accessToken' from public.jobs where id = '100') is distinct from (select access_token from public.jobs where id = '100') then raise exception 'the key was not kept in the order data'; end if;
   if exists (select 1 from public.jobs where coalesce(data->>'accessToken', '') <> access_token) then raise exception 'some orders carry the wrong key in their data'; end if;
   if (select count(distinct access_token) from public.jobs) <> (select count(*) from public.jobs) then raise exception 'two orders share a key'; end if;
@@ -292,7 +292,49 @@ do $$ begin
 end $$;
 set role anon;
 do $$ begin
-  if (select count(*) from public.order_links_for_email('0123456789abcdef0123456789abcdef', 'jane@example.com') d where length(d->>'accessToken') >= 60) < 1 then raise exception 'the email script should get Jane''s orders with their keys'; end if;
+  if (select count(*) from public.order_links_for_email('0123456789abcdef0123456789abcdef', 'jane@example.com') d where (d->>'accessToken') ~ '^[A-HJ-NP-Za-km-z2-9]{12}$') < 1 then raise exception 'the email script should get Jane''s orders with their keys'; end if;
   if (select count(*) from public.order_links_for_email('0123456789abcdef0123456789abcdef', 'nobody@example.com')) <> 0 then raise exception 'links returned for an unknown address'; end if;
+end $$;
+reset role;
+
+-- Approving a quote ("Looks good") confirms the order, which sends the deposit request; the owner can switch that off.
+do $$ begin
+  if (select data->>'phase' from public.jobs where id = '100') <> 'order_received' or (select data->'phaseHistory'->>'order_received' from public.jobs where id = '100') is null then
+    raise exception 'approving a quote should move the order to Confirmed & Printing (order_received)';
+  end if;
+  if (select data->>'paymentStatus' from public.jobs where id = '100') is distinct from (select data->>'paymentStatus' from public.jobs where id = '100') then raise exception 'unreachable'; end if;
+end $$;
+insert into public.jobs (id, data) values
+  ('auto-1', '{"id":"auto-1","clientEmail":"auto@example.com","phase":"quote_sent","paymentStatus":"unpaid","items":[]}'),
+  ('auto-2', '{"id":"auto-2","clientEmail":"auto@example.com","phase":"quote_sent","paymentStatus":"unpaid","items":[]}');
+truncate tok;
+insert into tok select id::text, access_token from public.jobs;
+update public.site_settings set data = jsonb_set(data, '{features}', '{"autoDeposit": false}') where id = 1;
+set role anon;
+select public.customer_approve_quote((select tk from tok where id = 'auto-1'));
+reset role;
+do $$ begin
+  if (select data->>'phase' from public.jobs where id = 'auto-1') <> 'quote_sent' or coalesce((select data->>'customerApprovedAt' from public.jobs where id = 'auto-1'), '') = '' then
+    raise exception 'with automatic deposit requests switched off, approving should record the approval but leave the order at Quote Sent';
+  end if;
+end $$;
+update public.site_settings set data = data - 'features' where id = 1;
+set role anon;
+select public.customer_approve_quote((select tk from tok where id = 'auto-2'));
+select public.customer_approve_quote((select tk from tok where id = 'auto-2'));
+reset role;
+do $$ begin
+  if (select data->>'phase' from public.jobs where id = 'auto-2') <> 'order_received' then raise exception 'approval did not confirm the order when the switch is on'; end if;
+end $$;
+
+-- Earlier, longer keys keep working, and a wrong key never does.
+alter table public.jobs disable trigger keep_access_token;
+update public.jobs set old_access_token = 'LEGACY-' || repeat('k', 57) where id = 'auto-2';
+alter table public.jobs enable trigger keep_access_token;
+set role anon;
+do $$ begin
+  if (select count(*) from public.customer_orders(array['LEGACY-' || repeat('k', 57)])) <> 1 then raise exception 'an earlier long key should still open its order'; end if;
+  if (select count(*) from public.customer_orders(array['LEGACY-' || repeat('k', 56)])) <> 0 then raise exception 'a wrong long key opened an order'; end if;
+  if (select (d->>'accessToken') from public.customer_orders(array['LEGACY-' || repeat('k', 57)]) d) !~ '^[A-HJ-NP-Za-km-z2-9]{12}$' then raise exception 'the order should hand back its new short key'; end if;
 end $$;
 reset role;

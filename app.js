@@ -15,9 +15,9 @@ const AUSTIN_TIMEZONE = 'America/Chicago';
 const MODEL_LIBRARY_KEY = 'soloprint_model_library_v1';
 const CLIENT_HISTORY_EMAIL_KEY = 'soloprint_client_history_email_v1';   // old key: customers used to be recognized by email alone
 const ORDER_KEYS_KEY = 'soloprint_order_keys_v1';
-// Each order has a long random private key (64 characters, made by the database). A customer's links carry it, and it
+// Each order has a random private key (12 characters, made by the database; earlier keys were longer). A customer's links carry it, and it
 // is the only thing that opens an order: an email address alone shows nothing.
-const ORDER_KEY = /^[A-Za-z0-9_-]{32,128}$/;
+const ORDER_KEY = /^[A-Za-z0-9_-]{10,128}$/;
 const OWNER_SESSION_KEY = 'soloprint_owner_session_v1';
 const OWNER_SESSION_MS = 60 * 60 * 1000;
 // Name of the customer tab that shows finished work with prices.
@@ -67,7 +67,7 @@ let state = {
   batches: [], clientTab: 'submit', ownerTab: 'dashboard', selectedClient: null, ordersTab: 'pending',
   gallery: [], galleryLoaded: false, galleryError: false, galleryForm: null, galleryOpen: '',
   draftItems: [blankItem()],
-  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '',
+  clientName: '', clientEmail: '', historyEmail: '', tokens: [], linksEmail: '', linksNote: '', pendingOwnerOrder: '', pendingReview: false,
   modelLibrary: {}, libraryEditingKey: '', analyticsQuery: '', ownerCalculator: blankOwnerCalculator(),
   synced: false, loading: true
 };
@@ -318,7 +318,7 @@ function renderCustomerOrderAction(batch) {
         <div class="alert error" id="terms-err-${esc(batch.id)}"></div>
       </div>` : ''}
       <button class="btn-primary" id="customer-approve-${esc(batch.id)}" type="button" onclick="customerApproveQuote('${esc(batch.id)}')">Looks good, I'd like to order</button>
-      <div class="order-action-sub">Nothing is charged yet. We'll confirm we can make your order before asking for payment.</div>
+      <div class="order-action-sub">${featureOn('autoDeposit') ? "Tapping this confirms your details, and I'll send you the deposit request right away. Nothing is charged until you pay it." : "Nothing is charged yet. We'll confirm we can make your order before asking for payment."}</div>
     </div>`;
   }
   if (phaseIndex(phase) >= phaseIndex('order_received')) {
@@ -375,6 +375,7 @@ async function customerApproveQuote(batchId) {
       return;
     }
     b.customerApprovedAt = new Date().toISOString();
+    await loadBatches(true);   // the order may have moved on to the deposit request
   }
   render();
 }
@@ -1210,7 +1211,8 @@ async function init() {
   loadModelLibrary();
   loadOrderKeys();
   restoreDraft();
-  const linkedOrder = handleRequestsLink();
+  const linked = handleRequestsLink();
+  handleOwnerLink();
   const resumeId = handleResumeLink();
   handleDesignLink();
   state.ownerUnlocked = hasValidOwnerSession();
@@ -1225,7 +1227,13 @@ async function init() {
   ]);
   state.loading = false;
   render();
-  if (linkedOrder) document.getElementById(`order-${linkedOrder}`)?.scrollIntoView({ block: 'start' });
+  if (linked) {
+    const mine = state.batches.find(b => b.accessToken === linked.key);
+    const id = mine ? mine.id : linked.legacyId;
+    if (state.pendingReview && mine) { state.reviewFor = { id: typeof state.pendingReview === 'string' ? state.pendingReview : mine.id, sent: false }; state.pendingReview = false; render(); }
+    if (id) document.getElementById(`order-${id}`)?.scrollIntoView({ block: 'start' });
+  }
+  if (state.pendingOwnerOrder) await showPendingOwnerOrder();
   if (state.resumedDraft) document.getElementById('resume-note')?.scrollIntoView({ block: 'start' });
   loadGallery().then(() => {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
@@ -2957,10 +2965,11 @@ const EMAIL_SAMPLE = {
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
   venmoLink: 'https://venmo.com/your-venmo?txn=pay&amount=15.68',
   deposit: '7.84', remainder: '22.84', shippingFee: '15.00', shippingDeposit: '15.00', depositDue: '11.76', depositPercent: '75', depositLink: 'https://venmo.com/your-venmo?txn=pay&amount=11.76', postage: '9.50', refund: '4.50', refundNote: "I'll send your $4.50 shipping deposit refund by Venmo.", invoiceSummary: 'Benchy x 2: $9.28\nTotal: $15.68\nShipping deposit paid: $15.00\nTotal paid: $30.68', remainderLink: 'https://venmo.com/your-venmo?txn=pay&amount=22.84',
-  orderLink: 'https://soloprint.vercel.app/?order=k7Qp2xVn9RtLm4Wc8ZaB3dFg6HjY1sUe5NoXi0VbTqCyA2Mw#order-1729',
+  orderLink: 'https://soloprint.vercel.app/?o=Kq7mT3xNp9Rv', ownerLink: 'https://soloprint.vercel.app/?admin=1729', amountPaid: '7.84',
+  approvalNote: 'I sent them the deposit request automatically, so there is nothing to confirm.',
   delivery: 'Delivery date: Oct 24\nTracking / pickup: Porch pickup',
   photo: `${SUPA_URL}/storage/v1/object/public/gallery/orders/1729-photo.jpg`,
-  reviewLink: 'https://soloprint.vercel.app/?order=k7Qp2xVn9RtLm4Wc8ZaB3dFg6HjY1sUe5NoXi0VbTqCyA2Mw&review=1729#order-1729',
+  reviewLink: 'https://soloprint.vercel.app/?o=Kq7mT3xNp9Rv&review=1',
   rollColor: 'Red TPU', rollGrams: '500', rollExpires: 'Dec 21', siteLink: 'https://soloprint.vercel.app',
   weekSales: '64.50', waitingQuote: '2', waitingApproval: '1', unpaid: '1', printing: '1', newReviews: '1', lowStock: 'Black (150 g)'
 };
@@ -4099,31 +4108,53 @@ function clearMyRequestsLookup() {
 
 // The private link to an order, as a customer would get in an email.
 function orderLinkFor(b) {
-  const at = b && b.id ? `#order-${encodeURIComponent(b.id)}` : '';
-  return b && ORDER_KEY.test(String(b.accessToken || '')) ? `${location.origin}/?order=${b.accessToken}${at}` : `${location.origin}/?links=${encodeURIComponent((b && b.clientEmail) || '')}${at}`;
+  return b && ORDER_KEY.test(String(b.accessToken || '')) ? `${location.origin}/?o=${b.accessToken}` : `${location.origin}/?links=${encodeURIComponent((b && b.clientEmail) || '')}`;
 }
 
 // ── EMAIL LINKS (magic link / password reset) ─────────────────────────────
 // Supabase sends the owner back to this page with the session in the URL fragment
 // (#access_token=...&type=magiclink|recovery). Finish the login and, for resets, ask for a new password.
-// Links in emails (?order=<private key>#order-id) open that order, and the key is remembered on this device.
-// A link with only an email (the old kind, ?requests=email) opens nothing: it offers to email a fresh link instead.
+// Links in emails (?o=<private key>) open that order, and the key is remembered on this device. The key alone says which order,
+// so nothing else is in the link (&review=1 opens the review form). Older links (?order=<key>#order-<id>) still work.
+// A link with only an email (the oldest kind, ?requests=email) opens nothing: it offers to email a fresh link instead.
 function handleRequestsLink() {
   const params = new URLSearchParams(location.search);
-  const key = String(params.get('order') || '').trim();
+  const key = String(params.get('o') || params.get('order') || '').trim();
   const email = String(params.get('links') || params.get('requests') || '').trim().toLowerCase();
   const hasKey = ORDER_KEY.test(key), hasEmail = email.includes('@') && email.length <= 200;
   if (!hasKey && !hasEmail) return '';
-  const order = (String(location.hash).match(/^#order-([A-Za-z0-9_-]{1,64})$/) || [])[1] || '';
+  const legacyId = (String(location.hash).match(/^#order-([A-Za-z0-9_-]{1,64})$/) || [])[1] || '';
   const review = String(params.get('review') || '');
-  if (/^[A-Za-z0-9_-]{1,64}$/.test(review)) state.reviewFor = { id: review, sent: false };
+  if (review) state.pendingReview = /^[A-Za-z0-9_-]{1,64}$/.test(review) && review !== '1' ? review : true;
   if (hasKey) addOrderKey(key);
   else { state.linksEmail = email; state.linksNote = 'old'; }
-  ['order', 'links', 'requests', 'review'].forEach(k => params.delete(k));
+  ['o', 'order', 'links', 'requests', 'review'].forEach(k => params.delete(k));
   history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : ''));   // keeps the key out of the address bar
   state.view = 'client';
   state.clientTab = 'jobs';
-  return hasKey ? order : '';
+  return hasKey ? { key, legacyId } : '';
+}
+
+// Links in emails to you (?admin=<order number>) open that order in owner mode. They grant nothing: you still log in.
+function handleOwnerLink() {
+  const params = new URLSearchParams(location.search);
+  const id = String(params.get('admin') || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return;
+  params.delete('admin');
+  history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : ''));
+  state.pendingOwnerOrder = id;
+  state.view = 'owner';
+}
+// Once you're logged in, shows the order a link from your email pointed to (older ones are fetched if they aren't loaded).
+async function showPendingOwnerOrder() {
+  const id = state.pendingOwnerOrder;
+  if (!id || !state.ownerUnlocked) return;
+  state.pendingOwnerOrder = '';
+  if (!state.batches.some(b => b.id === id) && !state.ownerHistoryAll) { state.ownerHistoryAll = true; await loadBatches(); }
+  state.ownerTab = 'dashboard';
+  render();
+  const el = document.getElementById(`order-${id}`);
+  if (el) { el.scrollIntoView({ block: 'start' }); el.classList.add('flash'); }
 }
 
 function handleAuthRedirect() {
@@ -4233,6 +4264,7 @@ async function checkPw() {
     state.ownerTab = 'dashboard';
     await Promise.all([loadBatches(), loadRemoteLibrary()]);
     render();
+    if (state.pendingOwnerOrder) await showPendingOwnerOrder();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Login'; }
     showAlert('pw-err', 'Incorrect email or password.', 'error');
@@ -4686,14 +4718,26 @@ async function updatePaymentStatus(batchId, paymentStatus) {
     render();
     return;
   }
-  if (!confirmEmail(b, emailForPayment(b, paymentStatus) ? 'with ' + emailForPayment(b, paymentStatus) : '')) { render(); return; }
-  b.paymentStatus = paymentStatus;
-  // The deposit (or full payment, with no deposit) sets their place in the order queue.
-  if (paymentStatus === 'deposit_received' && !b.depositAt) {
-    b.depositAt = new Date().toISOString();
-    b.depositAmount = depositAmount(b, orderSum(b), rulesFor(b));
+  // The receipt email says how much they paid, so the amount comes first: no amount, no change, no email.
+  let amount = 0;
+  if (paymentStatus === 'deposit_received' || paymentStatus === 'payment_received') {
+    amount = askPaymentAmount(b, paymentStatus);
+    if (amount === null) { render(); return; }
+    if (!(amount > 0)) { alert('Type the amount they paid, like 45.00. Nothing was changed and no email was sent.'); render(); return; }
   }
-  if (paymentStatus === 'payment_received' && !b.paidAt) b.paidAt = new Date().toISOString();
+  if (!confirmEmail(b, emailForPayment(b, paymentStatus) ? `with ${emailForPayment(b, paymentStatus)} saying they paid $${amount.toFixed(2)}` : '')) { render(); return; }
+  b.paymentStatus = paymentStatus;
+  const now = new Date().toISOString();
+  // The deposit (or full payment, with no deposit) sets their place in the order queue.
+  if (paymentStatus === 'deposit_received') {
+    if (!b.depositAt) b.depositAt = now;
+    b.depositAmount = amount;
+  }
+  if (paymentStatus === 'payment_received') {
+    b.balancePaid = amount;
+    if (!b.balancePaidAt) b.balancePaidAt = now;
+    if (!b.paidAt) b.paidAt = now;
+  }
   await upsertBatch(b);
   render();
 }
