@@ -981,3 +981,51 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .job-card.flash { outline: 3px solid var(--accent); outline-offset: 3px; animation: flash-fade 4s ease-out 1.5s forwards; }
 @keyframes flash-fade { to { outline-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { .job-card.flash { animation: none; } }
+
+/* Customers (owner Orders tab) */
+.overview > summary, .finished-orders > summary, .client-notes > summary { cursor: pointer; }
+.overview[open] > summary { margin-bottom: 1rem; }
+.cust-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.cust-list { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.cust-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.cust-filter { border: 2px solid var(--btn-border); border-radius: 99px; padding: 5px 14px; background: var(--surface); color: var(--text); font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; }
+.cust-filter.on { border-color: var(--accent); background: rgba(var(--accent-rgb),0.12); color: var(--accent); }
+.cust-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; width: 100%; text-align: left; padding: 0.7rem 0.8rem; border: 2px solid var(--btn-border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.cust-row.need { border-left: 8px solid var(--red); }
+.cust-row.active { border-color: var(--accent); background: rgba(var(--accent-rgb),0.08); }
+.cust-who { display: grid; min-width: 0; }
+.cust-name { font-weight: 700; overflow-wrap: anywhere; }
+.cust-email { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.cust-dot { min-width: 28px; height: 28px; padding: 0 7px; border-radius: 14px; background: var(--red); color: #fff; font-weight: 800; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
+.cust-dot.grey { background: rgba(var(--accent-rgb),0.12); color: var(--muted); }
+.cust-chips { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.cust-chip { border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+.cust-red { background: var(--red); color: var(--on-accent, #fff); }
+.cust-amber { background: rgba(var(--accent-rgb),0.16); color: var(--text); }
+.cust-slate { background: rgba(var(--accent-rgb),0.10); color: var(--text); }
+.cust-detail { min-width: 0; display: grid; gap: 12px; align-content: start; }
+.cust-title { margin: 0; }
+.cust-back { display: none; justify-self: start; }
+.finished-orders { display: grid; gap: 12px; }
+.finished-orders > summary { padding: 8px 2px; font-weight: 700; }
+.client-notes > summary { padding: 2px 0; }
+.nav-tab .nav-badge { background: var(--red); color: #fff; }
+#all-orders { min-width: 0; max-width: 100%; }
+.all-orders-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; }
+.all-orders-table th, .all-orders-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+@media (max-width: 760px) {
+  .cust-layout { grid-template-columns: 1fr; }
+  .cust-layout.open .cust-list { display: none; }
+  .cust-layout:not(.open) .cust-detail { display: none; }
+  .cust-back { display: inline-block; }
+}
+
+/* The all-orders table becomes one small card per order on a phone, so the page never scrolls sideways. */
+@media (max-width: 760px) {
+  .all-orders-table { min-width: 0; }
+  .all-orders-table thead { display: none; }
+  .all-orders-table, .all-orders-table tbody, .all-orders-table tr, .all-orders-table td { display: block; width: 100%; }
+  .all-orders-table tr { border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; margin-bottom: 8px; }
+  .all-orders-table td { border: 0; padding: 3px 0; overflow-wrap: anywhere; }
+  .all-orders-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 700; color: var(--muted); }
+}

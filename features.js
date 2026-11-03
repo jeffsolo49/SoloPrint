@@ -1031,6 +1031,29 @@ function moneyReport(year) {
 
 function money2(n) { const v = Number(n) || 0; return `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`; }
 
+// Money & Sales: every order by date, newest first (the Orders tab is organised by customer instead).
+function renderOwnerOrdersList() {
+  const q = String(state.ordersListQuery || '').trim().toLowerCase();
+  const all = [...state.batches].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .filter(b => !q || `${b.clientName} ${b.clientEmail} ${orderTitle(b)} ${b.id}`.toLowerCase().includes(q));
+  const max = state.ordersListMax || 25, rows = all.slice(0, max);
+  const day = iso => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `<div class="card" id="all-orders">
+    <h3 class="card-title">All orders by date</h3>
+    <div class="field-help">Newest first. ${state.ownerHistoryAll ? '' : `Only open orders and the last ${RECENT_ORDER_DAYS} days are loaded here.`}</div>
+    <div class="field"><label for="all-orders-q">Search name, email, item or order number</label>
+      <input type="search" id="all-orders-q" value="${esc(state.ordersListQuery || '')}" oninput="state.ordersListQuery = this.value; state.ordersListMax = 25; clearTimeout(window.aolT); window.aolT = setTimeout(() => { render(); const el = document.getElementById('all-orders-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250)" /></div>
+    <div class="table-scroll"><table class="all-orders-table">
+      <thead><tr><th scope="col">Date</th><th scope="col">Customer</th><th scope="col">Order</th><th scope="col">Step</th><th scope="col">Total</th><th scope="col">Payment</th><th scope="col"><span class="sr-only">Open</span></th></tr></thead>
+      <tbody>${rows.map(b => { const total = batchTotal(b); return `<tr>
+        <td data-label="Date">${esc(day(b.createdAt))}</td><td data-label="Customer">${esc(b.clientName || b.clientEmail || '')}</td><td data-label="Order">${esc(orderTitle(b))}</td>
+        <td data-label="Step">${esc(phaseLabel(b.phase || 'estimate'))}</td><td data-label="Total">${total === null ? '–' : '$' + total.toFixed(2)}</td><td data-label="Payment">${esc(paymentLabel(b.paymentStatus || 'unpaid'))}</td>
+        <td><button type="button" class="btn-sm" onclick="focusOwnerOrder('${esc(b.id)}')" aria-label="Open order ${esc(b.id)} in Customers">Open</button></td></tr>`; }).join('')
+        || '<tr><td colspan="7">No orders match.</td></tr>'}</tbody>
+    </table></div>
+    ${all.length > rows.length ? `<button type="button" class="btn-sm" onclick="state.ordersListMax = ${max + 25}; render();">Show more (${all.length - rows.length} more)</button>` : ''}
+  </div>`;
+}
 function renderOwnerMoneyPage() {
   const years = [...new Set(state.batches.map(b => new Date(paidDate(b)).getFullYear()).concat(expenses().map(e => Number(String(e.date).slice(0, 4))), [new Date().getFullYear()]))]
     .filter(Number.isFinite).sort((a, b) => b - a);
@@ -2938,18 +2961,10 @@ async function sendCustomerMessage(jobId) {
     showAlert(`cmsg-err-${jobId}`, "Couldn't send your message. Please try again, or reply to one of my emails.", 'error');
   }
 }
-// Owner dashboard: conversations waiting on you, at the top.
-function renderWaitingOnYou() {
-  const list = waitingOnYou();
-  if (!list.length) return '';
-  return `<div class="alert waiting-banner" style="display:block;" role="status"><strong>${list.length} conversation${list.length === 1 ? ' is' : 's are'} waiting on you:</strong>
-    ${list.map(b => `<button type="button" class="btn-link" onclick="openConversation('${esc(b.id)}')">${esc(b.clientName || b.clientEmail)}: ${esc(orderTitle(b))}</button>`).join(' · ')}</div>`;
-}
 function openConversation(id) {
   state.openConversation = id;
-  render();
-  const el = document.getElementById(`conv-${id}`) || document.getElementById(`order-${id}`);
-  if (el) { el.scrollIntoView({ block: 'start' }); document.getElementById(`msg-text-${id}`)?.focus({ preventScroll: true }); }
+  focusOwnerOrder(id);
+  document.getElementById(`msg-text-${id}`)?.focus({ preventScroll: true });
 }
 
 // ── PRACTICE ORDER (owner tab "Practice") ─────────────────────────────────
