@@ -33,7 +33,11 @@ const cases = [
   ['deposit received says how much was paid', 'UPDATE', at({ paymentStatus: 'deposit_received', depositAmount: 6.96 }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Deposit received for your SoloPrint order']],
   ['deposit received with no amount: held back and the owner is told', 'UPDATE', at({ paymentStatus: 'deposit_received' }), at({ paymentStatus: 'payment_requested' }), ['jeffsolo49@gmail.com|The deposit received email was NOT sent: no amount on the order']],
   ['reset to estimate sends nothing', 'UPDATE', at({ phase: 'estimate' }), at({ phase: 'quote_sent' }), []],
-  ['unrelated edit sends nothing', 'UPDATE', at({ clientName: 'Janet' }), at({}), []]
+  ['unrelated edit sends nothing', 'UPDATE', at({ clientName: 'Janet' }), at({}), []],
+  ['confirm order with "Email" unticked sends nothing to the customer', 'UPDATE', at({ phase: 'order_received', quietEmails: { at: 't2', keys: ['confirmed'] } }), at({ phase: 'quote_sent' }), []],
+  ['a deposit with "Email" unticked: no receipt and no owner notice', 'UPDATE', at({ paymentStatus: 'deposit_received', quietEmails: { at: 't2', keys: ['deposit'] } }), at({ paymentStatus: 'payment_requested' }), []],
+  ['an older quietEmails never stops a later email', 'UPDATE', at({ phase: 'order_received', quietEmails: { at: 't1', keys: ['confirmed'] } }), at({ phase: 'quote_sent', quietEmails: { at: 't1', keys: ['confirmed'] } }), ['jane@example.com|Your SoloPrint order is confirmed']],
+  ['quietEmails only quiets the emails it names', 'UPDATE', at({ phase: 'final_payment_needed', quietEmails: { at: 't2', keys: ['confirmed'] } }), at({ phase: 'order_received' }), ['jane@example.com|Your SoloPrint order is ready — final payment needed']]
 ];
 cases.forEach(([name, type, rec, old, want]) => check(name, () => {
   const got = emailsFor(type, rec, old).map(m => `${m.to}|${m.subject}`);
