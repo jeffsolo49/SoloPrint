@@ -644,7 +644,7 @@ function renderEmailGuide() {
       <thead><tr><th scope="col">Button</th><th scope="col">Press it when</th><th scope="col">The customer gets</th></tr></thead>
       <tbody>
       ${row('You have read the request and the quote is right.', 'Send quote', 'The quote email, with a link to approve.')}
-      ${row('You need answers before you can quote (optional).', 'Confirm details with the customer, then Send email', 'The email you wrote and checked, exactly as shown.')}
+      ${row('You need answers before you can quote (optional).', 'More › Ask them questions before quoting, then Send email', 'The email you wrote and checked, exactly as shown.')}
       ${row('They tapped Looks good and you are happy to go ahead.', 'Confirm order', 'The order-confirmed email, asking for the deposit (if ticked).')}
       ${row('Their Venmo deposit shows in your Venmo app.', 'Deposit received (type the amount they paid)', 'A deposit receipt that says how much they paid. Their place in line starts now.')}
       ${row('The print is finished and photographed.', 'Printing done', 'The printing-done email: the rest plus the shipping deposit, and a request for their address. Nothing if they already paid in full.')}
@@ -2764,11 +2764,10 @@ function renderDetailsCheck(b) {
   const d = state.detailsDraft && state.detailsDraft.id === b.id ? state.detailsDraft : null;
   if (!d) {
     const sent = b.phase === 'details_check' && b.detailsEmail;
+    if (!sent) return '';   // starting one is in the More menu, so the quote screen has one obvious button
     return `<div class="details-check">
-      ${sent ? `<div class="field-help"><strong>Details check sent ${esc(formatAustinTime(b.detailsEmail.at || b.phaseHistory.details_check))}.</strong> Waiting for their answers; send the quote below when you're ready.</div>
-        <details><summary>See the email you sent</summary><div class="email-preview" style="white-space:pre-wrap;"><strong>${esc(b.detailsEmail.subject)}</strong>\n\n${esc(b.detailsEmail.body)}</div></details>` : ''}
-      <button class="btn-sm" type="button" id="details-open-${b.id}" onclick="openDetailsCheck('${b.id}')">${sent ? 'Ask more questions' : 'Confirm details with the customer'}</button>
-      ${sent ? '' : '<span class="field-help"> Optional: email them a summary of their request and your questions before you quote.</span>'}
+      <div class="field-help"><strong>Details check sent ${esc(formatAustinTime(b.detailsEmail.at || b.phaseHistory.details_check))}.</strong> Waiting for their answers; send the quote below when you're ready.</div>
+      <details><summary>See the email you sent</summary><div class="email-preview" style="white-space:pre-wrap;"><strong>${esc(b.detailsEmail.subject)}</strong>\n\n${esc(b.detailsEmail.body)}</div></details>
     </div>`;
   }
   return `<fieldset class="details-check owner-edit-item">

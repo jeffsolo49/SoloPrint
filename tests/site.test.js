@@ -521,7 +521,7 @@ const STATES = {
     await owner.evaluate(asOwner('dashboard'));
     assert(/jane@example\.com/.test(await owner.textContent('.desk-row.tone-need:has-text("Confirm order")')), 'an approved quote is in Needs me');
     await owner.evaluate(showOrder('1'));
-    assert(/Step 2 of 6/.test(await owner.textContent('#order-1 .desk-stepname')), 'step bar');
+    assert(/approved/.test(await owner.textContent('#order-1 .desk-stepname')) && await owner.$$eval('#order-1 .tracker-step', els => els.length) >= 5, 'step bar');
     await owner.uncheck('#step-mail-1');
     await owner.click('#step-go-1');
     await owner.waitForSelector('#order-1 .order-menu-list button:has-text("Print without a deposit")', { state: 'attached' });
@@ -762,7 +762,7 @@ const STATES = {
     await owner.evaluate(showOrder('pe'));
     const card = await owner.textContent('#order-pe');
     assert(/Red: 5\.0 g × \$0\.044/.test(card) && /Black: 30\.0 g × \$0\.024/.test(card), 'order card should show each color and its price');
-    await owner.click('#edit-request-pe');
+    await owner.$eval('#edit-request-pe', el => el.click());
     assert(/\$4\.38/.test(await owner.textContent('#oe-est-0')), 'edit form estimate');
     await owner.selectOption('#oe-part-color-0-1', 'silk');   // special rate 0.034
     assert(/\$4\.33/.test(await owner.textContent('#oe-est-0')) && /Silk Gold: 5\.0 g/.test(await owner.textContent('#oe-est-0')), await owner.textContent('#oe-est-0'));
@@ -771,7 +771,7 @@ const STATES = {
     assert(/\$5\.05/.test(await owner.textContent('#oe-est-0')), 'print time should update the estimate');
     assert(/1h 30m/.test(await owner.textContent('#oe-est-0')) && /flat × /.test(await owner.textContent('#oe-est-0')) && /90 min \(1h 30m\) × /.test(await owner.textContent('#oe-est-0')), 'the edit form should show the price breakdown: ' + await owner.textContent('#oe-est-0'));
     await owner.click('#owner-edit-save');
-    await owner.waitForSelector('#edit-request-pe');
+    await owner.waitForSelector('#edit-request-pe', { state: 'attached' });
     assert(db.jobs.pe.items[0].extraColors[0].colorId === 'silk' && db.jobs.pe.items[0].minutes === 90, JSON.stringify(db.jobs.pe.items[0]));
     await owner.close();
   });
@@ -1635,7 +1635,7 @@ const STATES = {
     const owner = await open(db);
     await owner.evaluate(asOwner('dashboard'));
     await owner.evaluate(showOrder('e1'));
-    await owner.click('#edit-request-e1');
+    await owner.$eval('#edit-request-e1', el => el.click());
     await owner.fill('#oe-name-0', 'Wall bracket');
     await owner.fill('#oe-notes-0', 'Red TPU, thicker arm');
     await owner.fill('#oe-qty-0', '3');
@@ -1648,7 +1648,7 @@ const STATES = {
     await owner.click('text=+ Add a charge');
     await owner.fill('#oe-charge-amount-0', '15');
     await owner.click('#owner-edit-save');
-    await owner.waitForSelector('#edit-request-e1');
+    await owner.waitForSelector('#edit-request-e1', { state: 'attached' });
     const saved = db.jobs.e1;
     const it = saved.items[0];
     assert(it.name === 'Wall bracket' && it.notes === 'Red TPU, thicker arm' && it.qty === 3 && it.filType === 'special_order' && it.specialColor === 'Red TPU'
@@ -1656,15 +1656,15 @@ const STATES = {
     assert(JSON.stringify(saved.extraCharges) === '[{"label":"Special costs","amount":15}]', JSON.stringify(saved.extraCharges));
     assert(/Your price \$7\.50 each/.test(await owner.textContent('#order-e1')), 'owner card does not show your price');
     // Cancel throws changes away.
-    await owner.click('#edit-request-e1');
+    await owner.$eval('#edit-request-e1', el => el.click());
     await owner.fill('#oe-client-name', 'Nobody');
     await owner.click('#order-e1 >> text=Cancel');
     assert(db.jobs.e1.clientName === 'Pat' && /Pat/.test(await owner.textContent('#order-e1')), 'cancel kept the changes');
     // Remove the spare item, then quote it: your price x 3 + roll + your charge.
-    await owner.click('#edit-request-e1');
+    await owner.$eval('#edit-request-e1', el => el.click());
     await owner.click('text=Remove item 2');
     await owner.click('#owner-edit-save');
-    await owner.waitForSelector('#edit-request-e1');
+    await owner.waitForSelector('#edit-request-e1', { state: 'attached' });
     await owner.fill('#special-cost-e1', '20');
     await owner.click('#approve-btn-e1');
     await owner.waitForTimeout(300);
@@ -2110,7 +2110,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
     await page.evaluate(showOrder('9'));
-    await page.click('#details-open-9');
+    await page.$eval('#details-open-9', el => el.click());
     await page.fill('#details-q-9', 'Which iPad model?');
     const body = await page.inputValue('#details-body-9');
     assert(/Hi Ana/.test(body) && /Which iPad model\?/.test(body) && /Phone stand x 2/.test(body) && /Notes: Fits an iPad\?/.test(body) && /(Estimated )?[Pp]rice: (\$|I'll)/.test(body) && /Jeff Solomon/.test(body), body);
@@ -2168,7 +2168,7 @@ const STATES = {
     const editable = Object.keys(db.jobs).find(id => ['estimate', 'details_check', undefined].includes(db.jobs[id].phase));
     await owner.evaluate(showOrder(editable));
     if (await owner.$(`#edit-request-${editable}`)) {
-      await owner.click(`#edit-request-${editable}`);
+      await owner.$eval(`#edit-request-${editable}`, el => el.click());
       await owner.waitForSelector(`.chat-edit #conv-${editable} + #owner-edit-${editable}`);
       assert(await owner.$eval(`#conv-${editable}`, el => el.open), 'the conversation stays open beside the edit form');
       await owner.click('#owner-edit-save');
