@@ -2014,7 +2014,7 @@ const STATES = {
     await page.waitForFunction(() => { const c = document.querySelector('.cm-request canvas.cm-ready'); if (!c) return false; const d = c.getContext('2d').getImageData(160, 50, 1, 1).data; return d[0] < 60 && d[1] < 60; });
     await page.close();
   });
-  await check('header shows how many minutes ago the site was updated, and hides after an hour', async () => {
+  await check('header shows how long ago the site was updated (minutes, hours, days) and never hides', async () => {
     const db = fixtures();
     db.deployedMinsAgo = 7;
     const page = await open(db, { width: 390 });
@@ -2025,9 +2025,11 @@ const STATES = {
     assert(await page.textContent('.build-badge-phone') === 'Updated just now', await page.textContent('.build-badge-phone'));
     await page.setViewportSize({ width: 1100, height: 900 });
     assert(await page.isVisible('#build-badge') && !(await page.isVisible('.build-badge-phone')), 'wide screens show it in the header');
-    db.deployedMinsAgo = 61;
-    await page.evaluate(() => loadLastUpdate());
-    assert(await page.evaluate(() => [...document.querySelectorAll('.build-badge')].every(e => e.hidden)), 'over an hour: hidden');
+    for (const [mins, text] of [[61, 'Updated 1 hr ago'], [540, 'Updated 9 hr ago'], [4320, 'Updated 3 days ago']]) {
+      db.deployedMinsAgo = mins;
+      await page.evaluate(() => loadLastUpdate());
+      assert(await page.textContent('#build-badge') === text && await page.isVisible('#build-badge'), `${mins} min: ${await page.textContent('#build-badge')}`);
+    }
     await page.close();
   });
   await check('company logo add-on: note on every design, tick box adds the logo price, saved with the request', async () => {

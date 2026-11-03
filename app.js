@@ -1146,13 +1146,18 @@ function formatAustinTime(iso) {
 }
 
 // "Updated N min ago" in the header: when the live site was last published (Vercel's production deploy,
-// as GitHub records it; the repo is public so no key is needed). Hidden after an hour.
+// as GitHub records it; the repo is public so no key is needed). Always shown once known: minutes, then hours, then days.
 const DEPLOYS_URL = 'https://api.github.com/repos/jeffsolo49/soloprint/deployments?environment=Production&per_page=1';
 let lastUpdateAt = 0;
 function updateBadgeText(now = Date.now()) {
   const mins = Math.floor((now - lastUpdateAt) / 60000);
-  if (!lastUpdateAt || mins > 60 || mins < 0) return '';
-  return mins < 1 ? 'Updated just now' : `Updated ${mins} min ago`;
+  if (!lastUpdateAt || mins < 0) return '';
+  if (mins < 1) return 'Updated just now';
+  if (mins < 60) return `Updated ${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Updated ${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `Updated ${days} day${days === 1 ? '' : 's'} ago`;
 }
 // Two copies: in the header on wide screens, a thin line under it on phones (styles.css).
 function refreshUpdateBadge() {
