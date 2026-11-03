@@ -14,12 +14,12 @@ const EMAIL_TEMPLATES = {
   owner_new: {
     label: 'New request', to: 'You', when: 'A customer sends a request.',
     subject: 'New SoloPrint request from {customerName}',
-    body: 'Customer: {customerName}\nEmail: {customerEmail}\nSubmitted: {submitted}\nAutomated estimate: ${estimate} (review and send the quote from your dashboard)\n\n{items}'
+    body: 'Customer: {customerName}\nEmail: {customerEmail}\nSubmitted: {submitted}\nAutomated estimate: ${estimate} (review and send the quote from your dashboard)\n\n{items}\n\nOpen it in owner mode (you log in with your password): {ownerLink}'
   },
   customer_received: {
     label: 'Request received', to: 'Customer', when: 'Right after they send a request.',
     subject: 'We received your SoloPrint request',
-    body: "Hi {name},\n\nThanks for your request for {title}. We've received your submission and will respond promptly after reviewing it.\n\n{vacationNote}\n\n{items}\n\nAutomated estimate: ${estimate}\nAny prices shown on the site are automated estimates, not exact costs. We'll email your confirmed quote once we've reviewed your request.\n\n{footer}"
+    body: "Hi {name},\n\nThanks for your request for {title}. We've received your submission and will respond promptly after reviewing it.\n\n{vacationNote}\n\n{items}\n\nAutomated estimate: ${estimate}\nAny prices shown on the site are automated estimates, not exact costs. Shipping is not included: it depends on where you live, and I work it out when your order is done. We'll email your confirmed quote once we've reviewed your request.\n\n{footer}"
   },
   details_check: {
     label: 'Confirm details', to: 'Customer', when: 'You tap "Confirm details" on a request. You see the email and can edit it before it sends.',
@@ -29,20 +29,20 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You click Save All & Notify Client.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nIf it looks good, tap "Looks good" here: {orderLink} (or just reply to this email).\nNothing is charged yet. We\'ll confirm we can make your order before asking for payment.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nShipping is not included in this total. It depends on where you live: with your final payment I collect a ${shippingDeposit} shipping deposit and refund whatever the postage doesn\'t use.\n\nIf it looks good, tap "Looks good" here: {orderLink}\nTapping it confirms your details, and I\'ll send you the deposit request right away. Nothing is charged until you pay it. Questions? Just reply to this email.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
     subject: 'Still interested? Your SoloPrint quote is waiting',
-    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until we\'ve both confirmed the order.\n\n{footer}'
+    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until you tap Looks good and pay the deposit.\n\n{footer}'
   },
   owner_approved: {
     label: 'Quote approved', to: 'You', when: 'The customer taps "Looks good" on their quote.',
     subject: '{customerName} approved their quote',
-    body: '{customerName} ({customerEmail}) approved the quote of ${total} for {title}.\nConfirm the order on your dashboard when you know you can make it.'
+    body: '{customerName} ({customerEmail}) approved the quote of ${total} for {title}.\n{approvalNote}\n\nOpen it in owner mode (you log in with your password): {ownerLink}'
   },
   confirmed: {
-    label: 'Order confirmed (printing)', to: 'Customer', when: 'You move the order to Confirmed & Printing (after you know you can make it).',
+    label: 'Order confirmed (printing)', to: 'Customer', when: 'The customer taps "Looks good" (or you move the order to Confirmed & Printing yourself).',
     subject: 'Your SoloPrint order is confirmed',
     body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nTo get in line, please pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo: {depositLink}\nOr pay everything now: {venmoLink}\n(The links fill in the amount and your order number.)\n\n{footer}'
   },
@@ -62,14 +62,14 @@ const EMAIL_TEMPLATES = {
     body: 'Hi {name},\n\nHere are the delivery details for {title}:\n\n{delivery}\n\n{footer}'
   },
   deposit: {
-    label: 'Deposit received', to: 'Customer', when: 'You mark the deposit received. Their place in line is set now.',
+    label: 'Deposit received', to: 'Customer', when: 'You mark the deposit received and confirm how much they paid (no email goes out until you do). Their place in line is set now.',
     subject: 'Deposit received for your SoloPrint order',
-    body: 'Hi {name},\n\nWe received your deposit for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready. Pay with Venmo: {venmoLink}\n\n{footer}'
+    body: 'Hi {name},\n\nWe received your deposit of ${amountPaid} for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready. Pay with Venmo: {venmoLink}\n\n{footer}'
   },
   payment: {
-    label: 'Payment received', to: 'Customer', when: 'You mark the payment received.',
-    subject: 'Payment received, thank you!',
-    body: 'Hi {name},\n\nWe received your payment for {title}. Thank you!\n\n{footer}'
+    label: 'Payment received', to: 'Customer', when: 'You mark the payment received and confirm how much they paid (no email goes out until you do).',
+    subject: 'Payment of ${amountPaid} received, thank you!',
+    body: 'Hi {name},\n\nWe received your payment of ${amountPaid} for {title}. Thank you!\n\n{footer}'
   },
   review_request: {
     label: 'Review request', to: 'Customer', when: "A week after an order is delivered (sent once). Reviews wait for your approval in Settings > Reviews.",
@@ -118,6 +118,9 @@ const EMAIL_PLACEHOLDERS = {
   remainderLink: 'Venmo link with the remainder filled in',
   venmoLink: 'Venmo link with the amount filled in, only while unpaid',
   orderLink: "Link to the customer's order on the site",
+  ownerLink: 'Link that opens this order in owner mode (you still log in with your password)',
+  amountPaid: 'Deposit and payment received emails: how much they paid (you confirm it when you mark the payment)',
+  approvalNote: 'Quote approved email: says whether the deposit request was sent automatically',
   delivery: 'Ship date, tracking number and notes',
   materialNote: 'Your material note from Settings > Wording (e.g. "All prints are PLA...")',
   extraCharges: 'Charges you added to the order, one per line (e.g. "Special costs: $15.00")',

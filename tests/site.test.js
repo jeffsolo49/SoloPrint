@@ -96,7 +96,7 @@ async function mockBackend(page, db) {
       job.items = job.items.map(it => { const { ownerPrice, ...rest } = it; return rest; });
       db.jobs[job.id] = job; return route.fulfill({ json: keyOf(job.id) });
     }
-    if (rest.startsWith('/rpc/customer_approve_quote')) { const job = jobByKey(JSON.parse(req.postData()).p_token); if (job && job.phase === 'quote_sent') job.customerApprovedAt = new Date().toISOString(); return route.fulfill({ status: 204, body: '' }); }
+    if (rest.startsWith('/rpc/customer_approve_quote')) { const job = jobByKey(JSON.parse(req.postData()).p_token); if (job && job.phase === 'quote_sent' && !job.customerApprovedAt) { job.customerApprovedAt = new Date().toISOString(); if ((db.settings.features || {}).autoDeposit !== false) { job.phase = 'order_received'; job.phaseHistory = { ...(job.phaseHistory || {}), order_received: new Date().toISOString() }; } } return route.fulfill({ status: 204, body: '' }); }
     if (rest.startsWith('/jobs')) {
       if (!owner) return route.fulfill({ status: 401, json: {} });
       if (method === 'GET') return route.fulfill({ json: Object.values(db.jobs).map(data => ({ data: { ...data, accessToken: keyOf(data.id) } })) });
@@ -185,7 +185,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
   const page = await browser.newPage({ viewport: { width, height }, colorScheme });
   page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
-  page.on('dialog', d => d.accept());
+  page.on('dialog', d => (d.type() === 'prompt' ? d.accept(d.defaultValue()) : d.accept()));
   await mockBackend(page, db);
   if (init) await page.addInitScript(init);
   await page.goto(SITE + suffix);
@@ -355,8 +355,8 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(STATES['my requests']);
     await page.click('#customer-approve-1');
-    await page.waitForSelector('text=We got your go-ahead');
-    assert(db.jobs['1'].customerApprovedAt, 'approval not saved');
+    await page.waitForFunction(() => state.batches.find(b => b.id === '1').phase === 'order_received');
+    assert(db.jobs['1'].customerApprovedAt && db.jobs['1'].phase === 'order_received', 'approval not saved, or it did not confirm the order: ' + JSON.stringify(db.jobs['1']));
     await page.close();
   });
   await check('MakerWorld link fills time and grams; saved model match fills estimate', async () => {
@@ -396,7 +396,7 @@ const STATES = {
   });
   await check('private order links open just that order, and never load other customers on the owner\'s device', async () => {
     const db = fixtures();
-    const page = await open(db, { suffix: '?order=' + keyOf('2') + '#order-2', init: () => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 })) });
+    const page = await open(db, { suffix: '?o=' + keyOf('2'), init: () => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 })) });
     assert(await page.evaluate(k => state.clientTab === 'jobs' && state.tokens[0] === k && state.historyEmail === 'jane@example.com', keyOf('2')), 'did not open My Requests for the linked order');
     assert(!db.log.includes('GET /jobs owner'), 'customer view loaded every order');
     assert(await page.locator('#order-2').count() === 1, 'linked order not shown');
@@ -407,14 +407,14 @@ const STATES = {
   await check('order links: the key is remembered on the device, a guessed or old-style link opens nothing, and "email me my links" works', async () => {
     const db = fixtures();
     // The key is remembered: a later visit with no link still shows the order.
-    const page = await open(db, { suffix: '?order=' + keyOf('1') });
+    const page = await open(db, { suffix: '?o=' + keyOf('1') });
     assert(await page.locator('#order-1').count() === 1, 'order not shown after the link');
     await page.reload(); await page.waitForFunction(() => !state.loading); await page.waitForTimeout(250);
     await page.evaluate(() => { state.clientTab = 'jobs'; render(); });
     assert(await page.locator('#order-1').count() === 1 && await page.locator('#order-2').count() === 0, 'the order was not remembered on this device (or others appeared)');
     await page.close();
     // Guessing: a made-up key, an order number and an email open nothing.
-    const bad = await open(db, { suffix: '?order=' + keyOf('nope') });
+    const bad = await open(db, { suffix: '?o=' + keyOf('nope') });
     await bad.evaluate(() => { state.clientTab = 'jobs'; render(); });
     assert(await bad.locator('.job-card').count() === 0 && /Email me my links/.test(await bad.textContent('body')), 'a made-up key showed orders');
     await bad.evaluate(async () => { state.tokens = ['1', 'jane@example.com', '%']; await loadBatches(true); });
@@ -430,6 +430,86 @@ const STATES = {
     assert(db2.linkRequests.join() === 'jane@example.com', 'links were not requested: ' + db2.linkRequests);
     assert(/If there are requests under that email/.test(await old.textContent('body')), 'the answer should not say whether the email has orders');
     await old.close();
+  });
+  await check('older links still open: ?order=<key>#order-<id>', async () => {
+    const db = fixtures();
+    const page = await open(db, { suffix: '?order=' + keyOf('2') + '#order-2' });
+    assert(await page.locator('#order-2').count() === 1 && await page.locator('#order-1').count() === 0, 'the older link style did not open its order');
+    await page.close();
+  });
+  await check('links in emails to you open the order in owner mode, but never skip the password', async () => {
+    const db = fixtures();
+    const page = await open(db, { suffix: '?admin=2' });
+    assert(await page.evaluate(() => state.view === 'owner' && !state.ownerUnlocked && state.pendingOwnerOrder === '2'), 'the link should open owner mode');
+    assert(await page.locator('#owner-pw').count() === 1 && await page.locator('#order-2').count() === 0, 'owner mode must ask for the password first');
+    assert(!db.log.includes('GET /jobs owner') && !db.log.includes('GET /jobs anon'), 'orders were loaded without logging in');
+    assert(!(await page.evaluate(() => location.search)).includes('admin'), 'the link should be tidied out of the address bar');
+    await page.fill('#owner-pw', 'right-password');
+    await page.click('#owner-login-btn');
+    await page.waitForSelector('#order-2');
+    assert(await page.evaluate(() => state.pendingOwnerOrder === '' && document.getElementById('order-2').classList.contains('flash')), 'after logging in the linked order should be shown and highlighted');
+    await page.close();
+    // already logged in: straight to the order
+    const again = await open(db, { suffix: '?admin=1', init: () => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 })) });
+    await again.waitForSelector('#order-1');
+    assert(await again.evaluate(() => state.ownerUnlocked && state.view === 'owner'), 'a logged-in owner should land on the order');
+    await again.close();
+    // a wrong password still gets nowhere
+    const bad = await open(fixtures(), { suffix: '?admin=1' });
+    await bad.fill('#owner-pw', 'wrong');
+    await bad.click('#owner-login-btn');
+    await bad.waitForSelector('#pw-err', { state: 'visible' });
+    assert(await bad.locator('#order-1').count() === 0, 'the link got in without the right password');
+    await bad.close();
+  });
+  await check('Looks good confirms the order and the customer sees the deposit request; the owner can switch that off', async () => {
+    const db = fixtures();
+    const page = await open(db, { suffix: '?o=' + keyOf('1') });
+    await page.click('#customer-approve-1');
+    await page.waitForSelector('text=Venmo');
+    assert(db.jobs['1'].customerApprovedAt && db.jobs['1'].phase === 'order_received', 'approving should confirm the order: ' + db.jobs['1'].phase);
+    assert(/deposit/i.test(await page.textContent('#order-1')), 'the customer should be asked for the deposit right away');
+    await page.close();
+    const off = fixtures();
+    off.settings.features = { autoDeposit: false };
+    const page2 = await open(off, { suffix: '?o=' + keyOf('1') });
+    assert(/We'll confirm we can make your order before asking for payment/.test(await page2.textContent('#order-1')), 'with the switch off the old wording stays');
+    await page2.click('#customer-approve-1');
+    await page2.waitForSelector('text=We got your go-ahead');
+    assert(off.jobs['1'].phase === 'quote_sent' && off.jobs['1'].customerApprovedAt, 'with the switch off the order waits for the owner');
+    await page2.close();
+  });
+  await check('marking a payment received asks how much they paid; no amount means no change', async () => {
+    const db = fixtures();
+    db.jobs['2'].phase = 'order_received'; db.jobs['2'].paymentStatus = 'payment_requested';
+    db.jobs['2'].phaseHistory = { estimate: ago(900), quote_sent: ago(800), order_received: ago(700) };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    const asked = [];
+    owner.removeAllListeners('dialog');
+    let answer = null;
+    owner.on('dialog', d => { asked.push(d.type() + ': ' + d.message()); if (d.type() === 'prompt') answer === null ? d.dismiss() : d.accept(answer); else d.accept(); });
+    // cancelled: nothing changes
+    await owner.selectOption('#order-2 .owner-batch-controls select >> nth=1', 'deposit_received');
+    await owner.waitForTimeout(300);
+    assert(db.jobs['2'].paymentStatus === 'payment_requested' && !db.jobs['2'].depositAmount, 'cancelling the amount should change nothing: ' + JSON.stringify(db.jobs['2']));
+    assert(asked.some(a => /^prompt: How much did Jane pay/.test(a)), 'should ask how much they paid: ' + asked);
+    // not an amount: nothing changes
+    answer = 'lots';
+    await owner.selectOption('#order-2 .owner-batch-controls select >> nth=1', 'deposit_received');
+    await owner.waitForTimeout(300);
+    assert(db.jobs['2'].paymentStatus === 'payment_requested', 'a non-amount should change nothing');
+    // a real amount is saved with the status, so the email can say it
+    answer = '$12.34';
+    await owner.selectOption('#order-2 .owner-batch-controls select >> nth=1', 'deposit_received');
+    await owner.waitForFunction(() => /deposit_received/.test(JSON.stringify(state.batches.find(b => b.id === '2'))));
+    assert(db.jobs['2'].paymentStatus === 'deposit_received' && db.jobs['2'].depositAmount === 12.34 && db.jobs['2'].depositAt, JSON.stringify(db.jobs['2']));
+    assert(asked.some(a => /saying they paid \$12\.34/.test(a)), 'the confirmation should repeat the amount: ' + asked);
+    answer = '30';
+    await owner.selectOption('#order-2 .owner-batch-controls select >> nth=1', 'payment_received');
+    await owner.waitForFunction(() => /payment_received/.test(JSON.stringify(state.batches.find(b => b.id === '2'))));
+    assert(db.jobs['2'].paymentStatus === 'payment_received' && db.jobs['2'].balancePaid === 30 && db.jobs['2'].balancePaidAt && db.jobs['2'].paidAt, JSON.stringify(db.jobs['2']));
+    await owner.close();
   });
   await check('a new request gets its own private key and shows in My Requests straight away', async () => {
     const db = fixtures();
@@ -586,8 +666,10 @@ const STATES = {
     assert(/\$4\.38/.test(await owner.textContent('#oe-est-0')), 'edit form estimate');
     await owner.selectOption('#oe-part-color-0-1', 'silk');   // special rate 0.034
     assert(/\$4\.33/.test(await owner.textContent('#oe-est-0')) && /Silk Gold: 5\.0 g/.test(await owner.textContent('#oe-est-0')), await owner.textContent('#oe-est-0'));
-    await owner.fill('#oe-minutes-0', '90');
+    await owner.fill('#oe-hours-0', '1');
+    await owner.fill('#oe-minutes-0', '30');   // print time is hours and minutes, like everywhere else
     assert(/\$5\.05/.test(await owner.textContent('#oe-est-0')), 'print time should update the estimate');
+    assert(/1h 30m/.test(await owner.textContent('#oe-est-0')) && /flat × /.test(await owner.textContent('#oe-est-0')) && /90 min \(1h 30m\) × /.test(await owner.textContent('#oe-est-0')), 'the edit form should show the price breakdown: ' + await owner.textContent('#oe-est-0'));
     await owner.click('#owner-edit-save');
     await owner.waitForSelector('#edit-request-pe');
     assert(db.jobs.pe.items[0].extraColors[0].colorId === 'silk' && db.jobs.pe.items[0].minutes === 90, JSON.stringify(db.jobs.pe.items[0]));
@@ -1030,7 +1112,7 @@ const STATES = {
     const db = fixtures();
     db.jobs['2'].phase = 'delivered';
     db.jobs['2'].clientName = 'Jane Doe';
-    const page = await open(db, { suffix: '?order=' + keyOf('2') + '&review=2#order-2' });
+    const page = await open(db, { suffix: '?o=' + keyOf('2') + '&review=1' });
     await page.waitForSelector('#review-card');
     assert(await page.inputValue('#review-name') === 'Jane D.', 'name should default to first name and initial');
     await page.click('.review-stars button[aria-label="5 stars"]');
@@ -1360,8 +1442,8 @@ const STATES = {
     assert(!db.jobs['c1'].customerApprovedAt && /tick the box/.test(await page.textContent('#terms-err-c1')), 'approved without agreeing');
     await page.check('#terms-agree-c1');
     await page.click('#customer-approve-c1');
-    await page.waitForSelector('text=We got your go-ahead');
-    assert(db.jobs['c1'].customerApprovedAt, 'approval not saved after agreeing');
+    await page.waitForFunction(() => state.batches.find(b => b.id === 'c1').phase === 'order_received');
+    assert(db.jobs['c1'].customerApprovedAt && db.jobs['c1'].phase === 'order_received', 'approval not saved after agreeing');
     await page.close();
     const after = await open(db);
     await after.evaluate(asOwner('dashboard'));
@@ -1922,7 +2004,7 @@ const STATES = {
     assert(job.phase === 'details_check' && /Edited by hand/.test(job.detailsEmail.body) && job.detailsEmail.subject && job.detailsQuestions === 'Changed question' && job.phaseHistory.details_check, JSON.stringify(job));
     assert(await page.$('#approve-btn-9'), 'the quote can still be sent from Confirming Details');
     await page.close();
-    const customer = await open(db, { suffix: '?order=' + keyOf('9') });
+    const customer = await open(db, { suffix: '?o=' + keyOf('9') });
     await customer.waitForSelector('.details-questions');
     assert(/Changed question/.test(await customer.textContent('.details-questions')), 'customer sees the questions');
     await customer.close();
@@ -1980,7 +2062,7 @@ const STATES = {
     assert(notes && notes.notes === 'Prefers pickup.' && notes.issues === 'Paid late once.', JSON.stringify(db.private));
     assert(!JSON.stringify(db.jobs).includes('Paid late once'), 'client notes must never be saved in an order');
     await owner.close();
-    const page = await open(db, { suffix: '?order=' + keyOf('1') });
+    const page = await open(db, { suffix: '?o=' + keyOf('1') });
     await page.waitForSelector('#conv-1 .thread');
     assert(/Yes, blue works\./.test(await page.textContent('#conv-1')), 'customer sees your message');
     await page.fill('#cmsg-text-1', 'Great, thanks!');
@@ -2016,7 +2098,7 @@ const STATES = {
     assert(/order is confirmed/.test(await cust()), 'confirmed email');
     await page.click('#practice-pay-deposit');
     await page.selectOption('#practice-payment', 'deposit_received');
-    assert(/Deposit received/.test(await cust()), 'deposit email');
+    assert(/Deposit received/.test(await cust()) && /We received your deposit of \$/.test(await cust()), 'deposit email says how much was paid');
     await page.selectOption('#practice-phase', 'final_payment_needed');
     const payBtn = await page.textContent('#practice-pay-all');
     assert(/Pay the rest and shipping deposit/.test(payBtn), payBtn);
@@ -2029,7 +2111,7 @@ const STATES = {
     await page.click('text=Save tracking and mark Shipped');
     await page.click('#practice-skip');
     const all = await cust();
-    ['final payment', 'Payment received', 'is on its way', 'Tracking number: USPS 9400 1111', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
+    ['final payment', 'received, thank you', 'We received your payment of $', 'is on its way', 'Tracking number: USPS 9400 1111', 'How did your SoloPrint order turn out'].forEach(w => assert(all.includes(w), `missing email: ${w}`));
     assert(db.log.every(l => l.startsWith('GET')), `practice must not write anything: ${db.log.filter(l => !l.startsWith('GET'))}`);
     assert(JSON.stringify(db.jobs) === jobsBefore && db.messages.length === messagesBefore, 'real orders and messages untouched');
     await page.close();

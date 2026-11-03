@@ -28,7 +28,10 @@ const cases = [
   ['order confirmed', 'UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }), ['jane@example.com|Your SoloPrint order is confirmed']],
   ['an order saved as Printing before the steps were merged sends no new Confirmed email', 'UPDATE', at({ phase: 'order_received' }), at({ phase: 'production' }), []],
   ['delivered', 'UPDATE', at({ phase: 'delivered' }), at({ phase: 'production' }), ['jane@example.com|Your SoloPrint order has shipped']],
-  ['payment received', 'UPDATE', at({ paymentStatus: 'payment_received' }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Payment received, thank you!']],
+  ['payment received says how much was paid', 'UPDATE', at({ paymentStatus: 'payment_received', balancePaid: 22.84 }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Payment of $22.84 received, thank you!']],
+  ['payment received with no amount on the order: nothing to the customer, the owner is told', 'UPDATE', at({ paymentStatus: 'payment_received' }), at({ paymentStatus: 'payment_requested' }), ['jeffsolo49@gmail.com|The payment received email was NOT sent: no amount on the order']],
+  ['deposit received says how much was paid', 'UPDATE', at({ paymentStatus: 'deposit_received', depositAmount: 6.96 }), at({ paymentStatus: 'payment_requested' }), ['jane@example.com|Deposit received for your SoloPrint order']],
+  ['deposit received with no amount: held back and the owner is told', 'UPDATE', at({ paymentStatus: 'deposit_received' }), at({ paymentStatus: 'payment_requested' }), ['jeffsolo49@gmail.com|The deposit received email was NOT sent: no amount on the order']],
   ['reset to estimate sends nothing', 'UPDATE', at({ phase: 'estimate' }), at({ phase: 'quote_sent' }), []],
   ['unrelated edit sends nothing', 'UPDATE', at({ clientName: 'Janet' }), at({}), []]
 ];
@@ -125,9 +128,9 @@ check('company logo add-on: the logo price is in the quote and the email asks fo
 });
 check('orders marked paid with the old spelling count as paid, and re-saving one sends no second payment email', () => {
   const resaved = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received' }), at({ phase: 'delivered', paymentStatus: 'payment_recieved' }));
-  assert(!resaved.some(m => /Payment received/.test(m.subject)), JSON.stringify(resaved.map(m => m.subject)));
-  const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_received' }), at({ phase: 'order_received', paymentStatus: 'payment_requested' }));
-  assert(paid.some(m => /Payment received/.test(m.subject)), 'a real payment still gets its email');
+  assert(!resaved.some(m => /received, thank you/.test(m.subject)), JSON.stringify(resaved.map(m => m.subject)));
+  const paid = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'payment_received', balancePaid: 10 }), at({ phase: 'order_received', paymentStatus: 'payment_requested' }));
+  assert(paid.some(m => /received, thank you/.test(m.subject)), 'a real payment still gets its email');
 });
 check('confirm details: sends exactly the email the owner approved, once', () => {
   const rec = at({ phase: 'details_check', detailsEmail: { subject: 'A quick\nquestion', body: 'Hi Jane,\n\nHow tall?\n\nThanks' } });
@@ -171,20 +174,24 @@ check('confirmed email asks for the deposit with a Venmo link', () => {
 });
 check('quote email links straight to the order', () => {
   const body = emailsFor('UPDATE', at({ phase: 'quote_sent' }), at({}))[0].body;
-  assert(body.includes('https://soloprint.vercel.app/?order=' + KEY + '#order-1729') && !body.includes('requests=') && !body.includes('jane%40example.com'), body);
+  assert(body.includes('https://soloprint.vercel.app/?o=' + KEY) && !body.includes('requests=') && !body.includes('jane%40example.com') && !body.includes('#order-'), body);
+  assert(/Shipping is not included in this total\. It depends on where you live/.test(body) && /\$15\.00 shipping deposit/.test(body), 'the quote should say shipping is not included');
+  assert(/Tapping it confirms your details, and I'll send you the deposit request right away/.test(body), body);
 });
 check('order links hold a long private key, never the customer\'s email', () => {
   const { orderLink } = load();
-  assert(orderLink(at({})) === 'https://soloprint.vercel.app/?order=' + KEY + '#order-1729', orderLink(at({})));
+  assert(orderLink(at({})) === 'https://soloprint.vercel.app/?o=' + KEY, orderLink(at({})));
+  // New keys are 12 characters, so the whole link is short.
+  assert(orderLink(at({ accessToken: 'Kq7mT3xNp9Rv' })) === 'https://soloprint.vercel.app/?o=Kq7mT3xNp9Rv', orderLink(at({ accessToken: 'Kq7mT3xNp9Rv' })));
   // An order with no key yet (before supabase/order-links.sql is run) opens the "email me my links" page, not the order.
   const nokey = orderLink(at({ accessToken: undefined }));
-  assert(!nokey.includes('?order=') && nokey.includes('?links='), nokey);
-  assert(!orderLink(at({ accessToken: 'short' })).includes('?order=short'), 'a short key was used');
+  assert(!nokey.includes('?o=') && nokey.includes('?links='), nokey);
+  assert(!orderLink(at({ accessToken: 'short' })).includes('?o=short'), 'a too-short key was used');
 });
 check('quote reminders: one per valid customer, with the order link', () => {
   const { reminderEmails } = load();
   const out = reminderEmails([at({ phase: 'quote_sent' }), at({ clientEmail: 'not-an-email' })]);
-  assert(out.length === 1 && out[0].subject.includes('quote is waiting') && out[0].body.includes('#order-1729') && out[0].body.includes('$9.28'), JSON.stringify(out));
+  assert(out.length === 1 && out[0].subject.includes('quote is waiting') && out[0].body.includes('?o=') && out[0].body.includes('$9.28'), JSON.stringify(out));
 });
 
 check('webhook accepts the saved secret and refuses anything else', () => {
@@ -198,7 +205,7 @@ check('"email me my links" sends one email with each order\'s private link, only
   const { linksEmail } = load();
   const m = linksEmail([at({}), at({ id: '1730', accessToken: KEY.split('').reverse().join(''), items: [{ name: 'Hook', qty: 1, filType: 'white', minutes: 10, grams: 4 }] }), at({ id: '9', clientEmail: 'other@example.com' })], 'JANE@example.com');
   assert(m && m.to === 'jane@example.com' && m.subject === 'Your SoloPrint order links', JSON.stringify(m));
-  assert(m.body.includes('?order=' + KEY + '#order-1729') && m.body.includes('#order-1730') && !m.body.includes('order-9'), m.body);
+  assert(m.body.includes('?o=' + KEY) && m.body.includes('?o=' + KEY.split('').reverse().join('')) && !m.body.includes('other@example.com'), m.body);
   assert(linksEmail([at({})], 'nobody@example.com') === null && linksEmail([], 'jane@example.com') === null && linksEmail([at({ accessToken: '' })], 'jane@example.com') === null, 'sent links it should not have');
 });
 check('the LINKS webhook asks the database for that address\'s orders and emails the links', () => {
@@ -207,8 +214,36 @@ check('the LINKS webhook asks the database for that address\'s orders and emails
     return { getResponseCode: () => 200, getContentText: () => JSON.stringify(/order_links_for_email/.test(url) ? [at({})] : []) }; } } });
   const post = (secret, email) => ctx.doPost({ postData: { contents: JSON.stringify({ secret, type: 'LINKS', email }) } }).text;
   assert(post('wrong', 'jane@example.com') === 'forbidden' && sent.length === 0, 'wrong secret was accepted');
-  assert(post('0123456789abcdef0123456789abcdef', 'jane@example.com') === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].body.includes('?order=' + KEY), JSON.stringify(sent));
+  assert(post('0123456789abcdef0123456789abcdef', 'jane@example.com') === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].body.includes('?o=' + KEY), JSON.stringify(sent));
   assert(post('0123456789abcdef0123456789abcdef', 'nobody@example.com') === 'sent 0', 'emailed an address with no orders');
+});
+check('emails to you link straight to the order in owner mode (the site still asks for your password)', () => {
+  const link = 'https://soloprint.vercel.app/?admin=1729';
+  const mine = emailsFor('INSERT', at({}), null).find(m => m.to === 'jeffsolo49@gmail.com');
+  assert(mine.body.includes(link), mine.body);
+  const approved = emailsFor('UPDATE', at({ phase: 'order_received', customerApprovedAt: '2026-10-20T16:00:00Z' }), at({ phase: 'quote_sent' }));
+  const note = approved.find(m => m.to === 'jeffsolo49@gmail.com');
+  assert(note && note.body.includes(link) && /deposit request automatically/.test(note.body), JSON.stringify(approved));
+  assert(approved.some(m => m.to === 'jane@example.com' && /deposit/.test(m.body)), 'approving the quote also sends the customer the deposit request');
+  const manual = emailsFor('UPDATE', at({ phase: 'quote_sent', customerApprovedAt: '2026-10-20T16:00:00Z' }), at({ phase: 'quote_sent' }))[0];
+  assert(/Confirm the order on your dashboard/.test(manual.body) && manual.body.includes(link), manual.body);
+  assert(!/[?&](o|order)=/.test(mine.body), 'an email to you carries no customer key');
+  const sent = [];
+  const ctx = load({ MailApp: { sendEmail: m => sent.push(m) }, UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getContentText: () => '[]' }) } });
+  ctx.doPost({ postData: { contents: JSON.stringify({ secret: '0123456789abcdef0123456789abcdef', type: 'MESSAGE', message: { sender: 'customer', via: 'site', body: 'Can it be blue?' }, record: at({}) }) } });
+  assert(sent[0].to === 'jeffsolo49@gmail.com' && sent[0].body.includes(link), JSON.stringify(sent));
+});
+check('estimate emails say shipping is not included', () => {
+  const body = emailsFor('INSERT', at({}), null).find(m => m.to === 'jane@example.com').body;
+  assert(/Shipping is not included: it depends on where you live/.test(body), body);
+});
+check('payment emails state the amount, and need it', () => {
+  const dep = emailsFor('UPDATE', at({ paymentStatus: 'deposit_received', depositAmount: 6.96 }), at({}))[0];
+  assert(/deposit of \$6\.96/.test(dep.body), dep.body);
+  const pay = emailsFor('UPDATE', at({ paymentStatus: 'payment_received', balancePaid: 22.84 }), at({ paymentStatus: 'deposit_received' }))[0];
+  assert(/payment of \$22\.84/.test(pay.body) && /\$22\.84/.test(pay.subject), pay.subject + pay.body);
+  const none = emailsFor('UPDATE', at({ paymentStatus: 'payment_received' }), at({ paymentStatus: 'deposit_received' }));
+  assert(none.length === 1 && none[0].to === 'jeffsolo49@gmail.com' && none[0].kind === 'owner_notice', JSON.stringify(none));
 });
 check('secret saved as lowercase "secret", with quotes or a semicolon, still works', () => {
   const ctx = load({ PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ secret: " '0123456789abcdef0123456789abcdef'; " }) }) } });
@@ -229,8 +264,8 @@ check('your message from the site is emailed to the customer, tagged with the or
   const sent = [], calls = [];
   const ctx = load({ MailApp: { sendEmail: m => sent.push(m) }, UrlFetchApp: fetchStub(calls) });
   const out = ctx.doPost({ postData: { contents: JSON.stringify({ secret: SECRET, type: 'MESSAGE', message: { sender: 'owner', via: 'site', body: 'Blue works.' }, record: at({}) }) } }).text;
-  assert(out === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].subject.startsWith('[SoloPrint #1729] ') && sent[0].body.startsWith('Blue works.') && sent[0].body.includes('#order-1729'), JSON.stringify(sent));
-  assert(/<a href="https:\/\/[^"]+#order-1729">/.test(sent[0].htmlBody) && !/<script/.test(ctx.emailHtml('<script>x</script>')), 'links in emails are real links: ' + sent[0].htmlBody);
+  assert(out === 'sent 1' && sent[0].to === 'jane@example.com' && sent[0].subject.startsWith('[SoloPrint #1729] ') && sent[0].body.startsWith('Blue works.') && sent[0].body.includes('?o='), JSON.stringify(sent));
+  assert(/<a href="https:\/\/[^"]+\?o=[^"]+">/.test(sent[0].htmlBody) && !/<script/.test(ctx.emailHtml('<script>x</script>')), 'links in emails are real links: ' + sent[0].htmlBody);
 });
 check('{detailsItems} gives the full breakdown, and placeholders work in any capitals', () => {
   const ctx = load({});
@@ -357,7 +392,7 @@ check('order-complete email links the finished-print photo', () => {
 check('review request links to the review form', () => {
   const [m] = ctxD.reviewRequestEmails([at({ phase: 'delivered' })], {}, {});
   assert(m.to === 'jane@example.com' && m.subject === 'How did your SoloPrint order turn out?', m.subject);
-  assert(m.body.includes('https://soloprint.vercel.app/?order=' + KEY + '&review=1729#order-1729'), m.body);
+  assert(m.body.includes('https://soloprint.vercel.app/?o=' + KEY + '&review=1'), m.body);
 });
 check('leftover roll reminder: about 2 weeks before it expires, once per roll', () => {
   const roll = (id, boughtDaysAgo, grams) => ({ id, clientName: 'Lee', clientEmail: 'lee@example.com', phase: 'delivered', createdAt: daysAgo(boughtDaysAgo + 1),
