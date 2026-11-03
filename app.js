@@ -2492,9 +2492,9 @@ function renderOwnerBatch(b) {
         </div>
         ${renderOrderMenu(b, st)}
       </div>
-      <div class="desk-bar" aria-hidden="true">${DESK_STEPS.map((s, i) => `<i class="${i + 1 < st.n ? 'done' : i + 1 === st.n ? 'now' : ''}"></i>`).join('')}</div>
+      ${renderTrackerSteps(b, false)}
       ${b.designTerms && !beforeQuote(phase) ? `<div><span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting for them to agree'}</span></div>` : ''}
-      <div class="desk-stepname">${st.n > 6 ? 'Finished' : `Step ${st.n} of 6 · ${esc(st.label)}`}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
+      <div class="desk-stepname">${st.n > 6 ? 'Finished' : esc(st.label)}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
     </div>
     ${editing ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>` : `${renderNextStep(b, st)}${renderOwnerConversation(b)}`}
     ${renderOrderFolds(b, st)}
@@ -2505,6 +2505,8 @@ function renderOwnerBatch(b) {
 function renderOrderMenu(b, st) {
   const phase = b.phase || 'estimate', id = esc(b.id);
   const items = [
+    beforeQuote(phase) ? `<button type="button" id="edit-request-${id}" onclick="startOwnerEdit('${id}')">Edit their request</button>` : '',
+    beforeQuote(phase) && phase !== 'details_check' ? `<button type="button" id="details-open-${id}" onclick="openDetailsCheck('${id}')">Ask them questions before quoting</button>` : '',
     !beforeQuote(phase) && phase !== 'delivered' ? `<button type="button" onclick="deskChangeQuote('${id}')">Change the quote</button>` : '',
     phaseIndex(phase) > phaseIndex('quote_sent') ? `<button type="button" onclick="deskBack('${id}')">Go back a step</button>` : '',
     st.key === 'deposit' ? `<button type="button" onclick="deskPrintAnyway('${id}')">Print without a deposit…</button>` : '',
@@ -2536,7 +2538,7 @@ function renderNextStep(b, st) {
     }
     case 'deposit': return box(`Waiting on ${name}: the deposit`, `<p>Deposit asked: $${depositAmount(b, total, rules).toFixed(2)} of $${total.toFixed(2)}. When it shows in your Venmo, type the amount and tap Deposit received.</p>
       ${amount('deposit_received')}${mailBox('a receipt for that amount')}
-      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`)}<button type="button" class="btn-secondary" onclick="deskPayment('${id}', 'payment_received')">They paid it all</button></div>`, true);
+      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`)}<button type="button" class="btn-link" onclick="deskPayment('${id}', 'payment_received')">They paid it all instead</button></div>`, true);
     case 'print': {
       const pos = ownerQueuePosition(b), paid = isPaidInFull(b), fp = finalPayment(b, total, rules);
       return box('Next step: print it', `${pos ? `<p>#${pos} in line.</p>` : ''}
@@ -2551,7 +2553,7 @@ function renderNextStep(b, st) {
       ${go('Payment received', `deskPayment('${id}', 'payment_received')`)}`, true);
     case 'ship': return box('Next step: ship it or hand it over', `${renderShippingFields(b)}
       ${mailBox('the "order shipped" email with tracking, invoice and refund note')}
-      <div class="step-buttons">${go('Save tracking and mark Shipped', `saveDeliveryInfo('${id}')`)}<button type="button" class="btn-secondary" onclick="deskHandOver('${id}')">Handed over in person</button></div>`);
+      <div class="step-buttons">${go('Save tracking and mark Shipped', `saveDeliveryInfo('${id}')`)}<button type="button" class="btn-link" onclick="deskHandOver('${id}')">Or: handed over in person</button></div>`);
     default: return box('Finished', `<p>${(b.phaseHistory || {}).delivered ? `Done on ${fmtShort(b.phaseHistory.delivered)}. ` : ''}${b.deliveryTracking ? `Tracking: ${esc(b.deliveryTracking)}` : ''}</p>
       <details class="desk-fold"><summary>Change shipping details</summary>${renderShippingFields(b)}
       <button type="button" class="btn-secondary" onclick="saveDeliveryInfo('${id}')" style="margin-top:10px;">Save shipping details</button>
@@ -2580,8 +2582,7 @@ function renderQuoteForm(b) {
   const hasSpecial = b.items.some(usesRolls);
   const checks = b.items.some(it => rollParts(it).length) ? leftoverChecks(b) : [];
   const rollProblem = checks.some(list => list.some(c => !c.ok));
-  return `<button class="btn-sm" type="button" id="edit-request-${b.id}" onclick="startOwnerEdit('${b.id}')">Edit their request</button>
-    ${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
+  return `${b.items.map((it, i) => renderOwnerItem(b.id, it, i)).join('')}
     ${checks.flat().filter(c => !c.ok).map(c => `<div class="roll-check bad">⚠ ${esc(c.text)}</div>`).join('')}
     ${renderOwnerCharges(b)}
     ${renderDetailsCheck(b)}

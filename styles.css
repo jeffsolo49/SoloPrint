@@ -1021,7 +1021,13 @@ a.auto-link { color: inherit; text-decoration: underline; font-weight: 600; over
 .desk-bar i { height: 6px; border-radius: 3px; background: var(--border); }
 .desk-bar i.done { background: var(--accent); }
 .desk-bar i.now { background: rgba(var(--accent-rgb), 0.45); }
-.desk-stepname { font-size: 13px; font-weight: 700; color: var(--muted); }
+.desk-order .tracker { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: minmax(0, 1fr); margin: 10px 0 4px; }
+.desk-order .tracker-step { display: block; text-align: center; padding: 0 2px; }
+.desk-order .tracker-step::before { top: 17px; left: -50%; width: 100%; height: 4px; }
+.desk-order .tracker-dot { width: 36px; height: 36px; margin: 0 auto 6px; font-size: 15px; }
+.desk-order .tracker-label { font-size: 12px; }
+.desk-order .tracker-time { display: none; }
+.desk-stepname { font-size: 15px; font-weight: 800; color: var(--text); }
 .next-step { border: 2px solid var(--accent); background: rgba(var(--accent-rgb), 0.06); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
 .next-step.theirs { border-color: var(--border); border-style: dashed; background: var(--surface); }
 .next-step-label { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
