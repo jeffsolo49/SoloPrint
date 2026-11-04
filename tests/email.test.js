@@ -45,7 +45,8 @@ cases.forEach(([name, type, rec, old, want]) => check(name, () => {
 }));
 check('confirmed email has a prefilled Venmo link', () => {
   const body = emailsFor('UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }))[0].body;
-  assert(body.includes('https://venmo.com/Jeffrey-Sol-3?txn=pay&amount=9.28'), body);
+  assert(body.includes('https://venmo.com/Jeffrey-Sol-3?txn=pay&amount=9.28&note=SoloPrint'), body);
+  assert(!/note=[^\s]*(order|%3A)/i.test(body), 'Venmo note should be plain: ' + body);
 });
 check('owner notice lists customer photo links', () => {
   assert(emailsFor('INSERT', at({}), null)[0].body.includes('Photo 1: https://img.test/a.png'), 'photo link missing');

@@ -492,6 +492,14 @@ function findRoll(rolls, email, part) {
 }
 
 // What customers are told while vacation mode is on (site banner and request-received email).
+// Venmo note: "SoloPrint" + up to 3 words of the first item's name + one word for what the payment is
+// (deposit, balance or full). Short and plain on purpose: it must not look like a business invoice.
+function venmoNote(rec, kind) {
+  const first = ((rec && rec.items) || [])[0] || {};
+  const words = String(first.name || '').replace(/[^A-Za-z0-9 '-]+/g, ' ').split(/\s+/).filter(Boolean).slice(0, 3).join(' ');
+  return ['SoloPrint', words, kind || ''].filter(Boolean).join(' ');
+}
+
 function vacationText(v) {
   if (!v || !v.on) return '';
   if (v.message && String(v.message).trim()) return String(v.message).trim();

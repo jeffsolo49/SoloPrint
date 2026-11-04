@@ -641,18 +641,18 @@ function emailVars(rec, custom, site) {
     specialRoll: roll ? money(roll) : '',
     extraCharges: extraCharges(rec).map(c => c.label + ': $' + money(c.amount)).join('\n'),
     amountDue: unpaid ? money(left) : '',
-    venmoLink: unpaid ? venmoUrl(rec, left, rules) : '',
+    venmoLink: unpaid ? venmoUrl(rec, left, rules, rec.paymentStatus === 'deposit_received' ? 'balance' : 'full') : '',
     deposit: money(fp.deposit),
     depositDue: unpaid && rec.paymentStatus !== 'deposit_received' && depositAmount(rec, total, rules) > 0 && depositAmount(rec, total, rules) < total ? money(depositAmount(rec, total, rules)) : '',
     depositPercent: String(Math.round(Number(rules.depositPercent) || 0)),
-    depositLink: unpaid && rec.paymentStatus !== 'deposit_received' && depositAmount(rec, total, rules) > 0 && depositAmount(rec, total, rules) < total ? venmoUrl(rec, depositAmount(rec, total, rules), rules) : '',
+    depositLink: unpaid && rec.paymentStatus !== 'deposit_received' && depositAmount(rec, total, rules) > 0 && depositAmount(rec, total, rules) < total ? venmoUrl(rec, depositAmount(rec, total, rules), rules, 'deposit') : '',
     shippingDeposit: money(fp.fee),
     postage: postageRefund(rec, rules) ? money(postageRefund(rec, rules).postage) : '',
     refund: postageRefund(rec, rules) ? money(postageRefund(rec, rules).refund) : '',
     refundNote: postageRefund(rec, rules) ? (postageRefund(rec, rules).refund > 0 ? "I'll send your $" + money(postageRefund(rec, rules).refund) + ' shipping deposit refund by Venmo.' : 'Postage used up the whole shipping deposit, so there is no refund this time.') : '',
     remainder: money(fp.remainder),
     shippingFee: money(fp.fee),
-    remainderLink: total ? venmoUrl(rec, fp.remainder, rules) : '',
+    remainderLink: total ? venmoUrl(rec, fp.remainder, rules, 'balance') : '',
     materialNote: (site && site.materialNote) || DEFAULT_MATERIAL_NOTE,
     queueNote: queueNote(rec, site),
     designTermsNote: rec.designTerms ? 'This order includes a custom design. When you approve your quote, you will be asked to read and agree to my custom design terms.' : '',
@@ -1220,6 +1220,14 @@ function findRoll(rolls, email, part) {
 }
 
 // What customers are told while vacation mode is on (site banner and request-received email).
+// Venmo note: "SoloPrint" + up to 3 words of the first item's name + one word for what the payment is
+// (deposit, balance or full). Short and plain on purpose: it must not look like a business invoice.
+function venmoNote(rec, kind) {
+  const first = ((rec && rec.items) || [])[0] || {};
+  const words = String(first.name || '').replace(/[^A-Za-z0-9 '-]+/g, ' ').split(/\s+/).filter(Boolean).slice(0, 3).join(' ');
+  return ['SoloPrint', words, kind || ''].filter(Boolean).join(' ');
+}
+
 function vacationText(v) {
   if (!v || !v.on) return '';
   if (v.message && String(v.message).trim()) return String(v.message).trim();
@@ -1275,8 +1283,8 @@ function orderTitle(rec) {
   return items.length ? items.map(it => it.name || 'Unnamed').join(', ') : 'your request';
 }
 
-function venmoUrl(rec, total, rules) {
-  const note = `SoloPrint order ${String(rec.id || '').slice(-4)}`.trim();
+function venmoUrl(rec, total, rules, kind) {
+  const note = venmoNote(rec, kind);
   return `https://venmo.com/${encodeURIComponent(rules.venmo)}?txn=pay&amount=${money(total)}&note=${encodeURIComponent(note)}`;
 }
 

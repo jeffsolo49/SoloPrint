@@ -3029,14 +3029,14 @@ function practiceVars() {
   }).join('\n\n');
   const vars = { name: o.clientName, customerName: o.clientName, customerEmail: o.clientEmail, title: orderTitle(o), submitted: formatAustinTime(o.createdAt),
     items: detailsItemsText(o), itemsWithPrices: withPrices, estimate: est ? est.toFixed(2) : '', total: total ? total.toFixed(2) : '',
-    specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left) : '',
+    specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left, o.paymentStatus === 'deposit_received' ? 'balance' : 'full') : '',
     depositDue: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? depositAmount(o, total, rules).toFixed(2) : '',
     depositPercent: String(Math.round(Number(rules.depositPercent) || 0)),
-    depositLink: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? venmoPayUrl(o, depositAmount(o, total, rules)) : '',
+    depositLink: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? venmoPayUrl(o, depositAmount(o, total, rules), 'deposit') : '',
     postage: postageRefund(o, rules) ? postageRefund(o, rules).postage.toFixed(2) : '',
     refund: postageRefund(o, rules) ? postageRefund(o, rules).refund.toFixed(2) : '',
     refundNote: postageRefund(o, rules) ? (postageRefund(o, rules).refund > 0 ? `I'll send your $${postageRefund(o, rules).refund.toFixed(2)} shipping deposit refund by Venmo.` : 'Postage used up the whole shipping deposit, so there is no refund this time.') : '',
-    deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), shippingDeposit: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder) : '',
+    deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), shippingDeposit: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder, 'balance') : '',
     materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
     delivery: [o.deliveryDate && `Ship date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking number: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
     photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '', detailsItems: detailsBreakdown(o) };
