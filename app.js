@@ -333,7 +333,7 @@ function renderCustomerOrderAction(batch) {
       const left = done ? fp.remainder : amountLeft(batch, total, rules);
       return `<div class="order-action"><strong>Deposit received ($${depositAmount(batch, total, rules).toFixed(2)}).</strong> Thank you!
         ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left, 'balance'))}">Pay the rest${done ? ' and shipping deposit' : ''}, $${left.toFixed(2)}, with Venmo</a>
-        <div class="order-action-sub">${done ? esc(shippingDepositNote(rules)) : 'Due when your order is ready.'}</div>` : ''}
+        <div class="order-action-sub">${done ? esc(shippingDepositNote(rules)) : `Due when your order is ready, as a second Venmo payment (you can pay it now if you like). A $${(Number(rules.shippingFee) || 0).toFixed(2)} shipping deposit is added then. It is partly refunded based on the actual postage cost.`}</div>` : ''}
       </div>`;
     }
     if (currentRules().venmo && total && phaseIndex(phase) >= phaseIndex('final_payment_needed')) {
@@ -349,7 +349,7 @@ function renderCustomerOrderAction(batch) {
       return `<div class="order-action">
         ${offerDeposit ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, deposit, 'deposit'))}">Pay the ${Math.round(deposit / total * 100)}% deposit, $${deposit.toFixed(2)}, with Venmo</a>` : ''}
         <a class="${offerDeposit ? 'btn-secondary btn-venmo-full' : 'btn-venmo'}" href="${esc(venmoPayUrl(batch, total, 'full'))}">Pay ${offerDeposit ? 'in full, ' : ''}$${total.toFixed(2)} with Venmo</a>
-        <div class="order-action-sub">Opens Venmo with the amount and order note filled in.${featureOn('queue') && batch.phase === 'order_received' ? ' Your place in line is set when your payment comes in.' : ''} We'll mark it received once it comes through.</div>
+        <div class="order-action-sub">${offerDeposit ? `Pay a deposit now and the rest when your print is done (two Venmo payments), or pay in full now (one Venmo payment). ` : ''}Shipping is extra: a $${(Number(rules.shippingFee) || 0).toFixed(2)} shipping deposit is collected with your final payment and partly refunded based on the actual postage cost. Opens Venmo with the amount filled in.${featureOn('queue') && batch.phase === 'order_received' ? ' Your place in line is set when your payment comes in.' : ''} We'll mark it received once it comes through.</div>
       </div>`;
     }
   }
@@ -5138,7 +5138,7 @@ function balanceDue(b, total, rules) {
 }
 function shippingDepositNote(rules) {
   const fee = Number(rules.shippingFee) || 0, pack = Number(rules.packagingFee) || 0;
-  return `Includes a $${fee.toFixed(2)} shipping deposit ($${pack.toFixed(2)} for packaging and $${Math.max(0, fee - pack).toFixed(2)} toward postage). Whatever isn't spent on postage is refunded after your package is mailed.`;
+  return `Includes a $${fee.toFixed(2)} shipping deposit ($${pack.toFixed(2)} for packaging and $${Math.max(0, fee - pack).toFixed(2)} toward postage). The shipping deposit is partly refunded: whatever isn't spent on packaging and postage comes back to you by Venmo after your package is mailed, based on the actual cost.`;
 }
 
 // The deposit the customer actually paid; used by {deposit} and {remainder} in the "printing done" email.

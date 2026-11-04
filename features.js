@@ -1784,7 +1784,7 @@ const SITE_TEXT = [
     ['step_order_received', 'Step 4 name', 'Confirmed & Printing'],
     ['stepInfo_order_received', 'Step 4 description', 'Your order is confirmed. Once your deposit is in, you have a place in line and it will be printed.'],
     ['step_final_payment_needed', 'Step 5 name', 'Printing Complete'],
-    ['stepInfo_final_payment_needed', 'Step 5 description', 'Your print is done. We need your final payment, shipping deposit and shipping address before we send it out.'],
+    ['stepInfo_final_payment_needed', 'Step 5 description', 'Your print is done. We need your final payment, shipping deposit (partly refunded based on the actual postage cost) and shipping address before we send it out.'],
     ['step_ready_to_ship', 'Step 6 name', 'Ready to Ship'],
     ['stepInfo_ready_to_ship', 'Step 6 description', "Your payment and address are in. I'm packing your order and will send the tracking number."],
     ['step_delivered', 'Step 7 name', 'Shipped'],

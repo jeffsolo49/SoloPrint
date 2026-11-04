@@ -59,6 +59,13 @@ localStorage (`OWNER_REMEMBER_KEY`, `refreshOwnerSession`, also retried on a 401
 `weakPasswordReason` (12+ characters, no common words); the card lists safety tips. Supabase dashboard settings the owner can add: 2-step on the login Gmail,
 Auth → Sessions "time-box"/"inactivity timeout" (Pro), and leaked-password protection (Pro).
 
+## Payments wording
+
+Venmo note (`venmoNote`, email-templates.js, shared): "SoloPrint" + up to 3 words of the first item + deposit / balance / full; never "order" or a number
+(owner doesn't want it to look like a business). Every customer message about paying explains the choice (pay in full = one Venmo payment, or deposit now and
+the rest later = two) and that the shipping deposit is only partly refunded, based on the real packaging and postage cost (quote, reminder, confirmed,
+deposit, printing done, payment, shipped emails; site order action; `shippingDepositNote`). Keep that when editing these texts.
+
 ## Data
 
 - `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job` (returns the new order's key), `customer_orders(keys)`,

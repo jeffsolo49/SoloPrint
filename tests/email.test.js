@@ -165,7 +165,7 @@ check('printing done email: total, deposit, remainder with the shipping fee', ()
     at({ phase: 'production', paymentStatus: 'deposit_received', depositAmount: 4.64 }))[0].body;
   const m = body.match(/total cost is \$(\d+\.\d\d).*deposit of \$(\d+\.\d\d) the remainder is \$(\d+\.\d\d)/);
   assert(m && m[2] === '4.64' && Math.abs(Number(m[1]) - 4.64 + 15 - Number(m[3])) < 0.011, body);
-  assert(body.includes('a $15.00 deposit for USPS') && body.includes('refund whatever was not spent on postage') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
+  assert(body.includes('a $15.00 deposit for USPS') && body.includes('based on the actual cost') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
 });
 check('shipped email: tracking, invoice and the shipping deposit refund', () => {
   const body = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64, deliveryTracking: 'USPS 9400 1111', postageCost: 9.5 }),
