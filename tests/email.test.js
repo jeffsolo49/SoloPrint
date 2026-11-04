@@ -45,7 +45,8 @@ cases.forEach(([name, type, rec, old, want]) => check(name, () => {
 }));
 check('confirmed email has a prefilled Venmo link', () => {
   const body = emailsFor('UPDATE', at({ phase: 'order_received' }), at({ phase: 'quote_sent' }))[0].body;
-  assert(body.includes('https://venmo.com/Jeffrey-Sol-3?txn=pay&amount=9.28'), body);
+  assert(body.includes('https://venmo.com/Jeffrey-Sol-3?txn=pay&amount=9.28&note=SoloPrint'), body);
+  assert(!/note=[^\s]*(order|%3A)/i.test(body), 'Venmo note should be plain: ' + body);
 });
 check('owner notice lists customer photo links', () => {
   assert(emailsFor('INSERT', at({}), null)[0].body.includes('Photo 1: https://img.test/a.png'), 'photo link missing');
@@ -164,7 +165,7 @@ check('printing done email: total, deposit, remainder with the shipping fee', ()
     at({ phase: 'production', paymentStatus: 'deposit_received', depositAmount: 4.64 }))[0].body;
   const m = body.match(/total cost is \$(\d+\.\d\d).*deposit of \$(\d+\.\d\d) the remainder is \$(\d+\.\d\d)/);
   assert(m && m[2] === '4.64' && Math.abs(Number(m[1]) - 4.64 + 15 - Number(m[3])) < 0.011, body);
-  assert(body.includes('a $15.00 deposit for USPS') && body.includes('refund whatever was not spent on postage') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
+  assert(body.includes('a $15.00 deposit for USPS') && body.includes('based on the actual cost') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
 });
 check('shipped email: tracking, invoice and the shipping deposit refund', () => {
   const body = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64, deliveryTracking: 'USPS 9400 1111', postageCost: 9.5 }),

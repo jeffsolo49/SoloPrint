@@ -329,7 +329,9 @@ const STATES = {
     // the hour is up: only the remembered refresh token is left
     await page.evaluate(() => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OLD', expiresAt: Date.now() - 1000 })));
     await page.reload();
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.loading === false, null, { timeout: 15000 });
     await page.evaluate(STATES['owner login']);
+    await page.evaluate(async () => { await loadBatches(); render(); });
     await page.waitForSelector('.desk-layout');
     assert(db.log.includes('AUTH refresh'), 'did not refresh the login');
     assert(JSON.parse(await page.evaluate(() => localStorage.getItem('soloprint_owner_remember_v1'))).refresh === 'REFRESH-2', 'newest refresh token not saved');

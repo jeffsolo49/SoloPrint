@@ -29,12 +29,12 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You tap "Send quote" on a new request.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nShipping is not included in this total. It depends on where you live: with your final payment I collect a ${shippingDeposit} shipping deposit and refund whatever the postage doesn\'t use.\n\nIf it looks good, tap "Looks good" here: {orderLink}\nTapping it confirms your details, and I\'ll send you the deposit request right away. Nothing is charged until you pay it. Questions? Just reply to this email.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nShipping is not included in this total. It depends on where you live: with your final payment I collect a ${shippingDeposit} shipping deposit. After I mail your package, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\nHow paying works: you can pay in full, or pay a {depositPercent}% deposit first and the rest when your print is done. Paying in two parts means two separate Venmo payments.\n\nIf it looks good, tap "Looks good" here: {orderLink}\nTapping it confirms your details, and I\'ll send you the deposit request right away. Nothing is charged until you pay it. Questions? Just reply to this email.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
     subject: 'Still interested? Your SoloPrint quote is waiting',
-    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until you tap Looks good and pay the deposit.\n\n{footer}'
+    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until you tap Looks good and pay. You can pay in full, or a deposit first and the rest later (two Venmo payments). Shipping is extra: a ${shippingDeposit} shipping deposit, partly refunded based on the real postage.\n\n{footer}'
   },
   owner_approved: {
     label: 'Quote approved', to: 'You', when: 'The customer taps "Looks good" on their quote.',
@@ -44,17 +44,17 @@ const EMAIL_TEMPLATES = {
   confirmed: {
     label: 'Order confirmed (printing)', to: 'Customer', when: 'You tap "Confirm order" after the customer taps "Looks good" (or right away, if orders confirm themselves).',
     subject: 'Your SoloPrint order is confirmed',
-    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nTo get in line, please pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo: {depositLink}\nOr pay everything now: {venmoLink}\n(The links fill in the amount and your order number.)\n\n{footer}'
+    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nTo get in line, you have two choices:\n\n1) Pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo now: {depositLink}\n   You will make a second Venmo payment for the rest when your print is done.\n\n2) Or pay everything now, ${amountDue}, in one Venmo payment: {venmoLink}\n\n(The links fill in the amount and a short note.)\n\nShipping is separate. When your print is done I collect a ${shippingDeposit} shipping deposit with your final payment. After I mail it, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\n{footer}'
   },
   final_payment_needed: {
     label: 'Printing complete', to: 'Customer', when: 'You tap "Printing done" (not sent when they have already paid in full).',
     subject: 'Your SoloPrint order is ready — final payment needed',
-    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${total}. But that is not including your deposit. Since you gave a deposit of ${deposit} the remainder is ${remainder}. That includes a ${shippingDeposit} shipping deposit.\n\nShipping address is also needed at this point. If you are in the USA, shipping is a ${shippingDeposit} deposit for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50. After I mail your package I refund whatever was not spent on postage, and send you a full invoice. We charge the deposit up front so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nOptionally if you have an account with another shipper you can send me a pre-paid label.\nReply to this email to arrange that option instead.\n\nPay with Venmo: {remainderLink}\nThen reply to this email with your shipping address.\n\n{footer}"
+    body: "Hi {name},\n\nYour order for {title} is done printing! The total cost is ${total}. But that is not including your deposit. Since you gave a deposit of ${deposit} the remainder is ${remainder}. That includes a ${shippingDeposit} shipping deposit.\n\nShipping address is also needed at this point. If you are in the USA, shipping is a ${shippingDeposit} deposit for USPS. $1 is for packaging and the rest for postage. Typically the cost for postage is about $9.50. After I mail your package I refund the part of the shipping deposit that was not spent on packaging and postage, based on the actual cost, and send you a full invoice. We charge the deposit up front so we can ship it on the same trip to the post office without waiting for shipping payments.\n\nOptionally if you have an account with another shipper you can send me a pre-paid label.\nReply to this email to arrange that option instead.\n\nThis is your last payment. Pay with Venmo: {remainderLink}\nThen reply to this email with your shipping address.\n\n{footer}"
   },
   delivered: {
     label: 'Order shipped', to: 'Customer', when: 'You tap "Save tracking and mark Shipped" (the order moves to Shipped).',
     subject: 'Your SoloPrint order has shipped',
-    body: "Hi {name},\n\nYour order for {title} is on its way!\n\n{delivery}\n\nHere's a photo of your print: {photo}\n\nYour invoice:\n{invoiceSummary}\n\n{refundNote}\n\n{footer}"
+    body: "Hi {name},\n\nYour order for {title} is on its way!\n\n{delivery}\n\nHere's a photo of your print: {photo}\n\nYour invoice:\n{invoiceSummary}\n\nYour shipping deposit is partly refunded based on the actual cost of packaging and postage. {refundNote}\n\n{footer}"
   },
   delivery_update: {
     label: 'Shipping details', to: 'Customer', when: 'You save changed shipping details on a shipped order.',
@@ -64,12 +64,12 @@ const EMAIL_TEMPLATES = {
   deposit: {
     label: 'Deposit received', to: 'Customer', when: 'You tap "Deposit received" with the amount they paid. Their place in line is set now.',
     subject: 'Deposit received for your SoloPrint order',
-    body: 'Hi {name},\n\nWe received your deposit of ${amountPaid} for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready. Pay with Venmo: {venmoLink}\n\n{footer}'
+    body: 'Hi {name},\n\nWe received your deposit of ${amountPaid} for {title}. Thank you!\n\n{queueNote}\n\nThe rest (${amountDue}) is due when your order is ready, as a second Venmo payment. Prefer to get it over with? You can pay it now: {venmoLink}\n\nWhen your print is done I also collect a ${shippingDeposit} shipping deposit. After I mail it, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\n{footer}'
   },
   payment: {
     label: 'Payment received', to: 'Customer', when: 'You tap "Payment received" (or "They paid it all") with the amount they paid.',
     subject: 'Payment of ${amountPaid} received, thank you!',
-    body: 'Hi {name},\n\nWe received your payment of ${amountPaid} for {title}. Thank you!\n\n{footer}'
+    body: 'Hi {name},\n\nWe received your payment of ${amountPaid} for {title}. Thank you!\n\nIf it included the ${shippingDeposit} shipping deposit, I refund the part that isn\'t spent on packaging and postage after I mail your package, based on the actual cost.\n\n{footer}'
   },
   review_request: {
     label: 'Review request', to: 'Customer', when: "A week after an order is delivered (sent once). Reviews wait for your approval in Settings > Reviews.",
@@ -492,6 +492,14 @@ function findRoll(rolls, email, part) {
 }
 
 // What customers are told while vacation mode is on (site banner and request-received email).
+// Venmo note: "SoloPrint" + up to 3 words of the first item's name + one word for what the payment is
+// (deposit, balance or full). Short and plain on purpose: it must not look like a business invoice.
+function venmoNote(rec, kind) {
+  const first = ((rec && rec.items) || [])[0] || {};
+  const words = String(first.name || '').replace(/[^A-Za-z0-9 '-]+/g, ' ').split(/\s+/).filter(Boolean).slice(0, 3).join(' ');
+  return ['SoloPrint', words, kind || ''].filter(Boolean).join(' ');
+}
+
 function vacationText(v) {
   if (!v || !v.on) return '';
   if (v.message && String(v.message).trim()) return String(v.message).trim();
