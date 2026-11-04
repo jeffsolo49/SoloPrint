@@ -1276,7 +1276,7 @@ function orderTitle(rec) {
 }
 
 function venmoUrl(rec, total, rules) {
-  const note = `SoloPrint order ${rec.id}: ${orderTitle(rec)}`.slice(0, 140);
+  const note = `SoloPrint order ${String(rec.id || '').slice(-4)}`.trim();
   return `https://venmo.com/${encodeURIComponent(rules.venmo)}?txn=pay&amount=${money(total)}&note=${encodeURIComponent(note)}`;
 }
 
