@@ -2571,12 +2571,13 @@ function renderNextStep(b, st) {
   const id = esc(b.id), name = firstNameOf(b), rules = rulesFor(b);
   const total = b.items.every(itemPriced) ? orderSum(b) : 0;
   const hasEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.clientEmail || ''));
-  const mailBox = text => hasEmail ? `<label class="step-mail"><input type="checkbox" id="step-mail-${id}" checked /> <span>Email ${name} ${text}</span></label>` : '<div class="field-help">No email address on this order, so nothing is emailed.</div>';
+  // The tick box is hidden: tapping the step button opens a pop-up (askMail) that asks "send the email, or continue without it".
+  const mailBox = text => hasEmail ? `<input type="checkbox" id="step-mail-${id}" class="step-mail-flag" checked hidden data-ask="${esc(`Email ${name} ${text}?`)}" /><div class="field-help step-mail-note">This step emails ${name} ${text}. You'll be asked first, and you can continue without sending it.</div>` : '<div class="field-help">No email address on this order, so nothing is emailed.</div>';
   const amount = status => `<div class="field step-amount"><label for="step-amount-${id}">Amount in your Venmo ($)</label>
     <input type="number" inputmode="decimal" min="0" step="0.01" id="step-amount-${id}" value="${Math.max(0, expectedPayment(b, status)).toFixed(2)}" /></div>`;
   const box = (title, body, mine = st.mine) => `<section class="next-step ${mine ? 'mine' : 'theirs'}" aria-label="Next step">
     <div class="next-step-label">${title}</div>${body}<div class="alert error" id="step-err-${id}"></div></section>`;
-  const go = (label, fn) => `<button type="button" class="btn-primary step-go" id="step-go-${id}" onclick="${fn}">${label}</button>`;
+  const go = (label, fn) => `<button type="button" class="btn-primary step-go" id="step-go-${id}" data-run="${esc(fn)}" onclick="askMail('${id}', this.dataset.run)">${label}</button>`;
   switch (st.key) {
     case 'quote': return box('Next step: price it and send the quote', renderQuoteForm(b));
     case 'approve': return box(`Waiting on ${name}`, `<p>Quote sent ${fmtShort((b.phaseHistory || {}).quote_sent)}. When ${name} taps "Looks good", the order comes back to Needs me for you to confirm.</p>
@@ -2588,7 +2589,7 @@ function renderNextStep(b, st) {
     }
     case 'deposit': return box(`Waiting on ${name}: the deposit`, `<p>Deposit asked: $${depositAmount(b, total, rules).toFixed(2)} of $${total.toFixed(2)}. When it shows in your Venmo, type the amount and tap Deposit received.</p>
       ${amount('deposit_received')}${mailBox('a receipt for that amount')}
-      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`)}<button type="button" class="btn-secondary" onclick="deskPayment('${id}', 'payment_received')">They paid it all</button></div>`, true);
+      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`)}<button type="button" class="btn-secondary" data-run="${esc(`deskPayment('${id}', 'payment_received')`)}" onclick="askMail('${id}', this.dataset.run)">They paid it all</button></div>`, true);
     case 'print': {
       const pos = ownerQueuePosition(b), paid = isPaidInFull(b), fp = finalPayment(b, total, rules);
       return box('Next step: print it', `${pos ? `<p>#${pos} in line.</p>` : ''}
@@ -4906,6 +4907,40 @@ async function updatePaymentStatus(batchId, paymentStatus) {
 // ── ORDER STEPS (the buttons on the order screen) ─────────────────────────
 // Emails go out from Code.gs when the order changes. Unticking "Email ..." saves quietEmails { at, keys } with
 // the change: Code.gs skips those emails for that one save only (keys are email names: confirmed, deposit, ...).
+// Pop-up before a step that emails the customer: send the email, or save the step without it.
+// It sets the (hidden) tick box the step functions read, then runs the step.
+function askMail(id, code) {
+  const run = () => { try { (new Function(code))(); } catch (e) { console.error(e); } };
+  const flag = document.getElementById(`step-mail-${id}`);
+  if (!flag) { run(); return; }
+  const opener = document.activeElement;
+  const wrap = document.createElement('div');
+  wrap.className = 'mail-modal-backdrop';
+  wrap.innerHTML = `<div class="mail-modal" role="dialog" aria-modal="true" aria-labelledby="mail-modal-title">
+    <h3 id="mail-modal-title">Send an email?</h3>
+    <p></p>
+    <div class="mail-modal-buttons">
+      <button type="button" class="btn-primary" data-send="1">Send email and continue</button>
+      <button type="button" class="btn-secondary" data-send="0">Don't send email, continue</button>
+      <button type="button" class="btn-link" data-send="x">Cancel, go back</button>
+    </div></div>`;
+  wrap.querySelector('p').textContent = flag.dataset.ask || 'Email the customer about this step?';
+  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') { close(); if (opener && opener.focus) opener.focus(); } };
+  wrap.addEventListener('click', e => {
+    const v = e.target.closest && e.target.closest('button[data-send]');
+    if (!v && e.target !== wrap) return;
+    const send = v ? v.dataset.send : 'x';
+    close();
+    if (send === 'x') { if (opener && opener.focus) opener.focus(); return; }
+    flag.checked = send === '1';
+    run();
+  });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(wrap);
+  wrap.querySelector('button').focus();
+}
+
 function quietIfUnticked(b, keys) {
   const box = document.getElementById(`step-mail-${b.id}`);
   b.quietEmails = { at: new Date().toISOString(), keys: box && !box.checked ? keys : [] };

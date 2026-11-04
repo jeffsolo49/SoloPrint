@@ -184,6 +184,9 @@ async function mockBackend(page, db) {
   });
 }
 
+// The pop-up before a step that emails the customer: send (default) or continue without the email.
+const mailChoice = (page, send = true) => page.click(`.mail-modal button[data-send="${send ? 1 : 0}"]`, { timeout: 4000 });
+
 // Waits for the "we received your request" message instead of a fixed time (CI machines can be slow).
 const requestSent = page => page.waitForFunction(() => /received your request/.test((document.getElementById('submit-ok') || {}).textContent || ''), null, { timeout: 15000 });
 
@@ -534,21 +537,24 @@ const STATES = {
     // not an amount: nothing changes
     await owner.fill('#step-amount-2', '');
     await owner.click('#order-2 button:has-text("Deposit received")');
+    await mailChoice(owner);
     await owner.waitForSelector('#step-err-2', { state: 'visible' });
     assert(db.jobs['2'].paymentStatus === 'payment_requested' && !db.jobs['2'].depositAmount, 'a non-amount should change nothing: ' + JSON.stringify(db.jobs['2']));
     // a real amount is saved with the status, so the email can say it
     await owner.fill('#step-amount-2', '12.34');
     await owner.click('#order-2 button:has-text("Deposit received")');
+    await mailChoice(owner);
     await owner.waitForSelector('#order-2 button:has-text("Printing done")');
     assert(db.jobs['2'].paymentStatus === 'deposit_received' && db.jobs['2'].depositAmount === 12.34 && db.jobs['2'].depositAt, JSON.stringify(db.jobs['2']));
     assert(db.jobs['2'].quietEmails && db.jobs['2'].quietEmails.keys.length === 0, 'emailing is the default');
     // now it's the printing step; printing done moves to the final payment (stock is taken then)
     await owner.click('#order-2 button:has-text("Printing done")');
+    await mailChoice(owner);
     await owner.waitForSelector('#order-2 button:has-text("Payment received")');
     // final payment with Email unticked: paid, ready to ship, and the receipt is quiet
     await owner.fill('#step-amount-2', '30');
-    await owner.uncheck('#step-mail-2');
     await owner.click('#order-2 button:has-text("Payment received")');
+    await mailChoice(owner, false);
     await owner.waitForFunction(() => /Paid in full/.test((document.getElementById('conv-2') || {}).textContent || ''));
     const j = db.jobs['2'];
     assert(j.paymentStatus === 'payment_received' && j.balancePaid === 30 && j.balancePaidAt && j.paidAt && j.quietEmails.keys.join() === 'payment', JSON.stringify(j));
@@ -565,8 +571,13 @@ const STATES = {
     assert(/jane@example\.com/.test(await owner.textContent('.desk-row.tone-need:has-text("Confirm order")')), 'an approved quote is in Needs me');
     await owner.evaluate(showOrder('1'));
     assert(/Step 2 of 6/.test(await owner.textContent('#order-1 .desk-stepname')), 'step bar');
-    await owner.uncheck('#step-mail-1');
+    // the pop-up: cancel changes nothing, then "don't send" continues without the email
     await owner.click('#step-go-1');
+    assert(/order confirmed/.test(await owner.textContent('.mail-modal p')) && await owner.locator('.mail-modal button:has-text("Send email and continue")').isVisible() && await owner.locator('.mail-modal button:has-text("Don\'t send email, continue")').isVisible(), 'pop-up asks');
+    await owner.click('.mail-modal button[data-send="x"]');
+    assert(db.jobs['1'].phase === 'quote_sent' && !(await owner.locator('.mail-modal').count()), 'cancel changes nothing');
+    await owner.click('#step-go-1');
+    await mailChoice(owner, false);
     await owner.waitForSelector('#order-1 .order-menu-list button:has-text("Print without a deposit")', { state: 'attached' });
     assert(db.jobs['1'].quietEmails.keys.join() === 'confirmed', JSON.stringify(db.jobs['1'].quietEmails));
     // More menu: printing without a deposit asks first and sends nothing
@@ -1765,10 +1776,12 @@ const STATES = {
     await owner.evaluate(showOrder('1'));
     await owner.waitForSelector('#dtrack-1');
     await owner.click('button:has-text("Save tracking and mark Shipped")', { timeout: 3000 }).catch(() => {});
+    await mailChoice(owner).catch(() => {});
     assert(db.jobs['1'].phase === 'ready_to_ship', 'needs a tracking number first');
     await owner.fill('#dtrack-1', 'USPS 9400 1111');
     await owner.fill('#dpost-1', '9.50');
     await owner.click('button:has-text("Save tracking and mark Shipped")');
+    await mailChoice(owner);
     await owner.waitForTimeout(400);
     assert(db.jobs['1'].phase === 'delivered' && db.jobs['1'].deliveryTracking === 'USPS 9400 1111' && db.jobs['1'].postageCost === 9.5, JSON.stringify(db.jobs['1']));
     await owner.close();
@@ -1953,6 +1966,7 @@ const STATES = {
     await owner.evaluate(showOrder('1'));
     assert(/#1 in line/.test(q1card) && /Waiting for deposit/.test(await owner.textContent('#order-1')), 'owner positions');
     await owner.click('#order-1 button:has-text("Deposit received")');
+    await mailChoice(owner);
     await owner.waitForTimeout(300);
     assert(db.jobs['1'].depositAt && db.jobs['1'].depositAmount === 6.96, JSON.stringify(db.jobs['1']));
     assert(/#2 in line/.test(await owner.textContent('#order-1')), 'deposit just now: behind Bo, whose deposit came first');

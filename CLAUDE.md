@@ -82,7 +82,7 @@ deposit, printing done, payment, shipped emails; site order action; `shippingDep
   after the normal password login, the order. It grants nothing by itself.
 - "Looks good" confirms the order: `customer_approve_quote` also moves it to order_received (which emails the deposit request) unless the owner switched off
   `features.autoDeposit` (Settings > Show or hide). The Practice tab mirrors this (`practiceApprove`).
-- "Email ..." tickbox on each order step: unticked saves `quietEmails: { at, keys }` (keys = email names: confirmed, deposit, payment, final_payment_needed, delivered, ...) with that change; Code.gs `emailsFor` skips those customer emails only when `quietEmails.at` is new in that save. Go back a step and Handed over never email.
+- Each order step that emails the customer opens a pop-up first (`askMail` in app.js: "Send email and continue" / "Don't send email, continue" / Cancel; it sets a hidden `step-mail-<id>` box that the step reads): not sending saves `quietEmails: { at, keys }` (keys = email names: confirmed, deposit, payment, final_payment_needed, delivered, ...) with that change; Code.gs `emailsFor` skips those customer emails only when `quietEmails.at` is new in that save. Go back a step and Handed over never email.
 - Payment receipts say how much was paid: marking Deposit Received or Payment Received asks for the amount first (`askPaymentAmount`; saved as
   `depositAmount` / `balancePaid`); Code.gs `emailsFor` sends the receipt only when that amount is on the order (else it emails the owner a notice).
 - `site_settings` (id=1, data jsonb): public read, owner write. Holds about, links, colors, reviews,

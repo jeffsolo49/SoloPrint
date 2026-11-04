@@ -639,7 +639,7 @@ function renderEmailGuide() {
   const row = (when, button, gets) => `<tr><th scope="row">${button}</th><td>${when}</td><td>${gets}</td></tr>`;
   return `<details class="card email-guide" id="email-guide">
     <summary><strong>When do emails go out? When should I press each button?</strong></summary>
-    <p class="field-help">Each order shows one next step with one button. The box above the button says which email it sends; untick "Email ..." to do the step without sending it.</p>
+    <p class="field-help">Each order shows one next step with one button. The note above the button says which email it sends. When you tap the button, a pop-up asks "Send email and continue" or "Don\'t send email, continue", so you can move an order along without emailing anyone.</p>
     <div class="table-scroll"><table class="email-guide-table">
       <thead><tr><th scope="col">Button</th><th scope="col">Press it when</th><th scope="col">The customer gets</th></tr></thead>
       <tbody>
