@@ -167,10 +167,15 @@ async function mockBackend(page, db) {
       (db.files = db.files || {})[url.split('/storage/v1/object/')[1]] = { body: req.postDataBuffer(), type: req.headers()['content-type'] };
       return route.fulfill({ json: { Key: 'ok' } });
     }
+    if (url.includes('/auth/v1/logout')) { db.log.push('AUTH logout ' + url.split('scope=')[1]); return route.fulfill({ status: 204, body: '' }); }
     if (url.includes('/auth/v1/token')) {
       const body = JSON.parse(req.postData());
+      db.log.push(url.includes('refresh_token') ? 'AUTH refresh' : 'AUTH password');
+      if (url.includes('grant_type=refresh_token')) {
+        return body.refresh_token === 'REFRESH-1' ? route.fulfill({ json: { access_token: 'OWNER-TOKEN', refresh_token: 'REFRESH-2', expires_in: 3600 } }) : route.fulfill({ status: 400, json: { error: 'invalid_grant' } });
+      }
       return body.password === 'right-password'
-        ? route.fulfill({ json: { access_token: 'OWNER-TOKEN', expires_in: 3600 } })
+        ? route.fulfill({ json: { access_token: 'OWNER-TOKEN', refresh_token: 'REFRESH-1', expires_in: 3600 } })
         : route.fulfill({ status: 400, json: { error: 'invalid_grant' } });
     }
     if (url.startsWith('https://script.google.com/')) return route.fulfill({ json: { ok: true, source: 'MakerWorld', name: 'Articulated Dragon', image: 'https://img.test/d1.png', profile: '0.2mm', plates: 1, minutes: 150, grams: 85.4 } });
@@ -310,6 +315,42 @@ const STATES = {
     await page.waitForSelector('.desk-layout');
     assert(db.log.includes('GET /jobs owner'), 'dashboard did not load orders with the owner token');
     await page.close();
+  });
+
+  await check('owner login: "keep me logged in" survives an expired hour; unticked does not; logout forgets it', async () => {
+    const db = fixtures();
+    let page = await open(db);
+    await page.evaluate(STATES['owner login']);
+    await page.fill('#owner-pw', 'right-password');
+    await page.check('#owner-remember');
+    await page.click('#owner-login-btn');
+    await page.waitForSelector('.stats-row');
+    assert(await page.evaluate(() => !!localStorage.getItem('soloprint_owner_remember_v1')), 'refresh token not kept');
+    // the hour is up: only the remembered refresh token is left
+    await page.evaluate(() => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OLD', expiresAt: Date.now() - 1000 })));
+    await page.reload();
+    await page.evaluate(STATES['owner login']);
+    await page.waitForSelector('.stats-row');
+    assert(db.log.includes('AUTH refresh'), 'did not refresh the login');
+    assert(JSON.parse(await page.evaluate(() => localStorage.getItem('soloprint_owner_remember_v1'))).refresh === 'REFRESH-2', 'newest refresh token not saved');
+    await page.evaluate(() => logoutOwner());
+    await page.waitForTimeout(150);
+    assert(await page.evaluate(() => !localStorage.getItem('soloprint_owner_remember_v1')), 'logout kept the 30-day login');
+    assert(db.log.includes('AUTH logout local'), 'logout did not end the login on Supabase');
+    await page.close();
+    // not ticked: nothing kept
+    const db2 = fixtures();
+    page = await open(db2);
+    await page.evaluate(STATES['owner login']);
+    await page.fill('#owner-pw', 'right-password');
+    await page.click('#owner-login-btn');
+    await page.waitForSelector('.stats-row');
+    assert(await page.evaluate(() => !localStorage.getItem('soloprint_owner_remember_v1')), 'kept a login without being asked');
+    await page.close();
+  });
+  await check('change password: weak passwords refused with a reason', async () => {
+    const out = await (async () => { const page = await open(fixtures()); const r = await page.evaluate(() => ['short1', 'password12345', 'aaaaaaaaaaaaaa', 'copper-lantern-seven-pickle'].map(weakPasswordReason)); await page.close(); return r; })();
+    assert(out[0] && out[1] && out[2] && !out[3], JSON.stringify(out));
   });
 
   console.log('\nCustomer flows:');

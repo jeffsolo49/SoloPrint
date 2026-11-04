@@ -102,6 +102,7 @@ async function supaFetch(path, opts = {}) {
     }
   });
   if (res.status === 401 && ownerToken) {
+    if (!opts._retried && await refreshOwnerSession()) return supaFetch(path, { ...opts, _retried: true });
     clearOwnerSession();
     state.ownerUnlocked = false;
     render();
@@ -753,12 +754,60 @@ function addOrderKey(key) {
   persistOrderKeys();
 }
 
-function persistOwnerSession(session) {
+
+// "Keep me logged in for 30 days": the browser keeps Supabase's refresh token (never the password) and quietly
+// swaps it for a fresh one-hour login token. Logging out, or Log out everywhere, removes it.
+const OWNER_REMEMBER_KEY = 'soloprint_owner_remember_v1';
+const OWNER_REMEMBER_MS = 30 * 24 * 60 * 60 * 1000;
+
+function persistOwnerSession(session, remember) {
   const expiresInMs = Math.min(OWNER_SESSION_MS, (Number(session.expires_in) || 3600) * 1000);
   ownerSession = { token: session.access_token, expiresAt: Date.now() + expiresInMs };
   try {
     localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify(ownerSession));
+    if (remember === true && session.refresh_token) {
+      localStorage.setItem(OWNER_REMEMBER_KEY, JSON.stringify({ refresh: session.refresh_token, until: Date.now() + OWNER_REMEMBER_MS }));
+    } else if (remember === false) {
+      localStorage.removeItem(OWNER_REMEMBER_KEY);
+    } else if (session.refresh_token && readOwnerRemember()) {
+      // A refresh: keep the same 30-day window, use the newest refresh token.
+      const r = readOwnerRemember();
+      localStorage.setItem(OWNER_REMEMBER_KEY, JSON.stringify({ refresh: session.refresh_token, until: r.until }));
+    }
   } catch (e) {}
+}
+
+function readOwnerRemember() {
+  try {
+    const r = JSON.parse(localStorage.getItem(OWNER_REMEMBER_KEY) || 'null');
+    if (r && typeof r.refresh === 'string' && Number(r.until) > Date.now()) return r;
+    if (r) localStorage.removeItem(OWNER_REMEMBER_KEY);
+  } catch (e) {}
+  return null;
+}
+
+let ownerRefreshing = null;
+function refreshOwnerSession() {
+  const r = readOwnerRemember();
+  if (!r) return Promise.resolve(false);
+  if (ownerRefreshing) return ownerRefreshing;
+  ownerRefreshing = (async () => {
+    try {
+      const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'apikey': SUPA_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: r.refresh })
+      });
+      const session = await res.json().catch(() => ({}));
+      if (!res.ok || !session.access_token) {
+        if (res.status >= 400 && res.status < 500) { try { localStorage.removeItem(OWNER_REMEMBER_KEY); } catch (e) {} }
+        return false;
+      }
+      persistOwnerSession(session);
+      return true;
+    } catch (e) { return false; } finally { ownerRefreshing = null; }
+  })();
+  return ownerRefreshing;
 }
 
 let ownerSession = null;
@@ -1221,6 +1270,7 @@ async function init() {
   const resumeId = handleResumeLink();
   handleDesignLink();
   state.ownerUnlocked = hasValidOwnerSession();
+  if (!state.ownerUnlocked && readOwnerRemember() && await refreshOwnerSession()) state.ownerUnlocked = true;
   handleAuthRedirect();
   await Promise.all([
     resumeId ? loadServerDraft(resumeId) : null,
@@ -2089,6 +2139,8 @@ function renderOwnerApp() {
         <div class="field"><label>Password</label>
           <input type="password" id="owner-pw" placeholder="Enter your password" autocomplete="current-password" />
         </div>
+        <label class="remember-row"><input type="checkbox" id="owner-remember" /> Keep me logged in on this device for 30 days</label>
+        <div class="field-help">Only tick this on your own phone or computer. Logging out turns it off.</div>
         <div class="alert error" id="pw-err" style="margin-bottom:10px;${state.authNotice ? 'display:block;' : ''}">${esc(state.authNotice || '')}</div>
         <div class="alert success" id="pw-ok" style="margin-bottom:10px;"></div>
         <button class="btn-primary" id="owner-login-btn" onclick="checkPw()">Login</button>
@@ -4274,8 +4326,18 @@ async function sendOwnerAuthEmail(kind) {
 function renderSetPasswordCard() {
   return `<div class="card">
     <h3 class="card-title">Set a new password</h3>
+    <div class="security-tips">
+      <strong>Keeping your owner login safe</strong>
+      <ul>
+        <li>Use a password only for SoloPrint, at least 12 characters. Three or four random words works well (like <em>copper-lantern-seven-pickle</em>).</li>
+        <li>Let your phone or a password manager make and remember it. Don't reuse your Gmail or Venmo password.</li>
+        <li>Turn on 2-step verification for the Gmail account that gets your login emails. Anyone who can open that inbox can reset this password.</li>
+        <li>Only tick "Keep me logged in" on your own devices. Lost a phone or used a shared computer? Press "Log out everywhere" below.</li>
+        <li>Never type this password into a link someone sent you. SoloPrint will never ask for it by email or message.</li>
+      </ul>
+    </div>
     <div class="row2">
-      <div class="field"><label>New password</label><input type="password" id="new-pw" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+      <div class="field"><label>New password</label><input type="password" id="new-pw" autocomplete="new-password" placeholder="At least 12 characters" /></div>
       <div class="field"><label>Repeat it</label><input type="password" id="new-pw2" autocomplete="new-password" /></div>
     </div>
     <div class="alert error" id="new-pw-err"></div>
@@ -4283,14 +4345,28 @@ function renderSetPasswordCard() {
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn-sm" type="button" id="new-pw-btn" onclick="saveNewPassword()">Save password</button>
       <button class="btn-sm" type="button" onclick="state.showPasswordForm = false; render();">Not now</button>
+      <button class="btn-sm danger" type="button" onclick="logoutEverywhere()">Log out everywhere</button>
     </div>
   </div>`;
+}
+
+// Returns a plain-words problem with a proposed owner password, or '' when it is fine.
+function weakPasswordReason(pw) {
+  if (pw.length < 12) return 'Use at least 12 characters. A few random words in a row is easiest to remember.';
+  const lower = pw.toLowerCase();
+  const common = ['password', 'passw0rd', 'qwerty', 'letmein', '123456', 'abcdef', 'iloveyou', 'welcome', 'admin', 'soloprint', '3dprint'];
+  if (common.some(w => lower.includes(w))) return "That password has an easy-to-guess part (like 'password', 'qwerty', numbers in a row or the shop name). Pick something else.";
+  if (new Set(lower).size < 6) return 'That password repeats the same few characters. Mix it up more.';
+  const local = String(OWNER_EMAIL || '').split('@')[0].toLowerCase();
+  if (local.length >= 4 && lower.includes(local)) return "Don't put your email name in the password.";
+  return '';
 }
 
 async function saveNewPassword() {
   const pw = document.getElementById('new-pw').value;
   const pw2 = document.getElementById('new-pw2').value;
-  if (pw.length < 8) { showAlert('new-pw-err', 'Use at least 8 characters.', 'error'); return; }
+  const weak = weakPasswordReason(pw);
+  if (weak) { showAlert('new-pw-err', weak, 'error'); return; }
   if (pw !== pw2) { showAlert('new-pw-err', "The two passwords don't match.", 'error'); return; }
   const btn = document.getElementById('new-pw-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
@@ -4326,7 +4402,7 @@ async function checkPw() {
     });
     const session = await res.json().catch(() => ({}));
     if (!res.ok || !session.access_token) throw new Error('login failed');
-    persistOwnerSession(session);
+    persistOwnerSession(session, !!document.getElementById('owner-remember')?.checked);
     state.authNotice = '';
     state.ownerUnlocked = true;
     state.ownerTab = 'dashboard';
@@ -4339,7 +4415,24 @@ async function checkPw() {
   }
 }
 
-function logoutOwner() {
+// Ends this login on Supabase too (everywhere = every phone and computer), so a copied token stops working.
+function revokeOwnerLogins(scope) {
+  const token = getOwnerToken();
+  if (!token) return Promise.resolve();
+  return fetch(`${SUPA_URL}/auth/v1/logout?scope=${scope}`, {
+    method: 'POST', headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}` }
+  }).catch(() => {});
+}
+
+async function logoutEverywhere() {
+  if (!confirm('Log out on every phone and computer, including this one? You will need your password again.')) return;
+  await revokeOwnerLogins('global');
+  logoutOwner(true);
+}
+
+function logoutOwner(skipRevoke) {
+  if (skipRevoke !== true) revokeOwnerLogins('local');
+  try { localStorage.removeItem(OWNER_REMEMBER_KEY); } catch (e) {}
   state.ownerUnlocked = false;
   state.view = 'client';
   clearOwnerSession();

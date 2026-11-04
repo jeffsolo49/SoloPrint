@@ -1126,3 +1126,10 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
   .all-orders-table td { border: 0; padding: 3px 0; overflow-wrap: anywhere; }
   .all-orders-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 700; color: var(--muted); }
 }
+
+/* Owner login: remember box, security tips */
+.remember-row { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin: 4px 0 2px; cursor: pointer; }
+.remember-row input { margin-top: 3px; flex: none; }
+.security-tips { border: 2px solid var(--btn-border, var(--border)); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.security-tips ul { margin: 6px 0 0; padding-left: 18px; }
+.security-tips li { margin-bottom: 4px; }

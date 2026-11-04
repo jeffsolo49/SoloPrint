@@ -51,6 +51,14 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 | `email/Loader.gs` | The only code pasted into Apps Script. Runs the latest `email/Code.gs` from GitHub `main` (checked every 15 min), keeps a saved copy, emails the owner on problems. |
 | `supabase/*.sql` | Run by the owner in the Supabase SQL Editor, in this order: `security`, `gallery`, `email-trigger`, `library-and-backups`, `site-settings`, `owner-tools`, `drafts`, `queue`, `messages`, `order-links` (last: it holds every function customers can call). All must stay safe to re-run. |
 
+## Owner login
+
+Supabase Auth password login. "Keep me logged in on this device for 30 days" (`owner-remember`) stores the refresh token in
+localStorage (`OWNER_REMEMBER_KEY`, `refreshOwnerSession`, also retried on a 401 in `supaFetch` and at start in `init`); unticked = the old
+1-hour login. Logout and "Log out everywhere" (`logoutEverywhere`, in the Change Password card) revoke the login on Supabase. New passwords go through
+`weakPasswordReason` (12+ characters, no common words); the card lists safety tips. Supabase dashboard settings the owner can add: 2-step on the login Gmail,
+Auth → Sessions "time-box"/"inactivity timeout" (Pro), and leaked-password protection (Pro).
+
 ## Data
 
 - `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job` (returns the new order's key), `customer_orders(keys)`,
