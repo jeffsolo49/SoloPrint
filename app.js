@@ -299,8 +299,11 @@ function batchTotal(batch) {
   return orderSum(batch);
 }
 
+// Short on purpose (1-4 words): a long prefilled note can stop Venmo's page from opening.
+function venmoNote(batch) { return `SoloPrint order ${String(batch.id || '').slice(-4)}`.trim(); }
+
 function venmoPayUrl(batch, total) {
-  const note = `SoloPrint order ${batch.id}: ${orderTitle(batch)}`.slice(0, 140);
+  const note = venmoNote(batch);
   return `https://venmo.com/${encodeURIComponent(currentRules().venmo)}?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(note)}`;
 }
 
@@ -332,14 +335,14 @@ function renderCustomerOrderAction(batch) {
       const fp = finalPayment(batch, total, rules);
       const left = done ? fp.remainder : amountLeft(batch, total, rules);
       return `<div class="order-action"><strong>Deposit received ($${depositAmount(batch, total, rules).toFixed(2)}).</strong> Thank you!
-        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}" target="_blank" rel="noopener noreferrer">Pay the rest${done ? ' and shipping deposit' : ''}, $${left.toFixed(2)}, with Venmo</a>
+        ${left > 0 ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, left))}">Pay the rest${done ? ' and shipping deposit' : ''}, $${left.toFixed(2)}, with Venmo</a>
         <div class="order-action-sub">${done ? esc(shippingDepositNote(rules)) : 'Due when your order is ready.'}</div>` : ''}
       </div>`;
     }
     if (currentRules().venmo && total && phaseIndex(phase) >= phaseIndex('final_payment_needed')) {
       const owe = balanceDue(batch, total, rules);
       return `<div class="order-action">
-        <a class="btn-venmo" href="${esc(venmoPayUrl(batch, owe))}" target="_blank" rel="noopener noreferrer">Pay the rest and shipping deposit, $${owe.toFixed(2)}, with Venmo</a>
+        <a class="btn-venmo" href="${esc(venmoPayUrl(batch, owe))}">Pay the rest and shipping deposit, $${owe.toFixed(2)}, with Venmo</a>
         <div class="order-action-sub">${esc(shippingDepositNote(rules))} We'll mark it received once it comes through.</div>
       </div>`;
     }
@@ -347,8 +350,8 @@ function renderCustomerOrderAction(batch) {
       const deposit = depositAmount(batch, total, rules);
       const offerDeposit = batch.phase === 'order_received' && deposit > 0 && deposit < total;
       return `<div class="order-action">
-        ${offerDeposit ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, deposit))}" target="_blank" rel="noopener noreferrer">Pay the ${Math.round(deposit / total * 100)}% deposit, $${deposit.toFixed(2)}, with Venmo</a>` : ''}
-        <a class="${offerDeposit ? 'btn-secondary btn-venmo-full' : 'btn-venmo'}" href="${esc(venmoPayUrl(batch, total))}" target="_blank" rel="noopener noreferrer">Pay ${offerDeposit ? 'in full, ' : ''}$${total.toFixed(2)} with Venmo</a>
+        ${offerDeposit ? `<a class="btn-venmo" href="${esc(venmoPayUrl(batch, deposit))}">Pay the ${Math.round(deposit / total * 100)}% deposit, $${deposit.toFixed(2)}, with Venmo</a>` : ''}
+        <a class="${offerDeposit ? 'btn-secondary btn-venmo-full' : 'btn-venmo'}" href="${esc(venmoPayUrl(batch, total))}">Pay ${offerDeposit ? 'in full, ' : ''}$${total.toFixed(2)} with Venmo</a>
         <div class="order-action-sub">Opens Venmo with the amount and order note filled in.${featureOn('queue') && batch.phase === 'order_received' ? ' Your place in line is set when your payment comes in.' : ''} We'll mark it received once it comes through.</div>
       </div>`;
     }
