@@ -324,13 +324,13 @@ const STATES = {
     await page.fill('#owner-pw', 'right-password');
     await page.check('#owner-remember');
     await page.click('#owner-login-btn');
-    await page.waitForSelector('.stats-row');
+    await page.waitForSelector('.desk-layout');
     assert(await page.evaluate(() => !!localStorage.getItem('soloprint_owner_remember_v1')), 'refresh token not kept');
     // the hour is up: only the remembered refresh token is left
     await page.evaluate(() => localStorage.setItem('soloprint_owner_session_v1', JSON.stringify({ token: 'OLD', expiresAt: Date.now() - 1000 })));
     await page.reload();
     await page.evaluate(STATES['owner login']);
-    await page.waitForSelector('.stats-row');
+    await page.waitForSelector('.desk-layout');
     assert(db.log.includes('AUTH refresh'), 'did not refresh the login');
     assert(JSON.parse(await page.evaluate(() => localStorage.getItem('soloprint_owner_remember_v1'))).refresh === 'REFRESH-2', 'newest refresh token not saved');
     await page.evaluate(() => logoutOwner());
@@ -344,7 +344,7 @@ const STATES = {
     await page.evaluate(STATES['owner login']);
     await page.fill('#owner-pw', 'right-password');
     await page.click('#owner-login-btn');
-    await page.waitForSelector('.stats-row');
+    await page.waitForSelector('.desk-layout');
     assert(await page.evaluate(() => !localStorage.getItem('soloprint_owner_remember_v1')), 'kept a login without being asked');
     await page.close();
   });
