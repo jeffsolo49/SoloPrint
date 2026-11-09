@@ -71,7 +71,7 @@ deposit, printing done, payment, shipped emails; site order action; `shippingDep
 On a design with parts and a color-ideas picture, customers see "Reverse colors" (`reverseColors`, `reverseCmColors`; only when exactly 2 different colors are on show; also on the request form's part colors, `reversePartColors`),
 can save a combination with a name on their own device (`saveCmColors`, localStorage `soloprint_saved_colors_v1`, shown as "Name (mine)"), and send it (`sendCmColors`,
 RPC `submit_color_idea` -> table `color_ideas`, owner-tools.sql; 20 waiting per design, 200 in all). The owner sees them on the Designs page (`renderColorIdeasInbox`),
-renames and publishes (`publishColorIdea` adds to the design's `colorMap.combos`, now up to 16) or dismisses. The owner must run supabase/owner-tools.sql once for sending to work.
+renames and publishes (`publishColorIdea` adds to the design's `colorMap.combos`, now up to 16) or dismisses. The design's color-map form also has "Paste several color ideas at once" (`importCmCombos`: one `Name, color, color` line per idea, a color per part in the part order shown; any bad line adds nothing). The owner must run supabase/owner-tools.sql once for sending to work.
 
 ## Data
 

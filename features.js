@@ -2700,7 +2700,13 @@ function renderColorMapForm(f) {
             <button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos.splice(${n}, 1); render();" aria-label="Remove color idea ${n + 1}">Remove idea</button>
           </div>
         </div>`; }).join('')}
-        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}` : ''}
+        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}
+        <details class="cm-paste"><summary>Paste several color ideas at once</summary>
+          <div class="field-help">One idea per line: its name, then a color for each part in this order: <strong>${esc(parts.map(p => p.name).join(', '))}</strong>. Use your color names, separated by commas. Example: <em>Santa Dragon, Red, Green</em></div>
+          <textarea id="cm-paste" rows="6" spellcheck="false" placeholder="Santa Dragon, Red, Green"></textarea>
+          <div class="alert error" id="cm-paste-err"></div>
+          <button type="button" class="btn-sm" id="cm-paste-go" onclick="importCmCombos()">Add these ideas</button>
+        </details>` : ''}
     `}
   </fieldset>`;
 }
@@ -2759,6 +2765,36 @@ function setCmComboColor(n, partId, key, focusId) {
   m.combos[n].colors[partId] = key;
   render();
   document.getElementById(focusId)?.focus();
+}
+// Several color ideas from pasted text: "Name, color, color" per line (a color for each part, in the part order shown).
+// Nothing is added unless every line is understood.
+function importCmCombos() {
+  const m = state.galleryForm && state.galleryForm.colorMap;
+  if (!m) return;
+  const parts = cleanDesignParts(state.galleryForm.parts);
+  const choices = ownerPartChoices();
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const lines = String(document.getElementById('cm-paste')?.value || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const fail = msg => showAlert('cm-paste-err', msg, 'error');
+  if (!lines.length) { fail('Type or paste at least one line first.'); return; }
+  if (m.combos.length + lines.length > 16) { fail(`A design can hold 16 color ideas and this one has ${m.combos.length}. Remove some, or paste fewer.`); return; }
+  const added = [];
+  for (let i = 0; i < lines.length; i++) {
+    const bits = lines[i].split(/\s*[,|\t]\s*/).map(x => x.trim());
+    const name = bits[0].slice(0, 40);
+    const want = bits.slice(1);
+    if (!name || want.length !== parts.length) { fail(`Line ${i + 1} ("${lines[i].slice(0, 40)}"): give a name and ${parts.length} color${parts.length === 1 ? '' : 's'} (${parts.map(p => p.name).join(', ')}). Nothing was added.`); return; }
+    const colors = {};
+    for (let k = 0; k < parts.length; k++) {
+      const hit = choices.find(c => norm(c.name) === norm(want[k])) || choices.find(c => norm(c.name).startsWith(norm(want[k])) && norm(want[k]).length >= 3);
+      if (!hit) { fail(`Line ${i + 1}: "${want[k]}" isn't one of your colors. Nothing was added.`); return; }
+      colors[parts[k].id] = hit.key;
+    }
+    added.push({ id: 'c' + (Date.now() + i).toString(36), name, colors });
+  }
+  m.combos.push(...added);
+  render();
+  document.getElementById('cm-add-combo')?.scrollIntoView({ block: 'center' });
 }
 function addCmCombo() {
   const m = state.galleryForm && state.galleryForm.colorMap;
