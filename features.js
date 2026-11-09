@@ -2635,6 +2635,77 @@ async function dismissColorIdea(id) {
   render();
 }
 
+
+// ── Owner: the drying rack's named color ideas, added in one tap (Designs page) ──
+// The picture is the rack's render (presets/drying-rack.png). Its white parts are the Base and the black
+// panel is the Spine, found by the same area finder the owner's form uses.
+const DRYING_RACK_PRESET = {
+  photo: 'https://soloprint.vercel.app/presets/drying-rack.png',
+  regions: [{ hexes: ['#56565a'], part: '' }, { hexes: ['#f2f2f2', '#c1c1c1', '#9a9a9a'], part: 'base' }, { hexes: ['#1e1e25'], part: 'spine' }],
+  ideas: [['Santa Dragon', 'Red', 'Green'], ['Omni', 'Red', 'Silver'], ['Bumblebee', 'Gold', 'Black'], ['Shamrock', 'Green', 'White'],
+    ['Lets Go Mets', 'Blue', 'Orange'], ['Gold Coast', 'Blue', 'Gold'], ['Vader', 'Black', 'Red'], ['Halloween', 'Black', 'Orange'],
+    ['Dog Pound', 'Orange', 'Brown'], ['Sandcastle', 'Beige', 'Blue']]
+};
+function rackDesign() { return state.gallery.find(g => /drying\s*rack/i.test(g.title)) || null; }
+function rackIdeasAdded(g) {
+  const names = ((g && g.colorMap && g.colorMap.combos) || []).map(c => c.name.toLowerCase());
+  return DRYING_RACK_PRESET.ideas.every(i => names.includes(i[0].toLowerCase()));
+}
+function renderDryingRackSetup() {
+  if (!state.galleryLoaded || !state.gallery.length) return '';
+  const g = rackDesign();
+  if (g && rackIdeasAdded(g)) return '';
+  return `<div class="card" id="rack-setup"><h3 class="card-title">Drying rack color ideas</h3>
+    <div class="field-help">Your 10 named color ideas (${esc(DRYING_RACK_PRESET.ideas.map(i => i[0]).join(', '))}) are ready. Tap the button and I'll add them to the design, including the picture and its Base and Spine parts if it doesn't have them yet.</div>
+    <div class="field"><label for="rack-design">Design</label><select id="rack-design">
+      ${state.gallery.map(x => `<option value="${esc(x.id)}" ${g && g.id === x.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('')}
+    </select></div>
+    <div class="alert error" id="rack-err"></div>
+    <button type="button" class="btn-sm" id="rack-go" onclick="addDryingRackIdeas()">Add the 10 color ideas</button>
+  </div>`;
+}
+async function addDryingRackIdeas() {
+  const g = state.gallery.find(x => x.id === document.getElementById('rack-design')?.value);
+  const fail = msg => showAlert('rack-err', msg, 'error');
+  if (!g) { fail('Pick the drying rack design first.'); return; }
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const colorKey = n => { const c = (state.settings.colors || []).find(x => norm(x.name) === norm(n)); return c ? c.id : ''; };
+  const wanted = [...new Set(DRYING_RACK_PRESET.ideas.flatMap(i => i.slice(1)))];
+  const missing = wanted.filter(n => !colorKey(n));
+  if (missing.length) { fail(`These colors aren't in Settings > Colors yet: ${missing.join(', ')}. Add them (or fix their spelling) and tap again.`); return; }
+  // The two parts: the design's own if it has them, otherwise a Base and a Spine sharing the design's weight.
+  let parts = (g.parts || []).map(p => ({ ...p }));
+  let base, spine;
+  if (parts.length >= 2) {
+    base = parts.find(p => /base|plate|bottom|floor/i.test(p.name)) || parts[0];
+    spine = parts.find(p => p !== base && /spine|back|panel|wall|tower/i.test(p.name)) || parts.find(p => p !== base);
+  } else {
+    if (!(g.grams > 0)) { fail("This design needs its weight (grams) filled in first, so I can split it between the Base and the Spine."); return; }
+    base = { id: 'base', name: 'Base', grams: Math.round(g.grams * 0.6 * 10) / 10, photo: '', optional: false, price: null, defaultColor: '', minutes: null };
+    spine = { id: 'spine', name: 'Spine', grams: Math.round(g.grams * 0.4 * 10) / 10, photo: '', optional: false, price: null, defaultColor: '', minutes: null };
+    parts = [base, spine];
+  }
+  let map = g.colorMap && cmUsable(g.colorMap) ? JSON.parse(JSON.stringify(g.colorMap)) : null;
+  if (!map) {
+    const regions = DRYING_RACK_PRESET.regions.map(r => ({ hexes: r.hexes, part: r.part === 'base' ? base.id : r.part === 'spine' ? spine.id : '' }));
+    map = { photo: DRYING_RACK_PRESET.photo, regions, combos: (g.colorMap && g.colorMap.combos) || [] };
+  }
+  const have = map.combos.map(c => norm(c.name));
+  const add = DRYING_RACK_PRESET.ideas.filter(i => !have.includes(norm(i[0])));
+  if (map.combos.length + add.length > 16) { fail(`A design can hold 16 color ideas; this one has ${map.combos.length}. Remove some first.`); return; }
+  add.forEach((i, n) => map.combos.push({ id: 'c' + (Date.now() + n).toString(36), name: i[0], colors: { [base.id]: colorKey(i[1]), [spine.id]: colorKey(i[2]) } }));
+  const cleaned = cleanColorMap(map, cleanDesignParts(parts));
+  if (!cleaned) { fail("Couldn't prepare the picture. Nothing was changed."); return; }
+  const next = { ...g, parts: cleanDesignParts(parts), colorMap: cleaned };
+  const btn = document.getElementById('rack-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+  try { await writeGalleryItem(next); }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Add the 10 color ideas'; } fail("Couldn't save. If you were logged out, log in again and tap once more."); return; }
+  await loadGallery();
+  state.rackDone = `${add.length} color ideas added to "${g.title}". Customers see them on its page now.`;
+  render();
+}
+
 // ── Request form: their chosen part colors on the photo ──
 function cmRequestPreview(item) {
   if (!featureOn('colorIdeas')) return '';
