@@ -2656,7 +2656,7 @@ function renderDryingRackSetup() {
   const g = rackDesign();
   if (g && rackIdeasAdded(g)) return '';
   return `<div class="card" id="rack-setup"><h3 class="card-title">Drying rack color ideas</h3>
-    <div class="field-help">Your 10 named color ideas (${esc(DRYING_RACK_PRESET.ideas.map(i => i[0]).join(', '))}) are ready. Tap the button and I'll add them to the design, including the picture and its Base and Spine parts if it doesn't have them yet.</div>
+    <div class="field-help">Your 10 named color ideas (${esc(DRYING_RACK_PRESET.ideas.map(i => i[0]).join(', '))}) are ready. Tap the button and I'll add them to the design, including the picture and its Base and Spine parts if it doesn't have them yet. New parts have no weights of their own, so the site splits the design's total weight evenly between the two colors, the way it does for any part without a weight.</div>
     <div class="field"><label for="rack-design">Design</label><select id="rack-design">
       ${state.gallery.map(x => `<option value="${esc(x.id)}" ${g && g.id === x.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('')}
     </select></div>
@@ -2680,9 +2680,10 @@ async function addDryingRackIdeas() {
     base = parts.find(p => /base|plate|bottom|floor/i.test(p.name)) || parts[0];
     spine = parts.find(p => p !== base && /spine|back|panel|wall|tower/i.test(p.name)) || parts.find(p => p !== base);
   } else {
-    if (!(g.grams > 0)) { fail("This design needs its weight (grams) filled in first, so I can split it between the Base and the Spine."); return; }
-    base = { id: 'base', name: 'Base', grams: Math.round(g.grams * 0.6 * 10) / 10, photo: '', optional: false, price: null, defaultColor: '', minutes: null };
-    spine = { id: 'spine', name: 'Spine', grams: Math.round(g.grams * 0.4 * 10) / 10, photo: '', optional: false, price: null, defaultColor: '', minutes: null };
+    // No weights typed on the parts: the site then splits the design's own total weight evenly between the colors
+    // (applyPartColors / colorGrams), exactly as it does for any part without grams. Nothing is guessed here.
+    base = { id: 'base', name: 'Base', grams: null, photo: '', optional: false, price: null, defaultColor: '', minutes: null };
+    spine = { id: 'spine', name: 'Spine', grams: null, photo: '', optional: false, price: null, defaultColor: '', minutes: null };
     parts = [base, spine];
   }
   let map = g.colorMap && cmUsable(g.colorMap) ? JSON.parse(JSON.stringify(g.colorMap)) : null;

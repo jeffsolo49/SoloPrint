@@ -445,7 +445,7 @@ const STATES = {
     await owner2.click('#rack-go');
     await owner2.waitForFunction(() => !document.getElementById('rack-setup'));
     const d = db.gallery.g1.data;
-    assert(d.parts.map(p => p.id).join() === 'base,spine' && d.parts[0].grams + d.parts[1].grams > 85 && d.parts[0].grams > d.parts[1].grams, JSON.stringify(d.parts));
+    assert(d.parts.map(p => p.id).join() === 'base,spine' && d.parts[0].grams == null && d.parts[1].grams == null && d.grams === 85.4, 'new parts carry no invented weights; the design keeps its own total: ' + JSON.stringify(d.parts));
     assert(d.colorMap.combos.length === 10 && d.colorMap.combos[0].name === 'Santa Dragon' && d.colorMap.combos[0].colors.base === 'red' && d.colorMap.combos[0].colors.spine === 'green'
       && d.colorMap.combos[9].name === 'Sandcastle' && d.colorMap.combos[9].colors.base === 'beige' && d.colorMap.combos[9].colors.spine === 'blue', JSON.stringify(d.colorMap.combos));
     assert(/presets\/drying-rack\.png$/.test(d.colorMap.photo) && d.colorMap.regions.some(r => r.part === 'base') && d.colorMap.regions.some(r => r.part === 'spine'), JSON.stringify(d.colorMap.regions));
