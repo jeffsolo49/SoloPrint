@@ -68,7 +68,7 @@ function doPost(e) {
   const site = loadSiteData();
   if (body.type === 'MESSAGE') {
     const m = messageEmail(body.message || {}, body.record || {}, site);
-    if (!m) return reply('sent 0');
+    if (!m) return reply('sent 0 (message not emailed: ' + messageSkipReason(body.message || {}, body.record || {}) + ')');
     mail(m, m.replyTo);
     return reply('sent 1');
   }
@@ -77,7 +77,8 @@ function doPost(e) {
   const emails = emailsFor(body.type, body.record || {}, body.old_record || null, site.emails || {}, site);
   emails.forEach(m => mail(m, OWNER_EMAIL));
   logSentEmails(body.record || {}, emails);
-  return reply('sent ' + emails.length);
+  // "sent 0" says why in Supabase's net._http_response, so a missing email is easy to explain.
+  return reply('sent ' + emails.length + (emails.length ? '' : ' (' + String(body.type || '') + ' order ' + String((body.record || {}).id || '?') + ' ' + String((body.record || {}).phase || '') + '/' + String((body.record || {}).paymentStatus || '') + ': no email for this change)'));
 }
 
 // ── MESSAGES (supabase/messages.sql) ──────────────────────────────────────
@@ -85,6 +86,13 @@ function doPost(e) {
 // the customer are logged on it; replies in Gmail are collected every 5 minutes (collectReplies).
 // Site messages carry "[SoloPrint #<order>]" in the subject so replies find their order.
 function messageTag(rec) { return '[SoloPrint #' + String(rec.id || '') + ']'; }
+// Why a site message produced no email (shown in the answer to Supabase).
+function messageSkipReason(msg, rec) {
+  if (!String(msg.body || '').trim()) return 'empty message';
+  if (!rec.id) return 'order not found';
+  if (msg.sender === 'owner' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(rec.clientEmail || ''))) return 'no valid email address on order ' + rec.id;
+  return 'nothing to send';
+}
 function messageEmail(msg, rec, site) {
   const text = String(msg.body || '').trim();
   const customer = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(rec.clientEmail || '')) ? String(rec.clientEmail) : '';
