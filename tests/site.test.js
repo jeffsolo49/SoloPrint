@@ -403,6 +403,31 @@ const STATES = {
     await cust.close();
   });
 
+  await check('color ideas: the owner pastes several named ideas at once, and a bad line adds nothing', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.parts = [{ id: 'pa', name: 'Base', grams: 40 }, { id: 'pb', name: 'Spine', grams: 10 }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: 'pa' }, { hexes: ['#0a3c80'], part: 'pb' }], combos: [] };
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    await owner.waitForSelector('#cm-paste', { state: 'attached' });
+    await owner.evaluate(() => { document.querySelector('.cm-paste').open = true; });
+    await owner.fill('#cm-paste', 'Santa Dragon, Red, Black\nLets Go Mets, black, silk gold\nBad, Red, Purple');
+    await owner.click('#cm-paste-go');
+    assert(/Purple/.test(await owner.textContent('#cm-paste-err')) && await owner.evaluate(() => state.galleryForm.colorMap.combos.length) === 0, 'a line with an unknown color adds nothing');
+    await owner.fill('#cm-paste', 'Only Name, Red');
+    await owner.click('#cm-paste-go');
+    assert(/Line 1/.test(await owner.textContent('#cm-paste-err')), 'a line with too few colors is refused');
+    await owner.fill('#cm-paste', 'Santa Dragon, Red, Black\nLets Go Mets, black, silk gold');
+    await owner.click('#cm-paste-go');
+    const combos = await owner.evaluate(() => state.galleryForm.colorMap.combos);
+    assert(combos.length === 2 && combos[0].name === 'Santa Dragon' && combos[0].colors.pa === 'red' && combos[0].colors.pb === 'black' && combos[1].name === 'Lets Go Mets' && combos[1].colors.pb === 'silk', JSON.stringify(combos));
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    assert(db.gallery.g1.data.colorMap.combos.length === 2 && db.gallery.g1.data.colorMap.combos[1].name === 'Lets Go Mets', 'saved with the design');
+    await owner.close();
+  });
+
   console.log('\nCustomer flows:');
   await check('submit a request: waits for review, saved through submit_job', async () => {
     const db = fixtures();
