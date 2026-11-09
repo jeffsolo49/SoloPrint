@@ -125,3 +125,60 @@ $$;
 
 revoke all on function public.owner_report_data(text) from public;
 grant execute on function public.owner_report_data(text) to anon;
+
+-- 4. Color ideas customers send in from a design page ("Send to SoloPrint to share"). They only show on the
+--    design once the owner publishes them (the owner can rename them first). Customers can add one, nothing more.
+create table if not exists public.color_ideas (
+  id uuid primary key default gen_random_uuid(),
+  design_id text not null,
+  name text not null default '',
+  colors jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists color_ideas_created on public.color_ideas (created_at);
+alter table public.color_ideas enable row level security;
+
+do $$
+declare p record;
+begin
+  for p in select policyname from pg_policies where schemaname = 'public' and tablename = 'color_ideas' loop
+    execute format('drop policy %I on public.color_ideas', p.policyname);
+  end loop;
+end $$;
+
+revoke all on public.color_ideas from anon, authenticated;
+grant select, delete on public.color_ideas to authenticated;
+
+create policy "owner manages color ideas" on public.color_ideas
+  for all to authenticated
+  using ((auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com')
+  with check ((auth.jwt() ->> 'email') = 'jeffsolo49@gmail.com');
+
+create or replace function public.submit_color_idea(p_design text, p_name text, p_colors jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare k text; v jsonb;
+begin
+  if p_design is null or length(p_design) > 80 or not exists (select 1 from public.gallery_items where id = p_design) then
+    raise exception 'invalid color idea';
+  end if;
+  if length(trim(coalesce(p_name, ''))) < 1 or length(p_name) > 40 then raise exception 'invalid color idea'; end if;
+  if jsonb_typeof(p_colors) is distinct from 'object' or (select count(*) from jsonb_object_keys(p_colors)) not between 1 and 12 then
+    raise exception 'invalid color idea';
+  end if;
+  for k, v in select * from jsonb_each(p_colors) loop
+    if k !~ '^[A-Za-z0-9_-]{1,40}$' or jsonb_typeof(v) <> 'string' or (v #>> '{}') !~ '^[a-z0-9-]{1,40}$' then raise exception 'invalid color idea'; end if;
+  end loop;
+  -- Keeps a flood out: at most 200 waiting in all, and 20 for one design.
+  if (select count(*) from public.color_ideas) >= 200 or (select count(*) from public.color_ideas where design_id = p_design) >= 20 then
+    raise exception 'too many color ideas waiting';
+  end if;
+  insert into public.color_ideas (design_id, name, colors) values (p_design, trim(p_name), p_colors);
+end;
+$$;
+
+revoke all on function public.submit_color_idea(text, text, jsonb) from public;
+grant execute on function public.submit_color_idea(text, text, jsonb) to anon, authenticated;
