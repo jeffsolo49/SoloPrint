@@ -456,6 +456,23 @@ const STATES = {
     await cust.close();
   });
 
+  await check('request form: switching between a past design and "I have an idea" keeps each one\'s own colors', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); render(); });
+    const snap = () => page.evaluate(() => { const it = state.draftItems[0]; return JSON.stringify({ g: it.galleryId, f: it.filType, c: it.colorId, p: (it.designParts || []).map(p => p.colorId), x: (it.extraColors || []).length }); });
+    await page.evaluate(() => { pickGalleryForItem(0, 'g2'); setPartColor(0, 0, 'red'); });
+    const design = await snap();
+    assert(JSON.parse(design).p[0] === 'red' && JSON.parse(design).g === 'g2', design);
+    await page.evaluate(() => { setItemMode(0, 'idea'); const it = state.draftItems[0]; it.notes = 'my own thing'; it.filType = 'special'; it.colorId = 'silk'; it.color = 'Silk Gold'; });
+    assert(await page.evaluate(() => state.draftItems[0].designParts.length) === 0, 'the past design\'s parts do not leak into "I have an idea"');
+    await page.evaluate(() => setItemMode(0, 'gallery'));
+    assert(await snap() === design, `the past design comes back with its own colors: ${await snap()} vs ${design}`);
+    await page.evaluate(() => setItemMode(0, 'idea'));
+    assert(await page.evaluate(() => state.draftItems[0].colorId) === 'silk' && await page.evaluate(() => state.draftItems[0].notes) === 'my own thing', 'the idea keeps its own color and text');
+    await page.close();
+  });
+
   console.log('\nCustomer flows:');
   await check('submit a request: waits for review, saved through submit_job', async () => {
     const db = fixtures();
