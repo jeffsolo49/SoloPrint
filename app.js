@@ -529,6 +529,9 @@ function cleanItem(it) {
 // switching back brings it back (and it's part of their saved draft).
 const MODE_FIELDS = ['link', 'name', 'notes', 'imageLinks', 'previewImage', 'grams', 'printHours', 'printMinutes',
   'knownMinutes', 'knownFromLibrary', 'knownPrompted', 'estimateSource', 'estimateNote', 'showTime', 'galleryId', 'setPrice'];
+// The color choices belong to the choice they were made under: a past design's part colors must not be mixed up
+// with the colors picked for "I have an idea", so they are kept and brought back with it.
+const MODE_COLOR_FIELDS = ['filType', 'color', 'colorId', 'specialColor', 'useLeftover', 'leftoverFrom', 'extraColors', 'designParts', 'mainParts', 'basePrice', 'baseMinutes'];
 function cleanModeDrafts(raw) {
   const out = {};
   ['link', 'idea', 'gallery'].forEach(mode => {
@@ -537,6 +540,7 @@ function cleanModeDrafts(raw) {
     const c = cleanItem({ ...d, modeDrafts: null });
     const kept = {};
     MODE_FIELDS.forEach(f => { kept[f] = f === 'printHours' || f === 'printMinutes' ? cleanText(d[f], 6) : c[f]; });
+    MODE_COLOR_FIELDS.forEach(f => { if (c[f] !== undefined) kept[f] = c[f]; });
     if (hasModeContent(kept)) out[mode] = kept;
   });
   return out;
@@ -1815,11 +1819,16 @@ function setItemMode(i, mode) {
   if (current) {
     const saved = {};
     MODE_FIELDS.forEach(f => { saved[f] = item[f]; });
-    if (hasModeContent(saved)) item.modeDrafts[current] = saved; else delete item.modeDrafts[current];
+    const contentOnly = { ...saved };
+    MODE_COLOR_FIELDS.forEach(f => { if (item[f] !== undefined) saved[f] = JSON.parse(JSON.stringify(item[f])); });
+    if (hasModeContent(contentOnly)) item.modeDrafts[current] = saved; else delete item.modeDrafts[current];
   }
   const blank = blankItem();
   const restore = item.modeDrafts[mode];
   MODE_FIELDS.forEach(f => { item[f] = restore && f in restore ? restore[f] : blank[f]; });
+  // An older saved draft has no colors of its own: leave the item as it was. Otherwise bring back this choice's colors, or start clean.
+  const hadColors = restore && MODE_COLOR_FIELDS.some(f => f in restore);
+  if (!restore || hadColors) MODE_COLOR_FIELDS.forEach(f => { if (restore && f in restore) item[f] = restore[f]; else if (f in blank) item[f] = blank[f]; else delete item[f]; });
   delete item.modeDrafts[mode];
   item.mode = mode;
   item.restoredDraft = !!restore;
