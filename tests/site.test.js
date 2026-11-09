@@ -39,7 +39,7 @@ function fixtures() {
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
       reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
-    private: {}, reviews: {}, uploads: [], drafts: {}, messages: [], linkRequests: [],
+    private: {}, reviews: {}, colorIdeas: [], uploads: [], drafts: {}, messages: [], linkRequests: [],
     log: []
   };
 }
@@ -128,6 +128,17 @@ async function mockBackend(page, db) {
       if (!job || job.phase !== 'delivered') return route.fulfill({ status: 400, json: { message: 'order not found' } });
       db.reviews[job.id] = { job_id: job.id, name: r.p_name, text: r.p_text, rating: r.p_rating, photos: r.p_photos || [], status: 'new' };
       return route.fulfill({ status: 204, body: '' });
+    }
+    if (rest.startsWith('/rpc/submit_color_idea')) {
+      const r = JSON.parse(req.postData());
+      if (!db.gallery[r.p_design] || !r.p_name) return route.fulfill({ status: 400, json: { message: 'invalid color idea' } });
+      db.colorIdeas.push({ id: 'ci' + (db.colorIdeas.length + 1), design_id: r.p_design, name: r.p_name, colors: r.p_colors });
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (rest.startsWith('/color_ideas')) {
+      if (!owner) return route.fulfill({ status: 401, json: {} });
+      if (method === 'GET') return route.fulfill({ json: db.colorIdeas });
+      if (method === 'DELETE') { const id = decodeURIComponent(url.split('id=eq.')[1]); db.colorIdeas = db.colorIdeas.filter(c => c.id !== id); return route.fulfill({ status: 204, body: '' }); }
     }
     if (rest.startsWith('/rpc/order_queue')) {
       const q = Object.values(db.jobs).filter(j => ['order_received', 'production'].includes(j.phase))
@@ -356,6 +367,40 @@ const STATES = {
   await check('change password: weak passwords refused with a reason', async () => {
     const out = await (async () => { const page = await open(fixtures()); const r = await page.evaluate(() => ['short1', 'password12345', 'aaaaaaaaaaaaaa', 'copper-lantern-seven-pickle'].map(weakPasswordReason)); await page.close(); return r; })();
     assert(out[0] && out[1] && out[2] && !out[3], JSON.stringify(out));
+  });
+
+  await check('color ideas: reverse two colors, save a combination, send it, and the owner renames and publishes it', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.parts = [{ id: 'pa', name: 'Body', grams: 40 }, { id: 'pb', name: 'Eyes', grams: 10 }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: 'pa' }, { hexes: ['#0a3c80'], part: 'pb' }],
+      combos: [{ id: 'c1', name: 'Red and black', colors: { pa: 'red', pb: 'black' } }] };
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('#color-ideas');
+    await page.click('#cm-reverse');
+    assert(await page.inputValue('#cm-own-0') === 'black' && await page.inputValue('#cm-own-1') === 'red', 'reverse swaps the two colors');
+    await page.click('#cm-reverse');
+    assert(await page.inputValue('#cm-own-0') === 'red' && await page.inputValue('#cm-own-1') === 'black', 'reversing again goes back');
+    await page.click('#cm-reverse');
+    await page.fill('#cm-save-name', 'Sunset');
+    await page.click('#cm-save');
+    assert(/Sunset \(mine\)/.test(await page.textContent('.cm-picks')), 'saved combination shows with the ideas');
+    await page.click('#cm-send');
+    await page.waitForSelector('#cm-send-msg:has-text("Sent")');
+    assert(db.colorIdeas.length === 1 && db.colorIdeas[0].name === 'Sunset' && db.colorIdeas[0].colors.pa === 'black' && db.colorIdeas[0].colors.pb === 'red', JSON.stringify(db.colorIdeas));
+    await page.close();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.waitForSelector('#color-inbox');
+    await owner.fill('#cmi-name-ci1', 'Black and red');
+    await owner.click('#color-inbox button:has-text("Publish for everyone")');
+    await owner.waitForFunction(() => !document.getElementById('color-inbox'));
+    const combos = db.gallery.g1.data.colorMap.combos;
+    assert(combos.length === 2 && combos[1].name === 'Black and red' && combos[1].colors.pa === 'black' && db.colorIdeas.length === 0, JSON.stringify(combos));
+    await owner.close();
+    const cust = await open(db, { suffix: '?design=dragon-organizer' });
+    await cust.waitForSelector('#color-ideas');
+    assert(/Black and red/.test(await cust.textContent('.cm-picks')), 'published idea shows for everyone');
+    await cust.close();
   });
 
   console.log('\nCustomer flows:');

@@ -66,6 +66,13 @@ Venmo note (`venmoNote`, email-templates.js, shared): "SoloPrint" + up to 3 word
 the rest later = two) and that the shipping deposit is only partly refunded, based on the real packaging and postage cost (quote, reminder, confirmed,
 deposit, printing done, payment, shipped emails; site order action; `shippingDepositNote`). Keep that when editing these texts.
 
+## Color ideas: reverse, save, share
+
+On a design with parts and a color-ideas picture, customers see "Reverse colors" (`reverseColors`, `reverseCmColors`; only when exactly 2 different colors are on show; also on the request form's part colors, `reversePartColors`),
+can save a combination with a name on their own device (`saveCmColors`, localStorage `soloprint_saved_colors_v1`, shown as "Name (mine)"), and send it (`sendCmColors`,
+RPC `submit_color_idea` -> table `color_ideas`, owner-tools.sql; 20 waiting per design, 200 in all). The owner sees them on the Designs page (`renderColorIdeasInbox`),
+renames and publishes (`publishColorIdea` adds to the design's `colorMap.combos`, now up to 16) or dismisses. The owner must run supabase/owner-tools.sql once for sending to work.
+
 ## Data
 
 - `jobs` (id, data jsonb): orders. Owner-only table; customers use RPCs `submit_job` (returns the new order's key), `customer_orders(keys)`,
