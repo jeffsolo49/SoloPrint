@@ -1606,12 +1606,26 @@ function setPartColor(i, k, key) {
   document.getElementById(`part-color-${i}-${k}`)?.focus();
 }
 
+function reversePartColors(i) {
+  const item = state.draftItems[i];
+  if (!item || !item.designParts) return;
+  const on = item.designParts.filter(p => !p.optional || p.include);
+  const rev = reverseColors(Object.fromEntries(on.map(p => [p.id, p.colorId])));
+  if (!rev) return;
+  on.forEach(p => { p.colorId = rev[p.id]; });
+  applyPartColors(item);
+  render();
+  queueDraftSave();
+  document.getElementById(`part-reverse-${i}`)?.focus();
+}
+
 function renderPartColors(item, i) {
   const choices = partColorChoices();
   return `<fieldset class="part-colors">
     <legend>Choose a color for each part</legend>
     <div class="field-help">${esc(materialNote())}</div>
     ${cmRequestPreview(item)}
+    ${reverseColors(Object.fromEntries(item.designParts.filter(p => !p.optional || p.include).map(p => [p.id, p.colorId]))) ? `<button type="button" class="btn-sm" id="part-reverse-${i}" onclick="reversePartColors(${i})">Reverse colors</button>` : ''}
     ${item.designParts.map((p, k) => `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
       ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="field">
@@ -2284,7 +2298,7 @@ function cleanColorMap(m, parts) {
     hexes: (r && Array.isArray(r.hexes) ? r.hexes : [r && r.hex]).filter(h => /^#[0-9a-f]{6}$/i.test(String(h))).slice(0, 16).map(h => h.toLowerCase()),
     part: r && ids.includes(r.part) ? r.part : ''
   })).filter(r => r.hexes.length);
-  const combos = (Array.isArray(m.combos) ? m.combos : []).slice(0, 8).map((c, n) => {
+  const combos = (Array.isArray(m.combos) ? m.combos : []).slice(0, 16).map((c, n) => {
     const colors = {};
     ids.forEach(id => { const k = c && c.colors && c.colors[id]; if (/^[a-z0-9-]{1,40}$/.test(String(k))) colors[id] = k; });
     return { id: /^[A-Za-z0-9_-]{1,40}$/.test(String(c && c.id)) ? c.id : `c${n + 1}`, name: cleanText(c && c.name, 40).trim(), colors };
@@ -2411,8 +2425,76 @@ async function paintColorPreviews() {
 function cmView(g, combos) {
   state.cmView = state.cmView || {};
   const v = state.cmView[g.id] || (state.cmView[g.id] = { pick: '', own: {} });
-  if (v.pick !== 'own' && !combos.some(c => c.id === v.pick)) v.pick = combos[0] ? combos[0].id : 'own';
+  if (v.pick !== 'own' && !combos.some(c => c.id === v.pick) && !cmSavedFor(g.id).some(s => `s-${s.id}` === v.pick)) v.pick = combos[0] ? combos[0].id : 'own';
   return v;
+}
+
+// ── Reverse colors, and color combinations customers save on their own device ──
+// With exactly 2 different colors on show, "reverse" swaps them (every part in one swaps to the other).
+function reverseColors(colors) {
+  const keys = [...new Set(Object.values(colors || {}))];
+  if (keys.length !== 2) return null;
+  const out = {};
+  Object.keys(colors).forEach(id => { out[id] = colors[id] === keys[0] ? keys[1] : keys[0]; });
+  return out;
+}
+const CM_SAVED_KEY = 'soloprint_saved_colors_v1';
+function cmSavedAll() { try { return JSON.parse(localStorage.getItem(CM_SAVED_KEY)) || {}; } catch (e) { return {}; } }
+function cmSavedWrite(all) { try { localStorage.setItem(CM_SAVED_KEY, JSON.stringify(all)); } catch (e) { /* not kept */ } }
+// Saved combinations for a design, only those whose colors are all still available.
+function cmSavedFor(gid) {
+  const keys = partColorChoices().map(c => c.key);
+  return (cmSavedAll()[gid] || []).filter(s => s && s.colors && Object.values(s.colors).every(k => keys.includes(k)));
+}
+function cmSavedPick(g, v) { return cmSavedFor(g.id).find(s => `s-${s.id}` === v.pick); }
+function reverseCmColors(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  const rev = reverseColors(cmViewColors(id));
+  if (!rev) return;
+  const v = cmView(g, cmCombosFor(g, partColorChoices()));
+  v.own = rev;
+  v.pick = 'own';
+  refreshColorIdeas(id, 'cm-reverse');
+}
+function saveCmColors(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  const colors = cmViewColors(id);
+  if (!colors) return;
+  const name = (document.getElementById('cm-save-name')?.value || '').replace(/\s+/g, ' ').trim().slice(0, 40) || 'My colors';
+  const all = cmSavedAll();
+  const list = (all[id] || []).slice(0, 9);
+  const s = { id: 'u' + Date.now().toString(36), name, colors, sent: false };
+  all[id] = [s].concat(list);
+  cmSavedWrite(all);
+  cmView(g, []).pick = `s-${s.id}`;
+  refreshColorIdeas(id, `cm-pick-s-${s.id}`);
+}
+function removeCmSaved(id, sid) {
+  const all = cmSavedAll();
+  all[id] = (all[id] || []).filter(s => s.id !== sid);
+  cmSavedWrite(all);
+  const g = state.gallery.find(x => x.id === id);
+  if (g) cmView(g, []).pick = '';
+  refreshColorIdeas(id, 'cm-pick-own');
+}
+async function sendCmColors(id, sid) {
+  const all = cmSavedAll();
+  const s = (all[id] || []).find(x => x.id === sid);
+  const msg = document.getElementById('cm-send-msg');
+  if (!s) return;
+  const btn = document.getElementById('cm-send');
+  if (btn) btn.disabled = true;
+  try {
+    await supaFetch('/rpc/submit_color_idea', { method: 'POST', body: JSON.stringify({ p_design: id, p_name: s.name, p_colors: s.colors }) });
+    s.sent = true;
+    cmSavedWrite(all);
+    refreshColorIdeas(id, 'cm-send-msg');
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    showAlert('cm-send-msg', "Couldn't send it just now. Please try again in a bit.", 'error');
+  }
 }
 function cmCombosFor(g, choices) {
   const keys = choices.map(c => c.key);
@@ -2424,7 +2506,7 @@ function cmViewColors(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g || !cmShown(g)) return null;
   const choices = partColorChoices(), combos = cmCombosFor(g, choices), v = cmView(g, combos);
-  const combo = combos.find(c => c.id === v.pick);
+  const combo = combos.find(c => c.id === v.pick) || cmSavedPick(g, v);
   return cmPartColors(g.parts, combo ? combo.colors : v.own, choices);
 }
 function renderColorIdeas(g) {
@@ -2437,6 +2519,7 @@ function renderColorIdeas(g) {
     <div class="field-help" style="margin-bottom:10px;">${esc(t('colorIdeasNote'))}</div>
     <div class="cm-picks" role="group" aria-label="${esc(t('colorIdeasTitle'))}">
       ${combos.map(c => `<button type="button" class="btn-sm" id="cm-pick-${esc(c.id)}" aria-pressed="${v.pick === c.id}" onclick="setCmPick('${esc(g.id)}', '${esc(c.id)}')">${esc(c.name)}</button>`).join('')}
+      ${cmSavedFor(g.id).map(s => `<button type="button" class="btn-sm" id="cm-pick-s-${esc(s.id)}" aria-pressed="${v.pick === `s-${s.id}`}" onclick="setCmPick('${esc(g.id)}', 's-${esc(s.id)}')">${esc(s.name)} (mine)</button>`).join('')}
       <button type="button" class="btn-sm" id="cm-pick-own" aria-pressed="${v.pick === 'own'}" onclick="setCmPick('${esc(g.id)}', 'own')">${esc(t('colorIdeasOwn'))}</button>
     </div>
     ${cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
@@ -2444,9 +2527,25 @@ function renderColorIdeas(g) {
       <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
       </select></div></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
+    ${renderCmSaveTools(g, v, colors)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
       ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
     <button class="btn-sm" type="button" id="cm-request" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('colorIdeasRequest'))}</button>
+  </div>`;
+}
+function renderCmSaveTools(g, v, colors) {
+  const mine = cmSavedPick(g, v);
+  const gid = esc(g.id);
+  return `<div class="cm-tools">
+    ${reverseColors(colors) ? `<button type="button" class="btn-sm" id="cm-reverse" onclick="reverseCmColors('${gid}')">Reverse colors</button>` : ''}
+    ${mine ? `<div class="cm-saved-note">${mine.sent ? `<span id="cm-send-msg" tabindex="-1">Sent. Thank you! If I like it, I may add "${esc(mine.name)}" for everyone (I might change the name).</span>`
+        : `<button type="button" class="btn-sm" id="cm-send" onclick="sendCmColors('${gid}', '${esc(mine.id)}')">Send to SoloPrint to share with everyone</button>
+           <div class="alert error" id="cm-send-msg" tabindex="-1"></div>`}
+      <button type="button" class="btn-sm danger" onclick="removeCmSaved('${gid}', '${esc(mine.id)}')">Remove my saved colors</button></div>`
+      : `<div class="cm-save"><label for="cm-save-name">Save these colors</label>
+        <div class="cm-save-row"><input type="text" id="cm-save-name" maxlength="40" placeholder="Name them, e.g. Sunset" />
+        <button type="button" class="btn-sm" id="cm-save" onclick="saveCmColors('${gid}')">Save</button></div>
+        <div class="field-help">Saved on this device. You can send ones you love to me to share with everyone.</div></div>`}
   </div>`;
 }
 function refreshColorIdeas(id, focusId) {
@@ -2473,6 +2572,67 @@ function setCmOwn(id, partId, key, k) {
   if (!g) return;
   cmView(g, []).own[partId] = key;
   refreshColorIdeas(id, `cm-own-${k}`);
+}
+
+// ── Owner: color ideas customers sent in (Designs page). Publishing adds one to the design's color ideas. ──
+async function loadColorIdeas() {
+  if (state.colorIdeasLoading) return;
+  state.colorIdeasLoading = true;
+  try { state.colorIdeas = await supaFetch('/color_ideas?select=*&order=created_at.asc') || []; state.colorIdeasError = false; }
+  catch (e) { state.colorIdeas = []; state.colorIdeasError = true; }
+  state.colorIdeasLoaded = true;
+  state.colorIdeasLoading = false;
+  render();
+}
+function renderColorIdeasInbox() {
+  if (!state.colorIdeasLoaded) { if (!state.colorIdeasLoading) loadColorIdeas(); return ''; }
+  const list = (state.colorIdeas || []).filter(c => state.gallery.some(g => g.id === c.design_id));
+  if (state.colorIdeasError) return `<div class="alert error" style="display:block;">Couldn't load the color ideas people sent. If you haven't yet, run supabase/owner-tools.sql in the Supabase SQL Editor.</div>`;
+  if (!list.length) return '';
+  return `<div class="card" id="color-inbox"><h3 class="card-title">Color ideas people sent in (${list.length})</h3>
+    <div class="field-help">Change the name if you like, then publish it to add it to that design's color ideas for everyone, or dismiss it.</div>
+    ${list.map(c => {
+      const g = state.gallery.find(x => x.id === c.design_id);
+      const parts = g.parts || [];
+      const colors = parts.length ? Object.fromEntries(parts.map(p => [p.id, (c.colors || {})[p.id] || p.defaultColor || 'white'])) : {};
+      const full = g.colorMap && g.colorMap.combos.length >= 16;
+      return `<div class="cm-combo" id="cmi-${esc(c.id)}">
+        <div><strong>${esc(g.title)}</strong>: ${esc(parts.map(p => `${p.name} in ${cmColor((c.colors || {})[p.id]).name}`).join(', ') || 'no parts')}</div>
+        <div class="field"><label for="cmi-name-${esc(c.id)}">Name to show</label><input type="text" id="cmi-name-${esc(c.id)}" maxlength="40" value="${esc(c.name)}" /></div>
+        ${g.colorMap && cmUsable(g.colorMap) ? '' : '<div class="field-help">This design has no color ideas picture yet, so it can be published but won\'t show until you add one.</div>'}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn-sm" ${full || !g.colorMap ? 'disabled' : ''} onclick="publishColorIdea('${esc(c.id)}')">Publish for everyone</button>
+          <button type="button" class="btn-sm danger" onclick="dismissColorIdea('${esc(c.id)}')">Dismiss</button>
+        </div>${full ? '<div class="field-help">That design already has 16 color ideas.</div>' : ''}${g.colorMap ? '' : '<div class="field-help">Add the color ideas picture to this design first (edit it below).</div>'}
+        <div class="alert error" id="cmi-err-${esc(c.id)}"></div></div>`;
+    }).join('')}</div>`;
+}
+async function publishColorIdea(id) {
+  const c = (state.colorIdeas || []).find(x => x.id === id);
+  const g = c && state.gallery.find(x => x.id === c.design_id);
+  if (!c || !g || !g.colorMap) return;
+  const name = (document.getElementById(`cmi-name-${id}`)?.value || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (!name) { showAlert(`cmi-err-${id}`, 'Give it a name first.', 'error'); return; }
+  const ids = (g.parts || []).map(p => p.id);
+  const colors = {};
+  ids.forEach(pid => { if (c.colors && c.colors[pid]) colors[pid] = c.colors[pid]; });
+  g.colorMap.combos.push({ id: 'c' + Date.now().toString(36), name, colors });
+  try {
+    await writeGalleryItem(g);
+    await supaFetch(`/color_ideas?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+  } catch (e) {
+    g.colorMap.combos.pop();
+    showAlert(`cmi-err-${id}`, "Couldn't publish it. If you were logged out, log in again and retry.", 'error');
+    return;
+  }
+  state.colorIdeas = state.colorIdeas.filter(x => x.id !== id);
+  render();
+}
+async function dismissColorIdea(id) {
+  try { await supaFetch(`/color_ideas?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } }); }
+  catch (e) { showAlert(`cmi-err-${id}`, "Couldn't dismiss it. Try again.", 'error'); return; }
+  state.colorIdeas = (state.colorIdeas || []).filter(x => x.id !== id);
+  render();
 }
 
 // ── Request form: their chosen part colors on the photo ──
@@ -2540,7 +2700,7 @@ function renderColorMapForm(f) {
             <button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos.splice(${n}, 1); render();" aria-label="Remove color idea ${n + 1}">Remove idea</button>
           </div>
         </div>`; }).join('')}
-        ${m.combos.length < 8 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}` : ''}
+        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}` : ''}
     `}
   </fieldset>`;
 }

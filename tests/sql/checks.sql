@@ -338,3 +338,15 @@ do $$ begin
   if (select (d->>'accessToken') from public.customer_orders(array['LEGACY-' || repeat('k', 57)]) d) !~ '^[A-HJ-NP-Za-km-z2-9]{12}$' then raise exception 'the order should hand back its new short key'; end if;
 end $$;
 reset role;
+
+-- Color ideas: customers can only add one for a real design; nobody but the owner reads or removes them.
+insert into public.gallery_items (id, published, data) values ('ci-1', true, '{"title":"Two tone"}') on conflict (id) do nothing;
+set role anon;
+select pg_temp.expect_denied('select count(*) from public.color_ideas', 'anon reading color ideas');
+select pg_temp.expect_denied($q$delete from public.color_ideas$q$, 'anon deleting color ideas');
+select pg_temp.expect_denied($q$select public.submit_color_idea('no-such-design', 'Nice', '{"a":"red"}')$q$, 'a color idea for a missing design');
+select pg_temp.expect_denied($q$select public.submit_color_idea('ci-1', '', '{"a":"red"}')$q$, 'a color idea without a name');
+select pg_temp.expect_denied($q$select public.submit_color_idea('ci-1', 'Bad', '{"a":"<script>"}')$q$, 'a color idea with a bad color');
+select public.submit_color_idea('ci-1', 'Gold and black', '{"a":"gold","b":"black"}');
+reset role;
+do $$ begin if (select count(*) from public.color_ideas where design_id = 'ci-1' and name = 'Gold and black') <> 1 then raise exception 'color idea not saved'; end if; end $$;

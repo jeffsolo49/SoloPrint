@@ -1141,3 +1141,9 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 .mail-modal p { margin: 0 0 14px; overflow-wrap: anywhere; line-height: 1.5; }
 .mail-modal-buttons { display: flex; flex-direction: column; gap: 8px; }
 .mail-modal-buttons button { width: 100%; text-align: center; }
+
+/* Color ideas: reverse, save and share */
+.cm-tools { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.cm-save-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.cm-save-row input { flex: 1 1 160px; min-width: 0; }
+.cm-saved-note { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; overflow-wrap: anywhere; }
