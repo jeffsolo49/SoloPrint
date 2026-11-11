@@ -3607,8 +3607,9 @@ function renderWorkDetail(g) {
     ${renderDesignParts(g)}
     <div class="card">
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
+      ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}
+        <label class="special-order-check" style="margin-top:8px;"><input type="checkbox" id="design-logo" ${designOpts(g.id).logo ? 'checked' : ''} onchange="setDesignLogo('${esc(g.id)}', this.checked)" /> ${esc(logoText('logoCheckbox'))}</label></div>` : ''}
       <div id="work-price">${renderWorkPrice(g)}</div>
-      ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}</div>` : ''}
 
     </div>
     ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
@@ -3616,14 +3617,14 @@ function renderWorkDetail(g) {
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.
 function renderWorkPrice(g) {
-  const colors = cmViewColors(g.id);
-  const price = designEstimate(g, colors);
+  const colors = cmViewColors(g.id), opts = designOpts(g.id);
+  const price = designEstimate(g, colors, opts);
   if (price === null) return `<div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`;
   return `<div class="job-divider" style="margin:6px 0 14px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
-            ${g.price > 0 ? '' : `<div class="gallery-meta">${colors ? 'In the colors picked above' : (g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
+            ${g.price > 0 ? '' : `<div class="gallery-meta">${colors ? 'In the colors picked above' : (g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g, null, opts)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
           <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('requestThis'))}</button>
         </div>
@@ -3732,6 +3733,7 @@ function requestGalleryItem(id, colors) {
   if (!g) return;
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
   if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
+  applyDesignOpts(item, (state.designOpts || {})[id]);
   applyPartColors(item);
   state.galleryOpen = '';
   setDesignUrl('');
