@@ -650,9 +650,17 @@ textarea { resize: vertical; min-height: 70px; }
 .finished-thumb { position: relative; display: inline-block; }
 .finished-thumb .btn-sm { position: absolute; top: 4px; right: 4px; padding: 2px 7px; }
 .owner-extras { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
-.review-stars { display: flex; gap: 4px; }
-.review-stars button { font-size: 28px; line-height: 1; background: none; border: none; cursor: pointer; color: var(--border-hover); padding: 2px 4px; }
-.review-stars button.on { color: var(--amber); }
+.review-stars { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; }
+.review-stars .star { position: relative; width: 48px; height: 44px; font-size: 38px; line-height: 44px; text-align: center; }
+.review-stars .star-bg, .review-stars .star-fill { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.review-stars .star-bg { color: var(--border-hover); }
+.review-stars .star-fill { color: var(--amber); overflow: hidden; white-space: nowrap; }
+.review-stars .star-in { display: block; width: 48px; text-align: center; }
+.review-stars button { position: absolute; top: 0; height: 100%; width: 50%; background: none; border: none; cursor: pointer; padding: 0; }
+.review-stars .half-l { left: 0; border-radius: 6px 0 0 6px; }
+.review-stars .half-r { right: 0; border-radius: 0 6px 6px 0; }
+.review-stars button:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+.review-rating-note { margin-left: 8px; }
 .field-label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 6px; }
 .review-approvals { margin: 0 0 14px; }
 .review-approval { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin-top: 8px; border: 2px solid var(--accent); border-radius: 12px; background: var(--surface2); }

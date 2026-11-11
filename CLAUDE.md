@@ -73,6 +73,11 @@ can save a combination with a name on their own device (`saveCmColors`, localSto
 RPC `submit_color_idea` -> table `color_ideas`, owner-tools.sql; 20 waiting per design, 200 in all). The owner sees them on the Designs page (`renderColorIdeasInbox`),
 renames and publishes (`publishColorIdea` adds to the design's `colorMap.combos`, now up to 16) or dismisses. The design's color-map form also has "Paste several color ideas at once" (`importCmCombos`: one `Name, color, color` line per idea, a color per part in the part order shown; any bad line adds nothing). The owner must run supabase/owner-tools.sql once for sending to work. Designs page card "Drying rack color ideas" (`renderDryingRackSetup`, `addDryingRackIdeas`, `DRYING_RACK_PRESET`, picture `presets/drying-rack.png`): one tap adds the owner's 10 named ideas, the picture and Base/Spine parts. New parts carry no grams: the site's own rule then splits the design's total weight evenly between the colors (`applyPartColors`); never invent a split.
 
+## Reviews: half stars
+
+Review ratings run 1 to 5 in half steps (`customer_reviews.rating` numeric(2,1), converted once by owner-tools.sql; `submit_review(..., p_rating numeric, ...)` in order-links.sql). The form has a left and right half on each star
+(`.review-stars`, each half at least 24px wide for the accessibility check). Until the owner re-runs owner-tools.sql then order-links.sql, `sendReview` falls back to the whole star below a half so no review is lost.
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves

@@ -146,9 +146,10 @@ select pg_temp.expect_denied($q$select public.submit_review('not-the-key', 'X', 
 select pg_temp.expect_denied($q$select public.submit_review('dee@example.com', 'X', 'Great print', 5)$q$, 'reviewing with just an email');
 select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = '100'), 'Jane', 'Great print', 5)$q$, 'reviewing an order that is not delivered');
 select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-1'), 'Dee', 'x', 9)$q$, 'an invalid review');
+select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-1'), 'Dee', 'Nearly great', 4.3)$q$, 'a rating that is not a whole or half star');
 select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 5, array['https://evil.example/x.jpg'])$q$, 'a review photo from outside the reviews folder');
 select pg_temp.expect_denied($q$select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/a.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/b.jpg','https://x.supabase.co/storage/v1/object/public/gallery/reviews/c.jpg'])$q$, 'three review photos');
-select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/d-2-1.jpg']);
+select public.submit_review((select tk from tok where id = 'd-2'), 'Dee', 'Came out great', 4.5, array['https://x.supabase.co/storage/v1/object/public/gallery/reviews/d-2-1.jpg']);
 select pg_temp.expect_denied($q$select public.due_review_requests('wrong-secret')$q$, 'review requests with a wrong secret');
 select pg_temp.expect_denied($q$select public.owner_report_data('wrong-secret')$q$, 'report data with a wrong secret');
 do $$ declare ids text; begin

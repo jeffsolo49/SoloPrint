@@ -760,7 +760,11 @@ function renderReviewForm() {
     <div class="field">
       <span class="field-label" id="review-stars-label">Rating</span>
       <div class="review-stars" role="radiogroup" aria-labelledby="review-stars-label">
-        ${[1, 2, 3, 4, 5].map(n => `<button type="button" role="radio" aria-checked="${r.rating === n}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${(r.rating || 0) >= n ? 'on' : ''}" onclick="state.reviewFor.rating = ${n}; render();">★</button>`).join('')}
+        ${[1, 2, 3, 4, 5].map(n => { const v = r.rating || 0, fill = v >= n ? 100 : v >= n - 0.5 ? 50 : 0;
+          return `<span class="star"><span class="star-bg" aria-hidden="true">★</span><span class="star-fill" aria-hidden="true" style="width:${fill}%"><span class="star-in">★</span></span>
+            <button type="button" role="radio" class="half-l" aria-checked="${v === n - 0.5}" aria-label="${n - 0.5} stars" onclick="state.reviewFor.rating = ${n - 0.5}; render(); document.querySelector('.review-stars .half-l[aria-label=&quot;${n - 0.5} stars&quot;]')?.focus();"></button>
+            <button type="button" role="radio" class="half-r" aria-checked="${v === n}" aria-label="${n} star${n > 1 ? 's' : ''}" onclick="state.reviewFor.rating = ${n}; render(); document.querySelector('.review-stars .half-r[aria-label=&quot;${n} star${n > 1 ? 's' : ''}&quot;]')?.focus();"></button></span>`; }).join('')}
+        <span class="field-help review-rating-note" aria-live="polite">${r.rating ? `${r.rating} out of 5` : 'Tap the left half of a star for a half star.'}</span>
       </div>
     </div>
     <div class="field">
@@ -819,9 +823,13 @@ async function sendReview() {
       showAlert('review-err', "Couldn't upload your photos. Try JPG or PNG pictures, or send the review without them.", 'error');
       return;
     }
-    await supaFetch('/rpc/submit_review', { method: 'POST', body: JSON.stringify({
-      p_token: b.accessToken, p_name: String(r.name ?? firstNameAndInitial(b.clientName)).trim(), p_text: text, p_rating: r.rating || null, p_photos: urls
+    const send = rating => supaFetch('/rpc/submit_review', { method: 'POST', body: JSON.stringify({
+      p_token: b.accessToken, p_name: String(r.name ?? firstNameAndInitial(b.clientName)).trim(), p_text: text, p_rating: rating || null, p_photos: urls
     }) });
+    // Half stars need supabase/owner-tools.sql and order-links.sql to have been run again. Until then the database only
+    // takes whole stars, so a half star is sent rounded down rather than losing the review.
+    try { await send(r.rating); }
+    catch (e) { if (r.rating && r.rating % 1) await send(Math.floor(r.rating)); else throw e; }
     state.reviewFor.sent = true;
     render();
   } catch (e) {
@@ -848,7 +856,7 @@ function renderReviewApprovals() {
   return `<div class="review-approvals">
     <div class="owner-order-summary-label">New from customers (${list.length})</div>
     ${list.map(r => `<div class="review-approval">
-      <div>${r.rating ? `<span aria-label="${r.rating} stars">${'★'.repeat(r.rating)}</span> ` : ''}"${esc(r.text)}"${r.name ? ` <span class="field-help">- ${esc(r.name)}</span>` : ''}</div>
+      <div>${r.rating ? `<span aria-label="${r.rating} stars">${'★'.repeat(Math.floor(r.rating))}${r.rating % 1 ? '½' : ''}</span> ` : ''}"${esc(r.text)}"${r.name ? ` <span class="field-help">- ${esc(r.name)}</span>` : ''}</div>
       ${(r.photos || []).length ? `<div class="finished-photo-row">${r.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><img src="${esc(u)}" alt="Photo from the customer" loading="lazy" /></a>`).join('')}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button type="button" class="btn-sm" onclick="decideReview('${esc(r.job_id)}', true)">Approve and show</button>
