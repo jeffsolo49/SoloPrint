@@ -1656,12 +1656,13 @@ function renderDesignParts(g) {
   if (!g.parts || !g.parts.length) return '';
   return `<div class="card design-parts">
     <h3 class="card-title">Parts</h3>
-    <div class="field-help" style="margin-bottom:10px;">You can pick a color for each part when you request this${g.parts.some(p => p.optional) ? ', and add any optional add-ons' : ''}.</div>
-    <div class="design-parts-grid">${g.parts.map(p => `<div class="design-part">
+    <div class="field-help" style="margin-bottom:10px;">${g.parts.some(p => p.optional) ? 'Tick any add-ons you want; the price updates. ' : ''}You can pick a color for each part when you request this.</div>
+    <div class="design-parts-grid">${g.parts.map((p, k) => `<div class="design-part">
       ${p.photo ? thumbImg(p.photo, p.name, 'thumb') : '<span class="part-thumb-blank" aria-hidden="true"></span>'}
       <div class="design-part-name">${esc(p.name)}</div>
       ${p.optional ? `<div class="gallery-meta"><strong>Optional add-on</strong>${p.price && g.price > 0 ? ` · +$${p.price.toFixed(2)}` : ''}${p.minutes ? ` · +${fmtTime(p.minutes)} print time` : ''}</div>` : ''}
       ${p.grams ? `<div class="gallery-meta">${p.grams} g</div>` : ''}
+      ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="design-add-${k}" ${designOpts(g.id).include[p.id] ? 'checked' : ''} onchange="setDesignAddOn('${esc(g.id)}', '${esc(p.id)}', this.checked, ${k})" /> Add ${esc(p.name)}</label>` : ''}
     </div>`).join('')}</div>
   </div>`;
 }
@@ -2065,16 +2066,47 @@ function renderColorLines(item, grams, rules) {
 // A past-work design as a customer would first request it: its own color (else White), each part in its
 // starting color, add-ons left off. Used for the price shown on the gallery and in the owner's design form.
 // `colors` ({ partId: colorKey }, optional): the colors a customer picked under Color ideas.
-function designEstimateItem(g, colors) {
+function designEstimateItem(g, colors, opts) {
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
   if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
+  applyDesignOpts(item, opts);
   if ((item.designParts || []).length) applyPartColors(item); else ensureItemColor(item);
   return item;
 }
-function designEstimate(g, colors) {
-  if (g.price > 0) return g.price;
-  const item = designEstimateItem(g, colors);
-  return g.minutes && Number(item.grams) > 0 ? calcPerPrint(g.minutes, item.grams, item) : null;
+// `opts` (design page only): the add-ons and logo the customer ticked there (`designOpts`).
+function designEstimate(g, colors, opts) {
+  if (g.price > 0 && !opts) return g.price;
+  const item = designEstimateItem(g, colors, opts);
+  if (fixedPrice(item) !== null) return calcPerPrint(0, 0, item);
+  const mins = Number(item.knownMinutes) || g.minutes;
+  return mins && Number(item.grams) > 0 ? calcPerPrint(mins, item.grams, item) : null;
+}
+// The design page's own choices before "Request this": optional add-on parts and the company logo.
+function designOpts(id) {
+  state.designOpts = state.designOpts || {};
+  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false });
+}
+function applyDesignOpts(item, opts) {
+  if (!opts) return item;
+  (item.designParts || []).forEach(p => { if (p.optional) p.include = !!opts.include[p.id]; });
+  item.logo = featureOn('logoAddOn') && !!opts.logo;
+  return item;
+}
+function refreshDesignPrice(id, focusId) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return;
+  if (document.getElementById('color-ideas')) { refreshColorIdeas(id, focusId); return; }
+  const el = document.getElementById('work-price');
+  if (el) el.innerHTML = renderWorkPrice(g);
+  if (focusId) document.getElementById(focusId)?.focus();
+}
+function setDesignAddOn(id, partId, on, k) {
+  designOpts(id).include[partId] = !!on;
+  refreshDesignPrice(id, `design-add-${k}`);
+}
+function setDesignLogo(id, on) {
+  designOpts(id).logo = !!on;
+  refreshDesignPrice(id, 'design-logo');
 }
 
 // Owner's edit form: the price for one item with today's prices (an order being reviewed has no saved prices yet).
@@ -2427,6 +2459,31 @@ async function paintColorPreviews() {
     cv.getContext('2d').putImageData(new ImageData(data, img.width, img.height), 0, 0);
     cv.classList.add('cm-ready');
   }
+  checkCmBackground();
+}
+// Owner's color-map form: an area that runs along most of the picture's edge is almost surely the background.
+// Set to a part, every color change (and "Reverse colors") would repaint the background instead of the print.
+async function checkCmBackground() {
+  const el = document.getElementById('cm-bg-warn');
+  const m = state.galleryForm && state.galleryForm.colorMap;
+  if (!el || !m || !m.regions.length) return;
+  const img = await cmPixels(m.photo);
+  if (!img || !el.isConnected) return;
+  const hexes = cmHexes(m), lk = m.photo + '|' + hexes.join(',');
+  if (!cmLabelCache.has(lk)) cmLabelCache.set(lk, labelPixels(img, hexes));
+  const labels = cmLabelCache.get(lk), w = img.width, h = img.height, edge = new Array(hexes.length).fill(0);
+  let n = 0;
+  const add = p => { edge[labels[p]]++; n++; };
+  for (let x = 0; x < w; x++) { add(x); add((h - 1) * w + x); }
+  for (let y = 1; y < h - 1; y++) { add(y * w); add(y * w + w - 1); }
+  let start = 0;
+  const bad = [];
+  m.regions.forEach((r, k) => {
+    const s = r.hexes.reduce((t, x, j) => t + edge[start + j], 0);
+    start += r.hexes.length;
+    if (r.part && n && s / n > 0.4) bad.push(k);
+  });
+  el.innerHTML = bad.length ? `<div class="alert error" style="display:block;">${bad.map(k => `Area ${k + 1}`).join(' and ')} ${bad.length > 1 ? 'run' : 'runs'} along the edges of the picture, so ${bad.length > 1 ? 'they look' : 'it looks'} like the background, but ${bad.length > 1 ? 'they are' : 'it is'} set to a part. Then changing that part's color (or "Reverse colors") repaints the background instead of the print. If it is the background, set it to "Not a part (leave as is)".</div>` : '';
 }
 
 // ── Customers: the design page card ──
@@ -2454,14 +2511,20 @@ function cmSavedFor(gid) {
   const keys = partColorChoices().map(c => c.key);
   return (cmSavedAll()[gid] || []).filter(s => s && s.colors && Object.values(s.colors).every(k => keys.includes(k)));
 }
+// The colors of the parts the customer gets: an add-on they haven't ticked doesn't count for "Reverse colors".
+function cmOnShow(g, colors) {
+  const opts = designOpts(g.id);
+  return Object.fromEntries(Object.entries(colors || {}).filter(([id]) => { const p = (g.parts || []).find(x => x.id === id); return !p || !p.optional || opts.include[id]; }));
+}
 function cmSavedPick(g, v) { return cmSavedFor(g.id).find(s => `s-${s.id}` === v.pick); }
 function reverseCmColors(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
-  const rev = reverseColors(cmViewColors(id));
+  const colors = cmViewColors(id);
+  const rev = reverseColors(cmOnShow(g, colors));
   if (!rev) return;
   const v = cmView(g, cmCombosFor(g, partColorChoices()));
-  v.own = rev;
+  v.own = { ...colors, ...rev };
   v.pick = 'own';
   refreshColorIdeas(id, 'cm-reverse');
 }
@@ -2520,8 +2583,8 @@ function cmViewColors(id) {
 function renderColorIdeas(g) {
   if (!cmShown(g)) return '';
   const choices = partColorChoices(), combos = cmCombosFor(g, choices), v = cmView(g, combos);
-  const colors = cmViewColors(g.id);
-  const price = designEstimate(g, colors), item = designEstimateItem(g, colors);
+  const colors = cmViewColors(g.id), opts = designOpts(g.id);
+  const price = designEstimate(g, colors, opts), item = designEstimateItem(g, colors, opts);
   return `<div class="card color-ideas" id="color-ideas">
     <h3 class="card-title">${esc(t('colorIdeasTitle'))}</h3>
     <div class="field-help" style="margin-bottom:10px;">${esc(t('colorIdeasNote'))}</div>
@@ -2545,7 +2608,7 @@ function renderCmSaveTools(g, v, colors) {
   const mine = cmSavedPick(g, v);
   const gid = esc(g.id);
   return `<div class="cm-tools">
-    ${reverseColors(colors) ? `<button type="button" class="btn-sm" id="cm-reverse" onclick="reverseCmColors('${gid}')">Reverse colors</button>` : ''}
+    ${reverseColors(cmOnShow(g, colors)) ? `<button type="button" class="btn-sm" id="cm-reverse" onclick="reverseCmColors('${gid}')">Reverse colors</button>` : ''}
     ${mine ? `<div class="cm-saved-note">${mine.sent ? `<span id="cm-send-msg" tabindex="-1">Sent. Thank you! If I like it, I may add "${esc(mine.name)}" for everyone (I might change the name).</span>`
         : `<button type="button" class="btn-sm" id="cm-send" onclick="sendCmColors('${gid}', '${esc(mine.id)}')">Send to SoloPrint to share with everyone</button>
            <div class="alert error" id="cm-send-msg" tabindex="-1"></div>`}
@@ -2853,6 +2916,7 @@ function renderColorMapForm(f) {
             ${r.hexes.length > 1 ? `<button type="button" class="btn-sm" id="cm-split-${k}" onclick="splitCmRegion(${k})">Split apart</button>` : ''}
           </div></div>
       </div>`; }).join('')}</div>
+      <div id="cm-bg-warn" role="status"></div>
       <div id="cm-join-bar">${renderCmJoinBar()}</div>
       <div class="field" style="max-width:340px;"><label for="cm-detail">Areas not split right?</label>
         <select id="cm-detail" onchange="redoColorAreas(this.value)">
