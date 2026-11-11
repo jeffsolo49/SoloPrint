@@ -197,7 +197,8 @@ end;
 $$;
 
 -- 7. Customer: review a delivered order, once; they can rewrite it until the owner has looked at it.
-create or replace function public.submit_review(p_token text, p_name text, p_text text, p_rating int, p_photos text[] default '{}')
+drop function if exists public.submit_review(text, text, text, int, text[]);
+create or replace function public.submit_review(p_token text, p_name text, p_text text, p_rating numeric, p_photos text[] default '{}')
 returns void
 language plpgsql
 security definer
@@ -206,7 +207,7 @@ as $$
 declare ph text; jid text;
 begin
   if length(trim(coalesce(p_text, ''))) < 3 or length(p_text) > 600 or length(coalesce(p_name, '')) > 60
-     or (p_rating is not null and p_rating not between 1 and 5) then
+     or (p_rating is not null and (p_rating not between 1 and 5 or p_rating * 2 <> round(p_rating * 2))) then
     raise exception 'invalid review';
   end if;
   -- Up to 2 photos, each one a file the customer uploaded to the gallery bucket's reviews/ folder.
@@ -309,7 +310,7 @@ revoke all on function public.customer_orders(text[]) from public;
 revoke all on function public.customer_approve_quote(text) from public;
 revoke all on function public.customer_messages(text) from public;
 revoke all on function public.customer_send_message(text, text) from public;
-revoke all on function public.submit_review(text, text, text, int, text[]) from public;
+revoke all on function public.submit_review(text, text, text, numeric, text[]) from public;
 revoke all on function public.request_order_links(text) from public;
 revoke all on function public.order_links_for_email(text, text) from public;
 grant execute on function public.submit_job(jsonb) to anon, authenticated;
@@ -317,6 +318,6 @@ grant execute on function public.customer_orders(text[]) to anon, authenticated;
 grant execute on function public.customer_approve_quote(text) to anon, authenticated;
 grant execute on function public.customer_messages(text) to anon, authenticated;
 grant execute on function public.customer_send_message(text, text) to anon, authenticated;
-grant execute on function public.submit_review(text, text, text, int, text[]) to anon, authenticated;
+grant execute on function public.submit_review(text, text, text, numeric, text[]) to anon, authenticated;
 grant execute on function public.request_order_links(text) to anon, authenticated;
 grant execute on function public.order_links_for_email(text, text) to anon;

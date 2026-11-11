@@ -1416,6 +1416,8 @@ const STATES = {
     assert(top >= -5 && top < 200, `the review link scrolls to the review form (it is ${Math.round(top)}px from the top)`);
     assert(await page.evaluate(() => document.getElementById('review-card').classList.contains('review-gold') && document.getElementById('review-send').classList.contains('btn-gold') && !!document.querySelector('.order-extras .btn-gold')), 'the review form, its Send review button and the Leave a review button are gold');
     assert(await page.inputValue('#review-name') === 'Jane D.', 'name should default to first name and initial');
+    await page.click('.review-stars button[aria-label="3.5 stars"]');
+    assert(/3\.5 out of 5/.test(await page.textContent('.review-rating-note')) && await page.evaluate(() => state.reviewFor.rating) === 3.5 && await page.evaluate(() => [...document.querySelectorAll('.star-fill')].map(e => e.style.width).join()) === '100%,100%,100%,50%,0%', 'a half star fills half of the 4th star');
     await page.click('.review-stars button[aria-label="5 stars"]');
     await page.fill('#review-text', 'Sturdy hook, holds my bag.');
     const img = n => ({ name: `p${n}.png`, mimeType: 'image/png', buffer: PNG });

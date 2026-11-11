@@ -22,12 +22,21 @@ create table if not exists public.customer_reviews (
   job_id text primary key,
   name text not null default '',
   text text not null,
-  rating int check (rating between 1 and 5),
+  rating numeric(2,1) check (rating between 1 and 5 and rating * 2 = round(rating * 2)),
   status text not null default 'new' check (status in ('new', 'approved', 'dismissed')),
   created_at timestamptz not null default now()
 );
 
 alter table public.customer_reviews add column if not exists photos text[] not null default '{}';
+
+-- Half stars: ratings are 1, 1.5, ... 5. Older databases stored whole numbers; this converts the column once.
+do $$ begin
+  if (select data_type from information_schema.columns where table_schema = 'public' and table_name = 'customer_reviews' and column_name = 'rating') = 'integer' then
+    alter table public.customer_reviews drop constraint if exists customer_reviews_rating_check;
+    alter table public.customer_reviews alter column rating type numeric(2,1);
+    alter table public.customer_reviews add constraint customer_reviews_rating_check check (rating between 1 and 5 and rating * 2 = round(rating * 2));
+  end if;
+end $$;
 
 alter table public.customer_reviews enable row level security;
 
