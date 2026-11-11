@@ -1338,6 +1338,7 @@ function render() {
   attachAll();
   paintColorPreviews();
   growMessageBoxes();
+  driftReviews();
   if (state.view === 'client' && state.clientTab === 'submit') queueDraftSave();
 }
 
@@ -1466,11 +1467,20 @@ function renderHowItWorks() {
   </div>`;
 }
 
+// Reviews as speech bubbles in one row: they get narrower as more are added, up to 4 across. With more than 4, they're
+// in a random order (fixed for this visit), the row scrolls sideways (drag, swipe, arrows) and drifts slowly to show it
+// can (`driftReviews`, paused while touched, hovered or focused, and off for people who ask for less motion).
 function renderReviews(reviews, title = t('reviewsTitle')) {
   if (!reviews.length || !featureOn('reviews')) return '';
+  const many = reviews.length > 4;
+  const seed = state.reviewSeed || (state.reviewSeed = Math.random().toString(36).slice(2));
+  const key = r => { let h = 2166136261; for (const ch of seed + (r.id || '') + r.text + (r.name || '')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; };
+  const list = many ? reviews.slice().sort((x, y) => key(x) - key(y)) : reviews;
   return `<div class="card">
     <h3 class="card-title">${esc(title)}</h3>
-    <div class="reviews">${reviews.map(r => {
+    <div class="reviews-wrap${many ? ' many' : ''}">
+      ${many ? '<button class="btn-sm review-nav" type="button" aria-label="Earlier reviews" onclick="scrollReviews(this, -1)">‹</button>' : ''}
+      <div class="reviews" style="--per:${Math.min(list.length, 4)}"${list.length > 1 ? ' tabindex="0" role="region" aria-label="Reviews. Drag or scroll sideways to see more."' : ''}>${list.map(r => {
       const design = r.designId && state.gallery.find(g => g.id === r.designId && g.published);
       return `<figure class="review">
         <blockquote>“${esc(r.text)}”</blockquote>
@@ -1478,7 +1488,60 @@ function renderReviews(reviews, title = t('reviewsTitle')) {
         <figcaption>${esc(r.name || 'A customer')}${design ? ` · <button class="btn-link" type="button" onclick="openWork('${esc(design.id)}')">${esc(design.title)}</button>` : ''}</figcaption>
       </figure>`;
     }).join('')}</div>
+      ${many ? '<button class="btn-sm review-nav" type="button" aria-label="More reviews" onclick="scrollReviews(this, 1)">›</button>' : ''}
+    </div>
+    ${many ? '<div class="field-help reviews-hint">Drag or swipe the reviews to see more.</div>' : ''}
   </div>`;
+}
+function scrollReviews(btn, dir) {
+  const row = btn.parentElement.querySelector('.reviews');
+  if (!row) return;
+  row._pauseUntil = Date.now() + 8000;
+  row.scrollBy({ left: dir * row.clientWidth * 0.8, behavior: 'smooth' });
+}
+// The slow drift and mouse dragging for review rows with more than 4 reviews.
+function driftReviews() {
+  if (window.__reviewDrift) return;
+  window.__reviewDrift = true;
+  const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let last = performance.now();
+  const step = now => {
+    const dt = Math.min(100, now - last);
+    last = now;
+    document.querySelectorAll('.reviews-wrap.many .reviews').forEach(row => {
+      if (!row._ready) {
+        row._ready = true;
+        row._pos = row.scrollLeft;
+        row.addEventListener('scroll', () => { if (Math.abs(row.scrollLeft - row._pos) > 3) { row._pos = row.scrollLeft; row._pauseUntil = Date.now() + 5000; } });
+        row.addEventListener('pointerdown', e => {
+          row._pauseUntil = Date.now() + 8000;
+          if (e.pointerType !== 'mouse' || e.button !== 0 || e.target.closest('a,button')) return;
+          const x0 = e.clientX, s0 = row.scrollLeft;
+          let moved = false;
+          const move = m => { if (Math.abs(m.clientX - x0) > 4) moved = true; row.scrollLeft = s0 - (m.clientX - x0); row._pos = row.scrollLeft; row._pauseUntil = Date.now() + 5000; };
+          const up = () => {
+            window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+            row.classList.remove('dragging');
+            if (moved) row.addEventListener('click', c => { c.stopPropagation(); c.preventDefault(); }, { capture: true, once: true });
+          };
+          row.classList.add('dragging');
+          window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+          e.preventDefault();
+        });
+      }
+      const end = row.scrollWidth - row.clientWidth;
+      if (calm || end <= 1 || (row._pauseUntil || 0) > Date.now() || row.matches(':hover') || row.contains(document.activeElement)) return;
+      if (row._pos >= end - 1) {   // reached the end: wait, then glide back to the start
+        row._pauseUntil = Date.now() + 4000;
+        setTimeout(() => { row._pos = 0; row.scrollTo({ left: 0, behavior: 'smooth' }); row._pauseUntil = Date.now() + 2500; }, 3000);
+        return;
+      }
+      row._pos = Math.min(end, row._pos + dt * 0.015);   // about 15 pixels a second
+      row.scrollLeft = row._pos;
+    });
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function renderSubmitTab() {

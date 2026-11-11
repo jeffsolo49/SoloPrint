@@ -604,8 +604,19 @@ textarea { resize: vertical; min-height: 70px; }
 .how-desc { display: block; font-size: 12px; color: var(--muted); line-height: 1.55; margin-top: 4px; }
 @media (max-width: 760px) { .how-steps { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 420px) { .how-steps { grid-template-columns: 1fr; } .how-steps li { flex-direction: row; } .how-num { flex-shrink: 0; } }
-.reviews { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.review { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--surface2); border-left: 4px solid var(--accent); }
+/* Reviews: speech bubbles in one row, narrower as more are added (4 across at most); more than 4 scroll sideways. */
+.reviews-wrap { display: flex; align-items: center; gap: 6px; }
+.reviews { --per: 1; flex: 1; min-width: 0; display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 22px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.reviews-wrap.many .reviews { cursor: grab; scroll-snap-type: none; }
+.reviews.dragging { cursor: grabbing; user-select: none; }
+.review { position: relative; margin: 0; padding: 14px 16px; border-radius: 22px; background: var(--surface2); border: 2px solid var(--accent);
+  flex: 0 0 calc((100% - (var(--per) - 1) * 14px) / var(--per)); min-width: 150px; scroll-snap-align: start; box-sizing: border-box; }
+.review::after { content: ''; position: absolute; left: 26px; bottom: -11px; width: 18px; height: 18px; background: var(--surface2);
+  border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(45deg); }
+.reviews[style*="--per:4"] .review blockquote, .reviews[style*="--per:3"] .review blockquote { font-size: 13px; }
+.review-nav { flex-shrink: 0; min-width: 32px; min-height: 44px; font-size: 20px; padding: 0 8px; }
+.reviews-hint { margin-top: 4px; text-align: center; }
+@media (max-width: 640px) { .review { min-width: 200px; } }
 .review-photos { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .review-photos img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); display: block; }
 .review blockquote { margin: 0; font-size: 14px; line-height: 1.6; }
