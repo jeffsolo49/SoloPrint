@@ -575,7 +575,9 @@ function normalizeBatch(batch) {
     shippingDepositPaid: Number(batch.shippingDepositPaid) > 0 ? Math.round(Number(batch.shippingDepositPaid) * 100) / 100 : null,
     refundSent: Number(batch.refundSent) > 0 ? Math.round(Number(batch.refundSent) * 100) / 100 : null,
     refundSentAt: cleanIso(batch.refundSentAt),
-    manualEmail: batch.manualEmail && MANUAL_EMAILS.some(m => m.key === batch.manualEmail.key) && cleanIso(batch.manualEmail.at) ? { key: batch.manualEmail.key, at: cleanIso(batch.manualEmail.at) } : null,
+    manualEmail: batch.manualEmail && MANUAL_EMAILS.some(m => m.key === batch.manualEmail.key) && cleanIso(batch.manualEmail.at)
+      ? { key: batch.manualEmail.key, at: cleanIso(batch.manualEmail.at),
+          ...(String(batch.manualEmail.body || '').trim() ? { subject: cleanText(batch.manualEmail.subject, 200), body: cleanText(batch.manualEmail.body, 10000) } : {}) } : null,
     manualEmails: (Array.isArray(batch.manualEmails) ? batch.manualEmails : []).filter(m => m && MANUAL_EMAILS.some(x => x.key === m.key) && cleanIso(m.at)).map(m => ({ key: m.key, at: cleanIso(m.at) })).slice(-30),
     depositAmount: Number(batch.depositAmount) > 0 ? Math.round(Number(batch.depositAmount) * 100) / 100 : null,
     rates: cleanQuoteRates(batch.rates),

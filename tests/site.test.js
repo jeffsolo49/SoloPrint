@@ -482,7 +482,7 @@ const STATES = {
     await owner.evaluate(() => { document.getElementById('send-email-fold-1').open = true; });
     assert(await owner.locator('#send-email-review_request-1').isEnabled() && await owner.locator('#send-email-reminder-1').isDisabled(), 'review request is available on a shipped order, a quote reminder is not');
     await owner.click('#send-email-review_request-1');
-    assert(/How did your SoloPrint order turn out/.test(await owner.textContent('.mail-modal .mp-subject')) && /jane@example\.com/.test(await owner.textContent('.mail-modal .send-to')) && /review=1/.test(await owner.textContent('.mail-modal .mp-body')), 'shows the exact email');
+    assert(/How did your SoloPrint order turn out/.test(await owner.inputValue('#mp-subject')) && /jane@example\.com/.test(await owner.textContent('.mail-modal .send-to')) && /review=1/.test(await owner.inputValue('#mp-body')), 'shows the exact email, ready to edit');
     await owner.click('.mail-modal button[data-go="0"]');
     assert(!db.jobs['1'].manualEmail, 'cancel saves nothing');
     await owner.click('#send-email-review_request-1');
@@ -491,6 +491,18 @@ const STATES = {
     const j = db.jobs['1'];
     assert(j.manualEmail && j.manualEmail.key === 'review_request' && j.manualEmail.at && j.reviewRequestedAt && j.manualEmails.length === 1, JSON.stringify(j));
     assert(/on its way to jane@example\.com/.test(await owner.textContent('#send-email-fold-1 .alert.success')), 'says it is on its way');
+    assert(!j.manualEmail.body, 'unchanged: the email script fills in the template itself');
+    // Edited: exactly this subject and text are saved for the email script to send.
+    await owner.evaluate(() => { document.getElementById('send-email-fold-1').open = true; });
+    await owner.click('#send-email-review_request-1');
+    await owner.fill('#mp-subject', 'A review for 10% off?');
+    const body = (await owner.inputValue('#mp-body')).replace('I\'d love a short review', 'leave a review for 10% off your next order');
+    await owner.fill('#mp-body', body);
+    await owner.click('.mail-modal button[data-go="1"]');
+    await owner.waitForFunction(() => (state.batches.find(b => b.id === '1').manualEmails || []).length === 2);
+    await owner.waitForTimeout(200);
+    const j2 = db.jobs['1'];
+    assert(j2.manualEmail.subject === 'A review for 10% off?' && /10% off your next order/.test(j2.manualEmail.body) && /review=1/.test(j2.manualEmail.body), JSON.stringify(j2.manualEmail));
     await owner.close();
   });
 

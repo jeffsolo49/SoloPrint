@@ -613,7 +613,11 @@ function emailsFor(type, rec, old, custom, site) {
   // The owner pressed "Send an email now" on the order screen: send that one email, once (manualEmail.at is new in this save).
   const mm = rec.manualEmail, om = old.manualEmail || {};
   if (mm && mm.at && mm.at !== om.at && MANUAL_EMAIL_KEYS.indexOf(mm.key) !== -1) {
-    send(mm.key, customer);
+    // Edited in the pop-up: send exactly what the owner wrote. Otherwise the usual template, filled in now.
+    if (customer && String(mm.body || '').trim()) {
+      const t = emailTemplate(mm.key, custom);
+      emails.push({ to: customer, kind: mm.key, subject: String(mm.subject || renderEmailText(t.subject, vars)).replace(/\s+/g, ' ').trim().slice(0, 200), body: String(mm.body).slice(0, 10000) });
+    } else send(mm.key, customer);
     return emails;
   }
 

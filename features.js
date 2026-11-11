@@ -2773,30 +2773,37 @@ function askSendEmail(id, key) {
   wrap.innerHTML = `<div class="mail-modal wide" role="dialog" aria-modal="true" aria-labelledby="send-modal-title">
     <h3 id="send-modal-title">Send this email?</h3>
     <p class="send-to"></p>
-    <div class="mail-preview" tabindex="0"><strong class="mp-subject"></strong><pre class="mp-body"></pre></div>
-    <div class="field-help">Lines that depend on the moment (like your place in line) are filled in when it sends.</div>
+    <div class="field"><label for="mp-subject">Subject</label><input type="text" id="mp-subject" class="mp-subject" maxlength="200" /></div>
+    <div class="field"><label for="mp-body">Email</label><textarea id="mp-body" class="mp-body" rows="12" maxlength="10000" spellcheck="true"></textarea></div>
+    <div class="field-help">Change anything you like: this one email is sent exactly as shown. To change it for every order, edit it in Settings > Emails. If you leave it as is, lines that depend on the moment (like their place in line) are filled in when it sends.</div>
+    <button type="button" class="btn-link" id="mp-reset">Undo my changes</button>
     <div class="mail-modal-buttons"><button type="button" class="btn-primary" data-go="1">Send email</button><button type="button" class="btn-secondary" data-go="0">Cancel</button></div></div>`;
   wrap.querySelector('.send-to').textContent = `To: ${b.clientName ? b.clientName + ' ' : ''}<${b.clientEmail}>`;
-  wrap.querySelector('.mp-subject').textContent = p.subject;
-  wrap.querySelector('.mp-body').textContent = p.body;
+  const subj = wrap.querySelector('#mp-subject'), body = wrap.querySelector('#mp-body');
+  subj.value = p.subject;
+  body.value = p.body;
+  wrap.querySelector('#mp-reset').addEventListener('click', () => { subj.value = p.subject; body.value = p.body; body.focus(); });
   const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus(); };
   const onKey = e => { if (e.key === 'Escape') close(); };
   wrap.addEventListener('click', e => {
     const v = e.target.closest && e.target.closest('button[data-go]');
     if (!v && e.target !== wrap) return;
     const go = v && v.dataset.go === '1';
+    const edited = subj.value !== p.subject || body.value !== p.body ? { subject: subj.value.trim(), body: body.value } : null;
+    if (go && edited && (!edited.subject || !edited.body.trim())) { alert('The subject and the email both need some text.'); return; }
     close();
-    if (go) sendManualEmail(id, key);
+    if (go) sendManualEmail(id, key, edited);
   });
   document.addEventListener('keydown', onKey);
   document.body.appendChild(wrap);
   wrap.querySelector('button').focus();
 }
-async function sendManualEmail(id, key) {
+async function sendManualEmail(id, key, edited) {
   const b = state.batches.find(x => x.id === id), m = MANUAL_EMAILS.find(x => x.key === key);
   if (!b || !m || !m.ok(b) || !hasEmailAddress(b)) return;
   const now = new Date().toISOString();
-  b.manualEmail = { key, at: now };
+  // Edited in the pop-up: the email script sends exactly this subject and text. Otherwise it fills in the template itself.
+  b.manualEmail = edited ? { key, at: now, subject: edited.subject.slice(0, 200), body: edited.body.slice(0, 10000) } : { key, at: now };
   b.manualEmails = [...(b.manualEmails || []), { key, at: now }].slice(-30);
   if (key === 'review_request') b.reviewRequestedAt = now;
   if (key === 'reminder') b.reminderSentAt = now;
