@@ -473,6 +473,27 @@ const STATES = {
     await page.close();
   });
 
+  await check('send an email now: preview the review request, cancel changes nothing, send saves it once and stamps the daily job', async () => {
+    const db = fixtures();
+    Object.assign(db.jobs['1'], { phase: 'delivered', paymentStatus: 'payment_received', deliveryTracking: 'USPS 1', phaseHistory: { delivered: ago(2) } });
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    await owner.evaluate(showOrder('1'));
+    await owner.evaluate(() => { document.getElementById('send-email-fold-1').open = true; });
+    assert(await owner.locator('#send-email-review_request-1').isEnabled() && await owner.locator('#send-email-reminder-1').isDisabled(), 'review request is available on a shipped order, a quote reminder is not');
+    await owner.click('#send-email-review_request-1');
+    assert(/How did your SoloPrint order turn out/.test(await owner.textContent('.mail-modal .mp-subject')) && /jane@example\.com/.test(await owner.textContent('.mail-modal .send-to')) && /review=1/.test(await owner.textContent('.mail-modal .mp-body')), 'shows the exact email');
+    await owner.click('.mail-modal button[data-go="0"]');
+    assert(!db.jobs['1'].manualEmail, 'cancel saves nothing');
+    await owner.click('#send-email-review_request-1');
+    await owner.click('.mail-modal button[data-go="1"]');
+    await owner.waitForSelector('#send-email-fold-1 .alert.success');
+    const j = db.jobs['1'];
+    assert(j.manualEmail && j.manualEmail.key === 'review_request' && j.manualEmail.at && j.reviewRequestedAt && j.manualEmails.length === 1, JSON.stringify(j));
+    assert(/on its way to jane@example\.com/.test(await owner.textContent('#send-email-fold-1 .alert.success')), 'says it is on its way');
+    await owner.close();
+  });
+
   console.log('\nCustomer flows:');
   await check('submit a request: waits for review, saved through submit_job', async () => {
     const db = fixtures();
