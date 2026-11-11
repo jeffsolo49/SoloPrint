@@ -1166,3 +1166,7 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 @media (prefers-color-scheme: dark) {
   .review-gold { background: #3a2f0a; border-color: #f2b705; box-shadow: 0 0 0 4px rgba(242, 183, 5, 0.3), 0 4px 14px rgba(0, 0, 0, 0.4); }
 }
+
+/* Editable email in the send pop-up */
+.mail-modal .mp-body { width: 100%; min-height: 220px; max-height: 50vh; resize: vertical; font: inherit; line-height: 1.5; }
+.mail-modal .mp-subject { width: 100%; }

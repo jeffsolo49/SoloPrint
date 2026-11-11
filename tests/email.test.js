@@ -177,6 +177,8 @@ check('"Send an email now": the chosen email goes out once, to the customer, wit
   assert(second.length === 1, 'a new press sends again');
   const unknown = emailsFor('UPDATE', at({ phase: 'delivered', manualEmail: { key: 'owner_new', at: 'm9' } }), at({ phase: 'delivered' }));
   assert(unknown.length === 0, 'only the listed emails can be sent by hand');
+  const edited = emailsFor('UPDATE', at({ phase: 'delivered', manualEmail: { key: 'review_request', at: 'm5', subject: 'A review for 10% off?', body: 'Hi Jane, my own words here.' } }), at({ phase: 'delivered' }));
+  assert(edited.length === 1 && edited[0].subject === 'A review for 10% off?' && edited[0].body === 'Hi Jane, my own words here.' && edited[0].to === 'jane@example.com', 'an edited email is sent exactly as written: ' + JSON.stringify(edited));
   const reminder = emailsFor('UPDATE', at({ phase: 'quote_sent', manualEmail: { key: 'reminder', at: 'm3' } }), at({ phase: 'quote_sent' }));
   assert(reminder.length === 1 && /Still interested/.test(reminder[0].subject), JSON.stringify(reminder));
 });

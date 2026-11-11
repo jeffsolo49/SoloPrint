@@ -77,7 +77,7 @@ renames and publishes (`publishColorIdea` adds to the design's `colorMap.combos`
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves
 `manualEmail { key, at }` (+ `manualEmails` log) on the order and Code.gs `emailsFor` sends that one email when `manualEmail.at` is new (keys in `MANUAL_EMAIL_KEYS`, keep both lists in step).
-A manual review request / quote reminder also sets `reviewRequestedAt` / `reminderSentAt` so the daily job doesn't repeat it.
+A manual review request / quote reminder also sets `reviewRequestedAt` / `reminderSentAt` so the daily job doesn't repeat it. The pop-up's subject and text are editable: if the owner changes them, `manualEmail` also carries `subject`/`body` and Code.gs sends exactly that (else it fills the template itself).
 
 ## Data
 
