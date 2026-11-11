@@ -219,6 +219,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const STATES = {
   'home': '0',
+  'home with many reviews': "(() => { state.settings.reviews = Array.from({ length: 7 }, (x, k) => ({ id: 'r' + k, name: 'Customer ' + k, text: 'Review number ' + k + ', the print came out great and it arrived fast.' })); render(); })()",
   'home with an item': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A desk hook'); updateDraftPrintTime(0, 'hours', '1'); updateDraft(0, 'grams', 20); render(); })()",
   'home with a multi-color print': "(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); })()",
   'home with color info': "(() => { state.settings.colors[2].description = 'Shimmery gold'; state.settings.colors[2].link = 'https://example.com/silk'; state.draftItems[0].mode = 'idea'; pickColor(0, 'silk'); render(); })()",
@@ -2292,6 +2293,30 @@ const STATES = {
       await page.evaluate(() => loadLastUpdate());
       assert(await page.textContent('#build-badge') === text && await page.isVisible('#build-badge'), `${mins} min: ${await page.textContent('#build-badge')}`);
     }
+    await page.close();
+  });
+  await check('reviews: bubbles narrow as more are added (4 across); more than 4 shuffle, scroll and drift', async () => {
+    const page = await open(fixtures());
+    const many = n => page.evaluate(n => { state.settings.reviews = Array.from({ length: n }, (x, k) => ({ id: 'r' + k, name: 'C' + k, text: 'Review ' + k })); render(); }, n);
+    await many(3);
+    let boxes = await page.$$eval('.reviews .review', els => els.map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.width)]; }));
+    assert(boxes.length === 3 && boxes.every(b => b[0] === boxes[0][0] && Math.abs(b[1] - boxes[0][1]) < 2) && !(await page.$('.reviews-wrap.many')), `3 in one row, same size: ${JSON.stringify(boxes)}`);
+    const w3 = boxes[0][1];
+    await many(4);
+    boxes = await page.$$eval('.reviews .review', els => els.map(e => Math.round(e.getBoundingClientRect().width)));
+    assert(boxes[0] < w3, `4 are narrower than 3: ${boxes[0]} vs ${w3}`);
+    await many(7);
+    await page.waitForSelector('.reviews-wrap.many .review-nav');
+    const order = () => page.$$eval('.reviews .review blockquote', els => els.map(e => e.textContent).join('|'));
+    const first = await order();
+    await page.evaluate(() => render());
+    assert(await order() === first, 'the random order stays the same while the visitor is here');
+    const start = await page.$eval('.reviews', e => e.scrollLeft);
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(s => document.querySelector('.reviews').scrollLeft > s + 5, start, { timeout: 4000 });
+    await page.click('.review-nav[aria-label="More reviews"]');
+    await page.waitForTimeout(600);
+    assert(await page.$eval('.reviews', e => e.scrollLeft) > start + 50, 'the arrow scrolls to more');
     await page.close();
   });
   await check('company logo add-on: note on every design, tick box adds the logo price, saved with the request', async () => {
