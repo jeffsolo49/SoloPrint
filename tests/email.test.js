@@ -167,6 +167,19 @@ check('printing done email: total, deposit, remainder with the shipping fee', ()
   assert(m && m[2] === '4.64' && Math.abs(Number(m[1]) - 4.64 + 15 - Number(m[3])) < 0.011, body);
   assert(body.includes('a $15.00 deposit for USPS') && body.includes('based on the actual cost') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
 });
+check('"Send an email now": the chosen email goes out once, to the customer, with the review link', () => {
+  const old = at({ phase: 'delivered', paymentStatus: 'payment_received' });
+  const sentNow = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', manualEmail: { key: 'review_request', at: 'm1' } }), old);
+  assert(sentNow.length === 1 && sentNow[0].to === 'jane@example.com' && sentNow[0].subject === 'How did your SoloPrint order turn out?' && sentNow[0].body.includes('&review=1'), JSON.stringify(sentNow));
+  const again = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', manualEmail: { key: 'review_request', at: 'm1' }, clientName: 'Janet' }), at({ phase: 'delivered', paymentStatus: 'payment_received', manualEmail: { key: 'review_request', at: 'm1' } }));
+  assert(again.length === 0, 'the same manualEmail never sends twice');
+  const second = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', manualEmail: { key: 'review_request', at: 'm2' } }), at({ phase: 'delivered', paymentStatus: 'payment_received', manualEmail: { key: 'review_request', at: 'm1' } }));
+  assert(second.length === 1, 'a new press sends again');
+  const unknown = emailsFor('UPDATE', at({ phase: 'delivered', manualEmail: { key: 'owner_new', at: 'm9' } }), at({ phase: 'delivered' }));
+  assert(unknown.length === 0, 'only the listed emails can be sent by hand');
+  const reminder = emailsFor('UPDATE', at({ phase: 'quote_sent', manualEmail: { key: 'reminder', at: 'm3' } }), at({ phase: 'quote_sent' }));
+  assert(reminder.length === 1 && /Still interested/.test(reminder[0].subject), JSON.stringify(reminder));
+});
 check('shipped email: tracking, invoice and the shipping deposit refund', () => {
   const body = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64, deliveryTracking: 'USPS 9400 1111', postageCost: 9.5 }),
     at({ phase: 'ready_to_ship', paymentStatus: 'payment_received', depositAmount: 4.64 }))[0].body;

@@ -577,6 +577,8 @@ function sendTestEmail() {
 // Decide which emails an order change should send. Pure function so it can be tested outside Apps Script.
 // `custom` is the owner's edited email text from the site's Emails page; `site` is the site settings
 // (for vacation mode). Both come from loadSiteData.
+// Emails the owner can send by hand from the order screen (site: MANUAL_EMAILS in features.js).
+const MANUAL_EMAIL_KEYS = ['review_request', 'reminder', 'quote', 'confirmed', 'final_payment_needed', 'delivered', 'delivery_update'];
 function emailsFor(type, rec, old, custom, site) {
   const emails = [];
   const customer = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(rec.clientEmail || '')) ? String(rec.clientEmail) : '';
@@ -607,6 +609,13 @@ function emailsFor(type, rec, old, custom, site) {
   }
 
   if (type !== 'UPDATE' || !old) return emails;
+
+  // The owner pressed "Send an email now" on the order screen: send that one email, once (manualEmail.at is new in this save).
+  const mm = rec.manualEmail, om = old.manualEmail || {};
+  if (mm && mm.at && mm.at !== om.at && MANUAL_EMAIL_KEYS.indexOf(mm.key) !== -1) {
+    send(mm.key, customer);
+    return emails;
+  }
 
   if (rec.phase !== old.phase && rec.phase === 'details_check') {
     // The owner wrote and checked this email on the site; send exactly that.

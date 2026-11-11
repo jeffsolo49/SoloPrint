@@ -639,7 +639,7 @@ function renderEmailGuide() {
   const row = (when, button, gets) => `<tr><th scope="row">${button}</th><td>${when}</td><td>${gets}</td></tr>`;
   return `<details class="card email-guide" id="email-guide">
     <summary><strong>When do emails go out? When should I press each button?</strong></summary>
-    <p class="field-help">Each order shows one next step with one button. The note above the button says which email it sends. When you tap the button, a pop-up asks "Send email and continue" or "Don\'t send email, continue", so you can move an order along without emailing anyone.</p>
+    <p class="field-help">Each order shows one next step with one button. The note above the button says which email it sends. When you tap the button, a pop-up asks "Send email and continue" or "Don\'t send email, continue", so you can move an order along without emailing anyone. To send one of the automatic emails yourself, like the review request, open an order and use <strong>Send an email now</strong> under the steps.</p>
     <div class="table-scroll"><table class="email-guide-table">
       <thead><tr><th scope="col">Button</th><th scope="col">Press it when</th><th scope="col">The customer gets</th></tr></thead>
       <tbody>
@@ -2707,6 +2707,97 @@ async function addDryingRackIdeas() {
   render();
 }
 
+
+// ── Send an automated email now (order screen > "Send an email now") ──
+// Saving the order with manualEmail { key, at } makes the email script send that email (Code.gs emailsFor), through the
+// same pipeline as the automatic ones. A manual review request or quote reminder also stamps the daily job's own marker
+// (reviewRequestedAt / reminderSentAt) so the daily job doesn't send it a second time.
+const MANUAL_EMAILS = [
+  { key: 'review_request', label: 'Ask for a review', normally: 'Normally sent by itself about a week after an order ships.',
+    ok: b => b.phase === 'delivered', need: 'Available once the order is Shipped.' },
+  { key: 'reminder', label: 'Send a quote reminder', normally: 'Normally sent by itself 3 days after a quote with no answer.',
+    ok: b => b.phase === 'quote_sent' && !b.customerApprovedAt, need: 'Available while a quote is waiting for their answer.' },
+  { key: 'quote', label: 'Send the quote again', normally: 'Sent when you send the quote.',
+    ok: b => b.phase === 'quote_sent', need: 'Available while the quote is sent.' },
+  { key: 'confirmed', label: 'Send the deposit request again', normally: 'Sent when you confirm the order.',
+    ok: b => b.phase === 'order_received', need: 'Available while the order is confirmed and printing.' },
+  { key: 'final_payment_needed', label: 'Send the final payment request again', normally: 'Sent when printing is done.',
+    ok: b => b.phase === 'final_payment_needed', need: 'Available at Printing Complete.' },
+  { key: 'delivered', label: 'Send the shipped email again', normally: 'Sent when you mark the order Shipped.',
+    ok: b => b.phase === 'delivered', need: 'Available once the order is Shipped.' },
+  { key: 'delivery_update', label: 'Send the shipping details', normally: 'Sent when you change shipping details on a shipped order.',
+    ok: b => b.phase === 'delivered' && !!String(b.deliveryTracking || '').trim(), need: 'Available once a shipped order has tracking.' }
+];
+function hasEmailAddress(b) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.clientEmail || '')); }
+function manualEmailLast(b, key) {
+  const hit = (b.manualEmails || []).filter(m => m.key === key).pop();
+  return hit ? hit.at : '';
+}
+function renderSendEmailFold(b) {
+  const note = (state.emailSentNote || {})[b.id];
+  const items = MANUAL_EMAILS.map(m => {
+    const ok = hasEmailAddress(b) && m.ok(b);
+    const last = manualEmailLast(b, m.key);
+    return `<li class="send-email-row ${ok ? '' : 'off'}">
+      <div><strong>${esc(m.label)}</strong><div class="field-help">${esc(ok ? m.normally : (hasEmailAddress(b) ? m.need : 'This order has no email address.'))}${last ? ` Last sent by you ${esc(formatAustinTime(last))}.` : ''}</div></div>
+      <button type="button" class="btn-sm" id="send-email-${esc(m.key)}-${esc(b.id)}" ${ok ? '' : 'disabled'} onclick="askSendEmail('${esc(b.id)}', '${m.key}')">Preview and send</button>
+    </li>`;
+  }).join('');
+  return `<details class="desk-fold" id="send-email-fold-${esc(b.id)}" ${note ? 'open' : ''}><summary>Send an email now</summary>
+    ${note ? `<div class="alert success" style="display:block;" role="status">${esc(note)}</div>` : ''}
+    <div class="field-help">The automatic emails, sent when you choose. You see the exact email first and confirm. It goes out within a minute or two.</div>
+    <ul class="send-email-list">${items}</ul></details>`;
+}
+function manualEmailPreview(b, key) {
+  const tpl = emailTemplate(key, state.settings.emails || {}), vars = practiceVars(b);
+  vars.orderLink = orderLinkFor(b);
+  vars.reviewLink = orderLinkFor(b) + '&review=1';
+  vars.footer = renderEmailText(emailTemplate('footer', state.settings.emails || {}).body, vars);
+  return { subject: renderEmailText(tpl.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(tpl.body, vars) };
+}
+function askSendEmail(id, key) {
+  const b = state.batches.find(x => x.id === id), m = MANUAL_EMAILS.find(x => x.key === key);
+  if (!b || !m || !m.ok(b) || !hasEmailAddress(b)) return;
+  const p = manualEmailPreview(b, key);
+  const opener = document.activeElement;
+  const wrap = document.createElement('div');
+  wrap.className = 'mail-modal-backdrop';
+  wrap.innerHTML = `<div class="mail-modal wide" role="dialog" aria-modal="true" aria-labelledby="send-modal-title">
+    <h3 id="send-modal-title">Send this email?</h3>
+    <p class="send-to"></p>
+    <div class="mail-preview" tabindex="0"><strong class="mp-subject"></strong><pre class="mp-body"></pre></div>
+    <div class="field-help">Lines that depend on the moment (like your place in line) are filled in when it sends.</div>
+    <div class="mail-modal-buttons"><button type="button" class="btn-primary" data-go="1">Send email</button><button type="button" class="btn-secondary" data-go="0">Cancel</button></div></div>`;
+  wrap.querySelector('.send-to').textContent = `To: ${b.clientName ? b.clientName + ' ' : ''}<${b.clientEmail}>`;
+  wrap.querySelector('.mp-subject').textContent = p.subject;
+  wrap.querySelector('.mp-body').textContent = p.body;
+  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus(); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  wrap.addEventListener('click', e => {
+    const v = e.target.closest && e.target.closest('button[data-go]');
+    if (!v && e.target !== wrap) return;
+    const go = v && v.dataset.go === '1';
+    close();
+    if (go) sendManualEmail(id, key);
+  });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(wrap);
+  wrap.querySelector('button').focus();
+}
+async function sendManualEmail(id, key) {
+  const b = state.batches.find(x => x.id === id), m = MANUAL_EMAILS.find(x => x.key === key);
+  if (!b || !m || !m.ok(b) || !hasEmailAddress(b)) return;
+  const now = new Date().toISOString();
+  b.manualEmail = { key, at: now };
+  b.manualEmails = [...(b.manualEmails || []), { key, at: now }].slice(-30);
+  if (key === 'review_request') b.reviewRequestedAt = now;
+  if (key === 'reminder') b.reminderSentAt = now;
+  state.emailSentNote = { ...(state.emailSentNote || {}), [id]: `"${m.label}" is on its way to ${b.clientEmail}. It goes out within a minute or two.` };
+  try { await upsertBatch(b); }
+  catch (e) { delete state.emailSentNote[id]; alert("Couldn't save, so nothing was sent. If you were logged out, log in again and retry."); }
+  render();
+}
+
 // ── Request form: their chosen part colors on the photo ──
 function cmRequestPreview(item) {
   if (!featureOn('colorIdeas')) return '';
@@ -3284,8 +3375,8 @@ function practiceSay(sender, via, body, subject = '', toOwner = false) {
   const p = state.practice;
   p.messages.push({ id: 'p' + (p.messages.length + 1), jobId: 'practice', sender, via, subject, body, toOwner, at: new Date().toISOString() });
 }
-function practiceVars() {
-  const o = state.practice.order, rules = rulesFor(o), custom = state.settings.emails || {};
+function practiceVars(order) {
+  const o = order || state.practice.order, rules = rulesFor(o), custom = state.settings.emails || {};
   const priced = o.items.length && o.items.every(itemPriced);
   const total = priced ? orderSum(o) : null;
   const est = o.items.reduce((s, it) => s + (calcTotal(it.minutes || it.knownMinutes, it.grams, it, it.qty, rules) || 0), 0);

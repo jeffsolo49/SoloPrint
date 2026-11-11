@@ -575,6 +575,8 @@ function normalizeBatch(batch) {
     shippingDepositPaid: Number(batch.shippingDepositPaid) > 0 ? Math.round(Number(batch.shippingDepositPaid) * 100) / 100 : null,
     refundSent: Number(batch.refundSent) > 0 ? Math.round(Number(batch.refundSent) * 100) / 100 : null,
     refundSentAt: cleanIso(batch.refundSentAt),
+    manualEmail: batch.manualEmail && MANUAL_EMAILS.some(m => m.key === batch.manualEmail.key) && cleanIso(batch.manualEmail.at) ? { key: batch.manualEmail.key, at: cleanIso(batch.manualEmail.at) } : null,
+    manualEmails: (Array.isArray(batch.manualEmails) ? batch.manualEmails : []).filter(m => m && MANUAL_EMAILS.some(x => x.key === m.key) && cleanIso(m.at)).map(m => ({ key: m.key, at: cleanIso(m.at) })).slice(-30),
     depositAmount: Number(batch.depositAmount) > 0 ? Math.round(Number(batch.depositAmount) * 100) / 100 : null,
     rates: cleanQuoteRates(batch.rates),
     designTerms: cleanText(batch.designTerms, 4000),
@@ -2670,6 +2672,7 @@ function renderOrderFolds(b, st) {
   const k = esc(ownerClientKey(b)).replace(/'/g, '&#39;');
   const total = b.items.every(itemPriced) ? orderSum(b) : null;
   return `<div class="desk-folds">
+    ${renderSendEmailFold(b)}
     <details class="desk-fold"><summary>Their request (${b.items.length} item${b.items.length === 1 ? '' : 's'}, sent ${esc(createdLabel)})</summary>
       <div class="owner-item-summary-list">
         ${b.items.map((it, i) => `<div class="owner-item-summary">
