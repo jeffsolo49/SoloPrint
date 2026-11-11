@@ -1411,6 +1411,10 @@ const STATES = {
     db.jobs['2'].clientName = 'Jane Doe';
     const page = await open(db, { suffix: '?o=' + keyOf('2') + '&review=1' });
     await page.waitForSelector('#review-card');
+    await page.waitForTimeout(400);
+    const top = await page.evaluate(() => document.getElementById('review-card').getBoundingClientRect().top);
+    assert(top >= -5 && top < 200, `the review link scrolls to the review form (it is ${Math.round(top)}px from the top)`);
+    assert(await page.evaluate(() => document.getElementById('review-card').classList.contains('review-gold') && document.getElementById('review-send').classList.contains('btn-gold') && !!document.querySelector('.order-extras .btn-gold')), 'the review form, its Send review button and the Leave a review button are gold');
     assert(await page.inputValue('#review-name') === 'Jane D.', 'name should default to first name and initial');
     await page.click('.review-stars button[aria-label="5 stars"]');
     await page.fill('#review-text', 'Sturdy hook, holds my bag.');

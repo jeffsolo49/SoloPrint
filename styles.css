@@ -1158,3 +1158,11 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 .mail-preview { max-height: 45vh; overflow: auto; border: 1px solid var(--btn-border, #888); border-radius: 8px; padding: 10px; margin: 8px 0; }
 .mail-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 8px 0 0; }
 .send-to { margin: 0 0 6px; overflow-wrap: anywhere; font-size: 14px; }
+
+/* Review form from the review email: gold, so it can't be missed */
+.review-gold { background: #fff3c4; border-color: #e0a800; box-shadow: 0 0 0 4px rgba(224, 168, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.12); }
+.btn-gold, .btn-gold:hover { background: #f2b705; color: #2a2000; border: 2px solid #b78600; }
+.btn-gold:hover { background: #ffc928; }
+@media (prefers-color-scheme: dark) {
+  .review-gold { background: #3a2f0a; border-color: #f2b705; box-shadow: 0 0 0 4px rgba(242, 183, 5, 0.3), 0 4px 14px rgba(0, 0, 0, 0.4); }
+}
