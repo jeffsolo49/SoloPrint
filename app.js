@@ -1291,8 +1291,12 @@ async function init() {
   if (linked) {
     const mine = state.batches.find(b => b.accessToken === linked.key);
     const id = mine ? mine.id : linked.legacyId;
-    if (state.pendingReview && mine) { state.reviewFor = { id: typeof state.pendingReview === 'string' ? state.pendingReview : mine.id, sent: false }; state.pendingReview = false; render(); }
-    if (id) document.getElementById(`order-${id}`)?.scrollIntoView({ block: 'start' });
+    const toReview = !!(state.pendingReview && mine);
+    if (toReview) { state.reviewFor = { id: typeof state.pendingReview === 'string' ? state.pendingReview : mine.id, sent: false, focus: true }; state.pendingReview = false; render(); }
+    // The review link goes straight to the review form (highlighted in gold); any other link goes to the order.
+    const reviewCard = toReview && document.getElementById('review-card');
+    if (reviewCard) reviewCard.scrollIntoView({ block: 'start' });
+    else if (id) document.getElementById(`order-${id}`)?.scrollIntoView({ block: 'start' });
   }
   if (state.pendingOwnerOrder) await showPendingOwnerOrder();
   if (state.resumedDraft) document.getElementById('resume-note')?.scrollIntoView({ block: 'start' });

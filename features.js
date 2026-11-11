@@ -161,7 +161,7 @@ function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
   return `<div class="order-extras">
     ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>` : ''}
-    ${delivered ? `<button type="button" class="btn-sm" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
+    ${delivered ? `<button type="button" class="btn-sm btn-gold" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
 }
 
@@ -743,7 +743,7 @@ async function saveNumbers(batchId) {
 
 // ── REVIEWS FROM CUSTOMERS ────────────────────────────────────────────────
 function openReviewForm(id) {
-  state.reviewFor = { id, sent: false };
+  state.reviewFor = { id, sent: false, focus: true };
   render();
   document.getElementById('review-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -755,7 +755,7 @@ function renderReviewForm() {
   if (!b) return '';
   if (r.sent) return `<div class="card" id="review-card"><div class="alert success" style="display:block;">Thank you for the review! It will show on the site once I've had a look.</div></div>`;
   if ((b.phase || 'estimate') !== 'delivered') return '';
-  return `<div class="card" id="review-card">
+  return `<div class="card ${r.focus ? 'review-gold' : ''}" id="review-card">
     <h3 class="card-title">Review: ${esc(orderTitle(b))}</h3>
     <div class="field">
       <span class="field-label" id="review-stars-label">Rating</span>
@@ -778,7 +778,7 @@ function renderReviewForm() {
     </div>
     <div class="alert error" id="review-err"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button type="button" class="btn-primary" id="review-send" style="width:auto;" onclick="sendReview()">Send review</button>
+      <button type="button" class="btn-primary ${r.focus ? 'btn-gold' : ''}" id="review-send" style="width:auto;" onclick="sendReview()">Send review</button>
       <button type="button" class="btn-sm" onclick="state.reviewFor = null; render();">Not now</button>
     </div>
   </div>`;
