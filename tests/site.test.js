@@ -250,6 +250,7 @@ const STATES = {
   'owner emails': asOwner('emails'),
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
+  'owner money with etsy': "(async () => { await (" + asOwner('money') + "); state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 0 }], costs: [{ id: 'c1', date: new Date().getFullYear() + '-02-01', what: 'Listing fees', amount: 0.4 }] }; state.etsyEdit = ''; state.etsyImport = { kind: 'orders', fileName: 'EtsySoldOrders.csv', add: [], update: [], keep: 1, costs: [], fees: [], items: [], skipped: 0 }; render(); })()",
   'design page with parts': "(async () => { await loadGallery(); openWork('g2'); })()",
   'request with a color per part': "(async () => { await loadGallery(); requestGalleryItem('g2'); })()",
   'owner gallery parts': "(async () => { await " + asOwner('gallery') + "; editGalleryItem('g2'); })()",
@@ -1600,7 +1601,7 @@ const STATES = {
     const page = await open(db, { init: () => { window.__sheets = []; window.XLSX = { utils: { book_new: () => ({}), aoa_to_sheet: rows => rows, book_append_sheet: (wb, rows, name) => window.__sheets.push([name, rows]) }, writeFile: (wb, name) => { window.__file = name; } }; } });
     await page.evaluate(asOwner('money'));
     await page.waitForTimeout(400);
-    const stats = await page.$$eval('.money-stats .stat-val', els => els.map(e => e.textContent));
+    const stats = await page.$$eval('.money-stats:not(.etsy-stats) .stat-val', els => els.map(e => e.textContent));
     // Hook: 2 + 40 x 0.024 + 12 x 0.024 = 3.25 sale; 12 g x $0.02 = 0.24 material
     assert(JSON.stringify(stats) === JSON.stringify(['$3.25', '$0.24', '$3.01', '$60.00', '-$56.75']), `stats ${stats}`);
     await page.fill('#exp-what', 'Nozzles');
@@ -1611,7 +1612,75 @@ const STATES = {
     assert(db.private.money.expenses.length === 2 && db.private.money.expenses[1].amount === 12.5, JSON.stringify(db.private.money));
     await page.click(`text=Download ${year} for taxes (Excel)`);
     const out = await page.evaluate(() => ({ file: window.__file, sheets: window.__sheets.map(s => s[0]), jan: window.__sheets[0][1][1] }));
-    assert(out.file === `soloprint-${year}-taxes.xlsx` && out.sheets.join() === 'Summary,Paid orders,Expenses' && out.jan.join() === 'January,1,3.25,0.24,3.01,60', JSON.stringify(out));
+    assert(out.file === `soloprint-${year}-taxes.xlsx` && out.sheets.join() === 'Summary,Paid orders,Expenses,Etsy' && out.jan.join() === 'January,1,3.25,0.24,3.01,60', JSON.stringify(out));
+    await page.close();
+  });
+  await check('etsy: import the Orders file, item names and a statement (no double counting), edit by hand, export', async () => {
+    const db = fixtures();
+    const year = new Date().getFullYear(), yy = String(year).slice(2);
+    db.private.money = { costPerKg: 20, expenses: [] };
+    const page = await open(db, { init: () => { window.__sheets = []; window.XLSX = { utils: { book_new: () => ({}), aoa_to_sheet: rows => rows, book_append_sheet: (wb, rows, name) => window.__sheets.push([name, rows]) }, writeFile: () => {} }; } });
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#etsy-card');
+    const orders = 'Sale Date,Order ID,Buyer User ID,Full Name,Number of Items,Ship City,Currency,Order Value,Coupon Code,Discount Amount,Shipping Discount,Shipping,Sales Tax,Order Total,Status,Card Processing Fees,Order Net,Adjusted Order Total,Adjusted Card Processing Fees,Adjusted Net Order Amount,Buyer,Order Type\n'
+      + `02/03/${yy},3100000001,u1,Sam Lee,2,"Springfield, IL",USD,30.00,,0,0,6.00,2.00,38.00,Completed,1.44,36.56,--,--,--,samlee,online\n`
+      + `03/10/${yy},3100000002,u2,"Kim, Jo",1,Town,USD,"1,020.00",SAVE,20.00,0,0,0,1000.00,Completed,30.25,969.75,900.00,27.25,872.75,kimjo,online\n`;
+    const pick = (name, body) => page.setInputFiles('#etsy-file', { name, mimeType: 'text/csv', buffer: Buffer.from(body) });
+    await pick('EtsySoldOrders.csv', orders);
+    await page.waitForSelector('#etsy-preview');
+    assert(/2 new sales/.test(await page.textContent('#etsy-preview')) && !db.private.etsy, 'shows what will be added, saves nothing yet');
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => document.querySelector('#etsy-card .alert.success'));
+    let e = db.private.etsy;
+    const kim = e.orders.find(o => o.etsyId === '3100000002'), sam = e.orders.find(o => o.etsyId === '3100000001');
+    assert(sam.date === `${year}-02-03` && sam.sale === 30 && sam.shipping === 6 && sam.tax === 2 && sam.fees === 1.44 && sam.buyer === 'Sam Lee' && !sam.refund, JSON.stringify(sam));
+    assert(kim.sale === 1000 && kim.refund === 100 && kim.fees === 27.25 && kim.buyer === 'Kim, Jo', JSON.stringify(kim));
+    assert(!JSON.stringify(e).includes('Springfield'), 'addresses are never kept');
+    await pick('EtsySoldOrderItems.csv', 'Sale Date,Item Name,Buyer,Quantity,Price,Order ID\n' + `02/03/${yy},Dragon,samlee,2,15.00,3100000001\n`);
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => /Dragon x2/.test(document.getElementById('etsy-card').textContent));
+    const statement = 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n'
+      + `"February 3, ${year}",Sale,Payment for Order #3100000001,,USD,$38.00,--,$38.00,--\n`
+      + `"February 3, ${year}",Fee,Transaction fee: Dragon,Order #3100000001,USD,--,-$1.95,-$1.95,--\n`
+      + `"February 3, ${year}",Fee,Processing fee,Order #3100000001,USD,--,-$1.44,-$1.44,--\n`
+      + `"February 4, ${year}",Shipping,USPS shipping label,Order #3100000001,USD,--,-$5.20,-$5.20,--\n`
+      + `"February 1, ${year}",Fee,Listing fee,Listing #99,USD,--,-$0.20,-$0.20,--\n`;
+    await pick(`etsy_statement_${year}_2.csv`, statement);
+    await page.waitForSelector('#etsy-preview');
+    assert(/1 fee on your sales \(\$1\.95\)/.test(await page.textContent('#etsy-preview')) && /1 shipping label \(\$5\.20\)/.test(await page.textContent('#etsy-preview')), await page.textContent('#etsy-preview'));
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    await pick(`etsy_statement_${year}_2.csv`, statement);
+    await page.waitForSelector('#etsy-preview');
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    e = db.private.etsy;
+    const s2 = e.orders.find(o => o.etsyId === '3100000001');
+    assert(s2.fees === 3.39 && s2.label === 5.2 && e.costs.length === 1 && e.costs[0].amount === 0.2, `statement twice counts once: ${JSON.stringify(e)}`);
+    // Re-importing the Orders file updates, but keeps the statement fees and labels.
+    await pick('EtsySoldOrders.csv', orders);
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    assert(db.private.etsy.orders.length === 2 && db.private.etsy.orders.find(o => o.etsyId === '3100000001').fees === 3.39, JSON.stringify(db.private.etsy.orders));
+    // Edit by hand: 100 g at $20/kg = $2 material; profit 30 + 6 - 3.39 - 5.2 - 2 = 25.41.
+    await page.click('button[aria-label^="Edit Etsy sale ' + year + '-02-03"]');
+    await page.fill('#etsy-f-grams', '100');
+    await page.click('#etsy-save');
+    await page.waitForFunction(() => !document.getElementById('etsy-form'));
+    assert(db.private.etsy.orders.find(o => o.etsyId === '3100000001').edited === true, 'edited by hand');
+    assert(/\$25\.41/.test(await page.textContent('.etsy-table')), await page.textContent('.etsy-table'));
+    await page.click('#etsy-add');
+    await page.fill('#etsy-f-items', 'Market sale');
+    await page.fill('#etsy-f-sale', '12');
+    await page.click('#etsy-save');
+    await page.waitForFunction(() => /Market sale/.test(document.getElementById('etsy-card').textContent));
+    assert(db.private.etsy.orders.length === 3, 'a sale typed by hand');
+    // Sales 36 + 900 + 12; costs: fees 3.39 + 27.25, labels 5.2, material 2, other 0.2
+    const stats = await page.$$eval('.etsy-stats .stat-val', els => els.map(x => x.textContent));
+    assert(JSON.stringify(stats) === JSON.stringify(['$948.00', '$30.84', '$5.20', '$2.00', '$909.96']), `stats ${stats}`);
+    await page.click(`text=Download ${year} for taxes (Excel)`);
+    const sheets = await page.evaluate(() => window.__sheets.map(s => [s[0], s[1].length]));
+    assert(sheets.map(s => s[0]).join() === 'Summary,Paid orders,Expenses,Etsy' && sheets[3][1] >= 5, JSON.stringify(sheets));
     await page.close();
   });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
