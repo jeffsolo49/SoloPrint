@@ -1397,7 +1397,10 @@ function etsyPlan(rows, fileName) {
     // Every money line counts except deposits (payouts to the bank) and reserve holds. Sales already in the Orders file are skipped
     // (counted there); a sale only in the statement becomes a sale here. Credits (positive lines) take money off that kind of cost.
     const seen = new Set(etsyData().seen || []), fresh = new Map();
-    tb.body.forEach(r => {
+    // Etsy lists an order's fees and the buyer's sales tax before its "Payment for Order" line: read the sales first,
+    // so every fee and tax line finds its order.
+    const isSale = r => String(get(r, 'type')).trim().toLowerCase() === 'sale';
+    tb.body.filter(isSale).concat(tb.body.filter(r => !isSale(r))).forEach(r => {
       const type = String(get(r, 'type')).trim().toLowerCase(), title = String(get(r, 'title')).trim(), info = String(get(r, 'info')).trim();
       const date = etsyDate(get(r, 'date'));
       const netText = String(get(r, 'net')).trim(), feeText = String(get(r, 'fees taxes')).trim(), amtText = String(get(r, 'amount')).trim();
