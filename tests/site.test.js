@@ -134,7 +134,7 @@ async function mockBackend(page, db) {
     if (rest.startsWith('/rpc/submit_color_idea')) {
       const r = JSON.parse(req.postData());
       if (!db.gallery[r.p_design] || !r.p_name) return route.fulfill({ status: 400, json: { message: 'invalid color idea' } });
-      db.colorIdeas.push({ id: 'ci' + (db.colorIdeas.length + 1), design_id: r.p_design, name: r.p_name, colors: r.p_colors });
+      db.colorIdeas.push({ id: 'ci' + (db.colorIdeas.length + 1), design_id: r.p_design, name: r.p_name, colors: r.p_colors, created_at: new Date().toISOString() });
       return route.fulfill({ status: 204, body: '' });
     }
     if (rest.startsWith('/color_ideas')) {
@@ -2153,6 +2153,21 @@ const STATES = {
     // 2 pack of 1 kg white for $16.99; tax $1.33 less the $0.85 promotion = $0.48
     assert(JSON.stringify(lines) === JSON.stringify([['white', 2000, 16.99, true], ['-', 0, 0.48, true]]), JSON.stringify(lines));
     assert(await page.inputValue('#inv-date-money') === '2026-07-30' && /Adding \$17\.47 of filament/.test(await page.textContent('#invoice-total-money')), await page.textContent('#invoice-total-money'));
+    await page.close();
+  });
+  await check('a color idea a customer sends shows on the owner bell and opens the Designs inbox', async () => {
+    const db = fixtures();
+    db.colorIdeas.push({ id: 'ci9', design_id: 'g1', name: 'Sunset', colors: { pa: 'red', pb: 'black' }, created_at: new Date().toISOString() });
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.waitForSelector('.notif-bell');
+    await page.waitForFunction(() => /unread/.test(document.querySelector('.notif-bell').getAttribute('aria-label')));
+    await page.click('.notif-bell');
+    const item = page.locator('.notif-item:has-text("New color idea")');
+    assert(/"Sunset"/.test(await item.textContent()) && /Red and Black/.test(await item.textContent()), await item.textContent());
+    await item.click();
+    await page.waitForSelector('#color-inbox');
+    assert(await page.evaluate(() => state.ownerTab) === 'gallery' && await page.$$eval('#color-inbox input', els => els.some(e => e.value === 'Sunset')), 'opens the inbox with the idea');
     await page.close();
   });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
