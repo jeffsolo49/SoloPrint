@@ -1342,3 +1342,5 @@ html.owner-mode .review-stars-show { color: var(--sec-fees); }
 .review-import-list li { padding: 10px 0; border-top: 1px solid var(--border); }
 .review-import-list li:first-child { border-top: none; }
 .review-import-list .special-order-check { align-items: flex-start; }
+.etsy-sheet-month th, .etsy-sheet-month td { background: rgba(var(--sec-orders-rgb), 0.1); font-weight: 700; border-top: 2px solid var(--sec-orders); }
+.etsy-empty-month { margin: 8px 12px 12px; }

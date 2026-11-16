@@ -1743,7 +1743,12 @@ const STATES = {
     assert(/\$25\.02/.test(await page.textContent('#etsy-panel')), await page.textContent('#etsy-panel'));
     // Grouped by month, newest month open; search by order number.
     await page.evaluate(() => { state.etsyOpenGroup = ''; render(); });
-    assert((await page.$$eval('.etsy-group', els => els.map(d => d.open))).join() === 'true,true,false', 'year, then its newest month open, the rest folded');
+    const opens = await page.$$eval('.etsy-group', els => els.map(d => d.open));
+    assert(opens[0] && opens.filter(Boolean).length === 2, `the year, then its newest month with sales open, the rest folded: ${opens}`);
+    // Months without sales still show, with their costs.
+    const groupNames = await page.$$eval('.etsy-group > summary .etsy-group-name', els => els.map(x => x.textContent));
+    const now = new Date();
+    if (now.getFullYear() === year && now.getMonth() >= 3) assert(groupNames.some(n => /April/.test(n)) && /No sales this month/.test(await page.textContent('#etsy-panel')), groupNames.join('|'));
     await page.fill('#etsy-q', '3100000001');
     await page.waitForFunction(() => document.querySelectorAll('.etsy-order').length === 1);
     await page.fill('#etsy-q', '');
@@ -2010,7 +2015,8 @@ const STATES = {
       + `"May 3, ${y}",Fee,Transaction fee: Mug,Order #3300000001,USD,--,-$1.00,-$1.00,--\n`
       + `"May 6, ${y}",Refund,Refund to buyer for Order #3300000001,,USD,-$5.00,--,-$5.00,--\n`
       + `"May 7, ${y}",Fee,Credit for listing fee,Listing #5,USD,--,$0.50,$0.50,--\n`
-      + `"May 9, ${y}",Deposit,"$100.00 sent to your bank account",,USD,--,--,-$100.00,--\n`;
+      + `"May 9, ${y}",Deposit,"$100.00 sent to your bank account",,USD,--,--,-$100.00,--\n`
+      + `"May 10, ${y}",Payment,"Card Payment","Visa ending in 1517",USD,--,$1.74,$1.74,--\n`;
     await page.setInputFiles('#etsy-file', { name: `etsy_statement_${y}_5.csv`, mimeType: 'text/csv', buffer: Buffer.from(st) });
     await page.waitForSelector('#etsy-preview');
     await page.click('#etsy-apply');
@@ -2020,7 +2026,7 @@ const STATES = {
     assert(mug && mug.sale === 23.5 && mug.tax === 1.5 && mug.fees === 1 && mug.refund === 5, JSON.stringify(e));
     const cup = e.orders.find(o => o.etsyId === "3300000002");
     assert(cup && cup.sale === 10 && cup.tax === 0.8, `buyer sales tax taken out of the sale: ${JSON.stringify(cup)}`);
-    assert(e.costs.some(c => c.amount === -0.5) && !e.costs.some(c => /bank/.test(c.what)), JSON.stringify(e.costs));
+    assert(e.costs.some(c => c.amount === -0.5) && !e.costs.some(c => /bank|Card Payment/.test(c.what)), JSON.stringify(e.costs));
     // The Orders file for the orphan's order: its charge moves onto it.
     await page.setInputFiles('#etsy-file', { name: 'EtsySoldOrders.csv', mimeType: 'text/csv', buffer: Buffer.from('Sale Date,Order ID,Full Name,Order Value,Discount Amount,Shipping Discount,Shipping,Sales Tax,Order Total,Card Processing Fees,Adjusted Order Total,Adjusted Card Processing Fees\n' + `05/02/${yy},3400000001,Lu,30,0,0,0,0,30,1,--,--\n`) });
     await page.waitForSelector('#etsy-preview');
