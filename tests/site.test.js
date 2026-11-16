@@ -52,7 +52,9 @@ async function mockBackend(page, db) {
     if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('blob:')) return route.continue();
     if (url.startsWith('https://img.test/')) return route.fulfill({ body: PNG, contentType: 'image/png' });
     if (url.startsWith('https://api.github.com/repos/jeffsolo49/soloprint/deployments')) {
-      return route.fulfill({ json: [{ created_at: new Date(Date.now() - (db.deployedMinsAgo ?? 59) * 60000 - 5000).toISOString() }], headers: { 'Access-Control-Allow-Origin': '*' } });
+      const mins = db.deployedMinsAgo ?? 59;   // the same deploy keeps the same time, like the real list
+      if (db.deployMins !== mins) { db.deployMins = mins; db.deployAt = new Date(Date.now() - mins * 60000 - 5000).toISOString(); }
+      return route.fulfill({ json: [{ created_at: db.deployAt }], headers: { 'Access-Control-Allow-Origin': '*' } });
     }
     if (url.startsWith('https://api.github.com/repos/jeffsolo49/soloprint/pulls')) {
       return route.fulfill({ json: [
@@ -1737,6 +1739,17 @@ const STATES = {
     await page.click(`text=Download ${year} for taxes (Excel)`);
     const sheets = await page.evaluate(() => window.__sheets.map(s => [s[0], s[1].length]));
     assert(sheets.map(s => s[0]).join() === 'Summary,Paid orders,Expenses,Ads,Etsy' && sheets[4][1] >= 5, JSON.stringify(sheets));
+    await page.close();
+  });
+  await check('a page left open offers to reload when the site is updated', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.waitForFunction(() => pageDeployAt > 0);
+    await page.evaluate(() => loadLastUpdate());
+    assert(!(await page.$('#new-version')), 'same version: no notice');
+    db.deployedMinsAgo = 0;
+    await page.evaluate(() => loadLastUpdate());
+    assert(/Reload/.test(await page.textContent('#new-version')), 'newer version: asks to reload');
     await page.close();
   });
   await check('an expired owner login asks for the password again instead of showing an empty shop', async () => {
