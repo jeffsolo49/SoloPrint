@@ -55,7 +55,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 
 Supabase Auth password login. "Keep me logged in on this device for 30 days" (`owner-remember`) stores the refresh token in
 localStorage (`OWNER_REMEMBER_KEY`, `refreshOwnerSession`, also retried on a 401 in `supaFetch` and at start in `init`); unticked = the old
-1-hour login. Logout and "Log out everywhere" (`logoutEverywhere`, in the Change Password card) revoke the login on Supabase. New passwords go through
+1-hour login. When the login runs out with the page open, `supaFetch` renews it or shows the login again (never asks as a logged-out visitor, which made the shop look empty); a failed owner load shows `#load-failed` (`state.loadFailed`) with Try again. Logout and "Log out everywhere" (`logoutEverywhere`, in the Change Password card) revoke the login on Supabase. New passwords go through
 `weakPasswordReason` (12+ characters, no common words); the card lists safety tips. Supabase dashboard settings the owner can add: 2-step on the login Gmail,
 Auth → Sessions "time-box"/"inactivity timeout" (Pro), and leaked-password protection (Pro).
 

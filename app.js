@@ -90,7 +90,18 @@ function blankItem() {
 // Owner requests carry the signed-in owner's token; everyone else uses the public key,
 // which the database rules (supabase/security.sql) limit to the customer RPCs.
 async function supaFetch(path, opts = {}) {
-  const ownerToken = state.ownerUnlocked ? getOwnerToken() : '';
+  let ownerToken = state.ownerUnlocked ? getOwnerToken() : '';
+  // The owner's login ran out while the page was open: renew it, or ask for the password again. Never carry on as a
+  // logged-out visitor, which sees no orders or private data and would make everything look deleted.
+  if (state.ownerUnlocked && !ownerToken) {
+    if (await refreshOwnerSession()) ownerToken = getOwnerToken();
+    if (!ownerToken) {
+      clearOwnerSession();
+      state.ownerUnlocked = false;
+      render();
+      throw new Error('Owner login expired');
+    }
+  }
   const res = await fetch(`${SUPA_URL}/rest/v1${path}`, {
     ...opts,
     headers: {
@@ -143,9 +154,11 @@ async function loadBatches(asCustomer = false) {
       await loadCustomerMessages();
     }
     state.synced = true;
+    state.loadFailed = false;
   } catch(e) {
     console.error('Load error:', e);
     state.synced = false;
+    state.loadFailed = !asCustomer && state.ownerUnlocked;
   }
 }
 
@@ -2241,6 +2254,7 @@ function renderOwnerApp() {
       <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales', numbers: 'Numbers' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
       ${state.showPasswordForm ? renderSetPasswordCard() : ''}
       ${renderOwnerSubNav()}
+      ${state.loadFailed ? `<div class="alert error" style="display:block;" role="alert" id="load-failed">Your orders and money info didn't load, so pages may look empty. Nothing is deleted. <button type="button" class="btn-sm" onclick="loadBatches().then(render)">Try again</button> If it keeps happening, tap Logout and log back in.</div>` : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
         : state.ownerTab === 'practice'
