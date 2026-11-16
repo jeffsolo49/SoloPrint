@@ -94,7 +94,7 @@ The yearly Excel export has an Etsy sheet and "both shops" totals. SoloPrint's o
 
 ## Etsy to make
 
-Orders > "Etsy to make" (`etsytodo` tab, `renderEtsyTodoPage` at the end of features.js): Etsy orders still to print, in `owner_private` key `etsyTodo`
+Orders > "Etsy to make" (`etsytodo` tab, `renderEtsyTodoPage` at the end of features.js): Etsy orders still to print, in `owner_private` key `etsy_todo` (keys must be lowercase a-z and _, the table's check)
 ({ orders: [{ id, etsyId, buyer, due (ship by), note, done, doneAt, lines: [{ id, what, color (name text), qty, printed }] }] }). A print list groups every
 unprinted part by color ("Printed 1", `todoPrinted`); each waiting order folds open with +/- per part, Shipped: done (`todoFinish`, asks first), Edit, Delete.
 Add by hand (`state.todoDraft`), from a design's parts with a color idea (`todoAddDesign`, `colorMap.combos`), or unshipped rows of Etsy's Order Items

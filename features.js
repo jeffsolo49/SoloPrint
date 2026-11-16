@@ -1331,7 +1331,8 @@ function etsySummaryMissing(s, got) {
   const first = got.statement.slice().sort()[0] || '9999-99';
   for (let m = 1; m <= last; m++) {
     const k = `${y}-${String(m).padStart(2, '0')}`;
-    if (k < first.slice(0, 7) && got.statement.length) continue;
+    // Only within the year statements start: a year with no statements at all still needs every month.
+    if (k < first.slice(0, 7) && first.slice(0, 4) === y) continue;
     if (!got.statement.includes(k)) miss.push({ month: k, need: 'statement' });
     else if (got.sales.includes(k) && !got.orders.includes(k)) miss.push({ month: k, need: 'orders' });
   }
@@ -4516,12 +4517,12 @@ function closePhotoViewer() {
 
 // ── ETSY ORDERS TO MAKE ───────────────────────────────────────────────────
 // Owner only (Orders > Etsy to make). Etsy orders still to print, each with its parts and colors, and one print list
-// across all of them grouped by color. Saved in owner_private key `etsyTodo`: { orders: [{ id, etsyId, buyer, due, note,
+// across all of them grouped by color. Saved in owner_private key `etsy_todo`: { orders: [{ id, etsyId, buyer, due, note,
 // createdAt, done, doneAt, lines: [{ id, what, color, qty, printed }] }] }. Nothing here touches Etsy or the sales numbers.
-function etsyTodo() { const d = (state.ownerPrivate && state.ownerPrivate.etsyTodo) || {}; return Array.isArray(d.orders) ? d.orders : []; }
+function etsyTodo() { const d = (state.ownerPrivate && state.ownerPrivate.etsy_todo) || {}; return Array.isArray(d.orders) ? d.orders : []; }
 async function saveEtsyTodo(orders, msg) {
-  state.ownerPrivate = { ...(state.ownerPrivate || {}), etsyTodo: { orders } };
-  try { await saveOwnerPrivate('etsyTodo'); state.todoMsg = msg || ''; render(); }
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), etsy_todo: { orders } };
+  try { await saveOwnerPrivate('etsy_todo'); state.todoMsg = msg || ''; render(); }
   catch (e) { state.todoMsg = ''; render(); showAlert('todo-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); }
 }
 function todoColorName(key) {
