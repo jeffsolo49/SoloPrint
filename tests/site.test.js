@@ -253,6 +253,7 @@ const STATES = {
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
   'owner etsy spreadsheet': "(async () => { await (" + asOwner('money') + "); localStorage.setItem('soloprint_etsyView', 'sheet'); state.etsyView = 'sheet'; state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 1 }, { id: 'e2', date: new Date().getFullYear() + '-03-03', items: 'Market sale', sale: 12 }], seen: ['2026-02-03|fee|Transaction fee: Shipping|Order #3100000001|0.39'] }; render(); })()",
+  'owner etsy to make': "(async () => { await (" + asOwner('etsytodo') + "); state.ownerPrivate.etsyTodo = { orders: [{ id: 't1', etsyId: '4233804505', buyer: 'Jen', due: '2026-01-01', note: 'Gift', createdAt: '2026-01-01T00:00:00Z', done: false, lines: [{ id: 'l1', what: 'Base', color: 'Black', qty: 2, printed: 1 }, { id: 'l2', what: 'Spine', color: 'Red', qty: 1, printed: 0 }] }, { id: 't2', etsyId: '1', buyer: 'Bo', done: true, doneAt: '2026-01-02T00:00:00Z', lines: [{ id: 'l3', what: 'Hook', color: 'White', qty: 1, printed: 1 }] }] }; state.todoOpen = 't1'; state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [{ id: 'd1', what: 'Base', color: 'Blue', qty: 1, printed: 0 }] }; render(); })()",
   'owner money with etsy': "(async () => { await (" + asOwner('money') + "); state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 0 }], costs: [{ id: 'c1', date: new Date().getFullYear() + '-02-01', what: 'Listing fees', amount: 0.4 }] }; state.etsyEdit = ''; state.etsyImport = { plans: [{ kind: 'orders', fileName: 'EtsySoldOrders.csv', add: [], update: [], keep: 1, costs: [], fees: [], items: [], skipped: 0 }, { kind: 'statement', fileName: 'etsy_statement.csv', add: [], update: [], keep: 0, covered: 0, costs: [], fees: [], items: [], skipped: 2 }], bad: ['notes.csv'], result: state.ownerPrivate.etsy }; render(); })()",
   'design page with parts': "(async () => { await loadGallery(); openWork('g2'); })()",
   'request with a color per part': "(async () => { await loadGallery(); requestGalleryItem('g2'); })()",
@@ -1518,7 +1519,7 @@ const STATES = {
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
     assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Change Password', tabs.join('|'));
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|Fix numbers', 'Orders sub-menu');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|Etsy to make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
     await owner.click('.order-menu-list button:has-text("Fix numbers")');
@@ -1900,6 +1901,41 @@ const STATES = {
     assert(e.costs.length === 3 && !(await page.$('#etsy-orphans')), JSON.stringify(e.costs));
     // 42.16 sales - fees 4.12 - shipping 6.73 - marketing 3.06 = 28.25
     assert(/\$28\.25/.test(await page.textContent('#etsy-profit')), await page.textContent('#etsy-profit'));
+    await page.close();
+  });
+  await check('etsy to make: add an order with parts and colors, print list by color, mark printed, finish; import unshipped orders', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('etsytodo'));
+    await page.waitForSelector('#todo-add');
+    await page.fill('#todo-id', '4233804505');
+    await page.fill('#todo-buyer', 'Jen');
+    await page.fill('#todo-what', 'Base');
+    await page.fill('#todo-color', 'Black');
+    await page.fill('#todo-qty', '2');
+    await page.click('text=Add part');
+    await page.fill('#todo-what', 'Spine');
+    await page.fill('#todo-color', 'Red');
+    await page.click('text=Add part');
+    await page.click('#todo-save');
+    await page.waitForFunction(() => document.querySelectorAll('#todo-print .todo-color').length === 2);
+    let o = db.private.etsyTodo.orders[0];
+    assert(o.etsyId === '4233804505' && o.lines.length === 2 && o.lines[0].qty === 2, JSON.stringify(o));
+    assert(/Black\s*2 to print/.test(await page.textContent('#todo-print')), await page.textContent('#todo-print'));
+    await page.click('#todo-print button[aria-label^="Printed one Base"]');
+    await page.waitForFunction(() => /Black\s*1 to print/.test(document.getElementById('todo-print').textContent));
+    assert(db.private.etsyTodo.orders[0].lines[0].printed === 1, 'printed one');
+    await page.click('text=Shipped: done');
+    await page.waitForFunction(() => /Finished \(1\)/.test(document.body.textContent));
+    assert(db.private.etsyTodo.orders[0].done === true, 'finished');
+    // Etsy's Order Items file: only unshipped orders are added, with their options as the color.
+    const items = 'Sale Date,Item Name,Buyer,Quantity,Price,Order ID,Variations,Date Shipped,Ship Name\n'
+      + '11/15/26,Drying Rack,jen1,1,26.61,4240000001,"Color:Black,Size:5",,Ann Lee\n'
+      + '11/10/26,Vase,bo2,2,10.00,4240000002,,11/12/26,Bo Smith\n';
+    await page.setInputFiles('#todo-file', { name: 'EtsySoldOrderItems.csv', mimeType: 'text/csv', buffer: Buffer.from(items) });
+    await page.waitForFunction(() => /Added 1 unshipped order/.test(document.body.textContent));
+    o = db.private.etsyTodo.orders.find(x => x.etsyId === '4240000001');
+    assert(o && o.buyer === 'Ann Lee' && o.lines[0].what === 'Drying Rack' && /Color:Black/.test(o.lines[0].color) && !db.private.etsyTodo.orders.some(x => x.etsyId === '4240000002'), JSON.stringify(db.private.etsyTodo));
     await page.close();
   });
   await check('etsy: statements count every sale, refund and credit (not deposits); charges for orders not uploaded yet are flagged, then move onto them', async () => {
