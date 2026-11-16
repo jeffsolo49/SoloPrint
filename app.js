@@ -1413,13 +1413,13 @@ function renderClientApp() {
 // Clients and Numbers live inside Orders; Calculator & Models inside Designs. Their tab ids still work.
 function ownerSection() {
   const t = state.ownerTab;
-  if (['clients', 'numbers', 'orders'].includes(t)) return 'dashboard';
+  if (['clients', 'numbers', 'orders', 'etsytodo'].includes(t)) return 'dashboard';
   if (['calculator', 'library'].includes(t)) return 'gallery';
   return t;
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
-  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['numbers', 'Fix numbers']]
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['etsytodo', 'Etsy to make'], ['numbers', 'Fix numbers']]
     : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
@@ -2276,6 +2276,8 @@ function renderOwnerApp() {
         ? renderOwnerSettingsPage()
         : state.ownerTab === 'practice'
         ? renderPracticePage()
+        : state.ownerTab === 'etsytodo'
+        ? renderEtsyTodoPage()
         : state.ownerTab === 'numbers'
         ? renderNumbersPage()
         : state.ownerTab === 'money' || state.ownerTab === 'analytics'

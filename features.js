@@ -4513,3 +4513,197 @@ function closePhotoViewer() {
   box.remove();
   if (opener && document.contains(opener) && opener.focus) opener.focus();
 }
+
+// ── ETSY ORDERS TO MAKE ───────────────────────────────────────────────────
+// Owner only (Orders > Etsy to make). Etsy orders still to print, each with its parts and colors, and one print list
+// across all of them grouped by color. Saved in owner_private key `etsyTodo`: { orders: [{ id, etsyId, buyer, due, note,
+// createdAt, done, doneAt, lines: [{ id, what, color, qty, printed }] }] }. Nothing here touches Etsy or the sales numbers.
+function etsyTodo() { const d = (state.ownerPrivate && state.ownerPrivate.etsyTodo) || {}; return Array.isArray(d.orders) ? d.orders : []; }
+async function saveEtsyTodo(orders, msg) {
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), etsyTodo: { orders } };
+  try { await saveOwnerPrivate('etsyTodo'); state.todoMsg = msg || ''; render(); }
+  catch (e) { state.todoMsg = ''; render(); showAlert('todo-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); }
+}
+function todoColorName(key) {
+  if (!key) return '';
+  const c = (state.settings.colors || []).find(x => x.id === key);
+  return c ? c.name : key === 'black' ? 'Black' : key === 'white' ? 'White' : key;
+}
+function todoColorHex(name) {
+  const n = String(name || '').trim().toLowerCase();
+  const c = (state.settings.colors || []).find(x => String(x.name).trim().toLowerCase() === n);
+  return c ? c.hex : n === 'black' ? '#111111' : n === 'white' ? '#ffffff' : '';
+}
+function todoLeft(l) { return Math.max(0, (Number(l.qty) || 1) - (Number(l.printed) || 0)); }
+function todoDraft() { if (!state.todoDraft) state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [] }; return state.todoDraft; }
+function todoDue(o) {
+  if (!o.due) return '';
+  const days = Math.round((new Date(o.due + 'T12:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00')) / 864e5);
+  const when = new Date(o.due + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `<span class="todo-due${days < 0 ? ' late' : days <= 2 ? ' soon' : ''}">Ship by ${esc(when)}${days < 0 ? ` (${-days} day${days === -1 ? '' : 's'} late)` : days === 0 ? ' (today)' : days === 1 ? ' (tomorrow)' : ''}</span>`;
+}
+function renderEtsyTodoPage() {
+  if (!state.galleryLoaded) loadGallery().then(render);
+  const open = etsyTodo().filter(o => !o.done).sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  const done = etsyTodo().filter(o => o.done).sort((a, b) => String(b.doneAt).localeCompare(String(a.doneAt))).slice(0, 30);
+  // Print list: every part still to print, grouped by color.
+  const byColor = new Map();
+  open.forEach(o => (o.lines || []).forEach(l => {
+    if (!todoLeft(l)) return;
+    const k = String(l.color || 'No color picked').trim(), key = k.toLowerCase();
+    if (!byColor.has(key)) byColor.set(key, { name: k, rows: [] });
+    byColor.get(key).rows.push({ o, l });
+  }));
+  const colors = [...byColor.values()].sort((a, b) => b.rows.reduce((n, r) => n + todoLeft(r.l), 0) - a.rows.reduce((n, r) => n + todoLeft(r.l), 0));
+  const swatch = name => { const hex = todoColorHex(name); return hex ? `<span class="swatch" style="background:${esc(hex)}" aria-hidden="true"></span>` : ''; };
+  const who = o => `${o.etsyId ? '#' + esc(o.etsyId) : 'Etsy order'}${o.buyer ? ' · ' + esc(o.buyer) : ''}`;
+  const colorList = (state.settings.colors || []).map(c => c.name).concat(['Black', 'White']).filter((v, i, a) => a.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i);
+  const d = todoDraft();
+  const designs = (state.gallery || []).filter(g => (g.parts || []).length || g.title).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+  const pick = designs.find(g => g.id === state.todoDesign);
+  const combos = (pick && pick.colorMap && pick.colorMap.combos) || [];
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+        <div><h2 class="section-title">Etsy to make</h2><div class="section-sub">Etsy orders still to print: every part, in every color, in one list</div></div>
+      </div>
+    </div>
+    <div class="alert error" id="todo-err"></div>
+    ${state.todoMsg ? `<div class="alert success" style="display:block;" role="status">${esc(state.todoMsg)}</div>` : ''}
+    <div class="card todo-print" id="todo-print">
+      <h3 class="card-title">Print list by color</h3>
+      ${colors.length ? colors.map(c => `<div class="todo-color">
+          <h4 class="todo-color-name">${swatch(c.name)}${esc(c.name)} <span class="todo-count">${c.rows.reduce((n, r) => n + todoLeft(r.l), 0)} to print</span></h4>
+          <ul class="todo-lines">${c.rows.map(({ o, l }) => `<li><span><strong>${todoLeft(l)} × ${esc(l.what)}</strong> <span class="gallery-meta">${who(o)}</span> ${todoDue(o)}</span>
+            <button type="button" class="btn-sm" onclick="todoPrinted('${esc(o.id)}', '${esc(l.id)}', 1)" aria-label="Printed one ${esc(l.what)} in ${esc(c.name)} for ${o.etsyId ? 'order ' + esc(o.etsyId) : 'this order'}">Printed 1</button></li>`).join('')}</ul></div>`).join('')
+        : `<p class="field-help">${open.length ? 'Everything is printed. Mark the orders shipped below.' : 'Nothing to print. Add an Etsy order below.'}</p>`}
+    </div>
+    <div class="card" id="todo-orders">
+      <h3 class="card-title">Waiting to finish (${open.length})</h3>
+      ${open.length ? open.map(o => { const lines = o.lines || [], tot = lines.reduce((n, l) => n + (Number(l.qty) || 1), 0), got = lines.reduce((n, l) => n + Math.min(Number(l.printed) || 0, Number(l.qty) || 1), 0);
+        return `<details class="todo-order" id="todo-${esc(o.id)}"${state.todoOpen === o.id ? ' open' : ''}><summary><span class="todo-o-who">${who(o)}</span> ${todoDue(o)} <span class="todo-progress${got >= tot && tot ? ' all' : ''}">${got} of ${tot} printed</span></summary>
+          ${o.note ? `<p class="field-help">${esc(o.note)}</p>` : ''}
+          <ul class="todo-lines">${lines.map(l => `<li class="${todoLeft(l) ? '' : 'printed'}"><span>${swatch(l.color)}<strong>${esc(l.what)}</strong> · ${esc(l.color || 'no color')} · ${Number(l.printed) || 0} of ${Number(l.qty) || 1} printed</span>
+            <span class="todo-step"><button type="button" class="btn-sm" onclick="todoPrinted('${esc(o.id)}', '${esc(l.id)}', -1)" aria-label="One fewer printed: ${esc(l.what)}" ${Number(l.printed) ? '' : 'disabled'}>−</button><button type="button" class="btn-sm" onclick="todoPrinted('${esc(o.id)}', '${esc(l.id)}', 1)" aria-label="One more printed: ${esc(l.what)}" ${todoLeft(l) ? '' : 'disabled'}>+</button></span></li>`).join('')}</ul>
+          <div class="money-controls"><button type="button" class="btn-sm" onclick="todoFinish('${esc(o.id)}')">Shipped: done</button>
+            <button type="button" class="btn-sm" onclick="todoEdit('${esc(o.id)}')">Edit</button>
+            <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')">Delete</button></div>
+        </details>`; }).join('') : '<p class="field-help">No Etsy orders waiting.</p>'}
+    </div>
+    <div class="card" id="todo-add">
+      <h3 class="card-title">${d.id ? 'Edit this Etsy order' : 'Add an Etsy order'}</h3>
+      <div class="money-controls">
+        <button type="button" class="btn-sm" onclick="document.getElementById('todo-file').click()">Add unshipped orders from Etsy's Order Items file</button>
+        <input type="file" id="todo-file" accept=".csv,text/csv" hidden onchange="todoImport(this)" />
+      </div>
+      <div class="field-help">On Etsy: Shop Manager, Settings, Options, Download Data, Order Items, then Download CSV. Orders not shipped yet are added with their items and options (like color); ones already here are skipped.</div>
+      <div class="expense-form">
+        <div class="field"><label for="todo-id">Etsy order number</label><input type="text" inputmode="numeric" id="todo-id" maxlength="20" value="${esc(d.etsyId)}" oninput="todoDraft().etsyId = this.value" /></div>
+        <div class="field"><label for="todo-buyer">Buyer</label><input type="text" id="todo-buyer" maxlength="80" value="${esc(d.buyer)}" oninput="todoDraft().buyer = this.value" /></div>
+        <div class="field"><label for="todo-due">Ship by</label><input type="date" id="todo-due" value="${esc(d.due)}" oninput="todoDraft().due = this.value" /></div>
+        <div class="field" style="flex:2;"><label for="todo-note">Note</label><input type="text" id="todo-note" maxlength="300" value="${esc(d.note)}" oninput="todoDraft().note = this.value" /></div>
+      </div>
+      <h4 class="cm-heading">Parts to print</h4>
+      ${d.lines.length ? `<ul class="todo-lines">${d.lines.map((l, n) => `<li><span>${swatch(l.color)}${Number(l.qty) || 1} × <strong>${esc(l.what)}</strong> · ${esc(l.color || 'no color')}</span>
+        <button type="button" class="btn-sm danger" onclick="todoDraft().lines.splice(${n}, 1); render();" aria-label="Remove ${esc(l.what)}">✕</button></li>`).join('')}</ul>` : '<p class="field-help">No parts yet.</p>'}
+      <fieldset class="todo-from"><legend>From one of your designs</legend>
+        <div class="expense-form">
+          <div class="field" style="flex:2;"><label for="todo-design">Design</label><select id="todo-design" onchange="state.todoDesign = this.value; render(); document.getElementById('todo-design')?.focus();">
+            <option value="">Pick a design</option>${designs.map(g => `<option value="${esc(g.id)}" ${g.id === state.todoDesign ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}</select></div>
+          ${combos.length ? `<div class="field" style="flex:2;"><label for="todo-combo">Color idea</label><select id="todo-combo"><option value="">Each part's usual color</option>${combos.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></div>` : ''}
+          <div class="field"><label for="todo-dqty">How many</label><input type="number" id="todo-dqty" min="1" step="1" value="1" /></div>
+          <button type="button" class="btn-sm" onclick="todoAddDesign()" ${pick ? '' : 'disabled'}>Add its parts</button>
+        </div>
+      </fieldset>
+      <fieldset class="todo-from"><legend>Or type a part</legend>
+        <div class="expense-form">
+          <div class="field" style="flex:2;"><label for="todo-what">Part or item</label><input type="text" id="todo-what" maxlength="80" placeholder="e.g. Base" /></div>
+          <div class="field"><label for="todo-color">Color</label><input type="text" id="todo-color" maxlength="60" list="todo-colors" /></div>
+          <div class="field"><label for="todo-qty">How many</label><input type="number" id="todo-qty" min="1" step="1" value="1" /></div>
+          <button type="button" class="btn-sm" onclick="todoAddLine()">Add part</button>
+        </div>
+        <datalist id="todo-colors">${colorList.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+      </fieldset>
+      <div class="money-controls"><button type="button" class="btn-primary" style="width:auto;" id="todo-save" onclick="todoSave()">${d.id ? 'Save changes' : 'Save order'}</button>
+        ${d.id || d.lines.length || d.etsyId || d.buyer ? `<button type="button" class="btn-sm" onclick="state.todoDraft = null; render();">Cancel</button>` : ''}</div>
+    </div>
+    ${done.length ? `<details class="card todo-done"><summary><strong>Finished (${done.length})</strong></summary>
+      <ul class="todo-lines">${done.map(o => `<li><span>${who(o)} · ${esc((o.lines || []).map(l => `${Number(l.qty) || 1} × ${l.what}`).join(', '))}</span>
+        <button type="button" class="btn-sm" onclick="todoReopen('${esc(o.id)}')">Put back</button></li>`).join('')}</ul></details>` : ''}`;
+}
+function todoNewLine(what, color, qty) { return { id: settingsId(), what: String(what || '').trim().slice(0, 80), color: String(color || '').trim().slice(0, 60), qty: Math.max(1, Math.min(999, parseInt(qty, 10) || 1)), printed: 0 }; }
+function todoAddLine() {
+  const v = id => String((document.getElementById(id) || {}).value || '').trim();
+  if (!v('todo-what')) { showAlert('todo-err', 'Type the part or item to print.', 'error'); return; }
+  todoDraft().lines.push(todoNewLine(v('todo-what'), v('todo-color'), v('todo-qty')));
+  render();
+  document.getElementById('todo-what')?.focus();
+}
+function todoAddDesign() {
+  const g = (state.gallery || []).find(x => x.id === state.todoDesign);
+  if (!g) return;
+  const combo = ((g.colorMap && g.colorMap.combos) || []).find(c => c.id === (document.getElementById('todo-combo') || {}).value);
+  const qty = (document.getElementById('todo-dqty') || {}).value;
+  const parts = (g.parts || []).filter(p => !p.optional);
+  if (parts.length) parts.forEach(p => todoDraft().lines.push(todoNewLine(`${p.name}${g.title ? ` (${g.title})` : ''}`, todoColorName((combo && combo.colors[p.id]) || p.defaultColor || g.colorId || 'white'), qty)));
+  else todoDraft().lines.push(todoNewLine(g.title || 'Design', todoColorName(g.colorId || 'white'), qty));
+  render();
+}
+function todoSave() {
+  const d = todoDraft();
+  if (!d.lines.length) { showAlert('todo-err', 'Add at least one part to print.', 'error'); return; }
+  const o = { id: d.id || settingsId(), etsyId: String(d.etsyId || '').replace(/\D/g, '').slice(0, 20), buyer: String(d.buyer || '').trim().slice(0, 80),
+    due: /^\d{4}-\d{2}-\d{2}$/.test(d.due) ? d.due : '', note: String(d.note || '').trim().slice(0, 300), lines: d.lines.slice(0, 60),
+    createdAt: d.createdAt || new Date().toISOString(), done: !!d.done, doneAt: d.doneAt || '' };
+  const list = etsyTodo();
+  state.todoDraft = null;
+  state.todoOpen = o.id;
+  saveEtsyTodo(list.some(x => x.id === o.id) ? list.map(x => (x.id === o.id ? o : x)) : list.concat(o), 'Saved.');
+}
+function todoEdit(id) {
+  const o = etsyTodo().find(x => x.id === id);
+  if (!o) return;
+  state.todoDraft = JSON.parse(JSON.stringify(o));
+  render();
+  document.getElementById('todo-add')?.scrollIntoView({ block: 'start' });
+  document.getElementById('todo-id')?.focus();
+}
+function todoChange(id, fn, msg) { state.todoOpen = id; saveEtsyTodo(etsyTodo().map(o => (o.id === id ? fn(JSON.parse(JSON.stringify(o))) : o)), msg); }
+function todoPrinted(id, lineId, step) {
+  todoChange(id, o => { (o.lines || []).forEach(l => { if (l.id === lineId) l.printed = Math.max(0, Math.min(Number(l.qty) || 1, (Number(l.printed) || 0) + step)); }); return o; }, '');
+}
+function todoFinish(id) {
+  const o = etsyTodo().find(x => x.id === id);
+  if (!o) return;
+  const left = (o.lines || []).reduce((n, l) => n + todoLeft(l), 0);
+  if (!confirm(`Mark ${o.etsyId ? 'order #' + o.etsyId : 'this order'} as shipped and done?${left ? ` ${left} part${left === 1 ? ' is' : 's are'} not marked printed yet.` : ''}`)) return;
+  todoChange(id, x => ({ ...x, done: true, doneAt: new Date().toISOString() }), 'Moved to Finished.');
+}
+function todoReopen(id) { todoChange(id, x => ({ ...x, done: false, doneAt: '' }), 'Put back in Waiting to finish.'); }
+function todoDelete(id) {
+  const o = etsyTodo().find(x => x.id === id);
+  if (!o || !confirm(`Delete ${o.etsyId ? 'order #' + o.etsyId : 'this Etsy order'} from this list? This can't be undone.`)) return;
+  saveEtsyTodo(etsyTodo().filter(x => x.id !== id), 'Deleted.');
+}
+// Etsy's Order Items file: rows not shipped yet become orders here, one line per item (its options, like color, as the color).
+async function todoImport(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const { rows } = await etsyReadFile(file);
+  const tb = rows ? etsyTable(rows) : null;
+  if (!tb || tb.col('order id') < 0 || tb.col('item name') < 0) { showAlert('todo-err', "That isn't Etsy's Order Items file. On Etsy: Shop Manager, Settings, Options, Download Data, then Order Items.", 'error'); return; }
+  const get = (r, ...names) => { const k = tb.col(...names); return k >= 0 ? String(r[k] || '').trim() : ''; };
+  const have = new Set(etsyTodo().map(o => String(o.etsyId)).filter(Boolean));
+  const add = new Map();
+  tb.body.forEach(r => {
+    const id = get(r, 'order id').replace(/\D/g, ''), shipped = get(r, 'date shipped');
+    if (!id || have.has(id) || (shipped && !/^-+$/.test(shipped))) return;
+    if (!add.has(id)) add.set(id, { id: settingsId(), etsyId: id, buyer: get(r, 'ship name', 'buyer').slice(0, 80), due: '', note: '', createdAt: new Date().toISOString(), done: false, doneAt: '', lines: [] });
+    const opts = get(r, 'variations').replace(/\s*,\s*/g, ', ');
+    add.get(id).lines.push(todoNewLine(get(r, 'item name'), opts, get(r, 'quantity')));
+  });
+  if (!add.size) { state.todoMsg = 'No new unshipped orders in that file.'; render(); return; }
+  saveEtsyTodo(etsyTodo().concat([...add.values()]), `Added ${add.size} unshipped order${add.size === 1 ? '' : 's'}. Tap one to split its items into parts and colors with Edit.`);
+}

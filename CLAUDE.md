@@ -92,6 +92,14 @@ A hand-typed sale with `summary: true` is a yearly summary (the owner's Etsy act
 Card layout (`renderEtsyCard`, `renderEtsyTabs`; each kind has its own color, `--sec-orders/ads/fees/shipping/profit` in styles.css, classes `sec-*`): profit box with "How this is worked out", stat row, "Show all years" (`state.etsyAllYears`, `etsyAllTime`), tabs Orders / Marketing / Fees / Shipping (`etsyTab`), search (`etsyQuery`: order number, buyer, item), Group by week/month/year/all (`etsyGroup`, `etsyGrouped`: newest period open, the rest folded, each with its total). Orders: each sale folds open to its costs (List) or a sortable Spreadsheet (`ETSY_COLUMNS`, `ETSY_SORTS`); the cost tabs list every charge with its order number (`etsyTabRows`, tap to open the order, `etsyOpenOrder`) and an "Add ... by hand" form. Tab, view and grouping are remembered per device (localStorage `soloprint_etsyTab`, `soloprint_etsyView`, `soloprint_etsyGroup`).
 The yearly Excel export has an Etsy sheet and "both shops" totals. SoloPrint's own ad spending is `money.ads` ([{ id, date, where, amount }], `renderAdsCard`, `addAdCost`), shown as its own stat, monthly column and export sheet, and subtracted in "Sales minus expenses and ads" and the both-shops total.
 
+## Etsy to make
+
+Orders > "Etsy to make" (`etsytodo` tab, `renderEtsyTodoPage` at the end of features.js): Etsy orders still to print, in `owner_private` key `etsyTodo`
+({ orders: [{ id, etsyId, buyer, due (ship by), note, done, doneAt, lines: [{ id, what, color (name text), qty, printed }] }] }). A print list groups every
+unprinted part by color ("Printed 1", `todoPrinted`); each waiting order folds open with +/- per part, Shipped: done (`todoFinish`, asks first), Edit, Delete.
+Add by hand (`state.todoDraft`), from a design's parts with a color idea (`todoAddDesign`, `colorMap.combos`), or unshipped rows of Etsy's Order Items
+file (`todoImport`: no Date Shipped, skips order numbers already listed; Variations become the color text). Never touches the Etsy sales numbers.
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves
