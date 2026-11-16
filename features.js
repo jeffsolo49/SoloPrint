@@ -3699,14 +3699,28 @@ function setCmOwn(id, partId, key, k) {
 }
 
 // ── Owner: color ideas customers sent in (Designs page). Publishing adds one to the design's color ideas. ──
-async function loadColorIdeas() {
+async function fetchColorIdeas() {
   if (state.colorIdeasLoading) return;
   state.colorIdeasLoading = true;
   try { state.colorIdeas = await supaFetch('/color_ideas?select=*&order=created_at.asc') || []; state.colorIdeasError = false; }
-  catch (e) { state.colorIdeas = []; state.colorIdeasError = true; }
+  catch (e) { state.colorIdeas = state.colorIdeas || []; state.colorIdeasError = true; }
   state.colorIdeasLoaded = true;
   state.colorIdeasLoading = false;
-  render();
+}
+async function loadColorIdeas() { await fetchColorIdeas(); render(); }
+// The bell (owner): each color idea a customer sent in, until it's published or dismissed.
+function colorIdeaNotifications() {
+  return (state.colorIdeas || []).map(c => {
+    const g = state.gallery.find(x => x.id === c.design_id);
+    const names = Object.values(c.colors || {}).map(k => cmColor(k).name);
+    return { id: `idea-${c.id}`, batchId: '', at: c.created_at, title: `New color idea: "${c.name || 'Untitled'}"`,
+      body: `${g ? g.title + ': ' : ''}${[...new Set(names)].join(' and ')}. Tap to publish or dismiss it.` };
+  });
+}
+function openColorIdeaInbox() {
+  setOwnerTab('gallery');
+  const go = () => { const el = document.getElementById('color-inbox'); if (el) { el.scrollIntoView({ block: 'start' }); el.querySelector('button, input')?.focus(); } return !!el; };
+  if (!go()) setTimeout(go, 600);
 }
 function renderColorIdeasInbox() {
   if (!state.colorIdeasLoaded) { if (!state.colorIdeasLoading) loadColorIdeas(); return ''; }

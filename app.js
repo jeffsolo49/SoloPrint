@@ -144,7 +144,7 @@ async function loadBatches(asCustomer = false) {
       ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages()]); syncTopWork(); }
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); syncTopWork(); }
     else {
       // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
       const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));
@@ -4192,6 +4192,7 @@ function buildNotifications() {
         title: `${b.clientName || 'A customer'} approved their quote`,
         body: `Ready for you to confirm: ${orderTitle(b)}` });
     });
+    list.push(...colorIdeaNotifications());
   } else {
     if (!state.tokens.length) return [];
     state.batches.forEach(b => {
@@ -4286,6 +4287,7 @@ function markAllNotifsRead() {
 function openNotif(id, batchId) {
   markNotifsRead([id]);
   state.notifOpen = false;
+  if (notifScope() === 'owner' && /^idea-/.test(id)) { openColorIdeaInbox(); return; }
   if (notifScope() === 'owner') { focusOwnerOrder(batchId); return; }
   state.clientTab = 'jobs';
   render();
