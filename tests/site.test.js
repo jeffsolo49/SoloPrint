@@ -1739,6 +1739,22 @@ const STATES = {
     assert(sheets.map(s => s[0]).join() === 'Summary,Paid orders,Expenses,Ads,Etsy' && sheets[4][1] >= 5, JSON.stringify(sheets));
     await page.close();
   });
+  await check('an expired owner login asks for the password again instead of showing an empty shop', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    assert(await page.evaluate(() => state.batches.length) > 0, 'orders loaded');
+    await page.evaluate(async () => { ownerSession.expiresAt = Date.now() - 1000; try { localStorage.removeItem(OWNER_REMEMBER_KEY); } catch (e) {} await loadBatches(); render(); });
+    const after = await page.evaluate(() => ({ unlocked: state.ownerUnlocked, n: state.batches.length, failed: state.loadFailed }));
+    assert(after.unlocked === false && after.n > 0, `login asked again, orders not wiped: ${JSON.stringify(after)}`);
+    // A load that fails while logged in says so, instead of looking empty.
+    await page.evaluate(asOwner('money'));
+    await page.evaluate(async () => { const f = window.fetch; window.fetch = (u, o) => (/\/jobs/.test(String(u)) ? Promise.resolve(new Response('', { status: 500 })) : f(u, o)); await loadBatches(); window.fetch = f; render(); });
+    assert(/didn't load/.test(await page.textContent('#load-failed')), 'load problem shown');
+    await page.click('#load-failed button');
+    await page.waitForFunction(() => !document.getElementById('load-failed'));
+    await page.close();
+  });
   await check('etsy: shipping transaction fees imported before the fix move to shipping costs once', async () => {
     const db = fixtures(), y = new Date().getFullYear();
     db.private.etsy = { orders: [{ id: 'a', etsyId: '3100000001', date: `${y}-02-03`, sale: 30, fees: 3.39, label: 5.2 }, { id: 'b', etsyId: '3100000002', date: `${y}-02-04`, sale: 10, fees: 1, label: 0, edited: true }],
