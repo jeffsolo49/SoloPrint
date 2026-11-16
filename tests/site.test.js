@@ -256,6 +256,7 @@ const STATES = {
   'owner emails': asOwner('emails'),
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
+  'owner help': asOwner('help'),
   'owner etsy spreadsheet': "(async () => { await (" + asOwner('money') + "); localStorage.setItem('soloprint_etsyView', 'sheet'); state.etsyView = 'sheet'; state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 1 }, { id: 'e2', date: new Date().getFullYear() + '-03-03', items: 'Market sale', sale: 12 }], seen: ['2026-02-03|fee|Transaction fee: Shipping|Order #3100000001|0.39'] }; render(); })()",
   'owner etsy to make': "(async () => { await (" + asOwner('etsytodo') + "); state.ownerPrivate.etsy_todo = { orders: [{ id: 't1', etsyId: '4233804505', buyer: 'Jen', due: '2026-01-01', note: 'Gift', createdAt: '2026-01-01T00:00:00Z', done: false, lines: [{ id: 'l1', what: 'Base', color: 'Black', qty: 2, printed: 1 }, { id: 'l2', what: 'Spine', color: 'Red', qty: 1, printed: 0 }] }, { id: 't2', etsyId: '1', buyer: 'Bo', done: true, doneAt: '2026-01-02T00:00:00Z', lines: [{ id: 'l3', what: 'Hook', color: 'White', qty: 1, printed: 1 }] }] }; state.todoOpen = 't1'; state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [{ id: 'd1', what: 'Base', color: 'Blue', qty: 1, printed: 0 }] }; render(); })()",
   'owner money with etsy': "(async () => { await (" + asOwner('money') + "); state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 0 }], costs: [{ id: 'c1', date: new Date().getFullYear() + '-02-01', what: 'Listing fees', amount: 0.4 }] }; state.etsyEdit = ''; state.etsyImport = { plans: [{ kind: 'orders', fileName: 'EtsySoldOrders.csv', add: [], update: [], keep: 1, costs: [], fees: [], items: [], skipped: 0 }, { kind: 'statement', fileName: 'etsy_statement.csv', add: [], update: [], keep: 0, covered: 0, costs: [], fees: [], items: [], skipped: 2 }], bad: ['notes.csv'], result: state.ownerPrivate.etsy }; render(); })()",
@@ -1522,7 +1523,7 @@ const STATES = {
     const owner = await open(fixtures());
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
-    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Change Password', tabs.join('|'));
+    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Help|Change Password', tabs.join('|'));
     assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|Etsy to make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
@@ -2199,6 +2200,32 @@ const STATES = {
     await item.click();
     await page.waitForSelector('#color-inbox');
     assert(await page.evaluate(() => state.ownerTab) === 'gallery' && await page.$$eval('#color-inbox input', els => els.some(e => e.value === 'Sunset')), 'opens the inbox with the idea');
+    await page.close();
+  });
+  await check('owner help: search finds entries by any word; Take me there opens the place; own notes are saved and searchable', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.click('.nav-tab:has-text("Help")');
+    await page.waitForSelector('#wiki-q');
+    const all = await page.$$eval('.wiki-entry', els => els.length);
+    await page.fill('#wiki-q', 'refund postage');
+    const titles = await page.$$eval('.wiki-entry summary', els => els.map(e => e.textContent));
+    assert(all > 30 && titles.length >= 1 && titles.length < all && titles.some(x => /Ship it/.test(x)), JSON.stringify(titles));
+    await page.fill('#wiki-q', 'zzqx');
+    assert(/Nothing matches/.test(await page.textContent('#wiki-results')), 'no match message');
+    await page.fill('#wiki-q', 'stock');
+    await page.click('#wiki-stock button:has-text("Take me there")');
+    await page.waitForFunction(() => state.ownerTab === 'settings' && state.settingsTab === 'colors');
+    await page.click('.nav-tab:has-text("Help")');
+    await page.click('#wiki-note-add');
+    await page.fill('#wiki-note-title', 'Bambu settings for PETG');
+    await page.fill('#wiki-note-text', 'Nozzle 245\nBed 70');
+    await page.click('#wiki-note-save');
+    await page.waitForFunction(() => !document.getElementById('wiki-note-title'));
+    assert(db.private.wiki.entries[0].title === 'Bambu settings for PETG', JSON.stringify(db.private.wiki));
+    await page.fill('#wiki-q', 'nozzle 245');
+    assert(/Bambu settings/.test(await page.textContent('#wiki-results')) && /My notes/.test(await page.textContent('#wiki-results')), await page.textContent('#wiki-results'));
     await page.close();
   });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {

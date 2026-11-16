@@ -116,6 +116,12 @@ Waiting orders show open (not folded), like the edit screen: Etsy's listing titl
 Nothing saves until the owner checks the review (`renderInvoiceReview`) and taps Add (`applyInvoice`): new colors into Settings colors, grams onto `inventory`, one expense per line (`invoice` = Amazon order number, `money.invoices` warns on repeats), optional cost per kg.
 Tests: `tests/fixtures/amazon-invoice.pdf` and `amazon-order-details.pdf` (made-up data), read with `pdfjs-dist` from tests/node_modules (the cdnjs URL is routed to it).
 
+## Owner Help (wiki)
+
+Owner menu "Help" (`help` tab, `renderWikiPage` in features.js): step-by-step entries for everything in owner mode (`OWNER_WIKI`: { id, area, title, keys, steps, go: [ownerTab, settingsTab] } for "Take me there", `wikiGo`),
+a search box matching every typed word against title, area, keywords and steps (`wikiMatches`, results redrawn in place so typing keeps focus), and the owner's own notes (owner_private key `wiki`, { entries: [{ id, title, text }] }, shown as "My notes").
+**When you add or change an owner feature, add or update its entry in `OWNER_WIKI`** (exact button names).
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves

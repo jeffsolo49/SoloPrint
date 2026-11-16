@@ -2244,6 +2244,187 @@ async function applyInvoice() {
   }
 }
 
+// ── OWNER HELP: a searchable how-to for everything in owner mode ─────────────
+// Built-in entries are OWNER_WIKI (keep them in step when owner screens change). The owner's own notes are saved in
+// owner_private key `wiki` ({ entries: [{ id, title, text }] }) and searched the same way.
+// go: [ownerTab, settingsTab?] for "Take me there".
+const OWNER_WIKI = [
+  // Getting started
+  { id: 'login', area: 'Getting started', title: 'Log in, stay logged in, log out', keys: 'password sign in remember 30 days logout session',
+    steps: ['Tap Owner at the top of the site and type your password.', 'Tick "Keep me logged in on this device for 30 days" on your own phone or computer only.', 'To log out, tap Logout at the top. To log out on every device (lost phone), open Change Password and tap "Log out everywhere".'] },
+  { id: 'password', area: 'Getting started', title: 'Change your password', keys: 'security credentials strong password',
+    steps: ['Tap Change Password in the owner menu.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
+  { id: 'updated', area: 'Getting started', title: 'Is the site up to date? (Updated N min ago, Reload now)', keys: 'update new version reload refresh deploy live',
+    steps: ['The small "Updated N min ago" note shows when the site last changed.', 'If the site is updated while you have it open, a bar offers "Reload now". Tap it to get the newest version.', 'Settings > Updates lists every change made to the site.'], go: ['settings', 'updates'] },
+  { id: 'app', area: 'Getting started', title: 'Put the site on your home screen like an app', keys: 'install app icon home screen iphone android',
+    steps: ['iPhone: open the site in Safari, tap Share, then "Add to Home Screen".', 'Android or Chrome: open the menu (three dots), then "Install app" or "Add to Home screen".'] },
+  { id: 'bell', area: 'Getting started', title: 'The bell: notifications and phone alerts', keys: 'notifications alerts bell new request approved color idea unread',
+    steps: ['The bell at the top shows new requests, approved quotes and new color ideas from customers. The number is how many you haven\'t looked at.', 'Tap an item to open that order (or, for a color idea, the Designs inbox). "Mark all read" clears the number.', 'To get a pop-up on your device, open the bell and tap "Turn on alerts", then allow notifications.'] },
+
+  // Orders
+  { id: 'desk', area: 'Orders', title: 'The order desk: Needs me, Waiting on them, Done', keys: 'orders list tabs search dashboard',
+    steps: ['Orders opens the order desk. "Needs me" holds orders waiting on you; "Waiting on them" holds orders waiting on the customer; "Done" holds finished ones.', 'The search box looks in every tab: name, email, item or order number.', 'Tap an order to open it. On a phone it opens on its own screen; use Back to return to the list.', 'Each order shows a 6-step bar and one card with the next thing to do and one main button.'], go: ['dashboard'] },
+  { id: 'emails-popup', area: 'Orders', title: 'Every email is shown first, and you can change it', keys: 'email preview edit send dont send skip pop-up popup',
+    steps: ['Any button that emails a customer opens a pop-up with the exact email first.', 'Change the subject or any of the text if you like ("Undo my changes" puts it back). Your change is for that one email only.', 'Choose "Send email and continue", "Don\'t send email, continue" (the step happens, no email), or "Cancel, go back" (nothing happens).', 'To change an email for every order, edit it in Settings > Emails.'] },
+  { id: 'quote', area: 'Orders', title: 'Price a request and send the quote', keys: 'quote price grams print time minutes send quote estimate',
+    steps: ['Open the new request. Read "Their request" and the conversation.', 'For each item, fill in the print time and grams (a set price from your designs fills itself in).', 'If you need answers first, use "Confirm details with the customer" to send them questions instead.', 'Tap "Send quote", check the email in the pop-up, and send it. The customer gets a link to approve.'], go: ['dashboard'] },
+  { id: 'edit-request', area: 'Orders', title: 'Change what the customer asked for, set your own price, add charges', keys: 'edit request own price owner price charge extra charge custom design terms special order roll',
+    steps: ['Before the quote is sent, tap "Edit their request" on the order.', 'You can change names, items, colors and notes, set your own price per item (it beats the calculation), and "Add a charge" with your own label (the customer sees the label and amount).', 'Save. Then send the quote as usual.'] },
+  { id: 'confirm', area: 'Orders', title: 'Confirm an order (and ask for the deposit)', keys: 'confirm approved looks good deposit request auto',
+    steps: ['When a customer taps "Looks good", the order normally confirms itself and asks for the deposit.', 'To confirm each order yourself instead, tap "Let me confirm each order myself" on an order waiting for approval (or switch it in Settings > Show / hide).', 'Then the order waits in Needs me: tap "Confirm order" and check the email.'] },
+  { id: 'payments', area: 'Orders', title: 'Record a deposit or payment', keys: 'deposit received paid it all payment received venmo amount receipt',
+    steps: ['When the money shows in your Venmo, open the order.', 'Type the amount you received in "Amount in your Venmo".', 'Tap "Deposit received", "They paid it all", or (at the end) "Payment received". The receipt email says that amount.', 'A deposit (or full payment) sets their place in the print line.'] },
+  { id: 'printing', area: 'Orders', title: 'Printing done (and the final payment request)', keys: 'printing done finished photo final payment remainder shipping deposit',
+    steps: ['Add a photo of the finished print first under "Notes and photos": the customer sees it and it goes in the email.', 'Tap "Printing done". If they still owe money, they are emailed the rest plus the shipping deposit and asked for their address.', 'If they already paid in full, no payment email goes out and the order moves to Ready to ship.', 'Filament for the order comes off your stock now.'] },
+  { id: 'print-anyway', area: 'Orders', title: 'Print before the deposit comes in', keys: 'print without deposit unpaid more menu',
+    steps: ['On a confirmed order with no deposit, open More, then "Print without a deposit…".', 'Nothing is emailed. The order shows a warning that no deposit has come in.'] },
+  { id: 'ship', area: 'Orders', title: 'Ship it, or hand it over in person', keys: 'ship shipped tracking carrier postage refund handed over in person invoice',
+    steps: ['Type the ship date, carrier and tracking number, what the postage actually cost, and any note.', 'Tap "Save tracking and mark Shipped". The shipped email includes tracking, an invoice and the shipping deposit refund.', 'Send the refund amount by Venmo, then record it on the Fix numbers page.', 'Picked up in person? Tap "Handed over in person" instead (no email).'] },
+  { id: 'more-menu', area: 'Orders', title: 'More menu: change the quote, go back a step, delete', keys: 'change quote go back undo delete order mistake',
+    steps: ['Open the order, then More.', '"Change the quote" takes it back to a new request so you can re-price it (nothing is emailed until you send the new quote).', '"Go back a step" undoes the last step without emailing anyone (filament goes back to stock if you go back from Printing done).', '"Delete order…" removes it for good.'] },
+  { id: 'fix-numbers', area: 'Orders', title: 'Fix numbers: amounts typed wrong, refunds, postage', keys: 'fix numbers deposit amount balance shipping deposit refund sent postage special order roll',
+    steps: ['Orders > Fix numbers (or More > Fix numbers on an order).', 'Change any typed amount: deposit, balance, shipping deposit paid, postage, refund sent, special order roll cost, added charges.', 'It never changes an order\'s step and never emails anyone.'], go: ['numbers'] },
+  { id: 'send-now', area: 'Orders', title: 'Send an email now (review request, reminder, resend)', keys: 'send email now review request reminder resend quote again shipping details',
+    steps: ['Open the order and the "Send an email now" fold.', 'Pick the email (ask for a review, quote reminder, send the quote again, and so on). Only the ones that fit the order\'s step can be sent.', 'Check or change it in the pop-up and send.'] },
+  { id: 'messages', area: 'Orders', title: 'Messages with a customer', keys: 'message chat conversation reply email replies',
+    steps: ['Each order has one conversation: your messages, theirs, and every email sent.', 'Type in the box and send; they get it by email. Their email replies show up here within a few minutes.'] },
+  { id: 'notes', area: 'Orders', title: 'Private notes and notes about a customer', keys: 'private notes client notes customer notes about payment issues',
+    steps: ['"Notes and photos" on an order holds your private notes: customers never see them.', 'The "About" fold shows your notes about that customer and their other orders.'] },
+  { id: 'practice', area: 'Orders', title: 'Practice with a pretend order', keys: 'practice test pretend try training',
+    steps: ['Open Practice in the owner menu.', 'Walk a pretend order through every step and see each email it would send. Nothing is saved or emailed.'], go: ['practice'] },
+
+  // Etsy to make
+  { id: 'etsy-todo', area: 'Etsy orders to make', title: 'Keep track of Etsy orders to print', keys: 'etsy to make todo print list printed tick shipped',
+    steps: ['Orders > Etsy to make.', 'Add orders with "Add unshipped orders from Etsy\'s Order Items file" (Etsy: Shop Manager, Settings, Options, Download Data, Order Items), or by hand.', 'Each waiting order shows its Etsy title, every part with a picture in its color, and a tick box for each piece. Tick a box when that piece is printed.', '"Print list by color" groups everything still to print by color.', 'When it ships, tap "Shipped: done".'], go: ['etsytodo'] },
+  { id: 'etsy-todo-parts', area: 'Etsy orders to make', title: 'Split an Etsy order into parts and colors', keys: 'parts colors design add its parts edit order color idea',
+    steps: ['On the order, tap Edit.', 'Under "From one of your designs", pick the design, a color idea (or each part\'s usual color) and how many, then "Add its parts". Each part gets a picture.', 'Remove the plain Etsy line with ✕ if you like, then "Save changes".'], go: ['etsytodo'] },
+
+  // Designs
+  { id: 'design-add', area: 'Designs', title: 'Add or change a design', keys: 'design gallery past work new design photos price set price publish',
+    steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
+  { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
+    steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
+  { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
+    steps: ['In a design, under "Color ideas photo", tap "Upload picture" (a picture where each part is a different solid color works best).', 'For each found area, pick which part it is. Leave the background and shadows as "Not a part". A red warning means an area looks like the background.', 'Use Join to put areas of one part together, or "Areas not split right?" to find fewer or more areas.', 'Add color ideas with "+ Add a color idea" or "Paste several color ideas at once" (Name, color, color per line).'], go: ['gallery'] },
+  { id: 'color-inbox', area: 'Designs', title: 'Color ideas customers send in', keys: 'color idea submitted inbox publish dismiss rename suggestion',
+    steps: ['New ideas show on the bell. Tap one, or open Designs.', 'In "Color ideas people sent in", change the name if you like, then "Publish for everyone" or "Dismiss".'], go: ['gallery'] },
+  { id: 'calculator', area: 'Designs', title: 'Price calculator, saved models and comparing links', keys: 'calculator models saved library compare several links makerworld price check',
+    steps: ['Designs > Calculator & Models.', 'Type print time and grams to see the price. Saved models remember a model\'s time and grams for next time.', '"Compare several links" prices several model links side by side (nothing is saved).'], go: ['calculator'] },
+
+  // Money
+  { id: 'money', area: 'Money', title: 'Sales, profit and the tax download', keys: 'money sales profit tax excel export year material cost per kg',
+    steps: ['Open Money & Sales and pick the year.', 'Set "Your filament cost per 1 kg roll" so material estimates are right.', 'The tiles and the month table show sales, material, expenses and ads.', 'Tap "Download YEAR for taxes (Excel)" for a spreadsheet with every sheet (site orders, expenses, ads, Etsy).'], go: ['money'] },
+  { id: 'expenses', area: 'Money', title: 'Add an expense', keys: 'expense purchase bought supplies receipt',
+    steps: ['Money & Sales > Expenses: type the date, what it was and the amount, then "Add expense".', 'Remove one with ✕.'], go: ['money'] },
+  { id: 'amazon', area: 'Money', title: 'Read an Amazon invoice (filament rolls into purchases and stock)', keys: 'amazon invoice receipt photo pdf screenshot filament rolls stock new color',
+    steps: ['Tap "Read an Amazon invoice" (Money & Sales > Expenses, or Settings > Filament & colors > Stock on hand).', 'Pick the invoice PDF, the saved Order Details page, a screenshot or a photo.', 'Check what it read: only filament is added (glue, nozzles and so on are crossed out). Fix any color, grams or cost.', 'Tap "Add to purchases and stock": the cost goes into expenses, the grams onto that color\'s stock, and new colors into your colors.'], go: ['money'] },
+  { id: 'ads', area: 'Money', title: 'Track what you spend on ads', keys: 'ads advertising facebook instagram flyers marketing',
+    steps: ['Money & Sales > Ad costs: date, where the ad ran, amount, then "Add ad cost".', 'You see the total, a split by place, and ad cost per paid order. Etsy Ads go in the Etsy card instead.'], go: ['money'] },
+  { id: 'etsy-upload', area: 'Money', title: 'Bring in Etsy sales (CSV files, a whole year at once)', keys: 'etsy csv orders order items statement upload import download data fees shipping labels',
+    steps: ['On Etsy: Shop Manager, Settings, Options, Download Data. Download the Orders file (and Order Items for item names). For fees and labels: Finances, Monthly statements, Download CSV.', 'Money & Sales > Etsy sales > "Upload Etsy files". Pick all of them at once (up to 60, like two years).', 'Check the preview, then "Add to my sales". Uploading the same files again never counts anything twice; newer files add only what\'s new.'], go: ['money'] },
+  { id: 'etsy-edit', area: 'Money', title: 'Fix or type an Etsy sale by hand; yearly summaries', keys: 'etsy edit sale by hand summary yearly activity material grams refund',
+    steps: ['Tap Edit on a sale to change any number (sale, shipping, fees, label, grams or material, refund, note). Sales you edit are never overwritten by uploads.', '"Add an Etsy sale by hand" adds one. Tick "This is a yearly summary…" to enter a whole year at once until you upload that year\'s statements.'], go: ['money'] },
+
+  // Settings
+  { id: 'colors', area: 'Settings', title: 'Filament colors (add, rename, price per gram, photos)', keys: 'colors filament add color special rate price per gram photo out of stock',
+    steps: ['Settings > Filament & colors.', '"Add a color", type its name (the swatch color is guessed from the name), and optionally a price per gram, a real-life photo, a link and a description.', 'Tap Save at the bottom.'], go: ['settings', 'colors'] },
+  { id: 'stock', area: 'Settings', title: 'Filament stock on hand', keys: 'stock inventory grams roll low running out hidden',
+    steps: ['Settings > Filament & colors > Stock on hand.', 'Type how many grams you have, or tap "+ 1 kg roll". Set "Warn me at" for each color.', 'Grams come off when printing is done. A color at 0 g is hidden from customers until you add more.'], go: ['settings', 'colors'] },
+  { id: 'prices', area: 'Settings', title: 'Prices and rules', keys: 'prices rules base fee per minute per gram deposit percent shipping deposit logo price venmo username',
+    steps: ['Settings > Prices & rules.', 'Change the base fee, print time and material rates, deposit %, shipping deposit, logo price, Venmo username and reminder timing.', 'Sent quotes keep the prices they were sent with.'], go: ['settings', 'prices'] },
+  { id: 'emails', area: 'Settings', title: 'Change the wording of any email', keys: 'emails wording templates text placeholders',
+    steps: ['Settings > Emails.', 'Pick an email and change its subject or text. Words in {curly brackets} are filled in for each order.', 'Save. To change one email just once, edit it in the pop-up when you send it instead.'], go: ['settings', 'emails'] },
+  { id: 'wording', area: 'Settings', title: 'Site wording, FAQ and what customers see', keys: 'wording site text faq show hide features about links how it works material note',
+    steps: ['Settings > About & links: your about text, photo, Messenger and Etsy links.', 'Settings > Wording and Site text: the words on the site. Site text can be saved as a draft until you make it live.', 'Settings > FAQ: questions and answers. Settings > Show / hide: switch parts of the site on or off.'], go: ['settings', 'text'] },
+  { id: 'vacation', area: 'Settings', title: 'Vacation mode', keys: 'vacation away closed holiday pause',
+    steps: ['Settings > Vacation: turn it on, set the date you\'re back and an optional message.', 'Customers see a notice and the emails mention it.'], go: ['settings', 'vacation'] },
+  { id: 'reviews', area: 'Settings', title: 'Approve customer reviews', keys: 'reviews approve stars half star photos testimonials',
+    steps: ['Customers get a review link about a week after shipping (or send it yourself with "Send an email now").', 'Settings > Reviews: "Approve and show" puts a review on the site.'], go: ['settings', 'reviews'] },
+
+  // Behind the scenes
+  { id: 'sql', area: 'Behind the scenes', title: 'When asked to "run the SQL" in Supabase', keys: 'sql supabase database setup run owner-tools',
+    steps: ['Some new features need a one-time database update. Claude will tell you which file.', 'Open the Supabase SQL editor: https://supabase.com/dashboard/project/xpssamjjyarajtwtrwqx/sql/new', 'Paste the file\'s contents and tap Run. It\'s safe to run again.'] },
+  { id: 'backup', area: 'Behind the scenes', title: 'Backups and the email robot', keys: 'backup drive google apps script email robot emails not sent',
+    steps: ['A backup of your orders and settings goes to your Google Drive every week.', 'Emails are sent by a Google Apps Script that picks up site changes about every 15 to 20 minutes. If something goes wrong it emails you.'] }
+];
+
+function ownerWikiNotes() { const d = (state.ownerPrivate && state.ownerPrivate.wiki) || {}; return Array.isArray(d.entries) ? d.entries : []; }
+function wikiEntries() {
+  return ownerWikiNotes().map(n => ({ id: 'mine-' + n.id, mine: n.id, area: 'My notes', title: n.title, keys: '', steps: String(n.text || '').split(/\n+/).filter(Boolean) })).concat(OWNER_WIKI);
+}
+function wikiMatches(e, q) {
+  const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = `${e.title} ${e.area} ${e.keys} ${e.steps.join(' ')}`.toLowerCase();
+  return words.every(w => hay.includes(w));
+}
+function wikiGo(tab, sub) {
+  if (tab === 'password') { state.showPasswordForm = true; render(); document.getElementById('new-pw')?.focus(); return; }
+  if (sub) state.settingsTab = sub;
+  setOwnerTab(tab);
+  window.scrollTo(0, 0);
+}
+function renderWikiResults() {
+  const q = state.wikiQuery || '';
+  const list = wikiEntries().filter(e => wikiMatches(e, q));
+  if (!list.length) return `<p class="field-help">Nothing matches "${esc(q)}". Try fewer or different words, like "deposit", "etsy" or "stock".</p>`;
+  const areas = [...new Set(list.map(e => e.area))];
+  return `${q ? `<p class="field-help" role="status">${list.length} match${list.length === 1 ? '' : 'es'}</p>` : ''}
+    ${areas.map(a => `<h3 class="wiki-area">${esc(a)}</h3>${list.filter(e => e.area === a).map(e => `<details class="wiki-entry" id="wiki-${esc(e.id)}"${q || state.wikiOpen === e.id ? ' open' : ''}>
+      <summary>${esc(e.title)}</summary>
+      <ol class="wiki-steps">${e.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+      <div class="money-controls">
+        ${e.go ? `<button type="button" class="btn-sm" onclick="wikiGo('${esc(e.go[0])}', '${esc(e.go[1] || '')}')">Take me there</button>` : ''}
+        ${e.mine ? `<button type="button" class="btn-sm" onclick="state.wikiEdit = '${esc(e.mine)}'; render(); document.getElementById('wiki-note-title')?.focus();">Edit</button>
+          <button type="button" class="btn-sm danger" onclick="removeWikiNote('${esc(e.mine)}')">Delete</button>` : ''}
+      </div></details>`).join('')}`).join('')}`;
+}
+function renderWikiPage() {
+  const editing = state.wikiEdit !== undefined && state.wikiEdit !== null;
+  const note = editing ? ownerWikiNotes().find(n => n.id === state.wikiEdit) || { title: '', text: '' } : null;
+  return `
+    <div class="owner-page-header">
+      <div class="section-header">
+        <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></div>
+        <div><h2 class="section-title">Help</h2><div class="section-sub">How to do everything in owner mode. Search by any word.</div></div>
+      </div>
+    </div>
+    <div class="card wiki-card">
+      <div class="field"><label for="wiki-q">Search help</label>
+        <input type="search" id="wiki-q" value="${esc(state.wikiQuery || '')}" placeholder="e.g. deposit, refund, etsy, stock, email" autocomplete="off"
+          oninput="state.wikiQuery = this.value; const r = document.getElementById('wiki-results'); if (r) r.innerHTML = renderWikiResults();" /></div>
+      <div id="wiki-results">${renderWikiResults()}</div>
+    </div>
+    <div class="card" id="wiki-mine">
+      <h3 class="card-title">${editing && state.wikiEdit ? 'Edit your note' : 'Your own notes'}</h3>
+      <p class="field-help" style="margin-top:0;">Write down your own how-tos (supplier details, printer settings, packing steps). They show under "My notes" and come up in the search.</p>
+      ${editing ? `<div class="field"><label for="wiki-note-title">Title</label><input type="text" id="wiki-note-title" maxlength="120" value="${esc(note.title)}" /></div>
+        <div class="field"><label for="wiki-note-text">Steps or notes (one per line)</label><textarea id="wiki-note-text" rows="6" maxlength="4000">${esc(note.text)}</textarea></div>
+        <div class="money-controls"><button type="button" class="btn-sm" id="wiki-note-save" onclick="saveWikiNote()">Save note</button>
+          <button type="button" class="btn-sm" onclick="state.wikiEdit = null; render();">Cancel</button></div>`
+      : `<button type="button" class="btn-sm" id="wiki-note-add" onclick="state.wikiEdit = ''; render(); document.getElementById('wiki-note-title')?.focus();">+ Add a note</button>`}
+      <div class="alert error" id="wiki-err"></div>
+    </div>`;
+}
+async function writeWikiNotes(entries) {
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), wiki: { entries } };
+  try { await saveOwnerPrivate('wiki'); return true; }
+  catch (e) { showAlert('wiki-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); return false; }
+}
+async function saveWikiNote() {
+  const title = String((document.getElementById('wiki-note-title') || {}).value || '').trim().slice(0, 120);
+  const text = String((document.getElementById('wiki-note-text') || {}).value || '').trim().slice(0, 4000);
+  if (!title || !text) { showAlert('wiki-err', 'Give the note a title and some text.', 'error'); return; }
+  const id = state.wikiEdit || settingsId();
+  const list = ownerWikiNotes();
+  const next = list.some(n => n.id === id) ? list.map(n => (n.id === id ? { id, title, text } : n)) : [{ id, title, text }].concat(list);
+  if (await writeWikiNotes(next.slice(0, 200))) { state.wikiEdit = null; state.wikiOpen = 'mine-' + id; render(); }
+}
+async function removeWikiNote(id) {
+  if (!confirm('Delete this note?')) return;
+  if (await writeWikiNotes(ownerWikiNotes().filter(n => n.id !== id))) render();
+}
+
 // ── INSTALL AS AN APP ─────────────────────────────────────────────────────
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
