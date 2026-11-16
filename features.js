@@ -871,7 +871,7 @@ async function decideReview(jobId, approve) {
   if (!r) return;
   try {
     if (approve) {
-      const reviews = [{ id: settingsId(), name: r.name || '', text: r.text, designId: '', photos: r.photos || [] }].concat(state.settings.reviews || []);
+      const reviews = [{ id: settingsId(), name: r.name || '', text: r.text, designId: '', photos: r.photos || [], rating: Number(r.rating) || null, date: String(r.created_at || '').slice(0, 10) }].concat(state.settings.reviews || []);
       await saveSettings({ ...state.settings, reviews });
       state.settingsDraft = null;
     }
@@ -4756,4 +4756,72 @@ async function todoImport(input) {
   });
   if (!add.size) { state.todoMsg = 'No new unshipped orders in that file.'; render(); return; }
   saveEtsyTodo(etsyTodo().concat([...add.values()]), `Added ${add.size} unshipped order${add.size === 1 ? '' : 's'}. Tap one to split its items into parts and colors with Edit.`);
+}
+
+// ── REVIEWS FROM ETSY ─────────────────────────────────────────────────────
+// Settings > Reviews: Etsy's reviews.json ([{ reviewer, date_reviewed 'MM/DD/YYYY', star_rating, message, order_id }]) shown as a
+// list to tick, each linkable to a design (guessed from the Etsy sale's item names when they're uploaded). Ticked ones go into the
+// settings draft as site reviews ({ name, text, rating, source: 'etsy', date, designId }); Save publishes them. Ones already on the site are left out.
+const ETSY_REVIEW_MAX = 40;
+function etsyReviewKey(text) { return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 120); }
+function etsyReviewName(n) { const v = String(n || '').trim(); return /^sign in with|^etsy (user|buyer)$/i.test(v) ? '' : v.slice(0, 60); }
+function etsyReviewDesign(orderId, designs) {
+  const o = etsyOrders().find(x => String(x.etsyId) === String(orderId));
+  const items = String((o && o.items) || '').toLowerCase();
+  if (!items) return '';
+  const hit = designs.find(g => g.title && items.includes(String(g.title).toLowerCase().slice(0, 24)));
+  return hit ? hit.id : '';
+}
+function etsyReviewsChosen(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    let list;
+    try { list = JSON.parse(String(r.result || '').replace(/^﻿/, '')); } catch (e) { list = null; }
+    if (!Array.isArray(list) || !list.some(x => x && (x.message || x.review))) { showAlert('review-import-err', "That isn't Etsy's reviews.json file.", 'error'); return; }
+    const have = new Set((state.settingsDraft.reviews || []).map(x => etsyReviewKey(x.text)));
+    const designs = (state.gallery || []).filter(g => g.published);
+    state.reviewImport = list.filter(x => x && String(x.message || x.review || '').trim()).map((x, n) => {
+      const m = String(x.date_reviewed || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const text = String(x.message || x.review).replace(/\s+/g, ' ').trim().slice(0, 600);
+      const dup = have.has(etsyReviewKey(text));
+      return { n, name: etsyReviewName(x.reviewer), text, rating: Number(x.star_rating) >= 1 && Number(x.star_rating) <= 5 ? Number(x.star_rating) : null,
+        date: m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : '', dup, pick: !dup, designId: etsyReviewDesign(x.order_id, designs) };
+    });
+    render();
+    document.getElementById('review-import')?.focus();
+  };
+  r.readAsText(file);
+}
+function renderEtsyReviewImport(designs) {
+  const imp = state.reviewImport, room = ETSY_REVIEW_MAX - (state.settingsDraft.reviews || []).length;
+  const opener = `<div class="money-controls"><button type="button" class="btn-sm" onclick="document.getElementById('review-file').click()">Import reviews from Etsy (reviews.json)</button>
+    <input type="file" id="review-file" accept=".json,application/json" hidden onchange="etsyReviewsChosen(this)" /></div>
+    <div class="alert error" id="review-import-err"></div>
+    ${imp ? '' : '<div class="field-help">On Etsy: Shop Manager, Settings, Options, Download Data, then Reviews. You pick which ones to show.</div>'}`;
+  if (!imp) return opener;
+  const picked = imp.filter(x => x.pick).length;
+  return `${opener}<div class="etsy-preview review-import" id="review-import" tabindex="-1">
+    <strong>${imp.length} Etsy review${imp.length === 1 ? '' : 's'}</strong>${imp.some(x => x.dup) ? ` · ${imp.filter(x => x.dup).length} already on your site` : ''}
+    <div class="field-help">Tick the ones to show. Your site shows up to ${ETSY_REVIEW_MAX} reviews; room for ${Math.max(0, room)} more.</div>
+    <ul class="review-import-list">${imp.map(x => `<li>
+      <label class="special-order-check"><input type="checkbox" ${x.pick ? 'checked' : ''} ${x.dup ? 'disabled' : ''} onchange="state.reviewImport[${x.n}].pick = this.checked; render(); document.getElementById('review-import')?.focus();" />
+        <span>${x.rating ? `<span class="review-stars-show" aria-hidden="true">${'★'.repeat(Math.floor(x.rating))}</span> ` : ''}<strong>${esc(x.name || 'A customer')}</strong>${x.date ? ` · ${esc(x.date)}` : ''}${x.dup ? ' · already on your site' : ''}<br />“${esc(x.text)}”</span></label>
+      ${x.dup ? '' : `<div class="field"><label for="rvi-d-${x.n}">Design (optional)</label><select id="rvi-d-${x.n}" onchange="state.reviewImport[${x.n}].designId = this.value">
+        <option value="">Not linked to a design</option>${designs.map(g => `<option value="${esc(g.id)}" ${x.designId === g.id ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}</select></div>`}
+    </li>`).join('')}</ul>
+    <div class="money-controls"><button type="button" class="btn-sm" id="review-import-add" onclick="addEtsyReviews()" ${picked ? '' : 'disabled'}>Add ${picked} review${picked === 1 ? '' : 's'}</button>
+      <button type="button" class="btn-sm" onclick="state.reviewImport = null; render();">Cancel</button></div>
+  </div>`;
+}
+function addEtsyReviews() {
+  const imp = state.reviewImport || [], list = state.settingsDraft.reviews || (state.settingsDraft.reviews = []);
+  const room = ETSY_REVIEW_MAX - list.length, picked = imp.filter(x => x.pick && !x.dup);
+  if (picked.length > room) { showAlert('review-import-err', `Your site shows up to ${ETSY_REVIEW_MAX} reviews. Untick ${picked.length - room}, or remove some older ones first.`, 'error'); return; }
+  picked.sort((a, b) => String(b.date).localeCompare(String(a.date))).forEach(x => list.push({ id: settingsId(), name: x.name, text: x.text, designId: x.designId, photos: [], rating: x.rating, source: 'etsy', date: x.date }));
+  state.reviewImport = null;
+  render();
+  showAlert('review-import-err', `Added ${picked.length} review${picked.length === 1 ? '' : 's'}. Tap Save to put them on your site.`, 'success');
 }

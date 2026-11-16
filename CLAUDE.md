@@ -92,6 +92,13 @@ A hand-typed sale with `summary: true` is a yearly summary (the owner's Etsy act
 Card layout (`renderEtsyCard`, `renderEtsyTabs`; each kind has its own color, `--sec-orders/ads/fees/shipping/profit` in styles.css, classes `sec-*`): always all years (all-time profit box with "How this is worked out" and stat row; the "Both shops" line uses the Money page year). Tabs (`etsyTab`): "Profit & loss" (default, `renderEtsyOverview`: tiles for this month, last month, this year, last year, all time with the change on the period before; then each year folds open to a table of its months: sales #, sales, fees, shipping, marketing, material, profit, margin; a month opens its orders, `etsyOpenMonth`), Orders, Marketing, Fees, Shipping. Every period total comes from `etsyPeriod(prefix)` / `etsyCalc` (loose charges included), so months add up to years. Search (`etsyQuery`), Group by (`etsyGroup`: default "Year, then month" nests years then months, `etsyGrouped`; also week/month/year/all; newest open, or `state.etsyOpenGroup`). Orders: each sale folds open to its costs (List) or a sortable Spreadsheet (`ETSY_COLUMNS`, `ETSY_SORTS`); the cost tabs list every charge with its order number (`etsyTabRows`, tap to open the order, `etsyOpenOrder`) and an "Add ... by hand" form. Tab, view and grouping are remembered per device (localStorage `soloprint_etsyTab`, `soloprint_etsyView`, `soloprint_etsyGroup`).
 The yearly Excel export has an Etsy sheet and "both shops" totals. SoloPrint's own ad spending is `money.ads` ([{ id, date, where, amount }], `renderAdsCard`, `addAdCost`), shown as its own stat, monthly column and export sheet, and subtracted in "Sales minus expenses and ads" and the both-shops total.
 
+## Reviews from Etsy
+
+Settings > Reviews has "Import reviews from Etsy (reviews.json)" (`etsyReviewsChosen`, `renderEtsyReviewImport`, `addEtsyReviews` at the end of features.js): Etsy's file is
+[{ reviewer, date_reviewed 'MM/DD/YYYY', star_rating, message, order_id }]; the owner ticks which to add (ones whose text is already on the site are left out; "Sign in with Apple user" shows as "A customer"),
+links each to a design (guessed from the uploaded Etsy sale's item names), then Saves. Site reviews keep `rating` (half steps), `source: 'etsy'` and `date` (`cleanSettings`); `renderReviews` shows the stars and "on Etsy".
+Approved customer reviews keep their rating too (`decideReview`). Up to 40 reviews (`ETSY_REVIEW_MAX`, the `cleanSettings` limit).
+
 ## Etsy to make
 
 Orders > "Etsy to make" (`etsytodo` tab, `renderEtsyTodoPage` at the end of features.js): Etsy orders still to print, in `owner_private` key `etsy_todo` (keys must be lowercase a-z and _, the table's check)

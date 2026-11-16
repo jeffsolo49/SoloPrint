@@ -38,7 +38,7 @@ function fixtures() {
     settings: { about: { text: 'I print custom designs in my spare time.', replyTime: 'I usually reply within a day.' },
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
-      reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
+      reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1', rating: 4.5, source: 'etsy' }] },
     private: {}, reviews: {}, colorIdeas: [], uploads: [], drafts: {}, messages: [], linkRequests: [],
     log: []
   };
@@ -1934,6 +1934,31 @@ const STATES = {
     // 42.16 sales - fees 4.12 - shipping 6.73 - marketing 3.06 = 28.25
     assert(/\$28\.25/.test(await page.textContent('#etsy-profit')), await page.textContent('#etsy-profit'));
     await page.close();
+  });
+  await check("reviews: import Etsy's reviews.json, pick which to show, stars and 'on Etsy' on the site", async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('settings/reviews'));
+    await page.waitForSelector('#review-file', { state: 'attached' });
+    const json = JSON.stringify([{ reviewer: 'Andrea', date_reviewed: '10/23/2026', star_rating: 5, message: 'So happy with these, they are just as advertised! Thank you!', order_id: 4197256027 },
+      { reviewer: 'Sign in with Apple user', date_reviewed: '06/07/2025', star_rating: 4, message: 'These really work!', order_id: 3689566968 },
+      { reviewer: 'Mike', date_reviewed: '01/01/2026', star_rating: 5, message: 'Came out perfect.', order_id: 1 }]);
+    await page.setInputFiles('#review-file', { name: 'reviews.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+    await page.waitForSelector('#review-import');
+    assert(/already on your site/.test(await page.textContent('#review-import')), 'a review already shown is left out');
+    await page.click('#review-import-add');
+    await page.waitForFunction(() => !document.getElementById('review-import'));
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    const rv = db.settings.reviews;
+    const andrea = rv.find(r => r.name === 'Andrea'), apple = rv.find(r => /really work/.test(r.text));
+    assert(rv.length === 3 && andrea.rating === 5 && andrea.source === 'etsy' && andrea.date === '2026-10-23' && apple.name === '' && apple.rating === 4, JSON.stringify(rv));
+    await page.close();
+    const home = await open(db);
+    await home.waitForSelector('.review');
+    const txt = await home.textContent('.reviews');
+    assert(/on Etsy/.test(txt) && /★★★★★/.test(txt), txt);
+    await home.close();
   });
   await check('etsy to make: add an order with parts and colors, print list by color, mark printed, finish; import unshipped orders', async () => {
     const db = fixtures();

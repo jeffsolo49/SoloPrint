@@ -1334,3 +1334,11 @@ html.owner-mode, :root {
 .etsy-pl tfoot tr { background: rgba(var(--sec-profit-rgb), 0.1); }
 .etsy-year > .etsy-group { margin: 8px 10px; }
 .etsy-year > .table-scroll { margin: 0 10px 10px; }
+
+/* Review stars on the site, and the Etsy reviews import list */
+.review-stars-show { color: var(--text); font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
+html.owner-mode .review-stars-show { color: var(--sec-fees); }
+.review-import-list { list-style: none; margin: 10px 0; padding: 0; }
+.review-import-list li { padding: 10px 0; border-top: 1px solid var(--border); }
+.review-import-list li:first-child { border-top: none; }
+.review-import-list .special-order-check { align-items: flex-start; }
