@@ -587,11 +587,20 @@ function emailsFor(type, rec, old, custom, site) {
   // (quietEmails.at is new in this save; an older quietEmails never stops a later email).
   const q = rec.quietEmails, oq = (old && old.quietEmails) || {};
   const quiet = type === 'UPDATE' && q && q.at && q.at !== oq.at && Array.isArray(q.keys) ? q.keys : [];
+  // The owner read (and maybe changed) a step's email in the pop-up: emailEdits { at, list: { key: { subject, body } } } is
+  // sent exactly as written, for this one save only (emailEdits.at is new in this save).
+  const ed = rec.emailEdits, oed = (old && old.emailEdits) || {};
+  const edits = type === 'UPDATE' && ed && ed.at && ed.at !== oed.at && ed.list && typeof ed.list === 'object' ? ed.list : {};
   const send = (key, to, extra) => {
     if (!to) return;
     if (to === customer && quiet.indexOf(key) !== -1) return;
     const t = emailTemplate(key, custom);
     const v = extra ? Object.assign({}, vars, extra) : vars;
+    const mine = to === customer && Object.prototype.hasOwnProperty.call(edits, key) ? edits[key] : null;
+    if (mine && String(mine.body || '').trim()) {
+      emails.push({ to, kind: key, subject: String(mine.subject || renderEmailText(t.subject, v)).replace(/\s+/g, ' ').trim().slice(0, 200), body: String(mine.body).slice(0, 10000) });
+      return;
+    }
     emails.push({ to, kind: key, subject: renderEmailText(t.subject, v).replace(/\s*\n\s*/g, ' '), body: renderEmailText(t.body, v) });
   };
   // A payment receipt must say how much they paid. Without an amount on the order nothing is sent to the customer, and you are told.
@@ -712,21 +721,7 @@ function featureOff(site, key) { return !!(site && site.features && site.feature
 
 function queueNote(rec, site) {
   if (!site || !Array.isArray(site.queue) || featureOff(site, 'queue')) return '';
-  const rules = shopRules(site), custom = orderIsCustom(rec);
-  if (rec.phase === 'quote_sent') {
-    const q = queueEstimate(site.queue, rules, '', custom);
-    return 'Right now there ' + (q.ahead === 1 ? 'is ' : 'are ') + aheadText(q.ahead).replace(' of yours', '') + ', so once you approve, expect it to be printed in ' + daysText(q.minDays, q.maxDays) + '.';
-  }
-  if (rec.phase === 'order_received') {
-    const at = queueTime(rec);
-    if (!at) {
-      const waiting = queueEstimate(site.queue.filter(e => e.at || e.printing), rules, '', custom);
-      return "Your place in line is set when your deposit comes in. Right now there " + (waiting.ahead === 1 ? 'is ' : 'are ') + aheadText(waiting.ahead).replace(' of yours', '') + '.';
-    }
-    const q = queueEstimate(site.queue, rules, at, custom);
-    return "You're number " + (q.ahead + 1) + ' in line, so expect it to be printed in ' + daysText(q.minDays, q.maxDays) + '.';
-  }
-  return '';
+  return queueNoteText(rec, site.queue, shopRules(site));
 }
 
 // Site settings, including the owner's edited email text (Emails page) and vacation mode. If they can't be
@@ -1128,6 +1123,24 @@ function daysText(min, max) {
   return min === max ? 'about ' + min + ' day' + (min === 1 ? '' : 's') : 'about ' + min + '-' + max + ' days';
 }
 function aheadText(n) { return n === 0 ? 'no orders ahead of yours' : n + ' order' + (n === 1 ? '' : 's') + ' ahead of yours'; }
+// The "place in line" line in the quote, confirmed and deposit emails (Code.gs queueNote; the site's email previews).
+function queueNoteText(rec, queue, rules) {
+  const custom = orderIsCustom(rec);
+  if (rec.phase === 'quote_sent') {
+    const q = queueEstimate(queue, rules, '', custom);
+    return 'Right now there ' + (q.ahead === 1 ? 'is ' : 'are ') + aheadText(q.ahead).replace(' of yours', '') + ', so once you approve, expect it to be printed in ' + daysText(q.minDays, q.maxDays) + '.';
+  }
+  if (rec.phase === 'order_received') {
+    const at = queueTime(rec);
+    if (!at) {
+      const waiting = queueEstimate(queue.filter(e => e.at || e.printing), rules, '', custom);
+      return "Your place in line is set when your deposit comes in. Right now there " + (waiting.ahead === 1 ? 'is ' : 'are ') + aheadText(waiting.ahead).replace(' of yours', '') + '.';
+    }
+    const q = queueEstimate(queue, rules, at, custom);
+    return "You're number " + (q.ahead + 1) + ' in line, so expect it to be printed in ' + daysText(q.minDays, q.maxDays) + '.';
+  }
+  return '';
+}
 
 // The deposit: the amount saved when it was received, else the deposit % of the total.
 function depositAmount(order, total, rules) {

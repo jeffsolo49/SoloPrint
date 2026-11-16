@@ -578,6 +578,9 @@ function normalizeBatch(batch) {
     manualEmail: batch.manualEmail && MANUAL_EMAILS.some(m => m.key === batch.manualEmail.key) && cleanIso(batch.manualEmail.at)
       ? { key: batch.manualEmail.key, at: cleanIso(batch.manualEmail.at),
           ...(String(batch.manualEmail.body || '').trim() ? { subject: cleanText(batch.manualEmail.subject, 200), body: cleanText(batch.manualEmail.body, 10000) } : {}) } : null,
+    emailEdits: batch.emailEdits && cleanIso(batch.emailEdits.at) && batch.emailEdits.list && typeof batch.emailEdits.list === 'object'
+      ? { at: cleanIso(batch.emailEdits.at), list: Object.fromEntries(Object.entries(batch.emailEdits.list).filter(([k, v]) => /^[a-z_]{1,40}$/.test(k) && v && String(v.body || '').trim()).slice(0, 4)
+          .map(([k, v]) => [k, { subject: cleanText(v.subject, 200), body: cleanText(v.body, 10000) }])) } : null,
     manualEmails: (Array.isArray(batch.manualEmails) ? batch.manualEmails : []).filter(m => m && MANUAL_EMAILS.some(x => x.key === m.key) && cleanIso(m.at)).map(m => ({ key: m.key, at: cleanIso(m.at) })).slice(-30),
     depositAmount: Number(batch.depositAmount) > 0 ? Math.round(Number(batch.depositAmount) * 100) / 100 : null,
     rates: cleanQuoteRates(batch.rates),
@@ -2657,7 +2660,7 @@ function renderNextStep(b, st) {
     <input type="number" inputmode="decimal" min="0" step="0.01" id="step-amount-${id}" value="${Math.max(0, expectedPayment(b, status)).toFixed(2)}" /></div>`;
   const box = (title, body, mine = st.mine) => `<section class="next-step ${mine ? 'mine' : 'theirs'}" aria-label="Next step">
     <div class="next-step-label">${title}</div>${body}<div class="alert error" id="step-err-${id}"></div></section>`;
-  const go = (label, fn) => `<button type="button" class="btn-primary step-go" id="step-go-${id}" data-run="${esc(fn)}" onclick="askMail('${id}', this.dataset.run)">${label}</button>`;
+  const go = (label, fn, key) => `<button type="button" class="btn-primary step-go" id="step-go-${id}" data-run="${esc(fn)}" onclick="askMail('${id}', this.dataset.run, '${key}')">${label}</button>`;
   switch (st.key) {
     case 'quote': return box('Next step: price it and send the quote', renderQuoteForm(b));
     case 'approve': return box(`Waiting on ${name}`, `<p>Quote sent ${fmtShort((b.phaseHistory || {}).quote_sent)}. When ${name} taps "Looks good", the order comes back to Needs me for you to confirm.</p>
@@ -2665,11 +2668,11 @@ function renderNextStep(b, st) {
     case 'confirm': {
       const dep = depositAmount(b, total, rules);
       return box('Next step: confirm the order', `<p>${name} approved the quote${b.customerApprovedAt ? ` on ${esc(formatAustinTime(b.customerApprovedAt))}` : ''}. Read the conversation below and answer anything first if you need to.</p>
-        ${mailBox(`the "order confirmed" email asking for the $${dep.toFixed(2)} deposit`)}${go('Confirm order', `deskConfirm('${id}')`)}`);
+        ${mailBox(`the "order confirmed" email asking for the $${dep.toFixed(2)} deposit`)}${go('Confirm order', `deskConfirm('${id}')`, 'confirmed')}`);
     }
     case 'deposit': return box(`Waiting on ${name}: the deposit`, `<p>Deposit asked: $${depositAmount(b, total, rules).toFixed(2)} of $${total.toFixed(2)}. When it shows in your Venmo, type the amount and tap Deposit received.</p>
       ${amount('deposit_received')}${mailBox('a receipt for that amount')}
-      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`)}<button type="button" class="btn-secondary" data-run="${esc(`deskPayment('${id}', 'payment_received')`)}" onclick="askMail('${id}', this.dataset.run)">They paid it all</button></div>`, true);
+      <div class="step-buttons">${go('Deposit received', `deskPayment('${id}', 'deposit_received')`, 'deposit')}<button type="button" class="btn-secondary" data-run="${esc(`deskPayment('${id}', 'payment_received')`)}" onclick="askMail('${id}', this.dataset.run, 'payment')">They paid it all</button></div>`, true);
     case 'print': {
       const pos = ownerQueuePosition(b), paid = isPaidInFull(b), fp = finalPayment(b, total, rules);
       return box('Next step: print it', `${pos ? `<p>#${pos} in line.</p>` : ''}
@@ -2677,18 +2680,19 @@ function renderNextStep(b, st) {
         <p class="field-help">Add a photo of the finished print in "Notes and photos" below first: the customer sees it, and the first one goes in the email.</p>
         ${paid ? `<p>${name} has paid in full, so no payment email goes out: the order moves to Ready to ship. If you're mailing it, message them for their address and the $${fp.fee.toFixed(2)} shipping deposit.</p>`
           : mailBox(`the "printing is done" email asking for $${fp.remainder.toFixed(2)} (includes the $${fp.fee.toFixed(2)} shipping deposit) and their address`)}
-        ${go('Printing done', `deskPrinted('${id}')`)}`);
+        ${go('Printing done', `deskPrinted('${id}')`, 'final_payment_needed')}`);
     }
     case 'final': return box(`Waiting on ${name}: the final payment`, `<p>${finalPaymentChip(b)}</p>
       ${amount('payment_received')}${mailBox('a receipt for that amount')}
-      ${go('Payment received', `deskPayment('${id}', 'payment_received')`)}`, true);
+      ${go('Payment received', `deskPayment('${id}', 'payment_received')`, 'payment')}`, true);
     case 'ship': return box('Next step: ship it or hand it over', `${renderShippingFields(b)}
       ${mailBox('the "order shipped" email with tracking, invoice and refund note')}
-      <div class="step-buttons">${go('Save tracking and mark Shipped', `saveDeliveryInfo('${id}')`)}<button type="button" class="btn-secondary" onclick="deskHandOver('${id}')">Handed over in person</button></div>`);
+      <div class="step-buttons">${go('Save tracking and mark Shipped', `saveDeliveryInfo('${id}')`, 'delivered')}<button type="button" class="btn-secondary" onclick="deskHandOver('${id}')">Handed over in person</button></div>`);
     default: return box('Finished', `<p>${(b.phaseHistory || {}).delivered ? `Done on ${fmtShort(b.phaseHistory.delivered)}. ` : ''}${b.deliveryTracking ? `Tracking: ${esc(b.deliveryTracking)}` : ''}</p>
       <details class="desk-fold"><summary>Change shipping details</summary>${renderShippingFields(b)}
-      <button type="button" class="btn-secondary" onclick="saveDeliveryInfo('${id}')" style="margin-top:10px;">Save shipping details</button>
-      <div class="field-help">Changing them emails ${name} a short shipping update (you're asked first).</div></details>`, false);
+      ${hasEmail ? `<input type="checkbox" id="step-mail-${id}" class="step-mail-flag" checked hidden data-ask="${esc(`Email ${name} a short shipping update?`)}" />` : ''}
+      <button type="button" class="btn-secondary" data-run="${esc(`saveDeliveryInfo('${id}')`)}" onclick="askMail('${id}', this.dataset.run, 'delivery_update')" style="margin-top:10px;">Save shipping details</button>
+      <div class="field-help">Changing the date, tracking or notes emails ${name} a short shipping update. You see it first and can change it or not send it.</div></details>`, false);
   }
 }
 
@@ -4995,41 +4999,52 @@ async function updatePaymentStatus(batchId, paymentStatus) {
 // the change: Code.gs skips those emails for that one save only (keys are email names: confirmed, deposit, ...).
 // Pop-up before a step that emails the customer: send the email, or save the step without it.
 // It sets the (hidden) tick box the step functions read, then runs the step.
-function askMail(id, code) {
+function askMail(id, code, key) {
   const run = () => { try { (new Function(code))(); } catch (e) { console.error(e); } };
   const flag = document.getElementById(`step-mail-${id}`);
-  if (!flag) { run(); return; }
-  const opener = document.activeElement;
-  const wrap = document.createElement('div');
-  wrap.className = 'mail-modal-backdrop';
-  wrap.innerHTML = `<div class="mail-modal" role="dialog" aria-modal="true" aria-labelledby="mail-modal-title">
-    <h3 id="mail-modal-title">Send an email?</h3>
-    <p></p>
-    <div class="mail-modal-buttons">
-      <button type="button" class="btn-primary" data-send="1">Send email and continue</button>
-      <button type="button" class="btn-secondary" data-send="0">Don't send email, continue</button>
-      <button type="button" class="btn-link" data-send="x">Cancel, go back</button>
-    </div></div>`;
-  wrap.querySelector('p').textContent = flag.dataset.ask || 'Email the customer about this step?';
-  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
-  const onKey = e => { if (e.key === 'Escape') { close(); if (opener && opener.focus) opener.focus(); } };
-  wrap.addEventListener('click', e => {
-    const v = e.target.closest && e.target.closest('button[data-send]');
-    if (!v && e.target !== wrap) return;
-    const send = v ? v.dataset.send : 'x';
-    close();
-    if (send === 'x') { if (opener && opener.focus) opener.focus(); return; }
-    flag.checked = send === '1';
+  const b = state.batches.find(x => x.id === id);
+  const p = flag && b && key ? stepPreviewOrder(b, key) : null;
+  state.stepEmailEdit = null;
+  if (!p) { run(); return; }   // nothing will be emailed (or the step itself will say what's missing)
+  emailPopup(b, stepEmailPreview(p.order, key, p.extra), flag.dataset.ask).then(ans => {
+    if (ans.choice === 'cancel') return;
+    flag.checked = ans.choice === 'send';
+    state.stepEmailEdit = ans.edited ? { id, key, ...ans.edited } : null;
     run();
   });
-  document.addEventListener('keydown', onKey);
-  document.body.appendChild(wrap);
-  wrap.querySelector('button').focus();
+}
+// The order as a step would save it, to show its email before anything changes. null = this step sends no email now.
+function stepPreviewOrder(b, key) {
+  const o = JSON.parse(JSON.stringify(b)), now = new Date().toISOString();
+  const typed = () => Math.round(parseFloat(String((document.getElementById(`step-amount-${b.id}`) || {}).value || '').replace(/[$,\s]/g, '')) * 100) / 100;
+  const field = k => ((document.getElementById(`${k}-${b.id}`) || { value: '' }).value || '').trim();
+  if (key === 'confirmed') { o.phase = 'order_received'; return { order: o }; }
+  if (key === 'deposit' || key === 'payment') {
+    const amount = typed();
+    if (!(amount > 0)) return null;
+    if (key === 'deposit') { o.paymentStatus = 'deposit_received'; o.depositAt = o.depositAt || now; o.depositAmount = amount; }
+    else { o.paymentStatus = 'payment_received'; o.balancePaid = amount; o.paidAt = o.paidAt || now; if (o.phase === 'final_payment_needed') o.phase = 'ready_to_ship'; }
+    return { order: o, extra: { amountPaid: amount.toFixed(2) } };
+  }
+  if (key === 'final_payment_needed') { if (isPaidInFull(b)) return null; o.phase = 'final_payment_needed'; return { order: o }; }
+  if (key === 'delivered' || key === 'delivery_update') {
+    o.deliveryDate = field('ddate'); o.deliveryTracking = field('dtrack'); o.deliveryNotes = field('dnotes');
+    const post = field('dpost');
+    o.postageCost = post === '' ? '' : Math.max(0, Math.round(parseFloat(post) * 100) / 100) || 0;
+    if (key === 'delivered') { if (!o.deliveryTracking) return null; o.phase = 'delivered'; return { order: o }; }
+    const lines = x => [x.deliveryDate, x.deliveryTracking, x.deliveryNotes].join('|');
+    return lines(o) !== lines(b) && (o.deliveryDate || o.deliveryTracking || o.deliveryNotes) ? { order: o } : null;
+  }
+  return null;
 }
 
 function quietIfUnticked(b, keys) {
-  const box = document.getElementById(`step-mail-${b.id}`);
-  b.quietEmails = { at: new Date().toISOString(), keys: box && !box.checked ? keys : [] };
+  const box = document.getElementById(`step-mail-${b.id}`), at = new Date().toISOString();
+  b.quietEmails = { at, keys: box && !box.checked ? keys : [] };
+  // The owner changed the email in the pop-up: Code.gs sends exactly that text (emailEdits, this save only).
+  const e = state.stepEmailEdit;
+  b.emailEdits = e && e.id === b.id && keys.includes(e.key) && (!box || box.checked) ? { at, list: { [e.key]: { subject: e.subject, body: e.body } } } : null;
+  state.stepEmailEdit = null;
 }
 function stepBusy(b, on) {
   const btn = document.getElementById(`step-go-${b.id}`);
@@ -5288,7 +5303,7 @@ async function saveDeliveryInfo(batchId) {
     b.phase = 'delivered';
     b.status = 'quoted';
     stampPhase(b, 'delivered');
-  } else if ((b.phase || '') === 'delivered' && before !== [b.deliveryDate, b.deliveryTracking, b.deliveryNotes].join('|') && !confirmEmail(b, 'with a shipping update email')) { render(); return; }
+  } else if ((b.phase || '') === 'delivered' && before !== [b.deliveryDate, b.deliveryTracking, b.deliveryNotes].join('|')) quietIfUnticked(b, ['delivery_update']);
   await upsertBatch(b);
   render();
 }
@@ -5313,7 +5328,6 @@ function ownerSetPrice(it) {
 async function approveBatch(batchId) {
   const batch = state.batches.find(b => b.id === batchId);
   if (!batch) return;
-  if (!confirm(`Ready to send the quote to ${batch.clientName || batch.clientEmail}?`)) return;
   let allValid = true;
   if (batch.items.some(it => it.galleryId) && !state.galleryLoaded) await loadGallery();
   batch.items.forEach((it, i) => {
@@ -5336,6 +5350,16 @@ async function approveBatch(batchId) {
     if (!Number.isFinite(cost) || cost < 0) { showAlert(`batch-err-${batchId}`, 'Enter the special order color cost (0 or more).', 'error'); return; }
     batch.specialOrderCost = Math.round(cost * 100) / 100;
   }
+  // Show the quote email (editable) before anything is saved.
+  let ans = { choice: 'send', edited: null };
+  if (hasEmailAddress(batch)) {
+    const o = { ...JSON.parse(JSON.stringify(batch)), status: 'quoted', phase: 'quote_sent', rates: quoteRates(currentRules()), paymentStatus: 'payment_requested', customerApprovedAt: '' };
+    ans = await emailPopup(batch, stepEmailPreview(o, 'quote'), `Send ${batch.clientName || 'the customer'} the quote?`);
+    if (ans.choice === 'cancel') return;
+  } else if (!confirm(`Save the quote for ${batch.clientName || 'this order'}? There's no email address on it, so nothing is emailed.`)) return;
+  const sentAt = new Date().toISOString();
+  batch.quietEmails = { at: sentAt, keys: ans.choice === 'skip' ? ['quote'] : [] };
+  batch.emailEdits = ans.edited ? { at: sentAt, list: { quote: ans.edited } } : null;
 
   const btn = document.getElementById(`approve-btn-${batchId}`);
   btn.disabled = true; btn.textContent = 'Saving & notifying...';
@@ -5348,7 +5372,7 @@ async function approveBatch(batchId) {
   stampPhase(batch, 'quote_sent');
   await upsertBatch(batch);
 
-  showAlert(`batch-ok-${batchId}`, `Quote saved! ${batch.clientName || 'The customer'} will get an email at ${batch.clientEmail}.`, 'success');
+  showAlert(`batch-ok-${batchId}`, ans.choice === 'skip' || !hasEmailAddress(batch) ? 'Quote saved. No email was sent.' : `Quote saved! ${batch.clientName || 'The customer'} will get an email at ${batch.clientEmail}.`, 'success');
   setTimeout(() => render(), 1800);
 }
 

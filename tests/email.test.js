@@ -167,6 +167,15 @@ check('printing done email: total, deposit, remainder with the shipping fee', ()
   assert(m && m[2] === '4.64' && Math.abs(Number(m[1]) - 4.64 + 15 - Number(m[3])) < 0.011, body);
   assert(body.includes('a $15.00 deposit for USPS') && body.includes('based on the actual cost') && body.includes('pre-paid label') && body.includes('amount=' + m[3]), body);
 });
+check('a step email the owner changed in the pop-up is sent exactly as written, once', () => {
+  const edits = { at: 'e1', list: { confirmed: { subject: 'Your order is on!', body: 'Hi Jane, my words.' } } };
+  const sent = emailsFor('UPDATE', at({ phase: 'order_received', emailEdits: edits }), at({ phase: 'quote_sent' }));
+  assert(sent.length === 1 && sent[0].kind === 'confirmed' && sent[0].subject === 'Your order is on!' && sent[0].body === 'Hi Jane, my words.', JSON.stringify(sent));
+  const stale = emailsFor('UPDATE', at({ phase: 'final_payment_needed', emailEdits: edits }), at({ phase: 'order_received', emailEdits: edits }));
+  assert(stale.length === 1 && stale[0].body !== 'Hi Jane, my words.' && /final|done|ready/i.test(stale[0].subject + stale[0].body), 'an older edit never changes a later email');
+  const receipt = emailsFor('UPDATE', at({ phase: 'order_received', paymentStatus: 'deposit_received', depositAmount: 20, depositAt: '2026-10-03T00:00:00Z', emailEdits: { at: 'e2', list: { deposit: { subject: 'Got it', body: 'Thanks for the $20.' } } } }), at({ phase: 'order_received', paymentStatus: 'payment_requested' }));
+  assert(receipt.length === 1 && receipt[0].body === 'Thanks for the $20.', JSON.stringify(receipt));
+});
 check('"Send an email now": the chosen email goes out once, to the customer, with the review link', () => {
   const old = at({ phase: 'delivered', paymentStatus: 'payment_received' });
   const sentNow = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', manualEmail: { key: 'review_request', at: 'm1' } }), old);

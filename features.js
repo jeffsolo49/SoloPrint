@@ -639,7 +639,7 @@ function renderEmailGuide() {
   const row = (when, button, gets) => `<tr><th scope="row">${button}</th><td>${when}</td><td>${gets}</td></tr>`;
   return `<details class="card email-guide" id="email-guide">
     <summary><strong>When do emails go out? When should I press each button?</strong></summary>
-    <p class="field-help">Each order shows one next step with one button. The note above the button says which email it sends. When you tap the button, a pop-up asks "Send email and continue" or "Don\'t send email, continue", so you can move an order along without emailing anyone. To send one of the automatic emails yourself, like the review request, open an order and use <strong>Send an email now</strong> under the steps.</p>
+    <p class="field-help">Each order shows one next step with one button. The note above the button says which email it sends. When you tap the button, a pop-up shows the exact email, and you can change the subject or any of the text first. Then choose "Send email and continue" or "Don\'t send email, continue", so you can move an order along without emailing anyone. To send one of the automatic emails yourself, like the review request, open an order and use <strong>Send an email now</strong> under the steps.</p>
     <div class="table-scroll"><table class="email-guide-table">
       <thead><tr><th scope="col">Button</th><th scope="col">Press it when</th><th scope="col">The customer gets</th></tr></thead>
       <tbody>
@@ -3171,12 +3171,71 @@ function renderSendEmailFold(b) {
     <div class="field-help">The automatic emails, sent when you choose. You see the exact email first and confirm. It goes out within a minute or two.</div>
     <ul class="send-email-list">${items}</ul></details>`;
 }
-function manualEmailPreview(b, key) {
-  const tpl = emailTemplate(key, state.settings.emails || {}), vars = practiceVars(b);
-  vars.orderLink = orderLinkFor(b);
-  vars.reviewLink = orderLinkFor(b) + '&review=1';
-  vars.footer = renderEmailText(emailTemplate('footer', state.settings.emails || {}).body, vars);
+function manualEmailPreview(b, key) { return stepEmailPreview(b, key); }
+// The email a customer would get, filled in the way Code.gs `emailVars` fills it. `o` is the order as it will be
+// saved (a copy with the step applied), `extra` adds values like amountPaid.
+function stepEmailPreview(o, key, extra) {
+  const custom = state.settings.emails || {}, tpl = emailTemplate(key, custom), rules = rulesFor(o);
+  const vars = Object.assign(practiceVars(o), extra || {});
+  vars.name = String(o.clientName || '').trim() || 'there';
+  vars.orderLink = orderLinkFor(o);
+  vars.reviewLink = vars.orderLink + '&review=1';
+  const roll = rollCharge(o, rules);
+  vars.specialRoll = roll ? roll.toFixed(2) : '';
+  vars.extraCharges = extraCharges(o).map(c => `${c.label}: $${c.amount.toFixed(2)}`).join('\n');
+  vars.designTermsNote = o.designTerms ? 'This order includes a custom design. When you approve your quote, you will be asked to read and agree to my custom design terms.' : '';
+  vars.photo = (Array.isArray(o.finishedPhotos) ? o.finishedPhotos : []).filter(u => /^https:\/\//.test(String(u)))[0] || '';
+  vars.delivery = ['', o.deliveryDate && `Ship date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking number: ${o.deliveryTracking}`, o.deliveryNotes && `Notes: ${o.deliveryNotes}`].filter(x => x !== '' && x).join('\n');
+  vars.queueNote = featureOn('queue') ? queueNoteText(o, queueFromOrders(state.batches.map(x => (x.id === o.id ? o : x))), rules) : '';
+  vars.detailsItems = [vars.itemsWithPrices, vars.specialRoll ? 'Special order roll: $' + vars.specialRoll : '', vars.extraCharges, vars.total ? 'Total: $' + vars.total : ''].filter(Boolean).join('\n\n');
+  vars.invoiceSummary = invoiceSummary(vars, o, o.items.every(itemPriced) ? orderSum(o) : 0, rules);
+  vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
   return { subject: renderEmailText(tpl.subject, vars).replace(/\s*\n\s*/g, ' '), body: renderEmailText(tpl.body, vars) };
+}
+// Before a step that emails the customer: the exact email in boxes the owner can change, then
+// "Send email and continue", "Don't send email, continue" or "Cancel, go back".
+// Resolves { choice: 'send' | 'skip' | 'cancel', edited: { subject, body } | null } (edited only when they changed it).
+function emailPopup(b, preview, ask) {
+  return new Promise(resolve => {
+    const opener = document.activeElement;
+    const wrap = document.createElement('div');
+    wrap.className = 'mail-modal-backdrop';
+    wrap.innerHTML = `<div class="mail-modal wide" role="dialog" aria-modal="true" aria-labelledby="mail-modal-title">
+      <h3 id="mail-modal-title">Send this email?</h3>
+      <p class="mail-ask"></p>
+      <p class="send-to"></p>
+      <div class="field"><label for="mp-subject">Subject</label><input type="text" id="mp-subject" class="mp-subject" maxlength="200" /></div>
+      <div class="field"><label for="mp-body">Email</label><textarea id="mp-body" class="mp-body" rows="12" maxlength="10000" spellcheck="true"></textarea></div>
+      <div class="field-help">Change anything you like: this email is sent exactly as shown. To change it for every order, edit it in Settings > Emails.</div>
+      <button type="button" class="btn-link" id="mp-reset">Undo my changes</button>
+      <div class="mail-modal-buttons">
+        <button type="button" class="btn-primary" data-send="1">Send email and continue</button>
+        <button type="button" class="btn-secondary" data-send="0">Don't send email, continue</button>
+        <button type="button" class="btn-link" data-send="x">Cancel, go back</button>
+      </div></div>`;
+    wrap.querySelector('.mail-ask').textContent = ask || 'Email the customer about this step?';
+    wrap.querySelector('.send-to').textContent = `To: ${b.clientName ? b.clientName + ' ' : ''}<${b.clientEmail}>`;
+    const subj = wrap.querySelector('#mp-subject'), body = wrap.querySelector('#mp-body');
+    subj.value = preview.subject;
+    body.value = preview.body;
+    wrap.querySelector('#mp-reset').addEventListener('click', () => { subj.value = preview.subject; body.value = preview.body; body.focus(); });
+    const done = choice => {
+      wrap.remove();
+      document.removeEventListener('keydown', onKey);
+      if (choice === 'cancel' && opener && opener.focus) opener.focus();
+      const changed = subj.value !== preview.subject || body.value !== preview.body;
+      resolve({ choice, edited: choice === 'send' && changed && body.value.trim() ? { subject: subj.value.replace(/\s+/g, ' ').trim().slice(0, 200), body: body.value.slice(0, 10000) } : null });
+    };
+    const onKey = e => { if (e.key === 'Escape') done('cancel'); };
+    wrap.addEventListener('click', e => {
+      const v = e.target.closest && e.target.closest('button[data-send]');
+      if (!v && e.target !== wrap) return;
+      done(!v ? 'cancel' : v.dataset.send === '1' ? 'send' : v.dataset.send === '0' ? 'skip' : 'cancel');
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(wrap);
+    wrap.querySelector('button[data-send="1"]').focus();
+  });
 }
 function askSendEmail(id, key) {
   const b = state.batches.find(x => x.id === id), m = MANUAL_EMAILS.find(x => x.key === key);
