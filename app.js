@@ -5036,13 +5036,28 @@ function askMail(id, code, key) {
   const b = state.batches.find(x => x.id === id);
   const p = flag && b && key ? stepPreviewOrder(b, key) : null;
   state.stepEmailEdit = null;
-  if (!p) { run(); return; }   // nothing will be emailed (or the step itself will say what's missing)
+  if (!p) {   // nothing will be emailed: still check it wasn't a mis-tap (unless the step will show what's missing)
+    const ask = b ? stepConfirmText(b, key) : '';
+    if (ask && !confirm(ask)) return;
+    run(); return;
+  }
   emailPopup(b, stepEmailPreview(p.order, key, p.extra), flag.dataset.ask).then(ans => {
     if (ans.choice === 'cancel') return;
     flag.checked = ans.choice === 'send';
     state.stepEmailEdit = ans.edited ? { id, key, ...ans.edited } : null;
     run();
   });
+}
+// "Are you sure?" for a step that sends no email (no address, paid in full, ...). '' = the step will show an error instead.
+function stepConfirmText(b, key) {
+  const who = b.clientName || 'this customer', note = ' Nothing is emailed.';
+  const typed = Math.round(parseFloat(String((document.getElementById(`step-amount-${b.id}`) || {}).value || '').replace(/[$,\s]/g, '')) * 100) / 100;
+  if (key === 'confirmed') return `Confirm ${who}'s order?` + note;
+  if (key === 'deposit' || key === 'payment') return typed > 0 ? `Mark $${typed.toFixed(2)} received from ${who}?` + note : '';
+  if (key === 'final_payment_needed') return `Mark printing as done for ${who}'s order?` + note;
+  if (key === 'delivered') return String((document.getElementById(`dtrack-${b.id}`) || {}).value || '').trim() ? `Mark ${who}'s order as Shipped?` + note : '';
+  if (key === 'delivery_update') return 'Save these shipping details?' + note;
+  return 'Are you sure?';
 }
 // The order as a step would save it, to show its email before anything changes. null = this step sends no email now.
 function stepPreviewOrder(b, key) {
@@ -5130,6 +5145,7 @@ async function deskPrinted(id) {
 async function deskHandOver(id) {
   const b = state.batches.find(x => x.id === id);
   if (!b) return;
+  if (!confirm(`Mark ${b.clientName ? b.clientName + "'s" : 'this'} order as handed over in person? It moves to Done. Nothing is emailed.`)) return;
   b.deliveryTracking = (document.getElementById(`dtrack-${id}`) || { value: '' }).value.trim() || 'Handed over in person';
   b.deliveryDate = (document.getElementById(`ddate-${id}`) || { value: '' }).value.trim() || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   b.deliveryNotes = (document.getElementById(`dnotes-${id}`) || { value: '' }).value.trim();
@@ -5168,6 +5184,7 @@ async function deskBack(id) {
 }
 // Stops orders confirming themselves when the customer approves (Settings > Show or hide has the same switch).
 async function deskManualConfirm() {
+  if (!confirm('Stop orders confirming themselves? From now on you confirm each order after the customer approves the quote. You can switch this back in Settings > Show or hide.')) return;
   try {
     await saveSettings({ ...state.settings, features: { ...(state.settings.features || {}), autoDeposit: false } });
   } catch (e) { alert("Couldn't save. If you were logged out, log in again and retry."); }
