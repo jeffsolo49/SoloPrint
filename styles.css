@@ -1313,3 +1313,12 @@ html.owner-mode, :root {
 .todo-from { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 10px 0; }
 .todo-from legend { font-weight: 700; padding: 0 6px; }
 .todo-done > summary { cursor: pointer; min-height: 24px; }
+
+/* Amazon invoice reader (Money > Expenses, Settings > Colors > Stock) */
+.invoice-reader { margin: 8px 0 14px; max-width: 100%; }
+.invoice-reader > .btn-sm { white-space: normal; text-align: left; max-width: 100%; }
+.invoice-review { margin-top: 12px; padding: 12px 14px; border: 2px solid var(--accent); border-radius: 12px; background: var(--surface2); }
+.invoice-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.invoice-line .field { flex: 1; min-width: 110px; margin-bottom: 0; }
+.invoice-line .btn-sm { min-height: 44px; }
+.invoice-line.not-added input[type=text], .invoice-line.not-added input[type=number] { text-decoration: line-through; }

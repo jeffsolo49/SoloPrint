@@ -100,6 +100,14 @@ unprinted part by color ("Printed 1", `todoPrinted`); each waiting order folds o
 Add by hand (`state.todoDraft`), from a design's parts with a color idea (`todoAddDesign`, `colorMap.combos`), or unshipped rows of Etsy's Order Items
 file (`todoImport`: no Date Shipped, skips order numbers already listed; Variations become the color text). Never touches the Etsy sales numbers.
 
+## Amazon invoices
+
+"Read an Amazon invoice" (`renderInvoiceReader('money' | 'stock')`, Money > Expenses and Settings > Colors > Stock on hand; features.js): photos/screenshots via Tesseract OCR, PDFs via pdf.js (both loaded on first use from jsdelivr/cdnjs, `INVOICE_LIBS`).
+`parseInvoiceText` reads the invoice ("1 of:" rows, price = one item x qty), the saved "Order Details" page (name above "Sold by", price after; stops at "Pick up where you left off" so ads are ignored), or any priced lines;
+`invoiceLines` makes one line per color (packs split evenly; grams from kg/g, packs, qty). Only filament is added (`invoiceIsFilament`: PLA/PETG/TPU/ABS/ASA..., not nozzles, glue, dryers...), plus the filament's share of tax, shipping and discounts.
+Nothing saves until the owner checks the review (`renderInvoiceReview`) and taps Add (`applyInvoice`): new colors into Settings colors, grams onto `inventory`, one expense per line (`invoice` = Amazon order number, `money.invoices` warns on repeats), optional cost per kg.
+Tests: `tests/fixtures/amazon-invoice.pdf` and `amazon-order-details.pdf` (made-up data), read with `pdfjs-dist` from tests/node_modules (the cdnjs URL is routed to it).
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves

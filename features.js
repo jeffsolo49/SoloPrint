@@ -949,7 +949,8 @@ function renderStockCard() {
   const colors = state.settings.colors;
   return `
     <h3 class="card-title" style="margin-top:1.5rem;">Stock on hand</h3>
-    <div class="field-help" style="margin-bottom:8px;">Saved as soon as you change it. Grams come off when an order moves to Printing.</div>
+    <div class="field-help" style="margin-bottom:8px;">Saved as soon as you change it. Grams come off when an order moves to Printing. Bought rolls on Amazon? Read the invoice: it adds the grams here, the cost to your expenses, and any new colors.</div>
+    ${renderInvoiceReader('stock')}
     ${state.ownerPrivateError ? `<div class="alert error" style="display:block;">Filament stock needs a one-time setup: run supabase/owner-tools.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       ${colors.length ? `<div class="stock-table">
@@ -1120,7 +1121,8 @@ function renderOwnerMoneyPage() {
     </div>
     <div class="card">
       <h3 class="card-title">Expenses in ${year}</h3>
-      <p class="field-help" style="margin-top:0;">Filament, parts, tools, shipping supplies: anything you bought for the shop.</p>
+      <p class="field-help" style="margin-top:0;">Filament, parts, tools, shipping supplies: anything you bought for the shop. Bought on Amazon? Read the invoice instead of typing it: filament rolls also go into your stock, and new colors into your colors.</p>
+      ${renderInvoiceReader('money')}
       <div class="expense-form">
         <div class="field"><label for="exp-date">Date</label><input type="date" id="exp-date" value="${today}" /></div>
         <div class="field" style="flex:2;"><label for="exp-what">What</label><input type="text" id="exp-what" maxlength="120" placeholder="e.g. 3 rolls of Black PLA" /></div>
@@ -1852,6 +1854,318 @@ function renderEtsyCard(year, site) {
         <div class="field-help">Anything you upload for those months is saved and shown, marked "not counted yet", so nothing counts twice.</div></div>`; }).join('')}
     ${renderEtsyTabs(scope, orders, costs)}
   </div>`;
+}
+
+// ── AMAZON INVOICES: read a photo, screenshot or PDF, then add purchases, roll grams and new colors ──
+// Read in the browser (photos with Tesseract OCR, PDFs with pdf.js, both loaded on first use); nothing is saved
+// until the owner checks the filled-in lines (`renderInvoiceReview`) and taps "Add". Saves: an expense per line
+// (money.expenses, with `invoice` = the Amazon order number; money.invoices remembers read orders), grams added to
+// owner_private inventory per color, and any new colors to Settings > Colors.
+const INVOICE_LIBS = {
+  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+  pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+};
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('load'));
+    document.head.appendChild(s);
+  });
+}
+async function invoiceTextFromFile(file, progress) {
+  if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) {
+    if (!window.pdfjsLib) await loadScriptOnce(INVOICE_LIBS.pdf);
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = INVOICE_LIBS.pdfWorker;
+    const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const out = [];
+    for (let n = 1; n <= Math.min(pdf.numPages, 10); n++) {
+      const content = await (await pdf.getPage(n)).getTextContent();
+      // Put the pieces back into lines by their height on the page.
+      const rows = new Map();
+      content.items.forEach(it => { const y = Math.round(it.transform[5]); rows.set(y, (rows.get(y) || []).concat({ x: it.transform[4], s: it.str })); });
+      [...rows.entries()].sort((a, b) => b[0] - a[0]).forEach(([, parts]) => out.push(parts.sort((a, b) => a.x - b.x).map(p => p.s).join(' ')));
+    }
+    return out.join('\n');
+  }
+  if (!window.Tesseract) await loadScriptOnce(INVOICE_LIBS.tesseract);
+  const res = await window.Tesseract.recognize(file, 'eng', { logger: m => { if (m && m.status === 'recognizing text' && progress) progress(m.progress); } });
+  return (res && res.data && res.data.text) || '';
+}
+
+// Words that name a filament color, for colors the shop doesn't have yet (longest first so "light blue" beats "blue").
+const INVOICE_COLOR_WORDS = ['light blue', 'dark blue', 'navy blue', 'sky blue', 'light green', 'dark green', 'olive green', 'forest green', 'light gray', 'dark gray', 'light grey', 'dark grey',
+  'rose gold', 'black', 'white', 'gray', 'grey', 'silver', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'violet', 'pink', 'magenta', 'brown', 'beige', 'tan', 'gold', 'bronze', 'copper',
+  'transparent', 'clear', 'navy', 'teal', 'turquoise', 'cyan', 'lime', 'mint', 'ivory', 'cream', 'khaki', 'burgundy', 'maroon', 'peach', 'coral', 'lavender', 'wood', 'marble', 'rainbow']
+  .sort((a, b) => b.length - a.length);
+const INVOICE_STYLE_WORDS = ['silk', 'matte', 'glow in the dark', 'glow', 'galaxy', 'metallic', 'sparkle', 'glitter', 'translucent', 'dual color', 'tri color'];
+const INVOICE_TOTAL_WORDS = /sub\s*-?total|grand total|total before|order total|^total|estimated tax|sales tax|\btax\b|shipping|handling|promotion|discount|coupon|gift card|refund|payment|visa|mastercard|amex|discover|item\(s\)/i;
+function invoiceMoney(s) { const m = String(s).match(/\$\s?(\d{1,5}(?:,\d{3})*(?:\.\d{2}))/); return m ? Number(m[1].replace(/,/g, '')) : null; }
+function titleCase(s) { return String(s).replace(/\b\w/g, c => c.toUpperCase()); }
+
+// Colors named in an item's description: the shop's own colors first (by name), then common color words (new colors).
+function invoiceColors(text) {
+  const low = ' ' + String(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' ';
+  const found = [];
+  const taken = [];
+  const hit = (word) => { const i = low.indexOf(' ' + word + ' '); return i >= 0 && !taken.some(([a, b]) => i < b && i + word.length + 2 > a) ? i : -1; };
+  state.settings.colors.slice().sort((a, b) => b.name.length - a.name.length).forEach(c => {
+    const w = c.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const i = w ? hit(w) : -1;
+    if (i >= 0) { taken.push([i, i + w.length + 2]); found.push({ at: i, colorId: c.id, name: c.name }); }
+  });
+  INVOICE_COLOR_WORDS.forEach(w => {
+    const i = hit(w);
+    if (i < 0) return;
+    taken.push([i, i + w.length + 2]);
+    const before = INVOICE_STYLE_WORDS.find(s => low.slice(Math.max(0, i - s.length - 1), i + 1) === ' ' + s + ' ');
+    const name = titleCase((before ? before + ' ' : '') + (w === 'grey' ? 'gray' : w === 'clear' ? 'transparent' : w));
+    const same = state.settings.colors.find(c => c.name.toLowerCase() === name.toLowerCase());
+    found.push(same ? { at: i, colorId: same.id, name: same.name } : { at: i, colorId: '', name });
+  });
+  const seen = new Set();
+  return found.sort((a, b) => a.at - b.at).filter(f => { const k = (f.colorId || f.name).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// The invoice's text -> { date, orderNo, items: [{ text, qty, amount }], total, extra } (extra = tax + shipping).
+function parseInvoiceText(text) {
+  let lines = String(text || '').split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  // A saved "Order Details" page goes on with suggestions and ads: stop reading there.
+  const stop = lines.findIndex(l => /^(pick up where you left off|customers who (bought|viewed)|recommended for you|inspired by your|related to items you|back to top|sponsored products)/i.test(l));
+  if (stop > 0) lines = lines.slice(0, stop);
+  const all = lines.join('\n');
+  const orderNo = (all.match(/\b(\d{3}-\d{7}-\d{7})\b/) || [])[1] || '';
+  const dm = all.match(/(?:order placed|ordered on|order date|date)[:\s]*([A-Z][a-z]+\.? \d{1,2},? \d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i) || all.match(/\b([A-Z][a-z]+ \d{1,2}, \d{4})\b/);
+  const date = dm ? etsyDate(dm[1].replace('.', '')) : '';
+  const find = re => { const l = lines.find(x => re.test(x)); return l ? invoiceMoney(l.slice(l.search(re))) : null; };
+  const total = [/grand total/i, /order total/i, /^total(?! before)[:\s]/i].reduce((v, re) => (v !== null ? v : find(re)), null);
+  const subtotal = [/item\(s\) subtotal/i, /items? subtotal/i, /subtotal[:\s]*\$/i].reduce((v, re) => (v !== null ? v : find(re)), null);
+  const items = [];
+  let cur = null;
+  // Amazon lists the price of one; "2 of:" means twice that.
+  const close = () => { if (cur) { const each = invoiceMoney(cur.text); cur.amount = each === null ? null : Math.round(each * cur.qty * 100) / 100; items.push(cur); cur = null; } };
+  lines.forEach(l => {
+    const start = l.match(/^(\d{1,3})\s*of\s*:?\s*(.*)$/i);
+    if (start) { close(); cur = { qty: Number(start[1]) || 1, text: start[2] }; if (invoiceMoney(l) !== null) close(); return; }
+    if (!cur) return;
+    if (/^(sold by|supplied by|condition|return|shipping address|shipping speed|payment|item\(s\) subtotal)/i.test(l) || INVOICE_TOTAL_WORDS.test(l)) { close(); return; }
+    cur.text += ' ' + l;
+    if (invoiceMoney(l) !== null) close();
+  });
+  close();
+  // The "Order Details" page (or its screenshot): each item's name is the line above "Sold by", its price just after.
+  if (!items.length) {
+    lines.forEach((l, n) => {
+      if (!/^sold by\b/i.test(l) || n === 0) return;
+      const desc = lines[n - 1];
+      if (invoiceMoney(desc) !== null || desc.replace(/[^a-z]/gi, '').length < 6) return;
+      const after = lines.slice(n + 1, n + 6);
+      const priceLine = after.find(x => invoiceMoney(x) !== null && !INVOICE_TOTAL_WORDS.test(x) && !/list price|was:/i.test(x));
+      if (!priceLine) return;
+      const q = (lines.slice(Math.max(0, n - 3), n + 6).join(' ').match(/(?:qty|quantity)[:\s]*(\d{1,3})/i) || [])[1];
+      const qty = Number(q) || 1;
+      items.push({ text: desc, qty, amount: Math.round(invoiceMoney(priceLine) * qty * 100) / 100 });
+    });
+  }
+  // Anything else: any line with a price that isn't a total is an item.
+  if (!items.length) {
+    lines.forEach((l, n) => {
+      const amount = invoiceMoney(l);
+      if (amount === null || INVOICE_TOTAL_WORDS.test(l)) return;
+      let desc = l.replace(/\$\s?[\d,]+\.\d{2}/g, '').trim();
+      if (desc.replace(/[^a-z]/gi, '').length < 6 && n > 0) desc = (lines[n - 1] + ' ' + desc).trim();
+      if (desc.replace(/[^a-z]/gi, '').length < 6 || INVOICE_TOTAL_WORDS.test(desc)) return;
+      const q = (lines.slice(n, n + 3).join(' ').match(/qty[:\s]*(\d{1,3})/i) || [])[1];
+      items.push({ text: desc, qty: Number(q) || 1, amount: Math.round(amount * (Number(q) || 1) * 100) / 100 });
+    });
+  }
+  items.forEach(it => { it.text = it.text.replace(/\$\s?[\d,]+\.\d{2}/g, '').replace(/\s+/g, ' ').trim(); });
+  const sum = items.reduce((s, it) => s + (it.amount || 0), 0);
+  const base = subtotal !== null ? subtotal : sum;
+  const extra = total !== null && Math.abs(total - base) >= 0.01 ? Math.round((total - base) * 100) / 100 : 0;
+  return { date, orderNo, items, total, extra };
+}
+
+// Filament (PLA, PETG, TPU, ABS, ASA... rolls), not accessories that mention it.
+function invoiceIsFilament(t) {
+  return /filament|\bpla\+?\b|petg|\babs\b|\btpu\b|\basa\b|\bnylon\b|spool/i.test(t)
+    && !/nozzle|glue|dryer|dry box|storage|holder|rack|scraper|clean|hot ?end|extruder|ptfe|tube|build plate|bed|sheet|tape|spray|tool|kit|printer\b(?!.*filament)|resin|vacuum|bag|desiccant/i.test(t.replace(/3d printer filament/ig, 'filament'));
+}
+// One review line per color (a multi-color pack is split evenly), or one line for anything that isn't filament
+// (shown, but never added). Tax and shipping: only the filament's share of them is added.
+function invoiceLines(parsed) {
+  const out = [];
+  parsed.items.forEach(it => {
+    const t = it.text, amount = it.amount || 0;
+    const isFil = invoiceIsFilament(t);
+    if (!isFil) { out.push({ what: t.slice(0, 120), amount, filament: false, other: true, colorId: '', newColor: '', grams: 0 }); return; }
+    const kg = t.match(/(\d+(?:\.\d+)?)\s*kg/i), g = t.match(/(\d{3,4})\s*g\b/i);
+    const spool = kg ? Math.round(Number(kg[1]) * 1000) : g ? Number(g[1]) : 1000;
+    const packs = Number((t.match(/(\d{1,2})\s*(?:-|\s)?(?:pack|pcs|rolls|spools|colors)\b/i) || t.match(/\bx\s?(\d{1,2})\b/i) || [])[1]) || 1;
+    const colors = invoiceColors(t);
+    const total = spool * packs * (it.qty || 1);
+    const list = colors.length ? colors : [{ colorId: '', name: '' }];
+    const each = Math.round(amount / list.length * 100) / 100;
+    list.forEach((c, n) => out.push({
+      what: `${t.slice(0, 90)}${list.length > 1 ? ` (${c.name})` : ''}`, filament: true,
+      amount: n === list.length - 1 ? Math.round((amount - each * (list.length - 1)) * 100) / 100 : each,
+      colorId: c.colorId || '', newColor: c.colorId ? '' : c.name, grams: Math.round(total / list.length)
+    }));
+  });
+  const all = parsed.items.reduce((s, it) => s + (it.amount || 0), 0), fil = out.filter(l => l.filament).reduce((s, l) => s + l.amount, 0);
+  const share = parsed.extra && all > 0 && fil > 0 ? Math.round(parsed.extra * fil / all * 100) / 100 : 0;
+  if (share) out.push({ what: 'Tax, shipping and discounts on the filament', amount: share, filament: false, tax: true, colorId: '', newColor: '', grams: 0 });
+  return out;
+}
+
+function renderInvoiceReader(where) {
+  const inv = state.invoice && state.invoice.where === where ? state.invoice : null;
+  return `<div class="invoice-reader" id="invoice-${where}">
+    <button type="button" class="btn-sm" id="invoice-read-${where}" onclick="document.getElementById('invoice-file-${where}').click()">Read an Amazon invoice (photo, screenshot or PDF)</button>
+    <input type="file" id="invoice-file-${where}" accept="image/*,application/pdf,.pdf" multiple hidden onchange="readInvoiceFiles(this, '${where}')" />
+    <span class="field-help" id="invoice-status-${where}" role="status">${inv && inv.busy ? esc(inv.busy) : state.invoiceMsg && state.invoiceMsg.where === where ? esc(state.invoiceMsg.text) : ''}</span>
+    <div class="alert error" id="invoice-err-${where}"></div>
+    ${inv && inv.lines ? renderInvoiceReview(inv) : ''}
+  </div>`;
+}
+async function readInvoiceFiles(input, where) {
+  const files = [...(input.files || [])].slice(0, 6);
+  input.value = '';
+  if (!files.length) return;
+  state.invoiceMsg = null;
+  state.invoice = { where, busy: 'Reading the invoice... (a photo can take up to a minute)' };
+  render();
+  const status = () => document.getElementById(`invoice-status-${where}`);
+  try {
+    let text = '';
+    for (let n = 0; n < files.length; n++) {
+      text += '\n' + await invoiceTextFromFile(files[n], p => { const s = status(); if (s) s.textContent = `Reading ${files.length > 1 ? `picture ${n + 1} of ${files.length}` : 'the invoice'}... ${Math.round(p * 100)}%`; });
+    }
+    const parsed = parseInvoiceText(text);
+    const lines = invoiceLines(parsed);
+    if (!lines.length) throw new Error('none');
+    const already = parsed.orderNo && (moneyData().invoices || []).includes(parsed.orderNo);
+    state.invoice = { where, lines, date: parsed.date || new Date().toISOString().slice(0, 10), orderNo: parsed.orderNo, total: parsed.total, already, text };
+    render();
+    document.getElementById(`invoice-review-${where}`)?.focus();
+  } catch (e) {
+    state.invoice = null;
+    render();
+    showAlert(`invoice-err-${where}`, e && e.message === 'none'
+      ? "I couldn't find any items on that invoice. Try a clearer photo (flat, in good light, the whole page), a screenshot, or the PDF from Amazon's \"View invoice\"."
+      : "Couldn't read that file. Check your connection and try again, or try a screenshot or the PDF.", 'error');
+  }
+}
+function renderInvoiceReview(inv) {
+  const colors = state.settings.colors.slice().sort(byName);
+  const sum = inv.lines.filter(invoiceAdds).reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const fil = inv.lines.filter(l => l.filament && (l.colorId || l.newColor) && Number(l.grams) > 0);
+  const kg = fil.reduce((s, l) => s + Number(l.grams), 0) / 1000;
+  const perKg = kg ? fil.reduce((s, l) => s + (Number(l.amount) || 0), 0) / kg : 0;
+  const w = inv.where;
+  return `<div class="invoice-review" id="invoice-review-${w}" tabindex="-1">
+    <strong>Check what I read${inv.orderNo ? ` (Amazon order ${esc(inv.orderNo)})` : ''}</strong>
+    ${inv.already ? `<div class="alert error" style="display:block;">You already added this Amazon order. Adding it again would count it twice.</div>` : ''}
+    <div class="field-help">Fix anything I misread. Only filament is added: each roll's cost goes into your purchases and its grams onto that color's stock, plus the filament's share of the tax and shipping. Anything else on the invoice is shown but not added.</div>
+    <div class="field" style="max-width:200px;"><label for="inv-date-${w}">Date</label><input type="date" id="inv-date-${w}" value="${esc(inv.date)}" onchange="state.invoice.date = this.value" /></div>
+    ${inv.lines.map((l, n) => `<div class="invoice-line${invoiceAdds(l) ? '' : ' not-added'}">
+      <div class="field" style="flex:3;"><label for="inv-what-${w}-${n}">Item ${n + 1}</label><input type="text" id="inv-what-${w}-${n}" maxlength="120" value="${esc(l.what)}" oninput="state.invoice.lines[${n}].what = this.value" /></div>
+      <div class="field"><label for="inv-amt-${w}-${n}">Cost ($)</label><input type="number" id="inv-amt-${w}-${n}" ${l.tax ? '' : 'min="0"'} step="0.01" value="${esc(String(l.amount))}" oninput="state.invoice.lines[${n}].amount = parseFloat(this.value) || 0; updateInvoiceTotal()" /></div>
+      <div class="field"><label for="inv-color-${w}-${n}">Filament color</label>
+        <select id="inv-color-${w}-${n}" onchange="setInvoiceColor(${n}, this.value)">
+          <option value="" ${!l.filament ? 'selected' : ''}>${l.tax ? 'Tax and shipping (added)' : 'Not filament (not added)'}</option>
+          ${colors.map(c => `<option value="${esc(c.id)}" ${l.filament && l.colorId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          <option value="new" ${l.filament && !l.colorId ? 'selected' : ''}>New color…</option>
+        </select></div>
+      ${l.filament && !l.colorId ? `<div class="field"><label for="inv-new-${w}-${n}">New color name</label><input type="text" id="inv-new-${w}-${n}" maxlength="40" value="${esc(l.newColor)}" placeholder="e.g. Silk Gold" oninput="state.invoice.lines[${n}].newColor = this.value" /></div>` : ''}
+      ${l.filament ? `<div class="field"><label for="inv-grams-${w}-${n}">Grams</label><input type="number" id="inv-grams-${w}-${n}" min="0" step="50" value="${esc(String(l.grams))}" oninput="state.invoice.lines[${n}].grams = parseFloat(this.value) || 0" /></div>` : ''}
+      <button type="button" class="btn-sm danger" onclick="state.invoice.lines.splice(${n}, 1); render();" aria-label="Leave out item ${n + 1}">✕</button>
+    </div>`).join('')}
+    <button type="button" class="btn-sm" onclick="state.invoice.lines.push({ what: '', amount: 0, filament: false, colorId: '', newColor: '', grams: 0 }); render();">+ Add a line</button>
+    <p class="field-help" id="invoice-total-${w}">${invoiceTotalText(inv, sum)}</p>
+    ${perKg ? `<label class="special-order-check"><input type="checkbox" id="inv-cost-${w}" /> Also set my filament cost per kg to ${money2(perKg)} (this invoice's average; used for material estimates)</label>` : ''}
+    <div class="money-controls"><button type="button" class="btn-primary" id="invoice-add-${w}" onclick="applyInvoice()">Add to purchases and stock</button>
+      <button type="button" class="btn-sm" onclick="state.invoice = null; render();">Cancel</button></div>
+  </div>`;
+}
+function invoiceAdds(l) { return !!(l.filament || l.tax); }
+function invoiceTotalText(inv, sum) {
+  const left = inv.lines.filter(l => !invoiceAdds(l)).length;
+  return `Adding ${money2(sum)} of filament${inv.total !== null && inv.total !== undefined ? ` (the whole invoice was ${money2(inv.total)})` : ''}.${left ? ` ${left} other item${left === 1 ? '' : 's'} not added.` : ''}`;
+}
+function updateInvoiceTotal() {
+  const inv = state.invoice, el = inv && document.getElementById(`invoice-total-${inv.where}`);
+  if (el) el.textContent = invoiceTotalText(inv, inv.lines.filter(invoiceAdds).reduce((s, l) => s + (Number(l.amount) || 0), 0));
+}
+function setInvoiceColor(n, value) {
+  const l = state.invoice && state.invoice.lines[n];
+  if (!l) return;
+  l.filament = value !== '';
+  l.colorId = value === 'new' || value === '' ? '' : value;
+  if (value !== '') l.tax = false;
+  if (l.filament && !l.grams) l.grams = 1000;
+  render();
+  document.getElementById(`inv-color-${state.invoice.where}-${n}`)?.focus();
+}
+async function applyInvoice() {
+  const inv = state.invoice;
+  if (!inv) return;
+  const w = inv.where, date = inv.date;
+  const err = msg => showAlert(`invoice-err-${w}`, msg, 'error');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { err('Pick the date of the order.'); return; }
+  const lines = inv.lines.filter(l => invoiceAdds(l) && (String(l.what).trim() || Number(l.amount) > 0));
+  if (!lines.some(l => l.filament)) { err("There's no filament on this invoice to add. Pick a color on a line if I missed one."); return; }
+  const unnamed = lines.find(l => l.filament && !l.colorId && !String(l.newColor).trim());
+  if (unnamed) { err('Give each new color a name, or pick one of your colors.'); return; }
+  const setCost = document.getElementById(`inv-cost-${w}`)?.checked;
+  const btn = document.getElementById(`invoice-add-${w}`);
+  if (btn) btn.disabled = true;
+  try {
+    // 1. New colors (one per name), added to Settings > Colors.
+    const newNames = [...new Map(lines.filter(l => l.filament && !l.colorId).map(l => [String(l.newColor).trim().toLowerCase(), String(l.newColor).trim()])).values()];
+    const added = [];
+    if (newNames.length) {
+      const colors = state.settings.colors.slice();
+      newNames.forEach(name => {
+        const same = colors.find(c => c.name.toLowerCase() === name.toLowerCase());
+        if (same) { added.push(same); return; }
+        const c = { id: settingsId(), name: titleCase(name).slice(0, 40), hex: guessColorHex(name) || '#888888', special: false };
+        colors.push(c); added.push(c);
+      });
+      await saveSettings({ ...state.settings, colors });
+      state.settingsDraft = null;
+    }
+    const colorOf = l => l.colorId || (added.find(c => c.name.toLowerCase() === String(l.newColor).trim().toLowerCase()) || {}).id;
+    // 2. Grams onto each color's stock.
+    const inventoryNow = { ...inventory() };
+    const stockNotes = [];
+    lines.filter(l => l.filament && Number(l.grams) > 0).forEach(l => {
+      const id = colorOf(l);
+      if (!id) return;
+      const s = inventoryNow[id];
+      inventoryNow[id] = { ...(s || {}), grams: Math.round(((s && Number.isFinite(s.grams) ? Math.max(0, s.grams) : 0) + Number(l.grams)) * 10) / 10 };
+      if (!s) stockNotes.push((state.settings.colors.find(c => c.id === id) || {}).name || 'a color');
+    });
+    state.ownerPrivate = { ...(state.ownerPrivate || {}), inventory: inventoryNow };
+    await saveOwnerPrivate('inventory');
+    await syncOutOfStock();
+    // 3. The purchases (one expense per line), and the order number so it isn't added twice.
+    const exp = lines.map(l => ({ id: settingsId(), date, what: `Amazon: ${String(l.what).trim() || 'purchase'}`.slice(0, 120), amount: Math.round((Number(l.amount) || 0) * 100) / 100, ...(inv.orderNo ? { invoice: inv.orderNo } : {}) }));
+    const patch = { expenses: expenses().concat(exp), invoices: (moneyData().invoices || []).concat(inv.orderNo ? [inv.orderNo] : []).slice(-500) };
+    if (setCost) {
+      const fil = lines.filter(l => l.filament && Number(l.grams) > 0), kg = fil.reduce((s, l) => s + Number(l.grams), 0) / 1000;
+      if (kg) patch.costPerKg = Math.round(fil.reduce((s, l) => s + (Number(l.amount) || 0), 0) / kg * 100) / 100;
+    }
+    state.moneyYear = Number(date.slice(0, 4));
+    const msg = `Added ${exp.length} purchase${exp.length === 1 ? '' : 's'} (${money2(exp.reduce((s, e) => s + e.amount, 0))})${added.length ? `, new color${added.length === 1 ? '' : 's'}: ${added.map(c => c.name).join(', ')}` : ''}.${stockNotes.length ? ` Started tracking stock for ${stockNotes.join(', ')} at what you just bought; change it in Settings > Colors if you had some already.` : ''}`;
+    state.invoice = null;
+    state.invoiceMsg = { where: w, text: msg };
+    await writeMoney(patch);
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    err("Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.");
+  }
 }
 
 // ── INSTALL AS AN APP ─────────────────────────────────────────────────────
