@@ -1357,3 +1357,11 @@ html.owner-mode, :root {
 .todo-piece { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 10px; border: 2px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 700; }
 .todo-piece input { width: 22px; height: 22px; margin: 0; }
 .todo-piece.on { border-color: var(--green); }
+
+/* Etsy to make: color buttons over the one list, fixing a part in place */
+.todo-colorbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.todo-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 12px; border: 2px solid var(--border); border-radius: 999px; background: var(--surface2); color: var(--text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.todo-chip.on { border-color: var(--sec-orders); background: rgba(var(--sec-orders-rgb), 0.14); }
+.todo-chip .swatch { border: 1px solid var(--border); }
+.todo-fix { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.todo-line-edit { display: block; background: rgba(var(--sec-orders-rgb), 0.06); border-radius: 10px; padding: 8px; }
