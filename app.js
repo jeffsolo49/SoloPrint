@@ -1516,9 +1516,10 @@ function renderReviews(reviews, title = t('reviewsTitle')) {
       <div class="reviews" style="--per:${Math.min(list.length, 4)}"${list.length > 1 ? ' tabindex="0" role="region" aria-label="Reviews. Drag or scroll sideways to see more."' : ''}>${list.map(r => {
       const design = r.designId && state.gallery.find(g => g.id === r.designId && g.published);
       return `<figure class="review">
+        ${r.rating ? `<div class="review-stars-show" role="img" aria-label="${r.rating} out of 5 stars">${'★'.repeat(Math.floor(r.rating))}${r.rating % 1 ? '½' : ''}</div>` : ''}
         <blockquote>“${esc(r.text)}”</blockquote>
         ${(r.photos || []).length ? `<div class="review-photos">${r.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><img src="${esc(u)}" alt="Photo of the print from this review" loading="lazy" /></a>`).join('')}</div>` : ''}
-        <figcaption>${esc(r.name || 'A customer')}${design ? ` · <button class="btn-link" type="button" onclick="openWork('${esc(design.id)}')">${esc(design.title)}</button>` : ''}</figcaption>
+        <figcaption>${esc(r.name || 'A customer')}${r.source === 'etsy' ? ' · on Etsy' : ''}${design ? ` · <button class="btn-link" type="button" onclick="openWork('${esc(design.id)}')">${esc(design.title)}</button>` : ''}</figcaption>
       </figure>`;
     }).join('')}</div>
       ${many ? '<button class="btn-sm review-nav" type="button" aria-label="More reviews" onclick="scrollReviews(this, 1)">›</button>' : ''}
@@ -3063,7 +3064,10 @@ function cleanSettings(raw) {
       name: cleanText(r && r.name, 60).trim(),
       text: cleanText(r && r.text, 600).trim(),
       designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : '',
-      photos: (Array.isArray(r && r.photos) ? r.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 2)
+      photos: (Array.isArray(r && r.photos) ? r.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 2),
+      rating: Number(r && r.rating) >= 1 && Number(r.rating) <= 5 ? Math.round(Number(r.rating) * 2) / 2 : null,   // stars, in half steps
+      source: r && r.source === 'etsy' ? 'etsy' : '',   // imported from Etsy's reviews.json
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(r && r.date)) ? r.date : ''
     })).filter(r => r.id && r.text),
     emails: cleanEmails(d.emails),
     rules: cleanRules(d.rules),
@@ -3400,6 +3404,7 @@ function renderOwnerSettingsPage() {
       <h3 class="card-title">Customer reviews</h3>
       ${renderReviewApprovals()}
       <div class="field-help">Add real reviews customers have given you, with their permission. They show on the home page, and on a design's page if you link them to it.</div>
+      ${renderEtsyReviewImport(designs)}
       ${d.reviews.map((r, n) => `
         <div class="item-block" style="margin-bottom:10px;">
           <div class="row2">
@@ -3412,6 +3417,11 @@ function renderOwnerSettingsPage() {
             </div>
           </div>
           <div class="field"><label>Review</label><textarea placeholder="What they said" oninput="state.settingsDraft.reviews[${n}].text = this.value">${esc(r.text)}</textarea></div>
+          <div class="row2">
+            <div class="field"><label for="rv-stars-${n}">Stars</label><select id="rv-stars-${n}" onchange="state.settingsDraft.reviews[${n}].rating = this.value ? Number(this.value) : null">
+              <option value="">No stars shown</option>${[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1].map(v => `<option value="${v}" ${Number(r.rating) === v ? 'selected' : ''}>${v} star${v === 1 ? '' : 's'}</option>`).join('')}</select></div>
+            ${r.source === 'etsy' ? `<div class="field-help" style="align-self:end;">From Etsy${r.date ? `, ${esc(r.date)}` : ''}</div>` : ''}
+          </div>
           <button class="btn-sm danger" type="button" onclick="state.settingsDraft.reviews.splice(${n}, 1); render();">Remove review</button>
         </div>`).join('')}
       <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>

@@ -1343,6 +1343,16 @@ html.owner-mode, :root {
 .etsy-year > .etsy-group { margin: 8px 10px; }
 .etsy-year > .table-scroll { margin: 0 10px 10px; }
 
+/* Review stars on the site, and the Etsy reviews import list */
+.review-stars-show { color: var(--text); font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
+html.owner-mode .review-stars-show { color: var(--sec-fees); }
+.review-import-list { list-style: none; margin: 10px 0; padding: 0; }
+.review-import-list li { padding: 10px 0; border-top: 1px solid var(--border); }
+.review-import-list li:first-child { border-top: none; }
+.review-import-list .special-order-check { align-items: flex-start; }
+.etsy-sheet-month th, .etsy-sheet-month td { background: rgba(var(--sec-orders-rgb), 0.1); font-weight: 700; border-top: 2px solid var(--sec-orders); }
+.etsy-empty-month { margin: 8px 12px 12px; }
+
 /* Etsy to make: waiting orders laid out open, a picture per part, a tick box per piece */
 .todo-order { padding: 12px 14px; margin-bottom: 12px; }
 .todo-o-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-weight: 700; }
