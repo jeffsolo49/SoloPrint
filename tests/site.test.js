@@ -1803,6 +1803,12 @@ const STATES = {
     await page.check('#etsy-f-summary');
     await page.click('#etsy-save');
     await page.waitForFunction(() => !document.getElementById('etsy-form'));
+    // The shop's first statement (January): months before it don't need one.
+    const month = (m, name) => 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n' + `"${name} 5, ${y}",Fee,Listing fee,Listing #9${m},USD,--,-$0.20,-$0.20,--\n`;
+    await pick(`etsy_statement_${y}_1.csv`, month(1, 'January'));
+    await page.waitForSelector('#etsy-preview');
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
     await pick('EtsySoldOrders.csv', head + `03/10/${yy},3200000001,Ann,20,0,0,0,0,20,1,--,--\n04/02/${yy},3200000002,Bo,40,0,0,5,0,45,2,--,--\n`);
     await page.waitForSelector('#etsy-preview');
     assert(/2 new sales/.test(await page.textContent('#etsy-preview')) && /1 fall inside your yearly summary/.test(await page.textContent('#etsy-preview')), await page.textContent('#etsy-preview'));
@@ -1826,11 +1832,20 @@ const STATES = {
     await page.waitForFunction(() => !document.getElementById('etsy-preview'));
     let e = db.private.etsy;
     const bo = e.orders.find(o => o.etsyId === '3200000002');
-    assert(e.orders.length === 3 && bo.ads === 6 && bo.fees === 2 && e.costs.length === 2, JSON.stringify(e));
+    assert(e.orders.length === 3 && bo.ads === 6 && bo.fees === 2 && e.costs.length === 3, JSON.stringify(e));
     // Counted: the summary (100) and April: Bo 45 - 2 - 6, Etsy Ads 3. Ann (March) and March's ads wait inside the summary.
     let stats = await page.$$eval('.etsy-stats .stat-val', els => els.map(x => x.textContent));
     assert(stats[2] === '$9.00' && stats[5] === '$134.00', `stats ${stats}`);
-    assert(/Monthly statements still needed: Jan \d+, Feb \d+/.test(await page.textContent('.etsy-summary-note')), await page.textContent('.etsy-summary-note'));
+    // The summary's own ad total, typed as a charge on its date, counts with it.
+    await page.evaluate(() => setEtsyPref('etsyTab', 'ads'));
+    await page.click('.etsy-add-charge summary');
+    await page.fill('#etsy-c-date', `${y}-03-31`);
+    await page.fill('#etsy-c-what', 'Etsy Ads summary');
+    await page.fill('#etsy-c-amount', '4');
+    await page.click('.etsy-add-charge button');
+    await page.waitForFunction(() => /\$130\.00/.test(document.getElementById('etsy-profit').textContent));
+    await page.evaluate(() => setEtsyPref('etsyTab', 'orders'));
+    assert(/Monthly statements still needed: Feb \d+\./.test(await page.textContent('.etsy-summary-note')), await page.textContent('.etsy-summary-note'));
     // Marketing tab: every charge, with its order number where Etsy gives one.
     await page.click('#etsy-tab-ads');
     await page.waitForSelector('.etsy-cost-table');
@@ -1838,15 +1853,14 @@ const STATES = {
     assert(/#3200000002/.test(ads) && /Etsy Ads/.test(ads) && /Not counted yet/.test(ads), ads);
     await page.selectOption('#etsy-group', 'year');
     await page.waitForFunction(() => document.querySelectorAll('.etsy-group').length === 1);
-    // January and February statements complete the summary's months: it's replaced and everything counts.
-    const month = (m, name) => 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n' + `"${name} 5, ${y}",Fee,Listing fee,Listing #9${m},USD,--,-$0.20,-$0.20,--\n`;
-    await page.setInputFiles('#etsy-file', [{ name: `etsy_statement_${y}_1.csv`, mimeType: 'text/csv', buffer: Buffer.from(month(1, 'January')) }, { name: `etsy_statement_${y}_2.csv`, mimeType: 'text/csv', buffer: Buffer.from(month(2, 'February')) }]);
+    // February's statement completes the summary's months: it's replaced and everything counts.
+    await pick(`etsy_statement_${y}_2.csv`, month(2, 'February'));
     await page.waitForSelector('#etsy-preview');
     assert(/This completes/.test(await page.textContent('#etsy-preview')), await page.textContent('#etsy-preview'));
     await page.click('#etsy-apply');
     await page.waitForFunction(() => !document.getElementById('etsy-preview'));
     e = db.private.etsy;
-    assert(e.orders.length === 2 && !e.orders.some(o => o.summary), JSON.stringify(e.orders));
+    assert(e.orders.length === 2 && !e.orders.some(o => o.summary) && !e.costs.some(c => /summary/.test(c.what)), JSON.stringify(e));
     // 20 - 1 + 45 - 2 - 6 - 9 - 3 - 0.4 = 43.60
     stats = await page.$$eval('.etsy-stats .stat-val', els => els.map(x => x.textContent));
     assert(stats[5] === '$43.60' && /\$43\.60/.test(await page.textContent('#etsy-profit')), `stats ${stats}`);

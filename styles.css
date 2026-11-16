@@ -1244,3 +1244,47 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 .etsy-add-charge > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
 .etsy-all-years { margin: 0; }
 .etsy-orders { margin: 0; gap: 0; }
+
+/* Etsy card colors: each kind of money has its own highlight (text colors pass AA on the page background) */
+html.owner-mode, :root {
+  --sec-orders: #1d4ed8; --sec-orders-rgb: 29,78,216;
+  --sec-ads: #7e22ce; --sec-ads-rgb: 126,34,206;
+  --sec-fees: #b45309; --sec-fees-rgb: 180,83,9;
+  --sec-shipping: #0f766e; --sec-shipping-rgb: 15,118,110;
+  --sec-profit: #15803d; --sec-profit-rgb: 21,128,61;
+  --sec-material: #6b7280; --sec-material-rgb: 107,114,128;
+}
+@media (prefers-color-scheme: dark) {
+  html.owner-mode, :root {
+    --sec-orders: #93b4ff; --sec-orders-rgb: 147,180,255;
+    --sec-ads: #d8a6ff; --sec-ads-rgb: 216,166,255;
+    --sec-fees: #fbbf72; --sec-fees-rgb: 251,191,114;
+    --sec-shipping: #5eead4; --sec-shipping-rgb: 94,234,212;
+    --sec-profit: #6ee7a0; --sec-profit-rgb: 110,231,160;
+    --sec-material: #b8c0cc; --sec-material-rgb: 184,192,204;
+  }
+}
+.sec-orders { --sec: var(--sec-orders); --sec-rgb: var(--sec-orders-rgb); }
+.sec-ads { --sec: var(--sec-ads); --sec-rgb: var(--sec-ads-rgb); }
+.sec-fees { --sec: var(--sec-fees); --sec-rgb: var(--sec-fees-rgb); }
+.sec-shipping { --sec: var(--sec-shipping); --sec-rgb: var(--sec-shipping-rgb); }
+.sec-profit { --sec: var(--sec-profit); --sec-rgb: var(--sec-profit-rgb); }
+.sec-material { --sec: var(--sec-material); --sec-rgb: var(--sec-material-rgb); }
+.etsy-profit-box { border: 1px solid rgba(var(--sec-profit-rgb), 0.5); border-left: 6px solid var(--sec-profit); background: rgba(var(--sec-profit-rgb), 0.08); }
+.etsy-profit-head strong { color: var(--sec-profit); }
+.etsy-profit-head strong.neg { color: var(--red); }
+.etsy-how-total dt { border-left: 4px solid var(--sec); padding-left: 8px; }
+.etsy-how-total dt .btn-link { color: var(--sec); font-weight: 700; }
+.etsy-stats .stat-card { border-top: 4px solid var(--sec); background: rgba(var(--sec-rgb), 0.07); }
+.etsy-stats .stat-val { color: var(--sec); }
+.etsy-tab.on { color: var(--sec); border-bottom-color: var(--sec); background: rgba(var(--sec-rgb), 0.1); border-radius: 8px 8px 0 0; }
+.etsy-tab:not(.on):hover { color: var(--sec); }
+.etsy-panel { border-top: 3px solid var(--sec); padding-top: 10px; margin-top: -11px; }
+.etsy-panel .etsy-group { border-left: 5px solid var(--sec); }
+.etsy-panel .etsy-group > summary { background: rgba(var(--sec-rgb), 0.1); border-radius: 0 10px 10px 0; }
+.etsy-panel .etsy-group[open] > summary { border-radius: 0 10px 0 0; border-bottom: 1px solid rgba(var(--sec-rgb), 0.35); }
+.etsy-panel .etsy-group-sum { color: var(--sec); }
+.etsy-panel .etsy-o-profit { color: var(--sec-profit); }
+.etsy-panel .etsy-order[open] { background: rgba(var(--sec-rgb), 0.05); }
+.etsy-summary-note { border-color: var(--sec-fees); background: rgba(var(--sec-fees-rgb), 0.08); }
+#etsy-orphans { border-left: 5px solid var(--sec-fees); }
