@@ -1006,6 +1006,9 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 function moneyData() { return (state.ownerPrivate && state.ownerPrivate.money) || {}; }
 function costPerKg() { const c = Number(moneyData().costPerKg); return Number.isFinite(c) && c >= 0 ? c : DEFAULT_COST_PER_KG; }
 function expenses() { return Array.isArray(moneyData().expenses) ? moneyData().expenses : []; }
+// owner_private 'money'.ads: [{ id, date, where, amount }]: what SoloPrint spends on ads (Facebook, flyers...), kept apart from other expenses.
+function adCosts() { return Array.isArray(moneyData().ads) ? moneyData().ads : []; }
+const AD_PLACES = ['Facebook', 'Instagram', 'Google', 'TikTok', 'Nextdoor', 'Craigslist', 'Flyers', 'Craft fair', 'Business cards'];
 
 function paidDate(b) {
   return b.paidAt || (b.phaseHistory || {}).delivered || (b.phaseHistory || {}).order_received || b.createdAt;
@@ -1020,7 +1023,7 @@ function orderMaterialCost(b) {
 }
 
 function moneyReport(year) {
-  const months = MONTH_NAMES.map(name => ({ name, sales: 0, material: 0, expenses: 0, orders: 0 }));
+  const months = MONTH_NAMES.map(name => ({ name, sales: 0, material: 0, expenses: 0, ads: 0, orders: 0 }));
   const orders = [];
   state.batches.forEach(b => {
     if (b.paymentStatus !== 'payment_received') return;
@@ -1033,9 +1036,11 @@ function moneyReport(year) {
   });
   const exp = expenses().filter(e => String(e.date).startsWith(String(year)));
   exp.forEach(e => { const mm = Number(String(e.date).slice(5, 7)) - 1; if (months[mm]) months[mm].expenses += Number(e.amount) || 0; });
-  const total = months.reduce((t, m) => ({ sales: t.sales + m.sales, material: t.material + m.material, expenses: t.expenses + m.expenses, orders: t.orders + m.orders }), { sales: 0, material: 0, expenses: 0, orders: 0 });
+  const ads = adCosts().filter(e => String(e.date).startsWith(String(year)));
+  ads.forEach(e => { const mm = Number(String(e.date).slice(5, 7)) - 1; if (months[mm]) months[mm].ads += Number(e.amount) || 0; });
+  const total = months.reduce((t, m) => ({ sales: t.sales + m.sales, material: t.material + m.material, expenses: t.expenses + m.expenses, ads: t.ads + m.ads, orders: t.orders + m.orders }), { sales: 0, material: 0, expenses: 0, ads: 0, orders: 0 });
   const unpaid = state.batches.filter(b => ['order_received', 'production', 'delivered'].includes(b.phase) && b.paymentStatus !== 'payment_received');
-  return { months, orders: orders.sort((a, b) => a.date - b.date), expenses: exp, total, unpaid };
+  return { months, orders: orders.sort((a, b) => a.date - b.date), expenses: exp, ads, total, unpaid };
 }
 
 function money2(n) { const v = Number(n) || 0; return `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`; }
@@ -1064,7 +1069,7 @@ function renderOwnerOrdersList() {
   </div>`;
 }
 function renderOwnerMoneyPage() {
-  const years = [...new Set(state.batches.map(b => new Date(paidDate(b)).getFullYear()).concat(expenses().map(e => Number(String(e.date).slice(0, 4))), etsyOrders().concat(etsyCosts()).map(o => Number(String(o.date).slice(0, 4))), [new Date().getFullYear()]))]
+  const years = [...new Set(state.batches.map(b => new Date(paidDate(b)).getFullYear()).concat(expenses().concat(adCosts()).map(e => Number(String(e.date).slice(0, 4))), etsyOrders().concat(etsyCosts()).map(o => Number(String(o.date).slice(0, 4))), [new Date().getFullYear()]))]
     .filter(Number.isFinite).sort((a, b) => b - a);
   const year = state.moneyYear || new Date().getFullYear();
   const r = moneyReport(year);
@@ -1094,14 +1099,15 @@ function renderOwnerMoneyPage() {
         <div class="stat-card"><div class="stat-val">${money2(r.total.material)}</div><div class="stat-label">Material used (est.)</div></div>
         <div class="stat-card"><div class="stat-val">${money2(r.total.sales - r.total.material)}</div><div class="stat-label">Profit after material</div></div>
         <div class="stat-card"><div class="stat-val">${money2(r.total.expenses)}</div><div class="stat-label">Expenses</div></div>
-        <div class="stat-card"><div class="stat-val">${money2(r.total.sales - r.total.expenses)}</div><div class="stat-label">Sales minus expenses</div></div>
+        <div class="stat-card"><div class="stat-val">${money2(r.total.ads)}</div><div class="stat-label">Ad costs</div></div>
+        <div class="stat-card"><div class="stat-val">${money2(r.total.sales - r.total.expenses - r.total.ads)}</div><div class="stat-label">Sales minus expenses and ads</div></div>
       </div>
       ${r.unpaid.length ? `<p class="field-help">Not paid yet: ${r.unpaid.length} order${r.unpaid.length === 1 ? '' : 's'}, ${money2(r.unpaid.reduce((s, b) => s + orderSum(b), 0))}. These count once you mark them paid.</p>` : ''}
       <div class="table-scroll">
         <table class="money-table">
-          <thead><tr><th scope="col">Month</th><th scope="col">Orders</th><th scope="col">Sales</th><th scope="col">Material (est.)</th><th scope="col">Profit after material</th><th scope="col">Expenses</th></tr></thead>
-          <tbody>${r.months.map(m => `<tr><th scope="row">${m.name}</th><td>${m.orders || ''}</td><td>${m.sales ? money2(m.sales) : ''}</td><td>${m.material ? money2(m.material) : ''}</td><td>${m.sales ? money2(m.sales - m.material) : ''}</td><td>${m.expenses ? money2(m.expenses) : ''}</td></tr>`).join('')}</tbody>
-          <tfoot><tr><th scope="row">Total</th><td>${r.total.orders}</td><td>${money2(r.total.sales)}</td><td>${money2(r.total.material)}</td><td>${money2(r.total.sales - r.total.material)}</td><td>${money2(r.total.expenses)}</td></tr></tfoot>
+          <thead><tr><th scope="col">Month</th><th scope="col">Orders</th><th scope="col">Sales</th><th scope="col">Material (est.)</th><th scope="col">Profit after material</th><th scope="col">Expenses</th><th scope="col">Ads</th></tr></thead>
+          <tbody>${r.months.map(m => `<tr><th scope="row">${m.name}</th><td>${m.orders || ''}</td><td>${m.sales ? money2(m.sales) : ''}</td><td>${m.material ? money2(m.material) : ''}</td><td>${m.sales ? money2(m.sales - m.material) : ''}</td><td>${m.expenses ? money2(m.expenses) : ''}</td><td>${m.ads ? money2(m.ads) : ''}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><th scope="row">Total</th><td>${r.total.orders}</td><td>${money2(r.total.sales)}</td><td>${money2(r.total.material)}</td><td>${money2(r.total.sales - r.total.material)}</td><td>${money2(r.total.expenses)}</td><td>${money2(r.total.ads)}</td></tr></tfoot>
         </table>
       </div>
     </div>
@@ -1127,6 +1133,7 @@ function renderOwnerMoneyPage() {
         <tbody>${r.expenses.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.what)}</td><td>${money2(e.amount)}</td><td><button type="button" class="btn-sm danger" onclick="removeExpense('${esc(e.id)}')" aria-label="Remove ${esc(e.what)}">✕</button></td></tr>`).join('')}</tbody>
       </table></div>` : ''}
     </div>
+    ${renderAdsCard(year, r)}
     ${renderEtsyCard(year, r.total)}`;
 }
 
@@ -1147,6 +1154,40 @@ function addExpense() {
   state.moneyYear = Number(date.slice(0, 4));
   writeMoney({ expenses: expenses().concat({ id: settingsId(), date, what: what.slice(0, 120), amount: Math.round(amount * 100) / 100 }) });
 }
+function renderAdsCard(year, r) {
+  const today = new Date().toISOString().slice(0, 10);
+  const byPlace = {};
+  r.ads.forEach(a => { byPlace[a.where] = (byPlace[a.where] || 0) + (Number(a.amount) || 0); });
+  const places = Object.entries(byPlace).sort((a, b) => b[1] - a[1]);
+  return `<div class="card" id="ads-card">
+    <h3 class="card-title">Ad costs in ${year}</h3>
+    <p class="field-help" style="margin-top:0;">What you spend advertising SoloPrint: Facebook or Instagram ads, Google, flyers, business cards, a craft fair table. Etsy Ads go in the Etsy card below.</p>
+    <div class="expense-form">
+      <div class="field"><label for="ad-date">Date</label><input type="date" id="ad-date" value="${today}" /></div>
+      <div class="field" style="flex:2;"><label for="ad-where">Where</label><input type="text" id="ad-where" maxlength="60" list="ad-places" placeholder="e.g. Facebook" />
+        <datalist id="ad-places">${[...new Set(AD_PLACES.concat(adCosts().map(a => a.where)))].map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist></div>
+      <div class="field"><label for="ad-amount">Amount ($)</label><input type="number" id="ad-amount" min="0" step="0.01" /></div>
+      <button type="button" class="btn-sm" id="ad-add" onclick="addAdCost()">Add ad cost</button>
+    </div>
+    <div class="alert error" id="ad-err"></div>
+    ${r.ads.length ? `<p class="field-help" id="ad-summary">${money2(r.total.ads)} on ads in ${year}${places.length > 1 ? ` (${places.map(([p, n]) => `${esc(p)} ${money2(n)}`).join(', ')})` : ''}.${r.total.orders ? ` That's ${money2(r.total.ads / r.total.orders)} per paid site order.` : ''}</p>
+      <div class="table-scroll"><table class="money-table">
+        <thead><tr><th scope="col">Date</th><th scope="col">Where</th><th scope="col">Amount</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+        <tbody>${r.ads.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(a => `<tr><td>${esc(a.date)}</td><td>${esc(a.where)}</td><td>${money2(a.amount)}</td><td><button type="button" class="btn-sm danger" onclick="removeAdCost('${esc(a.id)}')" aria-label="Remove ${esc(a.where)} ad ${esc(a.date)}">✕</button></td></tr>`).join('')}</tbody>
+      </table></div>` : `<div class="field-help">No ad costs in ${year} yet.</div>`}
+  </div>`;
+}
+function addAdCost() {
+  const v = k => String((document.getElementById(`ad-${k}`) || {}).value || '').trim();
+  const amount = parseFloat(v('amount'));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v('date')) || !v('where') || !Number.isFinite(amount) || amount < 0) { showAlert('ad-err', 'Fill in the date, where the ad ran, and the amount.', 'error'); return; }
+  state.moneyYear = Number(v('date').slice(0, 4));
+  writeMoney({ ads: adCosts().concat({ id: settingsId(), date: v('date'), where: v('where').slice(0, 60), amount: Math.round(amount * 100) / 100 }) });
+}
+function removeAdCost(id) {
+  if (!confirm('Remove this ad cost?')) return;
+  writeMoney({ ads: adCosts().filter(a => a.id !== id) });
+}
 function removeExpense(id) {
   if (!confirm('Remove this expense?')) return;
   writeMoney({ expenses: expenses().filter(e => e.id !== id) });
@@ -1155,10 +1196,10 @@ function removeExpense(id) {
 function exportMoneyReport(year) {
   const r = moneyReport(year);
   const round = n => Math.round((Number(n) || 0) * 100) / 100;
-  const summary = [['Month', 'Orders', 'Sales', 'Material (est.)', 'Profit after material', 'Expenses']]
-    .concat(r.months.map(m => [m.name, m.orders, round(m.sales), round(m.material), round(m.sales - m.material), round(m.expenses)]),
-      [['Total', r.total.orders, round(r.total.sales), round(r.total.material), round(r.total.sales - r.total.material), round(r.total.expenses)]],
-      [[], ['Sales minus expenses', '', round(r.total.sales - r.total.expenses)], ['Filament cost per kg used for estimates', '', costPerKg()]]);
+  const summary = [['Month', 'Orders', 'Sales', 'Material (est.)', 'Profit after material', 'Expenses', 'Ads']]
+    .concat(r.months.map(m => [m.name, m.orders, round(m.sales), round(m.material), round(m.sales - m.material), round(m.expenses), round(m.ads)]),
+      [['Total', r.total.orders, round(r.total.sales), round(r.total.material), round(r.total.sales - r.total.material), round(r.total.expenses), round(r.total.ads)]],
+      [[], ['Sales minus expenses and ads', '', round(r.total.sales - r.total.expenses - r.total.ads)], ['Filament cost per kg used for estimates', '', costPerKg()]]);
   const orders = [['Paid', 'Order #', 'Customer', 'Email', 'Items', 'Sale', 'Material (est.)', 'Profit']]
     .concat(r.orders.map(o => [o.date.toISOString().slice(0, 10), o.b.id, o.b.clientName, o.b.clientEmail, orderTitle(o.b), round(o.sales), round(o.material), round(o.sales - o.material)]));
   const exp = [['Date', 'What', 'Amount']].concat(r.expenses.map(e => [e.date, e.what, round(e.amount)]));
@@ -1167,12 +1208,13 @@ function exportMoneyReport(year) {
     .concat(ey.orders.slice().reverse().map(o => [o.date, o.etsyId || '', o.buyer || '', o.items || '', round(o.sale), round(o.shipping), round(o.tax), round(o.fees), round(o.label), round(etsyMaterial(o)), round(o.refund), round(etsyProfit(o)), o.note || '']),
       [[], ['Other Etsy charges'], ...ey.costs.map(c => [c.date, '', '', c.what, '', '', '', round(c.amount)])]);
   summary.push([], ['Etsy sales (with shipping paid)', '', round(ey.t.sales)], ['Etsy fees and charges', '', round(ey.t.fees + ey.t.other)], ['Etsy shipping labels', '', round(ey.t.labels)],
-    ['Etsy material (est.)', '', round(ey.t.material)], ['Etsy profit', '', round(ey.t.profit)], ['Both shops: profit after material, fees, labels and expenses', '', round(r.total.sales - r.total.material - r.total.expenses + ey.t.profit)]);
+    ['Etsy material (est.)', '', round(ey.t.material)], ['Etsy profit', '', round(ey.t.profit)], ['Both shops: profit after material, fees, labels, expenses and ads', '', round(r.total.sales - r.total.material - r.total.expenses - r.total.ads + ey.t.profit)]);
   if (typeof XLSX === 'undefined') { showAlert('money-err', "The spreadsheet tool didn't load. Check your connection and try again.", 'error'); return; }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Summary');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orders), 'Paid orders');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exp), 'Expenses');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Date', 'Where', 'Amount']].concat(r.ads.map(a => [a.date, a.where, round(a.amount)]))), 'Ads');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(etsy), 'Etsy');
   XLSX.writeFile(wb, `soloprint-${year}-taxes.xlsx`);
 }
@@ -1455,7 +1497,7 @@ function renderEtsyCard(year, site) {
       <div class="stat-card"><div class="stat-val">${money2(t.material)}</div><div class="stat-label">Material (est.)</div></div>
       <div class="stat-card"><div class="stat-val">${money2(t.profit)}</div><div class="stat-label">Etsy profit</div></div>
     </div>
-    <p class="field-help both-shops" id="both-shops"><strong>Both shops in ${year}:</strong> sales ${money2(site.sales + t.sales)}, profit after material, Etsy fees, labels and your expenses ${money2(site.sales - site.material - site.expenses + t.profit)}.${t.tax ? ` Sales tax Etsy collected and paid for you: ${money2(t.tax)} (not counted).` : ''}</p>
+    <p class="field-help both-shops" id="both-shops"><strong>Both shops in ${year}:</strong> sales ${money2(site.sales + t.sales)}, profit after material, Etsy fees, labels, your expenses and ads ${money2(site.sales - site.material - site.expenses - (site.ads || 0) + t.profit)}.${t.tax ? ` Sales tax Etsy collected and paid for you: ${money2(t.tax)} (not counted).` : ''}</p>
     ${orders.length ? `<div class="table-scroll"><table class="money-table etsy-table">
       <thead><tr><th scope="col">Date</th><th scope="col">Sale</th><th scope="col">Sales</th><th scope="col">Shipping paid</th><th scope="col">Fees</th><th scope="col">Label</th><th scope="col">Material</th><th scope="col">Refund</th><th scope="col">Profit</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead>
       <tbody>${orders.slice(0, max).map(o => `<tr><td>${esc(o.date)}</td><td>${esc([o.buyer, o.items].filter(Boolean).join(': ') || (o.etsyId ? `Order ${o.etsyId}` : 'Etsy sale'))}${o.note ? `<div class="gallery-meta">${esc(o.note)}</div>` : ''}</td>

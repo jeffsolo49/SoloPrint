@@ -85,7 +85,7 @@ Upload Etsy's Orders CSV (Shop Manager > Settings > Options > Download Data), Or
 `etsyPlan` reads columns by name and shows a preview, `applyEtsyImport` saves. Re-imports update by Etsy order id (orders edited by hand stay as they are: `edited`), statement lines are
 fingerprinted in `seen` so nothing counts twice, and a statement "Processing fee" is skipped when the Orders file already gave the card fee. Every sale is editable or typed by hand
 (`renderEtsyForm`/`saveEtsyForm`); material = typed $ or grams x the Money page cost per kg. `etsyProfit` = sale + shipping paid - refund - fees - label - material (sales tax not counted).
-The yearly Excel export has an Etsy sheet and "both shops" totals.
+The yearly Excel export has an Etsy sheet and "both shops" totals. SoloPrint's own ad spending is `money.ads` ([{ id, date, where, amount }], `renderAdsCard`, `addAdCost`), shown as its own stat, monthly column and export sheet, and subtracted in "Sales minus expenses and ads" and the both-shops total.
 
 ## Send an email now
 

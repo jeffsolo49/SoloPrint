@@ -1603,7 +1603,16 @@ const STATES = {
     await page.waitForTimeout(400);
     const stats = await page.$$eval('.money-stats:not(.etsy-stats) .stat-val', els => els.map(e => e.textContent));
     // Hook: 2 + 40 x 0.024 + 12 x 0.024 = 3.25 sale; 12 g x $0.02 = 0.24 material
-    assert(JSON.stringify(stats) === JSON.stringify(['$3.25', '$0.24', '$3.01', '$60.00', '-$56.75']), `stats ${stats}`);
+    assert(JSON.stringify(stats) === JSON.stringify(['$3.25', '$0.24', '$3.01', '$60.00', '$0.00', '-$56.75']), `stats ${stats}`);
+    await page.fill('#ad-where', 'Facebook');
+    await page.fill('#ad-amount', '20');
+    await page.fill('#ad-date', `${year}-01-05`);
+    await page.click('#ad-add');
+    await page.waitForSelector('#ad-summary');
+    assert(db.private.money.ads.length === 1 && db.private.money.ads[0].amount === 20 && db.private.money.ads[0].where === 'Facebook', JSON.stringify(db.private.money));
+    assert(/\$20\.00 per paid site order/.test(await page.textContent('#ad-summary')), await page.textContent('#ad-summary'));
+    const after = await page.$$eval('.money-stats:not(.etsy-stats) .stat-val', els => els.map(e => e.textContent));
+    assert(after[4] === '$20.00' && after[5] === '-$76.75', `with ads ${after}`);
     await page.fill('#exp-what', 'Nozzles');
     await page.fill('#exp-amount', '12.5');
     await page.fill('#exp-date', `${year}-02-01`);
@@ -1612,7 +1621,7 @@ const STATES = {
     assert(db.private.money.expenses.length === 2 && db.private.money.expenses[1].amount === 12.5, JSON.stringify(db.private.money));
     await page.click(`text=Download ${year} for taxes (Excel)`);
     const out = await page.evaluate(() => ({ file: window.__file, sheets: window.__sheets.map(s => s[0]), jan: window.__sheets[0][1][1] }));
-    assert(out.file === `soloprint-${year}-taxes.xlsx` && out.sheets.join() === 'Summary,Paid orders,Expenses,Etsy' && out.jan.join() === 'January,1,3.25,0.24,3.01,60', JSON.stringify(out));
+    assert(out.file === `soloprint-${year}-taxes.xlsx` && out.sheets.join() === 'Summary,Paid orders,Expenses,Ads,Etsy' && out.jan.join() === 'January,1,3.25,0.24,3.01,60,20', JSON.stringify(out));
     await page.close();
   });
   await check('etsy: import the Orders file, item names and a statement (no double counting), edit by hand, export', async () => {
@@ -1680,7 +1689,7 @@ const STATES = {
     assert(JSON.stringify(stats) === JSON.stringify(['$948.00', '$30.84', '$5.20', '$2.00', '$909.96']), `stats ${stats}`);
     await page.click(`text=Download ${year} for taxes (Excel)`);
     const sheets = await page.evaluate(() => window.__sheets.map(s => [s[0], s[1].length]));
-    assert(sheets.map(s => s[0]).join() === 'Summary,Paid orders,Expenses,Etsy' && sheets[3][1] >= 5, JSON.stringify(sheets));
+    assert(sheets.map(s => s[0]).join() === 'Summary,Paid orders,Expenses,Ads,Etsy' && sheets[4][1] >= 5, JSON.stringify(sheets));
     await page.close();
   });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
