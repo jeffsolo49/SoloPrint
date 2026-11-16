@@ -1207,7 +1207,6 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 .sort-head { background: none; border: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-decoration: underline dotted; min-height: 24px; }
 .etsy-sheet td.etsy-what { white-space: normal; min-width: 160px; }
 .etsy-orders { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
-.etsy-order { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); }
 .etsy-order-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .etsy-lines { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; margin: 10px 0 0; font-size: 14px; }
 .etsy-lines dt { color: var(--muted); }
@@ -1218,3 +1217,30 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 /* The site was updated while this page was open */
 .new-version-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1000; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
   max-width: calc(100vw - 32px); padding: 10px 14px; border-radius: 12px; background: var(--surface); color: var(--text); border: 2px solid var(--accent); box-shadow: 0 6px 24px rgba(0,0,0,0.3); font-size: 14px; }
+.etsy-pending { font-size: 12px; font-weight: 600; color: var(--muted); font-style: italic; }
+.etsy-summary-note div { margin-top: 6px; font-size: 14px; }
+
+/* Etsy card: profit, tabs, periods, orders that fold open */
+.etsy-profit-box { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); }
+.etsy-profit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 16px; }
+.etsy-profit-head strong { font-size: 26px; font-variant-numeric: tabular-nums; }
+.etsy-profit-head strong.neg { color: var(--red); }
+.etsy-how-total { margin-top: 8px; }
+.etsy-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 10px; border-bottom: 1px solid var(--border); }
+.etsy-tab { background: none; border: none; border-bottom: 3px solid transparent; padding: 10px 14px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; min-height: 44px; }
+.etsy-tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.etsy-group { border: 1px solid var(--border); border-radius: 12px; margin: 8px 0; background: var(--surface); }
+.etsy-group > summary { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 14px; cursor: pointer; font-weight: 700; min-height: 44px; }
+.etsy-group-sum { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.etsy-group > .etsy-orders, .etsy-group > .table-scroll { margin: 0 10px 10px; }
+.etsy-order { border-top: 1px solid var(--border); }
+.etsy-order > summary { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; padding: 10px 4px; cursor: pointer; min-height: 44px; }
+.etsy-o-num { font-variant-numeric: tabular-nums; font-weight: 700; }
+.etsy-o-name { min-width: 0; overflow-wrap: anywhere; }
+.etsy-o-profit { font-weight: 700; font-variant-numeric: tabular-nums; }
+.etsy-order[open] { padding-bottom: 10px; }
+.etsy-order .etsy-lines, .etsy-order .money-controls { margin-left: 4px; margin-right: 4px; }
+.etsy-add-charge { margin: 12px 0; }
+.etsy-add-charge > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+.etsy-all-years { margin: 0; }
+.etsy-orders { margin: 0; gap: 0; }
