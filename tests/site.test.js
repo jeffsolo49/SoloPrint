@@ -687,8 +687,8 @@ const STATES = {
     // not an amount: nothing changes
     await owner.fill('#step-amount-2', '');
     await owner.click('#order-2 button:has-text("Deposit received")');
-    await mailChoice(owner);
     await owner.waitForSelector('#step-err-2', { state: 'visible' });
+    assert(!(await owner.$('.mail-modal')), 'no amount: no email to show');
     assert(db.jobs['2'].paymentStatus === 'payment_requested' && !db.jobs['2'].depositAmount, 'a non-amount should change nothing: ' + JSON.stringify(db.jobs['2']));
     // a real amount is saved with the status, so the email can say it
     await owner.fill('#step-amount-2', '12.34');
@@ -710,6 +710,34 @@ const STATES = {
     assert(j.paymentStatus === 'payment_received' && j.balancePaid === 30 && j.balancePaidAt && j.paidAt && j.quietEmails.keys.join() === 'payment', JSON.stringify(j));
     // the feed lists the steps between the messages
     assert(/Deposit received \$12\.34/.test(await owner.textContent('#conv-2')) && /Paid in full \$30\.00/.test(await owner.textContent('#conv-2')), await owner.textContent('#conv-2'));
+    await owner.close();
+  });
+  await check('every step email is shown first and can be edited: the change is saved for the email script', async () => {
+    const db = fixtures();
+    db.settings.features = { autoDeposit: false };
+    Object.assign(db.jobs['1'], { phase: 'quote_sent', customerApprovedAt: ago(30) });
+    const owner = await open(db);
+    await owner.evaluate(asOwner('dashboard'));
+    await owner.evaluate(showOrder('1'));
+    await owner.click('#step-go-1');
+    await owner.waitForSelector('.mail-modal #mp-body');
+    const body = await owner.inputValue('#mp-body');
+    assert(/confirmed/i.test(body) && /Venmo/.test(body) && /jane@example\.com/.test(await owner.textContent('.mail-modal .send-to')), body);
+    await owner.fill('#mp-body', 'Hi Jane, confirmed! My own words.');
+    await mailChoice(owner);
+    await owner.waitForFunction(() => document.querySelector('#order-1 .desk-stepname') && !document.querySelector('.mail-modal'));
+    await owner.waitForTimeout(200);
+    const j = db.jobs['1'];
+    assert(j.phase === 'order_received' && j.emailEdits && j.emailEdits.list.confirmed.body === 'Hi Jane, confirmed! My own words.' && j.quietEmails.keys.length === 0, JSON.stringify({ e: j.emailEdits, q: j.quietEmails }));
+    // Deposit: the receipt shows the typed amount; unchanged text saves no edit
+    await owner.fill('#step-amount-1', '12.34');
+    await owner.click('#step-go-1');
+    await owner.waitForSelector('.mail-modal #mp-body');
+    assert(/12\.34/.test(await owner.inputValue('#mp-body')), await owner.inputValue('#mp-body'));
+    await mailChoice(owner);
+    await owner.waitForFunction(() => !document.querySelector('.mail-modal'));
+    await owner.waitForTimeout(200);
+    assert(db.jobs['1'].paymentStatus === 'deposit_received' && !db.jobs['1'].emailEdits, JSON.stringify(db.jobs['1'].emailEdits));
     await owner.close();
   });
   await check('confirm order: an approved quote waits for you; Confirm order sends the confirmed email unless unticked', async () => {
@@ -924,6 +952,7 @@ const STATES = {
     await owner.fill(`#ograms-${job.id}-0-x0`, '20');
     assert(/\$6\.24/.test(await owner.textContent(`#opval-${job.id}-0`)), 'preview should be 2 + 1.44 + 80 g x 0.024 + 20 g x 0.044');
     await owner.click(`#approve-btn-${job.id}`);
+    await mailChoice(owner);
     await owner.waitForTimeout(300);
     assert(db.jobs[job.id].items[0].extraColors[0].grams === 20 && db.jobs[job.id].items[0].grams === 80, JSON.stringify(db.jobs[job.id].items[0]));
     assert(await owner.evaluate(id => +batchTotal(state.batches.find(b => b.id === id)).toFixed(2), job.id) === 6.24, 'quote total');
@@ -1069,6 +1098,7 @@ const STATES = {
     const quoting = await open(db);
     await quoting.evaluate(asOwner('dashboard'));
     await quoting.click(`#approve-btn-${job.id}`);
+    await mailChoice(quoting);
     await quoting.waitForTimeout(300);
     assert(db.jobs[job.id].items[0].setPrice === 24, `quoted ${JSON.stringify(db.jobs[job.id].items[0])}`);
     await quoting.close();
@@ -1199,6 +1229,7 @@ const STATES = {
     await page.evaluate(showOrder('e2'));
     assert(/\$0\.034\/g/.test(await page.textContent('#order-e2')), 'owner card should show the color rate');
     await page.click('#approve-btn-e2');
+    await mailChoice(page);
     await page.waitForTimeout(300);
     assert(db.jobs.e2.rates.colorRates.red === 0.034, JSON.stringify(db.jobs.e2.rates));
     // Another day: red goes to 0.044. New estimates change, the sent quote doesn't.
@@ -1240,6 +1271,7 @@ const STATES = {
     await page.fill('#hours-s1-0', '1');
     await page.fill('#special-cost-s1', '18');
     await page.click('#approve-btn-s1');
+    await mailChoice(page);
     await page.waitForTimeout(300);
     assert(db.jobs['s1'].specialOrderCost === 18 && db.jobs['s1'].phase === 'quote_sent', `saved ${db.jobs['s1'].specialOrderCost}/${db.jobs['s1'].phase}`);
     const total = await page.evaluate(() => batchTotal(state.batches.find(b => b.id === 's1')));
@@ -1713,6 +1745,7 @@ const STATES = {
     await page.evaluate(showOrder('s1'));
     await page.fill('#hours-s1-0', '1');
     await page.click('#approve-btn-s1');
+    await mailChoice(page);
     await page.waitForTimeout(300);
     assert(db.jobs['s1'].rates && db.jobs['s1'].rates.baseFee === 3, `rates not saved on the quote: ${JSON.stringify(db.jobs['s1'].rates)}`);
     await page.close();
@@ -1831,6 +1864,7 @@ const STATES = {
     assert(await owner.isChecked('#terms-c1'), 'terms should be on by default for a custom design');
     await owner.fill('#hours-c1-0', '1');
     await owner.click('#approve-btn-c1');
+    await mailChoice(owner);
     await owner.waitForTimeout(300);
     assert(/Custom design terms/.test(db.jobs['c1'].designTerms) && /I own the design/.test(db.jobs['c1'].designTerms), 'terms not saved on the quote');
     await owner.close();
@@ -1915,6 +1949,7 @@ const STATES = {
     const quoting = await open(db);
     await quoting.evaluate(asOwner('dashboard'));
     await quoting.click(`#approve-btn-${job.id}`);
+    await mailChoice(quoting);
     await quoting.waitForTimeout(300);
     assert(db.jobs[job.id].phase === 'quote_sent' && db.jobs[job.id].items[0].setPrice === 12, `quote ${JSON.stringify(db.jobs[job.id].items[0])}`);
     assert(await quoting.evaluate(id => batchTotal(state.batches.find(b => b.id === id)), job.id) === 12, 'quote total should be the set price');
@@ -1959,6 +1994,7 @@ const STATES = {
     await owner.waitForSelector('#edit-request-e1');
     await owner.fill('#special-cost-e1', '20');
     await owner.click('#approve-btn-e1');
+    await mailChoice(owner);
     await owner.waitForTimeout(300);
     assert(db.jobs.e1.phase === 'quote_sent' && db.jobs.e1.items.length === 1, JSON.stringify(db.jobs.e1));
     assert(await owner.evaluate(() => batchTotal(state.batches.find(b => b.id === 'e1'))) === 57.5, 'total should be 3 x 7.50 + 20 roll + 15 charge');

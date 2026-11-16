@@ -379,6 +379,24 @@ function daysText(min, max) {
   return min === max ? 'about ' + min + ' day' + (min === 1 ? '' : 's') : 'about ' + min + '-' + max + ' days';
 }
 function aheadText(n) { return n === 0 ? 'no orders ahead of yours' : n + ' order' + (n === 1 ? '' : 's') + ' ahead of yours'; }
+// The "place in line" line in the quote, confirmed and deposit emails (Code.gs queueNote; the site's email previews).
+function queueNoteText(rec, queue, rules) {
+  const custom = orderIsCustom(rec);
+  if (rec.phase === 'quote_sent') {
+    const q = queueEstimate(queue, rules, '', custom);
+    return 'Right now there ' + (q.ahead === 1 ? 'is ' : 'are ') + aheadText(q.ahead).replace(' of yours', '') + ', so once you approve, expect it to be printed in ' + daysText(q.minDays, q.maxDays) + '.';
+  }
+  if (rec.phase === 'order_received') {
+    const at = queueTime(rec);
+    if (!at) {
+      const waiting = queueEstimate(queue.filter(e => e.at || e.printing), rules, '', custom);
+      return "Your place in line is set when your deposit comes in. Right now there " + (waiting.ahead === 1 ? 'is ' : 'are ') + aheadText(waiting.ahead).replace(' of yours', '') + '.';
+    }
+    const q = queueEstimate(queue, rules, at, custom);
+    return "You're number " + (q.ahead + 1) + ' in line, so expect it to be printed in ' + daysText(q.minDays, q.maxDays) + '.';
+  }
+  return '';
+}
 
 // The deposit: the amount saved when it was received, else the deposit % of the total.
 function depositAmount(order, total, rules) {
