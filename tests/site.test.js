@@ -1544,6 +1544,18 @@ const STATES = {
     await owner.evaluate(([id]) => { const b = state.batches.find(x => x.id === id); return updateBatchPhase(id, b.phase === 'quote_sent' ? 'order_received' : 'final_payment_needed'); }, [id]);
     assert(asked.length === 1 && /This emails .*Send it\?/s.test(asked[0]), asked.join('|'));
     assert(db.jobs[id].phase === before, 'cancelling must change nothing');
+    // Steps that send no email still ask first: Handed over in person.
+    db.jobs[id].phase = 'ready_to_ship';
+    db.jobs[id].paymentStatus = 'payment_received';
+    await owner.evaluate(async ([id]) => { await loadBatches(); render(); }, [id]);
+    asked.length = 0;
+    await owner.evaluate(([id]) => deskHandOver(id), [id]);
+    assert(asked.length === 1 && /handed over in person/.test(asked[0]) && db.jobs[id].phase === 'ready_to_ship', `cancel keeps it: ${asked.join('|')}`);
+    owner.removeAllListeners('dialog');
+    owner.on('dialog', d => d.accept());
+    await owner.evaluate(([id]) => deskHandOver(id), [id]);
+    await owner.waitForFunction(([id]) => state.batches.find(x => x.id === id).phase === 'delivered', [id]);
+    assert(db.jobs[id].phase === 'delivered', 'yes moves it to Done');
     await owner.close();
   });
   await check('calculator: paste several links and compare the costs', async () => {
