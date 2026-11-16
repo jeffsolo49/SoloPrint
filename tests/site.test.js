@@ -1876,6 +1876,8 @@ const STATES = {
     assert(/1 charge \(\$2\.00\)/.test(await page.textContent('#etsy-orphans')), await page.textContent('#etsy-orphans'));
     const st = 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n'
       + `"May 3, ${y}",Sale,Payment for Order #3300000001,,USD,$25.00,-$1.50,$23.50,--\n`
+      + `"May 4, ${y}",Sale,Payment for Order #3300000002,,USD,$10.80,--,$10.80,--\n`
+      + `"May 4, ${y}",Tax,Sales tax paid by buyer,Order #3300000002,USD,--,-$0.80,-$0.80,--\n`
       + `"May 3, ${y}",Fee,Transaction fee: Mug,Order #3300000001,USD,--,-$1.00,-$1.00,--\n`
       + `"May 6, ${y}",Refund,Refund to buyer for Order #3300000001,,USD,-$5.00,--,-$5.00,--\n`
       + `"May 7, ${y}",Fee,Credit for listing fee,Listing #5,USD,--,$0.50,$0.50,--\n`
@@ -1887,6 +1889,8 @@ const STATES = {
     let e = db.private.etsy;
     const mug = e.orders.find(o => o.etsyId === '3300000001');
     assert(mug && mug.sale === 23.5 && mug.tax === 1.5 && mug.fees === 1 && mug.refund === 5, JSON.stringify(e));
+    const cup = e.orders.find(o => o.etsyId === "3300000002");
+    assert(cup && cup.sale === 10 && cup.tax === 0.8, `buyer sales tax taken out of the sale: ${JSON.stringify(cup)}`);
     assert(e.costs.some(c => c.amount === -0.5) && !e.costs.some(c => /bank/.test(c.what)), JSON.stringify(e.costs));
     // The Orders file for the orphan's order: its charge moves onto it.
     await page.setInputFiles('#etsy-file', { name: 'EtsySoldOrders.csv', mimeType: 'text/csv', buffer: Buffer.from('Sale Date,Order ID,Full Name,Order Value,Discount Amount,Shipping Discount,Shipping,Sales Tax,Order Total,Card Processing Fees,Adjusted Order Total,Adjusted Card Processing Fees\n' + `05/02/${yy},3400000001,Lu,30,0,0,0,0,30,1,--,--\n`) });
