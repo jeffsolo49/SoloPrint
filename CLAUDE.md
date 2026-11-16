@@ -78,6 +78,15 @@ renames and publishes (`publishColorIdea` adds to the design's `colorMap.combos`
 Review ratings run 1 to 5 in half steps (`customer_reviews.rating` numeric(2,1), converted once by owner-tools.sql; `submit_review(..., p_rating numeric, ...)` in order-links.sql). The form has a left and right half on each star
 (`.review-stars`, each half at least 24px wide for the accessibility check). Until the owner re-runs owner-tools.sql then order-links.sql, `sendReview` falls back to the whole star below a half so no review is lost.
 
+## Etsy sales
+
+Money page card "Etsy sales" (`renderEtsyCard` in features.js), data in `owner_private` key `etsy` ({ orders, costs, seen }; never in an order, no addresses kept).
+Upload Etsy's Orders CSV (Shop Manager > Settings > Options > Download Data), Order Items CSV (item names) or a monthly statement CSV (fees, shipping labels, listing fees/ads);
+`etsyPlan` reads columns by name and shows a preview, `applyEtsyImport` saves. Re-imports update by Etsy order id (orders edited by hand stay as they are: `edited`), statement lines are
+fingerprinted in `seen` so nothing counts twice, and a statement "Processing fee" is skipped when the Orders file already gave the card fee. Every sale is editable or typed by hand
+(`renderEtsyForm`/`saveEtsyForm`); material = typed $ or grams x the Money page cost per kg. `etsyProfit` = sale + shipping paid - refund - fees - label - material (sales tax not counted).
+The yearly Excel export has an Etsy sheet and "both shops" totals. SoloPrint's own ad spending is `money.ads` ([{ id, date, where, amount }], `renderAdsCard`, `addAdCost`), shown as its own stat, monthly column and export sheet, and subtracted in "Sales minus expenses and ads" and the both-shops total.
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves

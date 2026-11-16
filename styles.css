@@ -700,6 +700,13 @@ textarea { resize: vertical; min-height: 70px; }
 .money-table tfoot th, .money-table tfoot td { font-weight: 700; border-bottom: none; }
 .expense-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .expense-form .field { flex: 1; min-width: 130px; margin-bottom: 0; }
+.etsy-preview { margin: 12px 0; padding: 12px 14px; border: 2px solid var(--accent); border-radius: 12px; background: var(--surface2); }
+.etsy-preview ul { margin: 8px 0 12px 18px; font-size: 14px; }
+.etsy-form { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.etsy-form .money-controls { margin: 12px 0 0; }
+.etsy-how { margin-bottom: 12px; }
+.etsy-how ol { margin: 8px 0 8px 18px; line-height: 1.6; }
+.both-shops { margin: 4px 0 12px; }
 .money-stats { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; }
 #rules-example { font-size: 13px; color: var(--text); }

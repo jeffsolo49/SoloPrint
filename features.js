@@ -1006,6 +1006,9 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 function moneyData() { return (state.ownerPrivate && state.ownerPrivate.money) || {}; }
 function costPerKg() { const c = Number(moneyData().costPerKg); return Number.isFinite(c) && c >= 0 ? c : DEFAULT_COST_PER_KG; }
 function expenses() { return Array.isArray(moneyData().expenses) ? moneyData().expenses : []; }
+// owner_private 'money'.ads: [{ id, date, where, amount }]: what SoloPrint spends on ads (Facebook, flyers...), kept apart from other expenses.
+function adCosts() { return Array.isArray(moneyData().ads) ? moneyData().ads : []; }
+const AD_PLACES = ['Facebook', 'Instagram', 'Google', 'TikTok', 'Nextdoor', 'Craigslist', 'Flyers', 'Craft fair', 'Business cards'];
 
 function paidDate(b) {
   return b.paidAt || (b.phaseHistory || {}).delivered || (b.phaseHistory || {}).order_received || b.createdAt;
@@ -1020,7 +1023,7 @@ function orderMaterialCost(b) {
 }
 
 function moneyReport(year) {
-  const months = MONTH_NAMES.map(name => ({ name, sales: 0, material: 0, expenses: 0, orders: 0 }));
+  const months = MONTH_NAMES.map(name => ({ name, sales: 0, material: 0, expenses: 0, ads: 0, orders: 0 }));
   const orders = [];
   state.batches.forEach(b => {
     if (b.paymentStatus !== 'payment_received') return;
@@ -1033,9 +1036,11 @@ function moneyReport(year) {
   });
   const exp = expenses().filter(e => String(e.date).startsWith(String(year)));
   exp.forEach(e => { const mm = Number(String(e.date).slice(5, 7)) - 1; if (months[mm]) months[mm].expenses += Number(e.amount) || 0; });
-  const total = months.reduce((t, m) => ({ sales: t.sales + m.sales, material: t.material + m.material, expenses: t.expenses + m.expenses, orders: t.orders + m.orders }), { sales: 0, material: 0, expenses: 0, orders: 0 });
+  const ads = adCosts().filter(e => String(e.date).startsWith(String(year)));
+  ads.forEach(e => { const mm = Number(String(e.date).slice(5, 7)) - 1; if (months[mm]) months[mm].ads += Number(e.amount) || 0; });
+  const total = months.reduce((t, m) => ({ sales: t.sales + m.sales, material: t.material + m.material, expenses: t.expenses + m.expenses, ads: t.ads + m.ads, orders: t.orders + m.orders }), { sales: 0, material: 0, expenses: 0, ads: 0, orders: 0 });
   const unpaid = state.batches.filter(b => ['order_received', 'production', 'delivered'].includes(b.phase) && b.paymentStatus !== 'payment_received');
-  return { months, orders: orders.sort((a, b) => a.date - b.date), expenses: exp, total, unpaid };
+  return { months, orders: orders.sort((a, b) => a.date - b.date), expenses: exp, ads, total, unpaid };
 }
 
 function money2(n) { const v = Number(n) || 0; return `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`; }
@@ -1064,7 +1069,7 @@ function renderOwnerOrdersList() {
   </div>`;
 }
 function renderOwnerMoneyPage() {
-  const years = [...new Set(state.batches.map(b => new Date(paidDate(b)).getFullYear()).concat(expenses().map(e => Number(String(e.date).slice(0, 4))), [new Date().getFullYear()]))]
+  const years = [...new Set(state.batches.map(b => new Date(paidDate(b)).getFullYear()).concat(expenses().concat(adCosts()).map(e => Number(String(e.date).slice(0, 4))), etsyOrders().concat(etsyCosts()).map(o => Number(String(o.date).slice(0, 4))), [new Date().getFullYear()]))]
     .filter(Number.isFinite).sort((a, b) => b - a);
   const year = state.moneyYear || new Date().getFullYear();
   const r = moneyReport(year);
@@ -1094,14 +1099,15 @@ function renderOwnerMoneyPage() {
         <div class="stat-card"><div class="stat-val">${money2(r.total.material)}</div><div class="stat-label">Material used (est.)</div></div>
         <div class="stat-card"><div class="stat-val">${money2(r.total.sales - r.total.material)}</div><div class="stat-label">Profit after material</div></div>
         <div class="stat-card"><div class="stat-val">${money2(r.total.expenses)}</div><div class="stat-label">Expenses</div></div>
-        <div class="stat-card"><div class="stat-val">${money2(r.total.sales - r.total.expenses)}</div><div class="stat-label">Sales minus expenses</div></div>
+        <div class="stat-card"><div class="stat-val">${money2(r.total.ads)}</div><div class="stat-label">Ad costs</div></div>
+        <div class="stat-card"><div class="stat-val">${money2(r.total.sales - r.total.expenses - r.total.ads)}</div><div class="stat-label">Sales minus expenses and ads</div></div>
       </div>
       ${r.unpaid.length ? `<p class="field-help">Not paid yet: ${r.unpaid.length} order${r.unpaid.length === 1 ? '' : 's'}, ${money2(r.unpaid.reduce((s, b) => s + orderSum(b), 0))}. These count once you mark them paid.</p>` : ''}
       <div class="table-scroll">
         <table class="money-table">
-          <thead><tr><th scope="col">Month</th><th scope="col">Orders</th><th scope="col">Sales</th><th scope="col">Material (est.)</th><th scope="col">Profit after material</th><th scope="col">Expenses</th></tr></thead>
-          <tbody>${r.months.map(m => `<tr><th scope="row">${m.name}</th><td>${m.orders || ''}</td><td>${m.sales ? money2(m.sales) : ''}</td><td>${m.material ? money2(m.material) : ''}</td><td>${m.sales ? money2(m.sales - m.material) : ''}</td><td>${m.expenses ? money2(m.expenses) : ''}</td></tr>`).join('')}</tbody>
-          <tfoot><tr><th scope="row">Total</th><td>${r.total.orders}</td><td>${money2(r.total.sales)}</td><td>${money2(r.total.material)}</td><td>${money2(r.total.sales - r.total.material)}</td><td>${money2(r.total.expenses)}</td></tr></tfoot>
+          <thead><tr><th scope="col">Month</th><th scope="col">Orders</th><th scope="col">Sales</th><th scope="col">Material (est.)</th><th scope="col">Profit after material</th><th scope="col">Expenses</th><th scope="col">Ads</th></tr></thead>
+          <tbody>${r.months.map(m => `<tr><th scope="row">${m.name}</th><td>${m.orders || ''}</td><td>${m.sales ? money2(m.sales) : ''}</td><td>${m.material ? money2(m.material) : ''}</td><td>${m.sales ? money2(m.sales - m.material) : ''}</td><td>${m.expenses ? money2(m.expenses) : ''}</td><td>${m.ads ? money2(m.ads) : ''}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><th scope="row">Total</th><td>${r.total.orders}</td><td>${money2(r.total.sales)}</td><td>${money2(r.total.material)}</td><td>${money2(r.total.sales - r.total.material)}</td><td>${money2(r.total.expenses)}</td><td>${money2(r.total.ads)}</td></tr></tfoot>
         </table>
       </div>
     </div>
@@ -1126,7 +1132,9 @@ function renderOwnerMoneyPage() {
         <thead><tr><th scope="col">Date</th><th scope="col">What</th><th scope="col">Amount</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
         <tbody>${r.expenses.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.what)}</td><td>${money2(e.amount)}</td><td><button type="button" class="btn-sm danger" onclick="removeExpense('${esc(e.id)}')" aria-label="Remove ${esc(e.what)}">✕</button></td></tr>`).join('')}</tbody>
       </table></div>` : ''}
-    </div>`;
+    </div>
+    ${renderAdsCard(year, r)}
+    ${renderEtsyCard(year, r.total)}`;
 }
 
 async function writeMoney(patch) {
@@ -1146,6 +1154,40 @@ function addExpense() {
   state.moneyYear = Number(date.slice(0, 4));
   writeMoney({ expenses: expenses().concat({ id: settingsId(), date, what: what.slice(0, 120), amount: Math.round(amount * 100) / 100 }) });
 }
+function renderAdsCard(year, r) {
+  const today = new Date().toISOString().slice(0, 10);
+  const byPlace = {};
+  r.ads.forEach(a => { byPlace[a.where] = (byPlace[a.where] || 0) + (Number(a.amount) || 0); });
+  const places = Object.entries(byPlace).sort((a, b) => b[1] - a[1]);
+  return `<div class="card" id="ads-card">
+    <h3 class="card-title">Ad costs in ${year}</h3>
+    <p class="field-help" style="margin-top:0;">What you spend advertising SoloPrint: Facebook or Instagram ads, Google, flyers, business cards, a craft fair table. Etsy Ads go in the Etsy card below.</p>
+    <div class="expense-form">
+      <div class="field"><label for="ad-date">Date</label><input type="date" id="ad-date" value="${today}" /></div>
+      <div class="field" style="flex:2;"><label for="ad-where">Where</label><input type="text" id="ad-where" maxlength="60" list="ad-places" placeholder="e.g. Facebook" />
+        <datalist id="ad-places">${[...new Set(AD_PLACES.concat(adCosts().map(a => a.where)))].map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist></div>
+      <div class="field"><label for="ad-amount">Amount ($)</label><input type="number" id="ad-amount" min="0" step="0.01" /></div>
+      <button type="button" class="btn-sm" id="ad-add" onclick="addAdCost()">Add ad cost</button>
+    </div>
+    <div class="alert error" id="ad-err"></div>
+    ${r.ads.length ? `<p class="field-help" id="ad-summary">${money2(r.total.ads)} on ads in ${year}${places.length > 1 ? ` (${places.map(([p, n]) => `${esc(p)} ${money2(n)}`).join(', ')})` : ''}.${r.total.orders ? ` That's ${money2(r.total.ads / r.total.orders)} per paid site order.` : ''}</p>
+      <div class="table-scroll"><table class="money-table">
+        <thead><tr><th scope="col">Date</th><th scope="col">Where</th><th scope="col">Amount</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+        <tbody>${r.ads.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(a => `<tr><td>${esc(a.date)}</td><td>${esc(a.where)}</td><td>${money2(a.amount)}</td><td><button type="button" class="btn-sm danger" onclick="removeAdCost('${esc(a.id)}')" aria-label="Remove ${esc(a.where)} ad ${esc(a.date)}">✕</button></td></tr>`).join('')}</tbody>
+      </table></div>` : `<div class="field-help">No ad costs in ${year} yet.</div>`}
+  </div>`;
+}
+function addAdCost() {
+  const v = k => String((document.getElementById(`ad-${k}`) || {}).value || '').trim();
+  const amount = parseFloat(v('amount'));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v('date')) || !v('where') || !Number.isFinite(amount) || amount < 0) { showAlert('ad-err', 'Fill in the date, where the ad ran, and the amount.', 'error'); return; }
+  state.moneyYear = Number(v('date').slice(0, 4));
+  writeMoney({ ads: adCosts().concat({ id: settingsId(), date: v('date'), where: v('where').slice(0, 60), amount: Math.round(amount * 100) / 100 }) });
+}
+function removeAdCost(id) {
+  if (!confirm('Remove this ad cost?')) return;
+  writeMoney({ ads: adCosts().filter(a => a.id !== id) });
+}
 function removeExpense(id) {
   if (!confirm('Remove this expense?')) return;
   writeMoney({ expenses: expenses().filter(e => e.id !== id) });
@@ -1154,19 +1196,329 @@ function removeExpense(id) {
 function exportMoneyReport(year) {
   const r = moneyReport(year);
   const round = n => Math.round((Number(n) || 0) * 100) / 100;
-  const summary = [['Month', 'Orders', 'Sales', 'Material (est.)', 'Profit after material', 'Expenses']]
-    .concat(r.months.map(m => [m.name, m.orders, round(m.sales), round(m.material), round(m.sales - m.material), round(m.expenses)]),
-      [['Total', r.total.orders, round(r.total.sales), round(r.total.material), round(r.total.sales - r.total.material), round(r.total.expenses)]],
-      [[], ['Sales minus expenses', '', round(r.total.sales - r.total.expenses)], ['Filament cost per kg used for estimates', '', costPerKg()]]);
+  const summary = [['Month', 'Orders', 'Sales', 'Material (est.)', 'Profit after material', 'Expenses', 'Ads']]
+    .concat(r.months.map(m => [m.name, m.orders, round(m.sales), round(m.material), round(m.sales - m.material), round(m.expenses), round(m.ads)]),
+      [['Total', r.total.orders, round(r.total.sales), round(r.total.material), round(r.total.sales - r.total.material), round(r.total.expenses), round(r.total.ads)]],
+      [[], ['Sales minus expenses and ads', '', round(r.total.sales - r.total.expenses - r.total.ads)], ['Filament cost per kg used for estimates', '', costPerKg()]]);
   const orders = [['Paid', 'Order #', 'Customer', 'Email', 'Items', 'Sale', 'Material (est.)', 'Profit']]
     .concat(r.orders.map(o => [o.date.toISOString().slice(0, 10), o.b.id, o.b.clientName, o.b.clientEmail, orderTitle(o.b), round(o.sales), round(o.material), round(o.sales - o.material)]));
   const exp = [['Date', 'What', 'Amount']].concat(r.expenses.map(e => [e.date, e.what, round(e.amount)]));
+  const ey = etsyYear(year);
+  const etsy = [['Date', 'Etsy order', 'Buyer', 'Items', 'Item sales', 'Shipping paid', 'Sales tax (not counted)', 'Fees', 'Shipping label', 'Material (est.)', 'Refund', 'Profit', 'Note']]
+    .concat(ey.orders.slice().reverse().map(o => [o.date, o.etsyId || '', o.buyer || '', o.items || '', round(o.sale), round(o.shipping), round(o.tax), round(o.fees), round(o.label), round(etsyMaterial(o)), round(o.refund), round(etsyProfit(o)), o.note || '']),
+      [[], ['Other Etsy charges'], ...ey.costs.map(c => [c.date, '', '', c.what, '', '', '', round(c.amount)])]);
+  summary.push([], ['Etsy sales (with shipping paid)', '', round(ey.t.sales)], ['Etsy fees and charges', '', round(ey.t.fees + ey.t.other)], ['Etsy shipping labels', '', round(ey.t.labels)],
+    ['Etsy material (est.)', '', round(ey.t.material)], ['Etsy profit', '', round(ey.t.profit)], ['Both shops: profit after material, fees, labels, expenses and ads', '', round(r.total.sales - r.total.material - r.total.expenses - r.total.ads + ey.t.profit)]);
   if (typeof XLSX === 'undefined') { showAlert('money-err', "The spreadsheet tool didn't load. Check your connection and try again.", 'error'); return; }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Summary');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orders), 'Paid orders');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exp), 'Expenses');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Date', 'Where', 'Amount']].concat(r.ads.map(a => [a.date, a.where, round(a.amount)]))), 'Ads');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(etsy), 'Etsy');
   XLSX.writeFile(wb, `soloprint-${year}-taxes.xlsx`);
+}
+
+// ── ETSY SALES: import Etsy's download files, or type sales in by hand ────
+// owner_private 'etsy' (never in an order: buyers' names stay owner-only; addresses are never kept):
+// { orders: [{ id, etsyId, date 'YYYY-MM-DD', buyer, items, sale, shipping, tax, fees, cardFee, label, grams, material, refund, note, edited }],
+//   costs: [{ id, date, what, amount }] (Etsy charges not tied to one order: listing fees, ads, labels without an order),
+//   seen: [statement line fingerprints already counted] }.
+// Etsy profit for an order = sale + shipping paid - refund - fees - shipping label - material. Sales tax is shown but Etsy pays it.
+// Material: typed $ amount, else grams x your cost per kg (the same rule as site orders).
+function etsyData() { return (state.ownerPrivate && state.ownerPrivate.etsy) || {}; }
+function etsyOrders() { return Array.isArray(etsyData().orders) ? etsyData().orders : []; }
+function etsyCosts() { return Array.isArray(etsyData().costs) ? etsyData().costs : []; }
+function etsyNum(v) { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0; }
+function etsyMaterial(o) { return o.material !== null && o.material !== undefined && o.material !== '' ? etsyNum(o.material) : etsyNum((Number(o.grams) || 0) * costPerKg() / 1000); }
+function etsyProfit(o) { return etsyNum(etsyNum(o.sale) + etsyNum(o.shipping) - etsyNum(o.refund) - etsyNum(o.fees) - etsyNum(o.label) - etsyMaterial(o)); }
+function etsyYear(year) {
+  const y = String(year);
+  const orders = etsyOrders().filter(o => String(o.date).startsWith(y)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const costs = etsyCosts().filter(c => String(c.date).startsWith(y)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const sum = f => etsyNum(orders.reduce((s, o) => s + f(o), 0));
+  const t = { orders: orders.length, sales: sum(o => etsyNum(o.sale) + etsyNum(o.shipping) - etsyNum(o.refund)), fees: sum(o => etsyNum(o.fees)),
+    labels: sum(o => etsyNum(o.label)), material: sum(etsyMaterial), tax: sum(o => etsyNum(o.tax)), other: etsyNum(costs.reduce((s, c) => s + etsyNum(c.amount), 0)) };
+  t.profit = etsyNum(t.sales - t.fees - t.labels - t.material - t.other);
+  return { orders, costs, t };
+}
+
+// Reading Etsy's files: columns are found by name, so their order (and extra columns) don't matter.
+function etsyCsvRows(text) {
+  let s = String(text || '');
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === '"' && s[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') q = false;
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && s[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim()));
+}
+function etsyMoney(v) {
+  let s = String(v === undefined || v === null ? '' : v).trim();
+  if (!s || /^-+$/.test(s)) return 0;
+  const neg = /^\(.*\)$/.test(s) || /^-/.test(s) || /^[A-Z]{0,3}\s*\$?\s*-/.test(s);
+  s = s.replace(/[^0-9.]/g, '');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? etsyNum(neg ? -n : n) : 0;
+}
+function etsyDate(v) {
+  const s = String(v || '').trim();
+  let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/))) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`; }
+  const d = new Date(s.replace(/(\d)(st|nd|rd|th)\b/, '$1'));
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function etsyTable(rows) {
+  const head = (rows[0] || []).map(h => String(h).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim());
+  const col = (...names) => { for (const n of names) { const k = head.indexOf(n); if (k >= 0) return k; } return -1; };
+  return { head, col, body: rows.slice(1) };
+}
+function etsyOrderNumber(text) { const m = String(text || '').match(/order\s*#?\s*(\d{5,})/i); return m ? m[1] : ''; }
+function etsyKind(tb) {
+  const has = n => tb.head.includes(n);
+  if (has('type') && has('title') && (has('net') || has('amount'))) return 'statement';
+  if (has('order id') && has('item name')) return 'items';
+  if (has('order id') && (has('order value') || has('order total'))) return 'orders';
+  return '';
+}
+
+// Works out what a file would change, without saving: the owner sees this first and taps "Add to my sales".
+function etsyPlan(rows, fileName) {
+  const tb = etsyTable(rows), kind = etsyKind(tb);
+  const plan = { kind, fileName, add: [], update: [], keep: 0, costs: [], fees: [], items: [], skipped: 0, seen: [] };
+  if (!kind) return plan;
+  const have = new Map(etsyOrders().map(o => [String(o.etsyId), o]));
+  const get = (r, ...names) => { const k = tb.col(...names); return k >= 0 ? r[k] : ''; };
+  if (kind === 'orders') {
+    tb.body.forEach(r => {
+      const etsyId = String(get(r, 'order id')).trim();
+      const date = etsyDate(get(r, 'sale date', 'date'));
+      if (!/^\d+$/.test(etsyId) || !date) { plan.skipped++; return; }
+      const total = etsyMoney(get(r, 'order total')), adj = String(get(r, 'adjusted order total')).trim();
+      const adjCard = String(get(r, 'adjusted card processing fees')).trim();
+      const o = { etsyId, date, buyer: String(get(r, 'full name', 'buyer') || '').trim().slice(0, 80),
+        sale: etsyNum(etsyMoney(get(r, 'order value')) - Math.abs(etsyMoney(get(r, 'discount amount')))),
+        shipping: etsyNum(etsyMoney(get(r, 'shipping')) - Math.abs(etsyMoney(get(r, 'shipping discount')))),
+        tax: etsyMoney(get(r, 'sales tax')),
+        cardFee: Math.abs(adjCard && !/^-+$/.test(adjCard) ? etsyMoney(adjCard) : etsyMoney(get(r, 'card processing fees'))),
+        refund: adj && !/^-+$/.test(adj) && etsyMoney(adj) < total ? etsyNum(total - etsyMoney(adj)) : 0 };
+      const was = have.get(etsyId);
+      if (!was) plan.add.push(o);
+      else if (was.edited) plan.keep++;
+      else plan.update.push(o);
+    });
+  } else if (kind === 'items') {
+    const byOrder = new Map();
+    tb.body.forEach(r => {
+      const id = String(get(r, 'order id')).trim(), name = String(get(r, 'item name')).trim();
+      if (!id || !name) { plan.skipped++; return; }
+      const qty = parseInt(get(r, 'quantity'), 10) || 1;
+      byOrder.set(id, (byOrder.get(id) || []).concat(qty > 1 ? `${name} x${qty}` : name));
+    });
+    byOrder.forEach((names, etsyId) => { if (have.has(etsyId)) plan.items.push({ etsyId, items: names.join('; ').slice(0, 300) }); else plan.skipped++; });
+  } else {
+    const seen = new Set(etsyData().seen || []);
+    tb.body.forEach(r => {
+      const type = String(get(r, 'type')).trim().toLowerCase(), title = String(get(r, 'title')).trim(), info = String(get(r, 'info')).trim();
+      const date = etsyDate(get(r, 'date'));
+      const net = String(get(r, 'net')).trim(), fee = String(get(r, 'fees taxes')).trim();
+      const amount = Math.abs(net && !/^-+$/.test(net) ? etsyMoney(net) : etsyMoney(get(r, 'amount')) || etsyMoney(fee));
+      if (!['fee', 'fees', 'shipping', 'marketing'].includes(type) || !date || !amount || etsyMoney(net || get(r, 'amount')) > 0) { plan.skipped++; return; }
+      const print = [date, type, title, info, amount].join('|');
+      if (seen.has(print)) { plan.keep++; return; }
+      plan.seen.push(print);
+      const etsyId = etsyOrderNumber(info) || etsyOrderNumber(title), o = etsyId && have.get(etsyId);
+      const isLabel = type === 'shipping' || /shipping label|postage/i.test(title);
+      if (o && /processing fee/i.test(title) && o.cardFee) return;   // already counted from the Orders file
+      if (o) plan.fees.push({ etsyId, amount, label: isLabel, what: title });
+      else plan.costs.push({ date, what: `${title}${info ? ` (${info})` : ''}`.slice(0, 120), amount });
+    });
+  }
+  return plan;
+}
+function etsyFileChosen(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const r = new FileReader();
+  r.onerror = () => showAlert('etsy-err', "Couldn't read that file.", 'error');
+  r.onload = () => {
+    let rows;
+    try {
+      if (/\.xlsx?$/i.test(file.name)) {
+        if (typeof XLSX === 'undefined') { showAlert('etsy-err', "The spreadsheet tool didn't load. Try the .csv file instead.", 'error'); return; }
+        const wb = XLSX.read(new Uint8Array(r.result), { type: 'array' });
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false });
+      } else rows = etsyCsvRows(new TextDecoder().decode(r.result));
+    } catch (e) { showAlert('etsy-err', "Couldn't read that file.", 'error'); return; }
+    const plan = etsyPlan(rows, file.name);
+    if (!plan.kind) { showAlert('etsy-err', "That doesn't look like one of Etsy's files. Use the Orders or Order Items file from Download Data, or a monthly statement (see the steps above).", 'error'); return; }
+    state.etsyImport = plan;
+    render();
+    document.getElementById('etsy-preview')?.focus();
+  };
+  r.readAsArrayBuffer(file);
+}
+function renderEtsyPreview(p) {
+  const name = { orders: 'Etsy Orders file', items: 'Etsy Order Items file', statement: 'Etsy monthly statement' }[p.kind];
+  const lines = [];
+  if (p.kind === 'orders') {
+    lines.push(`${p.add.length} new sale${p.add.length === 1 ? '' : 's'} (${money2(p.add.reduce((s, o) => s + o.sale + o.shipping - o.refund, 0))})`);
+    if (p.update.length) lines.push(`${p.update.length} already here, updated from the file`);
+    if (p.keep) lines.push(`${p.keep} you edited by hand, left as they are`);
+  } else if (p.kind === 'items') lines.push(`Item names for ${p.items.length} sale${p.items.length === 1 ? '' : 's'}`);
+  else {
+    const labels = p.fees.filter(f => f.label), fees = p.fees.filter(f => !f.label);
+    lines.push(`${fees.length} fee${fees.length === 1 ? '' : 's'} on your sales (${money2(fees.reduce((s, f) => s + f.amount, 0))})`);
+    lines.push(`${labels.length} shipping label${labels.length === 1 ? '' : 's'} (${money2(labels.reduce((s, f) => s + f.amount, 0))})`);
+    lines.push(`${p.costs.length} other Etsy charge${p.costs.length === 1 ? '' : 's'}, like listing fees and ads (${money2(p.costs.reduce((s, c) => s + c.amount, 0))})`);
+    if (p.keep) lines.push(`${p.keep} already counted from an earlier import, skipped`);
+  }
+  if (p.skipped) lines.push(`${p.skipped} line${p.skipped === 1 ? '' : 's'} not used${p.kind === 'items' ? ' (import the Orders file for those months first)' : p.kind === 'statement' ? ' (sales, deposits and taxes are already in the Orders file)' : ''}`);
+  return `<div class="etsy-preview" id="etsy-preview" tabindex="-1">
+    <strong>${esc(name)}: ${esc(p.fileName)}</strong>
+    <ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    <div class="money-controls"><button type="button" class="btn-sm" id="etsy-apply" onclick="applyEtsyImport()">Add to my sales</button>
+    <button type="button" class="btn-sm" onclick="state.etsyImport = null; render();">Cancel</button></div>
+  </div>`;
+}
+async function writeEtsy(patch, okMsg) {
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), etsy: { ...etsyData(), ...patch } };
+  try { await saveOwnerPrivate('etsy'); state.etsyMsg = okMsg || ''; render(); }
+  catch (e) { render(); showAlert('etsy-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); }
+}
+function applyEtsyImport() {
+  const p = state.etsyImport;
+  if (!p) return;
+  const orders = etsyOrders().map(o => ({ ...o }));
+  const find = id => orders.find(o => String(o.etsyId) === String(id));
+  if (p.kind === 'orders') {
+    p.update.forEach(u => { const o = find(u.etsyId); if (o) Object.assign(o, u, { fees: etsyNum(etsyNum(o.fees) - etsyNum(o.cardFee) + u.cardFee) }); });
+    p.add.forEach(u => orders.push({ id: settingsId(), items: '', label: 0, grams: null, material: null, note: '', ...u, fees: u.cardFee }));
+  } else if (p.kind === 'items') p.items.forEach(u => { const o = find(u.etsyId); if (o && !o.edited) o.items = u.items; });
+  else p.fees.forEach(f => { const o = find(f.etsyId); if (!o) return; if (f.label) o.label = etsyNum(etsyNum(o.label) + f.amount); else o.fees = etsyNum(etsyNum(o.fees) + f.amount); });
+  const costs = etsyCosts().concat(p.kind === 'statement' ? p.costs.map(c => ({ id: settingsId(), ...c })) : []);
+  const seen = (etsyData().seen || []).concat(p.seen || []).slice(-5000);
+  const years = orders.map(o => Number(String(o.date).slice(0, 4))).filter(Boolean);
+  if (p.kind === 'orders' && p.add.length) state.moneyYear = Math.max(...p.add.map(o => Number(o.date.slice(0, 4))));
+  else if (!state.moneyYear && years.length) state.moneyYear = Math.max(...years);
+  state.etsyImport = null;
+  writeEtsy({ orders, costs, seen }, 'Imported. Everything stays editable below.');
+}
+
+// Typing a sale in, or fixing one: the same form. Saving marks it edited, so a later import won't overwrite it.
+const ETSY_FIELDS = [['date', 'Date', 'date'], ['etsyId', 'Etsy order number (optional)', 'text'], ['buyer', 'Buyer', 'text'], ['items', 'What they bought', 'text'],
+  ['sale', 'Item sales after discounts ($)', 'money'], ['shipping', 'Shipping they paid ($)', 'money'], ['tax', 'Sales tax (Etsy pays it; not counted)', 'money'],
+  ['fees', 'Etsy fees ($)', 'money'], ['label', 'Shipping label cost ($)', 'money'], ['grams', 'Filament used (grams, optional)', 'number'],
+  ['material', 'Or material cost ($, optional)', 'money'], ['refund', 'Refunded ($)', 'money'], ['note', 'Note', 'text']];
+function renderEtsyForm() {
+  const id = state.etsyEdit;
+  if (id === undefined || id === null) return `<button type="button" class="btn-sm" id="etsy-add" onclick="state.etsyEdit = ''; render(); document.getElementById('etsy-f-date')?.focus();">+ Add an Etsy sale by hand</button>`;
+  const o = etsyOrders().find(x => x.id === id) || { date: new Date().toISOString().slice(0, 10) };
+  const val = (k, type) => { const v = o[k]; return v === null || v === undefined ? '' : type === 'money' && v === 0 && k !== 'sale' ? '' : v; };
+  return `<fieldset class="etsy-form" id="etsy-form"><legend>${id ? 'Edit this Etsy sale' : 'Add an Etsy sale'}</legend>
+    <div class="expense-form">${ETSY_FIELDS.map(([k, label, type]) => `<div class="field"><label for="etsy-f-${k}">${esc(label)}</label>
+      <input id="etsy-f-${k}" type="${type === 'date' ? 'date' : type === 'text' ? 'text' : 'number'}" ${type === 'money' ? 'min="0" step="0.01"' : type === 'number' ? 'min="0" step="1"' : 'maxlength="300"'} value="${esc(String(val(k, type)))}" /></div>`).join('')}</div>
+    <div class="money-controls"><button type="button" class="btn-sm" id="etsy-save" onclick="saveEtsyForm()">Save</button>
+      <button type="button" class="btn-sm" onclick="state.etsyEdit = null; render();">Cancel</button>
+      ${id ? `<button type="button" class="btn-sm danger" onclick="removeEtsyOrder('${esc(id)}')">Remove this sale</button>` : ''}</div>
+  </fieldset>`;
+}
+function saveEtsyForm() {
+  const v = k => String((document.getElementById(`etsy-f-${k}`) || {}).value || '').trim();
+  const date = v('date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showAlert('etsy-err', 'Pick the date of the sale.', 'error'); return; }
+  const num = k => { const n = parseFloat(v(k)); return Number.isFinite(n) && n >= 0 ? etsyNum(n) : 0; };
+  const id = state.etsyEdit || settingsId();
+  const o = { id, date, etsyId: v('etsyId').replace(/\D/g, '').slice(0, 20), buyer: v('buyer').slice(0, 80), items: v('items').slice(0, 300), note: v('note').slice(0, 300),
+    sale: num('sale'), shipping: num('shipping'), tax: num('tax'), fees: num('fees'), label: num('label'), refund: num('refund'),
+    grams: v('grams') ? num('grams') : null, material: v('material') ? num('material') : null, edited: true };
+  const was = etsyOrders().find(x => x.id === id);
+  o.cardFee = was ? was.cardFee || 0 : 0;
+  state.etsyEdit = null;
+  state.moneyYear = Number(date.slice(0, 4));
+  writeEtsy({ orders: was ? etsyOrders().map(x => (x.id === id ? o : x)) : etsyOrders().concat(o) }, 'Saved.');
+}
+function removeEtsyOrder(id) {
+  if (!confirm('Remove this Etsy sale?')) return;
+  state.etsyEdit = null;
+  writeEtsy({ orders: etsyOrders().filter(o => o.id !== id) }, 'Removed.');
+}
+function addEtsyCost() {
+  const v = k => String((document.getElementById(`etsy-c-${k}`) || {}).value || '').trim();
+  const amount = parseFloat(v('amount'));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v('date')) || !v('what') || !Number.isFinite(amount) || amount < 0) { showAlert('etsy-err', 'Fill in the date, what it was, and the amount.', 'error'); return; }
+  state.moneyYear = Number(v('date').slice(0, 4));
+  writeEtsy({ costs: etsyCosts().concat({ id: settingsId(), date: v('date'), what: v('what').slice(0, 120), amount: etsyNum(amount) }) }, 'Added.');
+}
+function removeEtsyCost(id) {
+  if (!confirm('Remove this Etsy charge?')) return;
+  writeEtsy({ costs: etsyCosts().filter(c => c.id !== id) }, 'Removed.');
+}
+function renderEtsyCard(year, site) {
+  const { orders, costs, t } = etsyYear(year);
+  const max = state.etsyMax || 25;
+  const today = new Date().toISOString().slice(0, 10);
+  const editing = state.etsyEdit !== undefined && state.etsyEdit !== null;
+  return `<div class="card" id="etsy-card">
+    <h3 class="card-title">Etsy sales in ${year}</h3>
+    <details class="etsy-how"><summary>How to get your files from Etsy</summary>
+      <ol class="field-help">
+        <li><strong>Sales:</strong> on Etsy, open Shop Manager, then Settings, then Options, then the Download Data tab. Under Orders pick <em>Orders</em>, the month and year, and tap Download CSV. Do the same with <em>Order Items</em> if you want item names.</li>
+        <li><strong>Fees and shipping labels:</strong> Shop Manager, then Finances, then Monthly statements. Pick the month and tap Download CSV.</li>
+        <li>Upload each file here. Import the Orders file first, then the statement for the same month. You'll see what will be added before anything is saved, and importing the same file twice doesn't count anything twice.</li>
+      </ol>
+      <div class="field-help">Etsy sometimes moves these menus; if they're not there, search Etsy's help for "download data" or "monthly statement".</div>
+    </details>
+    <div class="money-controls">
+      <button type="button" class="btn-sm" id="etsy-upload" onclick="document.getElementById('etsy-file').click()">Upload an Etsy file (.csv)</button>
+      <input type="file" id="etsy-file" accept=".csv,.xlsx,.xls,text/csv" hidden onchange="etsyFileChosen(this)" />
+      ${editing ? '' : renderEtsyForm()}
+    </div>
+    <div class="alert error" id="etsy-err"></div>
+    ${state.etsyMsg ? `<div class="alert success" style="display:block;" role="status">${esc(state.etsyMsg)}</div>` : ''}
+    ${state.etsyImport ? renderEtsyPreview(state.etsyImport) : ''}
+    ${editing ? renderEtsyForm() : ''}
+    <div class="stats-row money-stats etsy-stats">
+      <div class="stat-card"><div class="stat-val">${money2(t.sales)}</div><div class="stat-label">Etsy sales (with shipping paid)</div></div>
+      <div class="stat-card"><div class="stat-val">${money2(t.fees + t.other)}</div><div class="stat-label">Etsy fees and charges</div></div>
+      <div class="stat-card"><div class="stat-val">${money2(t.labels)}</div><div class="stat-label">Shipping labels</div></div>
+      <div class="stat-card"><div class="stat-val">${money2(t.material)}</div><div class="stat-label">Material (est.)</div></div>
+      <div class="stat-card"><div class="stat-val">${money2(t.profit)}</div><div class="stat-label">Etsy profit</div></div>
+    </div>
+    <p class="field-help both-shops" id="both-shops"><strong>Both shops in ${year}:</strong> sales ${money2(site.sales + t.sales)}, profit after material, Etsy fees, labels, your expenses and ads ${money2(site.sales - site.material - site.expenses - (site.ads || 0) + t.profit)}.${t.tax ? ` Sales tax Etsy collected and paid for you: ${money2(t.tax)} (not counted).` : ''}</p>
+    ${orders.length ? `<div class="table-scroll"><table class="money-table etsy-table">
+      <thead><tr><th scope="col">Date</th><th scope="col">Sale</th><th scope="col">Sales</th><th scope="col">Shipping paid</th><th scope="col">Fees</th><th scope="col">Label</th><th scope="col">Material</th><th scope="col">Refund</th><th scope="col">Profit</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead>
+      <tbody>${orders.slice(0, max).map(o => `<tr><td>${esc(o.date)}</td><td>${esc([o.buyer, o.items].filter(Boolean).join(': ') || (o.etsyId ? `Order ${o.etsyId}` : 'Etsy sale'))}${o.note ? `<div class="gallery-meta">${esc(o.note)}</div>` : ''}</td>
+        <td>${money2(o.sale)}</td><td>${money2(o.shipping)}</td><td>${money2(o.fees)}</td><td>${money2(o.label)}</td><td>${money2(etsyMaterial(o))}</td><td>${o.refund ? money2(o.refund) : ''}</td><td>${money2(etsyProfit(o))}</td>
+        <td><button type="button" class="btn-sm" onclick="state.etsyEdit = '${esc(o.id)}'; render(); document.getElementById('etsy-form')?.scrollIntoView({ block: 'center' }); document.getElementById('etsy-f-date')?.focus();" aria-label="Edit Etsy sale ${esc(o.date)} ${esc(o.buyer || '')}">Edit</button></td></tr>`).join('')}</tbody>
+    </table></div>
+    ${orders.length > max ? `<button type="button" class="btn-sm" onclick="state.etsyMax = ${max + 25}; render();">Show more (${orders.length - max} more)</button>` : ''}`
+      : `<div class="field-help">No Etsy sales in ${year} yet. Upload Etsy's Orders file, or add one by hand.</div>`}
+    <h4 class="cm-heading">Other Etsy charges in ${year}</h4>
+    <div class="field-help">Listing fees, Etsy Ads, and labels not tied to one sale. Statements add these for you.</div>
+    <div class="expense-form">
+      <div class="field"><label for="etsy-c-date">Date</label><input type="date" id="etsy-c-date" value="${today}" /></div>
+      <div class="field" style="flex:2;"><label for="etsy-c-what">What</label><input type="text" id="etsy-c-what" maxlength="120" placeholder="e.g. Listing fees" /></div>
+      <div class="field"><label for="etsy-c-amount">Amount ($)</label><input type="number" id="etsy-c-amount" min="0" step="0.01" /></div>
+      <button type="button" class="btn-sm" onclick="addEtsyCost()">Add charge</button>
+    </div>
+    ${costs.length ? `<div class="table-scroll"><table class="money-table">
+      <thead><tr><th scope="col">Date</th><th scope="col">What</th><th scope="col">Amount</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+      <tbody>${costs.map(c => `<tr><td>${esc(c.date)}</td><td>${esc(c.what)}</td><td>${money2(c.amount)}</td><td><button type="button" class="btn-sm danger" onclick="removeEtsyCost('${esc(c.id)}')" aria-label="Remove ${esc(c.what)}">✕</button></td></tr>`).join('')}</tbody>
+    </table></div>` : ''}
+  </div>`;
 }
 
 // ── INSTALL AS AN APP ─────────────────────────────────────────────────────
