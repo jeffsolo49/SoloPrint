@@ -99,6 +99,7 @@ Orders > "Etsy to make" (`etsytodo` tab, `renderEtsyTodoPage` at the end of feat
 unprinted part by color ("Printed 1", `todoPrinted`); each waiting order folds open with +/- per part, Shipped: done (`todoFinish`, asks first), Edit, Delete.
 Add by hand (`state.todoDraft`), from a design's parts with a color idea (`todoAddDesign`, `colorMap.combos`), or unshipped rows of Etsy's Order Items
 file (`todoImport`: no Date Shipped, skips order numbers already listed; Variations become the color text). Never touches the Etsy sales numbers.
+Waiting orders show open (not folded), like the edit screen: Etsy's listing title (`title`, only on orders from the Order Items file; editable in Edit), then each part with its picture (`todoPicture`: the design's color-ideas photo in this order's colors with that part alone, `cmCanvas(..., focus)`; else the part's or design's photo; lines remember `galleryId`/`partId` when added from a design, older ones are matched from "Part (Design)" by `todoLink`) and a tick box per piece printed (`todoPieces`/`todoSetPrinted`; a counter past 12).
 
 ## Amazon invoices
 

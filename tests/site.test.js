@@ -1968,6 +1968,35 @@ const STATES = {
     await page.waitForFunction(() => /Added 1 unshipped order/.test(document.body.textContent));
     o = db.private.etsy_todo.orders.find(x => x.etsyId === '4240000001');
     assert(o && o.buyer === 'Ann Lee' && o.lines[0].what === 'Drying Rack' && /Color:Black/.test(o.lines[0].color) && !db.private.etsy_todo.orders.some(x => x.etsyId === '4240000002'), JSON.stringify(db.private.etsy_todo));
+    // The order shows open, with Etsy's title (only orders from the file have one) and a tick box per piece
+    assert(o.title === 'Drying Rack' && /Drying Rack/.test(await page.textContent(`#todo-${o.id} .todo-o-title`)), JSON.stringify(o));
+    await page.check(`#todo-pc-${o.lines[0].id}-1`);
+    await page.waitForFunction(id => /1 of 1 printed/.test(document.querySelector(`#todo-${id} .todo-progress`).textContent), o.id);
+    assert(db.private.etsy_todo.orders.find(x => x.id === o.id).lines[0].printed === 1, 'ticked = printed');
+    await page.uncheck(`#todo-pc-${o.lines[0].id}-1`);
+    await page.waitForFunction(id => /0 of 1 printed/.test(document.querySelector(`#todo-${id} .todo-progress`).textContent), o.id);
+    await page.close();
+  });
+  await check('etsy to make: parts added from a design show a picture of that part in its color; a hand-typed order has no title', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.parts = [{ id: 'pa', name: 'Base', grams: 40 }, { id: 'pb', name: 'Spine', grams: 10 }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: 'pa' }, { hexes: ['#0a3c80'], part: 'pb' }], combos: [{ id: 'c1', name: 'Red and black', colors: { pa: 'red', pb: 'black' } }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('etsytodo'));
+    await page.waitForSelector('#todo-add');
+    await page.waitForFunction(() => state.galleryLoaded);
+    await page.selectOption('#todo-design', 'g1');
+    await page.selectOption('#todo-combo', 'c1');
+    await page.fill('#todo-dqty', '2');
+    await page.click('text=Add its parts');
+    await page.click('#todo-save');
+    await page.waitForSelector('#todo-orders .todo-order');
+    const o = db.private.etsy_todo.orders[0];
+    assert(!o.title && o.lines.length === 2 && o.lines[0].galleryId === 'g1' && o.lines[0].partId === 'pa' && o.lines[0].color === 'Red' && o.lines[1].color === 'Black', JSON.stringify(o));
+    assert(!(await page.$(`#todo-${o.id} .todo-o-title`)), 'no title when typed by hand');
+    const pics = await page.$$eval(`#todo-${o.id} .todo-pic canvas`, els => els.map(e => [e.getAttribute('aria-label'), JSON.parse(e.dataset.cm).focus]));
+    assert(JSON.stringify(pics) === JSON.stringify([['Base in Red', 0], ['Spine in Black', 1]]), JSON.stringify(pics));
+    assert(await page.$$eval(`#todo-${o.id} .todo-piece`, els => els.length) === 4, 'two tick boxes for each part (2 of each)');
     await page.close();
   });
   await check('etsy: statements count every sale, refund and credit (not deposits); charges for orders not uploaded yet are flagged, then move onto them', async () => {

@@ -3416,11 +3416,11 @@ function cmPartColors(parts, chosen, choices) {
 }
 function cmUsable(m) { return !!(m && m.regions.some(r => r.part)); }
 function cmHexes(m) { return m.regions.flatMap(r => r.hexes); }
-function cmCanvas(m, parts, colors, label, cls = '') {
+function cmCanvas(m, parts, colors, label, cls = '', focus = -1) {
   const on = r => r.part && parts.some(p => p.id === r.part);
   const targets = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? cmColor(colors[r.part]).hex : null)));
   const groups = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? parts.findIndex(p => p.id === r.part) : -1)));
-  return `<canvas class="cm-canvas ${cls}" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), targets, groups }))}" role="img" aria-label="${esc(label)}"></canvas>`;
+  return `<canvas class="cm-canvas ${cls}" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), targets, groups, ...(focus >= 0 ? { focus } : {}) }))}" role="img" aria-label="${esc(label)}"></canvas>`;
 }
 // Each part's reference lightness: the average of its colors, weighted by how much of the picture each covers.
 function cmBases(labels, hexes, groups) {
@@ -3500,7 +3500,11 @@ async function paintColorPreviews() {
         // One area in its own color, everything else faded, so the owner can see which area it is.
         data = new Uint8ClampedArray(img.data);
         for (let p = 0; p < labels.length; p++) if (!s.mask.includes(labels[p])) for (let k = 0; k < 3; k++) data[p * 4 + k] = 235 + data[p * 4 + k] * 0.08;
-      } else data = recolorPixels(img, labels, s.hexes, s.targets, s.groups ? cmBases(labels, s.hexes, s.groups) : null);
+      } else {
+        data = recolorPixels(img, labels, s.hexes, s.targets, s.groups ? cmBases(labels, s.hexes, s.groups) : null);
+        // One part on its own: everything else faded, so it's clear which piece to print.
+        if (s.groups && typeof s.focus === 'number') for (let p = 0; p < labels.length; p++) if (s.groups[labels[p]] !== s.focus) for (let k = 0; k < 3; k++) data[p * 4 + k] = 235 + data[p * 4 + k] * 0.08;
+      }
       if (cmPainted.size > 60) cmPainted.clear();
       cmPainted.set(spec, data);
     }
@@ -4946,14 +4950,18 @@ function renderEtsyTodoPage() {
     <div class="card" id="todo-orders">
       <h3 class="card-title">Waiting to finish (${open.length})</h3>
       ${open.length ? open.map(o => { const lines = o.lines || [], tot = lines.reduce((n, l) => n + (Number(l.qty) || 1), 0), got = lines.reduce((n, l) => n + Math.min(Number(l.printed) || 0, Number(l.qty) || 1), 0);
-        return `<details class="todo-order" id="todo-${esc(o.id)}"${state.todoOpen === o.id ? ' open' : ''}><summary><span class="todo-o-who">${who(o)}</span> ${todoDue(o)} <span class="todo-progress${got >= tot && tot ? ' all' : ''}">${got} of ${tot} printed</span></summary>
+        return `<section class="todo-order" id="todo-${esc(o.id)}" aria-label="${o.etsyId ? 'Etsy order ' + esc(o.etsyId) : 'Etsy order'}">
+          <div class="todo-o-head"><span class="todo-o-who">${who(o)}</span> ${todoDue(o)} <span class="todo-progress${got >= tot && tot ? ' all' : ''}">${got} of ${tot} printed</span></div>
+          ${o.title ? `<div class="todo-o-title">${esc(o.title)}</div>` : ''}
           ${o.note ? `<p class="field-help">${esc(o.note)}</p>` : ''}
-          <ul class="todo-lines">${lines.map(l => `<li class="${todoLeft(l) ? '' : 'printed'}"><span>${swatch(l.color)}<strong>${esc(l.what)}</strong> · ${esc(l.color || 'no color')} · ${Number(l.printed) || 0} of ${Number(l.qty) || 1} printed</span>
-            <span class="todo-step"><button type="button" class="btn-sm" onclick="todoPrinted('${esc(o.id)}', '${esc(l.id)}', -1)" aria-label="One fewer printed: ${esc(l.what)}" ${Number(l.printed) ? '' : 'disabled'}>−</button><button type="button" class="btn-sm" onclick="todoPrinted('${esc(o.id)}', '${esc(l.id)}', 1)" aria-label="One more printed: ${esc(l.what)}" ${todoLeft(l) ? '' : 'disabled'}>+</button></span></li>`).join('')}</ul>
+          <ul class="todo-parts">${lines.map(l => `<li class="${todoLeft(l) ? '' : 'printed'}">
+            ${todoPicture(o, l)}
+            <span class="todo-part-text">${swatch(l.color)}${Number(l.qty) || 1} × <strong>${esc(l.what)}</strong>${l.color ? ` · ${esc(l.color)}` : ''}</span>
+            ${todoPieces(o, l)}</li>`).join('')}</ul>
           <div class="money-controls"><button type="button" class="btn-sm" onclick="todoFinish('${esc(o.id)}')">Shipped: done</button>
             <button type="button" class="btn-sm" onclick="todoEdit('${esc(o.id)}')">Edit</button>
             <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')">Delete</button></div>
-        </details>`; }).join('') : '<p class="field-help">No Etsy orders waiting.</p>'}
+        </section>`; }).join('') : '<p class="field-help">No Etsy orders waiting.</p>'}
     </div>
     <div class="card" id="todo-add">
       <h3 class="card-title">${d.id ? 'Edit this Etsy order' : 'Add an Etsy order'}</h3>
@@ -4968,6 +4976,7 @@ function renderEtsyTodoPage() {
         <div class="field"><label for="todo-due">Ship by</label><input type="date" id="todo-due" value="${esc(d.due)}" oninput="todoDraft().due = this.value" /></div>
         <div class="field" style="flex:2;"><label for="todo-note">Note</label><input type="text" id="todo-note" maxlength="300" value="${esc(d.note)}" oninput="todoDraft().note = this.value" /></div>
       </div>
+      ${d.title ? `<div class="field"><label for="todo-title">Etsy listing title</label><input type="text" id="todo-title" maxlength="200" value="${esc(d.title)}" oninput="todoDraft().title = this.value" /></div>` : ''}
       <h4 class="cm-heading">Parts to print</h4>
       ${d.lines.length ? `<ul class="todo-lines">${d.lines.map((l, n) => `<li><span>${swatch(l.color)}${Number(l.qty) || 1} × <strong>${esc(l.what)}</strong> · ${esc(l.color || 'no color')}</span>
         <button type="button" class="btn-sm danger" onclick="todoDraft().lines.splice(${n}, 1); render();" aria-label="Remove ${esc(l.what)}">✕</button></li>`).join('')}</ul>` : '<p class="field-help">No parts yet.</p>'}
@@ -4996,7 +5005,59 @@ function renderEtsyTodoPage() {
       <ul class="todo-lines">${done.map(o => `<li><span>${who(o)} · ${esc((o.lines || []).map(l => `${Number(l.qty) || 1} × ${l.what}`).join(', '))}</span>
         <button type="button" class="btn-sm" onclick="todoReopen('${esc(o.id)}')">Put back</button></li>`).join('')}</ul></details>` : ''}`;
 }
-function todoNewLine(what, color, qty) { return { id: settingsId(), what: String(what || '').trim().slice(0, 80), color: String(color || '').trim().slice(0, 60), qty: Math.max(1, Math.min(999, parseInt(qty, 10) || 1)), printed: 0 }; }
+// A tick box per piece printed (a counter past 12). Ticking box k marks k printed; unticking it marks k - 1.
+function todoPieces(o, l) {
+  const q = Number(l.qty) || 1, p = Math.min(q, Number(l.printed) || 0), oid = esc(o.id), lid = esc(l.id);
+  if (q > 12) return `<span class="todo-step"><span class="todo-count">${p} of ${q} printed</span><button type="button" class="btn-sm" onclick="todoPrinted('${oid}', '${lid}', -1)" aria-label="One fewer printed: ${esc(l.what)}" ${p ? '' : 'disabled'}>−</button><button type="button" class="btn-sm" onclick="todoPrinted('${oid}', '${lid}', 1)" aria-label="One more printed: ${esc(l.what)}" ${p < q ? '' : 'disabled'}>+</button></span>`;
+  return `<span class="todo-pieces" role="group" aria-label="Printed: ${esc(l.what)}">${Array.from({ length: q }, (x, k) => `<label class="todo-piece${k < p ? ' on' : ''}"><input type="checkbox" id="todo-pc-${lid}-${k + 1}" ${k < p ? 'checked' : ''} onchange="todoSetPrinted('${oid}', '${lid}', ${k + 1})" />
+    <span>${q > 1 ? `Printed ${k + 1}` : 'Printed'}</span><span class="sr-only"> of ${q}: ${esc(l.what)}${l.color ? ', ' + esc(l.color) : ''}</span></label>`).join('')}</span>`;
+}
+function todoSetPrinted(id, lineId, k) {
+  const o = etsyTodo().find(x => x.id === id), l = o && (o.lines || []).find(x => x.id === lineId);
+  if (!l) return;
+  const now = Number(l.printed) || 0;
+  todoChange(id, x => { (x.lines || []).forEach(y => { if (y.id === lineId) y.printed = now >= k ? k - 1 : k; }); return x; }, '')
+    .then(() => document.getElementById(`todo-pc-${lineId}-${k}`)?.focus());
+}
+// The design and part a line is for: saved when it was added from a design, else read from "Part (Design title)".
+function todoLink(l) {
+  const gallery = state.gallery || [];
+  let g = l.galleryId && gallery.find(x => x.id === l.galleryId), part = null;
+  if (g) part = l.partId ? (g.parts || []).find(p => p.id === l.partId) : null;
+  else {
+    const m = String(l.what || '').match(/^(.*) \((.*)\)$/);
+    const low = s => String(s || '').trim().toLowerCase();
+    g = m ? gallery.find(x => low(x.title) === low(m[2])) : gallery.find(x => low(x.title) === low(l.what));
+    if (g && m) part = (g.parts || []).find(p => low(p.name) === low(m[1])) || null;
+  }
+  return g ? { g, part } : null;
+}
+function todoColorKey(name) {
+  const n = String(name || '').trim().toLowerCase();
+  const c = (state.settings.colors || []).find(x => String(x.name).trim().toLowerCase() === n);
+  return c ? c.id : n === 'black' || n === 'white' ? n : '';
+}
+// The part's picture in its color: the design's color-ideas photo with this order's colors on every part and the
+// other parts faded; else the part's own photo, else the design's first photo.
+function todoPicture(o, l) {
+  const link = todoLink(l);
+  if (!link) return '';
+  const { g, part } = link, m = g.colorMap, parts = g.parts || [];
+  if (m && cmUsable(m) && parts.length) {
+    const colors = {};
+    parts.forEach(p => { colors[p.id] = p.defaultColor || g.colorId || 'white'; });
+    (o.lines || []).forEach(x => { const lx = todoLink(x); if (lx && lx.g.id === g.id && lx.part && todoColorKey(x.color)) colors[lx.part.id] = todoColorKey(x.color); });
+    if (part && todoColorKey(l.color)) colors[part.id] = todoColorKey(l.color);
+    const label = part ? `${part.name} in ${l.color || 'its color'}` : `${g.title} in these colors`;
+    return `<span class="todo-pic">${cmCanvas(m, parts, colors, label, 'cm-small', part ? parts.findIndex(p => p.id === part.id) : -1)}</span>`;
+  }
+  const photo = (part && part.photo) || (g.photos || [])[0];
+  return photo ? `<span class="todo-pic">${thumbImg(photo, part ? part.name : g.title, 'thumb')}</span>` : '';
+}
+function todoNewLine(what, color, qty, link) {
+  return { id: settingsId(), what: String(what || '').trim().slice(0, 80), color: String(color || '').trim().slice(0, 60), qty: Math.max(1, Math.min(999, parseInt(qty, 10) || 1)), printed: 0,
+    ...(link && link.galleryId ? { galleryId: link.galleryId, ...(link.partId ? { partId: link.partId } : {}) } : {}) };
+}
 function todoAddLine() {
   const v = id => String((document.getElementById(id) || {}).value || '').trim();
   if (!v('todo-what')) { showAlert('todo-err', 'Type the part or item to print.', 'error'); return; }
@@ -5010,8 +5071,8 @@ function todoAddDesign() {
   const combo = ((g.colorMap && g.colorMap.combos) || []).find(c => c.id === (document.getElementById('todo-combo') || {}).value);
   const qty = (document.getElementById('todo-dqty') || {}).value;
   const parts = (g.parts || []).filter(p => !p.optional);
-  if (parts.length) parts.forEach(p => todoDraft().lines.push(todoNewLine(`${p.name}${g.title ? ` (${g.title})` : ''}`, todoColorName((combo && combo.colors[p.id]) || p.defaultColor || g.colorId || 'white'), qty)));
-  else todoDraft().lines.push(todoNewLine(g.title || 'Design', todoColorName(g.colorId || 'white'), qty));
+  if (parts.length) parts.forEach(p => todoDraft().lines.push(todoNewLine(`${p.name}${g.title ? ` (${g.title})` : ''}`, todoColorName((combo && combo.colors[p.id]) || p.defaultColor || g.colorId || 'white'), qty, { galleryId: g.id, partId: p.id })));
+  else todoDraft().lines.push(todoNewLine(g.title || 'Design', todoColorName(g.colorId || 'white'), qty, { galleryId: g.id }));
   render();
 }
 function todoSave() {
@@ -5019,6 +5080,7 @@ function todoSave() {
   if (!d.lines.length) { showAlert('todo-err', 'Add at least one part to print.', 'error'); return; }
   const o = { id: d.id || settingsId(), etsyId: String(d.etsyId || '').replace(/\D/g, '').slice(0, 20), buyer: String(d.buyer || '').trim().slice(0, 80),
     due: /^\d{4}-\d{2}-\d{2}$/.test(d.due) ? d.due : '', note: String(d.note || '').trim().slice(0, 300), lines: d.lines.slice(0, 60),
+    ...(String(d.title || '').trim() ? { title: String(d.title).trim().slice(0, 200) } : {}),
     createdAt: d.createdAt || new Date().toISOString(), done: !!d.done, doneAt: d.doneAt || '' };
   const list = etsyTodo();
   state.todoDraft = null;
@@ -5033,7 +5095,7 @@ function todoEdit(id) {
   document.getElementById('todo-add')?.scrollIntoView({ block: 'start' });
   document.getElementById('todo-id')?.focus();
 }
-function todoChange(id, fn, msg) { state.todoOpen = id; saveEtsyTodo(etsyTodo().map(o => (o.id === id ? fn(JSON.parse(JSON.stringify(o))) : o)), msg); }
+function todoChange(id, fn, msg) { state.todoOpen = id; return saveEtsyTodo(etsyTodo().map(o => (o.id === id ? fn(JSON.parse(JSON.stringify(o))) : o)), msg); }
 function todoPrinted(id, lineId, step) {
   todoChange(id, o => { (o.lines || []).forEach(l => { if (l.id === lineId) l.printed = Math.max(0, Math.min(Number(l.qty) || 1, (Number(l.printed) || 0) + step)); }); return o; }, '');
 }
@@ -5067,7 +5129,10 @@ async function todoImport(input) {
     if (!add.has(id)) add.set(id, { id: settingsId(), etsyId: id, buyer: get(r, 'ship name', 'buyer').slice(0, 80), due: '', note: '', createdAt: new Date().toISOString(), done: false, doneAt: '', lines: [] });
     const opts = get(r, 'variations').replace(/\s*,\s*/g, ', ');
     add.get(id).lines.push(todoNewLine(get(r, 'item name'), opts, get(r, 'quantity')));
+    const name = get(r, 'item name'), o = add.get(id);
+    if (name && !String(o.title || '').split(' + ').includes(name)) o.title = (o.title ? o.title + ' + ' : '') + name;
   });
+  add.forEach(o => { if (o.title) o.title = o.title.slice(0, 200); });
   if (!add.size) { state.todoMsg = 'No new unshipped orders in that file.'; render(); return; }
   saveEtsyTodo(etsyTodo().concat([...add.values()]), `Added ${add.size} unshipped order${add.size === 1 ? '' : 's'}. Tap one to split its items into parts and colors with Edit.`);
 }
