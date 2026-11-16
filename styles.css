@@ -1196,3 +1196,20 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 /* Editable email in the send pop-up */
 .mail-modal .mp-body { width: 100%; min-height: 220px; max-height: 50vh; resize: vertical; font: inherit; line-height: 1.5; }
 .mail-modal .mp-subject { width: 100%; }
+
+/* Etsy sales: each order with its costs, or a sortable spreadsheet */
+.etsy-view-controls { align-items: flex-end; }
+.seg { display: inline-flex; gap: 0; }
+.seg .btn-sm { border-radius: 0; }
+.seg .btn-sm:first-child { border-radius: 8px 0 0 8px; }
+.seg .btn-sm:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+.seg .btn-sm[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.sort-head { background: none; border: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-decoration: underline dotted; min-height: 24px; }
+.etsy-sheet td.etsy-what { white-space: normal; min-width: 160px; }
+.etsy-orders { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
+.etsy-order { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); }
+.etsy-order-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.etsy-lines { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; margin: 10px 0 0; font-size: 14px; }
+.etsy-lines dt { color: var(--muted); }
+.etsy-lines dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.etsy-lines .etsy-total { border-top: 1px solid var(--border); padding-top: 4px; font-weight: 700; color: var(--text); }
