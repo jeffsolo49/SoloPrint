@@ -1866,6 +1866,42 @@ const STATES = {
     assert(stats[5] === '$43.60' && /\$43\.60/.test(await page.textContent('#etsy-profit')), `stats ${stats}`);
     await page.close();
   });
+  await check("etsy: a real statement's layout (fees and the buyer's sales tax listed before the sale) lands on the right orders", async () => {
+    const db = fixtures(), y = new Date().getFullYear();
+    db.private.money = { costPerKg: 20, expenses: [] };
+    const page = await open(db);
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#etsy-card');
+    const st = 'Date,Type,Title,Info,Currency,Amount,"Fees & Taxes",Net,"Tax Details"\n'
+      + `"November 16, ${y}",Deposit,"$124.45 sent to your bank account",,USD,--,--,--,--\n`
+      + `"November 16, ${y}",Marketing,"Etsy Ads","Bill for click-throughs to your shop on Nov 15, ${y}",USD,--,-$0.48,-$0.48,--\n`
+      + `"November 15, ${y}",Tax,"Tax on transaction fee","Order #4233804505",USD,--,-$0.06,-$0.06,--\n`
+      + `"November 15, ${y}",Fee,"Shipping transaction fee","Order #4233804505",USD,--,-$0.39,-$0.39,--\n`
+      + `"November 15, ${y}",Fee,"Transaction fee: Drying Rack, 5 Adj...","Order #4233804505",USD,--,-$1.23,-$1.23,--\n`
+      + `"November 15, ${y}",Tax,"Sales tax paid by buyer","Order #4233804505",USD,--,-$1.65,-$1.65,--\n`
+      + `"November 15, ${y}",Fee,"Payment processing fee","Order #4233804505",USD,--,-$1.05,-$1.05,--\n`
+      + `"November 15, ${y}",Sale,"Payment for Order #4233804505",,USD,$26.61,--,$26.61,--\n`
+      + `"November 15, ${y}",Fee,"Listing fee","Listing #4606049264",USD,--,-$0.20,-$0.20,--\n`
+      + `"November 12, ${y}",Shipping,"USPS shipping label","Label #320166474850",USD,--,-$5.95,-$5.95,--\n`
+      + `"November 12, ${y}",Tax,"Tax on transaction fee","Order #4230650856",USD,--,-$0.04,-$0.04,--\n`
+      + `"November 12, ${y}",Marketing,"Offsite Ads fee","Order #4230650856",USD,--,-$2.58,-$2.58,--\n`
+      + `"November 12, ${y}",Fee,"Shipping transaction fee","Order #4230650856",USD,--,-$0.39,-$0.39,--\n`
+      + `"November 12, ${y}",Fee,"Transaction fee: Bottle Anti Tipping F...","Order #4230650856",USD,--,-$0.73,-$0.73,--\n`
+      + `"November 12, ${y}",Tax,"Sales tax paid by buyer","Order #4230650856",USD,--,-$1.38,-$1.38,--\n`
+      + `"November 12, ${y}",Fee,"Payment processing fee","Order #4230650856",USD,--,-$0.81,-$0.81,--\n`
+      + `"November 12, ${y}",Sale,"Payment for Order #4230650856",,USD,$18.58,--,$18.58,--\n`;
+    await page.setInputFiles('#etsy-file', { name: `etsy_statement_${y}_11.csv`, mimeType: 'text/csv', buffer: Buffer.from(st) });
+    await page.waitForSelector('#etsy-preview');
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    const e = db.private.etsy, a = e.orders.find(o => o.etsyId === '4233804505'), b = e.orders.find(o => o.etsyId === '4230650856');
+    assert(a.sale === 24.96 && a.tax === 1.65 && a.fees === 2.34 && a.label === 0.39, JSON.stringify(a));
+    assert(b.sale === 17.2 && b.fees === 1.58 && b.label === 0.39 && b.ads === 2.58, JSON.stringify(b));
+    assert(e.costs.length === 3 && !(await page.$('#etsy-orphans')), JSON.stringify(e.costs));
+    // 42.16 sales - fees 4.12 - shipping 6.73 - marketing 3.06 = 28.25
+    assert(/\$28\.25/.test(await page.textContent('#etsy-profit')), await page.textContent('#etsy-profit'));
+    await page.close();
+  });
   await check('etsy: statements count every sale, refund and credit (not deposits); charges for orders not uploaded yet are flagged, then move onto them', async () => {
     const db = fixtures(), y = new Date().getFullYear(), yy = String(y).slice(2);
     db.private.money = { costPerKg: 20, expenses: [] };
