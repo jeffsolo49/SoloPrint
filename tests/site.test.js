@@ -1733,7 +1733,7 @@ const STATES = {
     assert(db.private.etsy.orders.length === 3, 'a sale typed by hand');
     // Sales 36 + 900 + 12; costs: fees 3.39 + 27.25, labels 5.2, material 2, other 0.2
     const stats = await page.$$eval('.etsy-stats .stat-val', els => els.map(x => x.textContent));
-    assert(JSON.stringify(stats) === JSON.stringify(['$948.00', '$30.84', '$5.59', '$2.00', '$909.57']), `stats ${stats}`);
+    assert(JSON.stringify(stats) === JSON.stringify(['$948.00', '$30.84', '$0.00', '$5.59', '$2.00', '$909.57']), `stats ${stats}`);
     await page.click(`text=Download ${year} for taxes (Excel)`);
     const sheets = await page.evaluate(() => window.__sheets.map(s => [s[0], s[1].length]));
     assert(sheets.map(s => s[0]).join() === 'Summary,Paid orders,Expenses,Ads,Etsy' && sheets[4][1] >= 5, JSON.stringify(sheets));
@@ -1755,6 +1755,50 @@ const STATES = {
     await page.waitForFunction(() => !document.getElementById('load-failed'));
     await page.close();
   });
+  await check('etsy: marketing is tracked, and a yearly summary makes uploads skip what it already holds', async () => {
+    const db = fixtures(), y = new Date().getFullYear(), yy = String(y).slice(2);
+    db.private.money = { costPerKg: 20, expenses: [] };
+    const page = await open(db);
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#etsy-card');
+    const pick = (name, body) => page.setInputFiles('#etsy-file', { name, mimeType: 'text/csv', buffer: Buffer.from(body) });
+    const head = 'Sale Date,Order ID,Full Name,Order Value,Discount Amount,Shipping Discount,Shipping,Sales Tax,Order Total,Card Processing Fees,Adjusted Order Total,Adjusted Card Processing Fees\n';
+    // A yearly summary typed by hand, up to March 31.
+    await page.click('#etsy-add');
+    await page.fill('#etsy-f-date', `${y}-03-31`);
+    await page.fill('#etsy-f-items', 'Etsy summary');
+    await page.fill('#etsy-f-sale', '100');
+    await page.check('#etsy-f-summary');
+    await page.click('#etsy-save');
+    await page.waitForFunction(() => !document.getElementById('etsy-form'));
+    await pick('EtsySoldOrders.csv', head + `03/10/${yy},3200000001,Ann,20,0,0,0,0,20,1,--,--\n04/02/${yy},3200000002,Bo,40,0,0,5,0,45,2,--,--\n`);
+    await page.waitForSelector('#etsy-preview');
+    assert(/1 new sale/.test(await page.textContent('#etsy-preview')) && /1 already in your yearly summary/.test(await page.textContent('#etsy-preview')), await page.textContent('#etsy-preview'));
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    // Uploading the same month again adds nothing (matched by order number).
+    await pick('EtsySoldOrders.csv', head + `04/02/${yy},3200000002,Bo,40,0,0,5,0,45,2,--,--\n`);
+    await page.waitForSelector('#etsy-preview');
+    assert(/0 new sales/.test(await page.textContent('#etsy-preview')), await page.textContent('#etsy-preview'));
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    const statement = 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n'
+      + `"March 20, ${y}",Marketing,Etsy Ads,Ads,USD,--,-$9.00,-$9.00,--\n`
+      + `"April 3, ${y}",Marketing,Offsite Ads fee,Order #3200000002,USD,--,-$6.00,-$6.00,--\n`
+      + `"April 5, ${y}",Marketing,Etsy Ads,Ads,USD,--,-$3.00,-$3.00,--\n`;
+    await pick(`etsy_statement_${y}_4.csv`, statement);
+    await page.waitForSelector('#etsy-preview');
+    const pv = await page.textContent('#etsy-preview');
+    assert(/2 marketing charges: Etsy Ads and Offsite Ads \(\$9\.00\)/.test(pv) && /1 already in your yearly summary/.test(pv), pv);
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    const e = db.private.etsy, bo = e.orders.find(o => o.etsyId === '3200000002');
+    assert(e.orders.length === 2 && bo.ads === 6 && bo.fees === 2 && e.costs.length === 1 && e.costs[0].kind === 'ads' && e.costs[0].amount === 3, JSON.stringify(e));
+    // Marketing stat = 6 (on the sale) + 3 (Etsy Ads); profit = 100 + 45 - 2 - 6 - 3 = 134.
+    const stats = await page.$$eval('.etsy-stats .stat-val', els => els.map(x => x.textContent));
+    assert(stats[2] === '$9.00' && stats[5] === '$134.00', `stats ${stats}`);
+    await page.close();
+  });
   await check('etsy: shipping transaction fees imported before the fix move to shipping costs once', async () => {
     const db = fixtures(), y = new Date().getFullYear();
     db.private.etsy = { orders: [{ id: 'a', etsyId: '3100000001', date: `${y}-02-03`, sale: 30, fees: 3.39, label: 5.2 }, { id: 'b', etsyId: '3100000002', date: `${y}-02-04`, sale: 10, fees: 1, label: 0, edited: true }],
@@ -1762,7 +1806,7 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(asOwner('money'));
     await page.waitForSelector('#etsy-shipfee-fix');
-    assert(/1 shipping transaction fee was/.test(await page.textContent('#etsy-shipfee-fix')), 'hand-edited sales are left alone');
+    assert(/counted 1 shipping transaction fee \(/.test(await page.textContent('#etsy-shipfee-fix')), 'hand-edited sales are left alone');
     await page.click('#etsy-shipfee-fix button');
     await page.waitForFunction(() => !document.getElementById('etsy-shipfee-fix'));
     const [a, b] = db.private.etsy.orders;
