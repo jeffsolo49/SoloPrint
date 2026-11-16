@@ -1386,31 +1386,53 @@ function etsyPlan(rows, fileName) {
   }
   return plan;
 }
-function etsyFileChosen(input) {
-  const file = input.files && input.files[0];
-  input.value = '';
-  if (!file) return;
-  const r = new FileReader();
-  r.onerror = () => showAlert('etsy-err', "Couldn't read that file.", 'error');
-  r.onload = () => {
-    let rows;
-    try {
-      if (/\.xlsx?$/i.test(file.name)) {
-        if (typeof XLSX === 'undefined') { showAlert('etsy-err', "The spreadsheet tool didn't load. Try the .csv file instead.", 'error'); return; }
-        const wb = XLSX.read(new Uint8Array(r.result), { type: 'array' });
-        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false });
-      } else rows = etsyCsvRows(new TextDecoder().decode(r.result));
-    } catch (e) { showAlert('etsy-err', "Couldn't read that file.", 'error'); return; }
-    const plan = etsyPlan(rows, file.name);
-    if (!plan.kind) { showAlert('etsy-err', "That doesn't look like one of Etsy's files. Use the Orders or Order Items file from Download Data, or a monthly statement (see the steps above).", 'error'); return; }
-    state.etsyImport = plan;
-    render();
-    document.getElementById('etsy-preview')?.focus();
-  };
-  r.readAsArrayBuffer(file);
+// One file or many at once (a whole year: the Orders file, Order Items and 12 statements). Files are read, put in a
+// safe order (Orders, then Order Items, then statements, oldest first), planned one after another on a copy, and
+// shown as one preview; nothing is saved until "Add to my sales".
+const ETSY_KIND_ORDER = { orders: 0, items: 1, statement: 2 };
+function etsyReadFile(file) {
+  return new Promise(resolve => {
+    const r = new FileReader();
+    r.onerror = () => resolve({ file, rows: null });
+    r.onload = () => {
+      try {
+        if (/\.xlsx?$/i.test(file.name)) {
+          if (typeof XLSX === 'undefined') { resolve({ file, rows: null }); return; }
+          const wb = XLSX.read(new Uint8Array(r.result), { type: 'array' });
+          resolve({ file, rows: XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false }) });
+        } else resolve({ file, rows: etsyCsvRows(new TextDecoder().decode(r.result)) });
+      } catch (e) { resolve({ file, rows: null }); }
+    };
+    r.readAsArrayBuffer(file);
+  });
 }
-function renderEtsyPreview(p) {
-  const name = { orders: 'Etsy Orders file', items: 'Etsy Order Items file', statement: 'Etsy monthly statement' }[p.kind];
+async function etsyFileChosen(input) {
+  const files = [...(input.files || [])].slice(0, 60);
+  input.value = '';
+  if (!files.length) return;
+  const read = await Promise.all(files.map(etsyReadFile));
+  const firstDate = rows => { const tb = etsyTable(rows); const k = tb.col('sale date', 'date'); return (tb.body.map(r => etsyDate(k >= 0 ? r[k] : '')).filter(Boolean).sort()[0]) || ''; };
+  const good = [], bad = [];
+  read.forEach(x => { const kind = x.rows ? etsyKind(etsyTable(x.rows)) : ''; if (kind) good.push({ ...x, kind, first: firstDate(x.rows) }); else bad.push(x.file.name); });
+  if (!good.length) { showAlert('etsy-err', `${bad.length > 1 ? "Those don't" : "That doesn't"} look like Etsy's files. Use the Orders or Order Items file from Download Data, or monthly statements (see the steps above).`, 'error'); return; }
+  good.sort((a, b) => ETSY_KIND_ORDER[a.kind] - ETSY_KIND_ORDER[b.kind] || a.first.localeCompare(b.first) || a.file.name.localeCompare(b.file.name));
+  const was = state.ownerPrivate && state.ownerPrivate.etsy;
+  const plans = [];
+  try {
+    good.forEach(x => {
+      const plan = etsyPlan(x.rows, x.file.name);
+      plans.push(plan);
+      state.ownerPrivate = { ...(state.ownerPrivate || {}), etsy: etsyApplyPlan(etsyData(), plan) };
+    });
+    state.etsyImport = { plans, bad, result: etsyData() };
+  } finally {
+    state.ownerPrivate = { ...(state.ownerPrivate || {}), etsy: was };
+    if (was === undefined) delete state.ownerPrivate.etsy;
+  }
+  render();
+  document.getElementById('etsy-preview')?.focus();
+}
+function etsyPreviewLines(p) {
   const lines = [];
   if (p.kind === 'orders') {
     lines.push(`${p.add.length} new sale${p.add.length === 1 ? '' : 's'} (${money2(p.add.reduce((s, o) => s + o.sale + o.shipping - o.refund, 0))})`);
@@ -1429,9 +1451,18 @@ function renderEtsyPreview(p) {
   }
   if (p.covered) lines.push(`${p.covered} already in your yearly summary, skipped`);
   if (p.skipped) lines.push(`${p.skipped} line${p.skipped === 1 ? '' : 's'} not used${p.kind === 'items' ? ' (import the Orders file for those months first)' : p.kind === 'statement' ? ' (sales, deposits and taxes are already in the Orders file)' : ''}`);
+  return lines;
+}
+function renderEtsyPreview(imp) {
+  const names = { orders: 'Orders file', items: 'Order Items file', statement: 'Monthly statement' };
+  const one = imp.plans.length === 1;
+  const sales = imp.plans.filter(p => p.kind === 'orders').reduce((s, p) => s + p.add.length, 0);
   return `<div class="etsy-preview" id="etsy-preview" tabindex="-1">
-    <strong>${esc(name)}: ${esc(p.fileName)}</strong>
-    <ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    <strong>${one ? `Etsy ${esc(names[imp.plans[0].kind])}: ${esc(imp.plans[0].fileName)}` : `${imp.plans.length} Etsy files${sales ? `, ${sales} new sale${sales === 1 ? '' : 's'}` : ''}`}</strong>
+    ${one ? `<ul>${etsyPreviewLines(imp.plans[0]).map(l => `<li>${esc(l)}</li>`).join('')}</ul>`
+      : imp.plans.map((p, n) => `<details class="etsy-file"${n === 0 ? ' open' : ''}><summary>${esc(names[p.kind])}: ${esc(p.fileName)}</summary>
+        <ul>${etsyPreviewLines(p).map(l => `<li>${esc(l)}</li>`).join('')}</ul></details>`).join('')}
+    ${imp.bad.length ? `<div class="field-help">Not Etsy files, left out: ${esc(imp.bad.join(', '))}</div>` : ''}
     <div class="money-controls"><button type="button" class="btn-sm" id="etsy-apply" onclick="applyEtsyImport()">Add to my sales</button>
     <button type="button" class="btn-sm" onclick="state.etsyImport = null; render();">Cancel</button></div>
   </div>`;
@@ -1441,10 +1472,9 @@ async function writeEtsy(patch, okMsg) {
   try { await saveOwnerPrivate('etsy'); state.etsyMsg = okMsg || ''; render(); }
   catch (e) { render(); showAlert('etsy-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); }
 }
-function applyEtsyImport() {
-  const p = state.etsyImport;
-  if (!p) return;
-  const orders = etsyOrders().map(o => ({ ...o }));
+// One file's plan applied to Etsy data (a copy is returned; nothing is saved here).
+function etsyApplyPlan(data, p) {
+  const orders = (Array.isArray(data.orders) ? data.orders : []).map(o => ({ ...o }));
   etsyMoveShipFees(orders);
   const find = id => orders.find(o => String(o.etsyId) === String(id));
   if (p.kind === 'orders') {
@@ -1452,13 +1482,20 @@ function applyEtsyImport() {
     p.add.forEach(u => orders.push({ id: settingsId(), items: '', label: 0, grams: null, material: null, note: '', ...u, fees: u.cardFee }));
   } else if (p.kind === 'items') p.items.forEach(u => { const o = find(u.etsyId); if (o && !o.edited) o.items = u.items; });
   else p.fees.forEach(f => { const o = find(f.etsyId); if (!o) return; const k = f.label ? 'label' : f.ads ? 'ads' : 'fees'; o[k] = etsyNum(etsyNum(o[k]) + f.amount); });
-  const costs = etsyCosts().concat(p.kind === 'statement' ? p.costs.map(c => ({ id: settingsId(), ...c })) : []);
-  const seen = (etsyData().seen || []).concat(p.seen || []).slice(-5000);
-  const years = orders.map(o => Number(String(o.date).slice(0, 4))).filter(Boolean);
-  if (p.kind === 'orders' && p.add.length) state.moneyYear = Math.max(...p.add.map(o => Number(o.date.slice(0, 4))));
+  const costs = (Array.isArray(data.costs) ? data.costs : []).concat(p.kind === 'statement' ? p.costs.map(c => ({ id: settingsId(), ...c })) : []);
+  const seen = (data.seen || []).concat(p.seen || []).slice(-5000);
+  return { ...data, orders, costs, seen, shipFeesMoved: true, adsMoved: true };
+}
+function applyEtsyImport() {
+  const imp = state.etsyImport;
+  if (!imp) return;
+  const result = imp.result, before = new Set(etsyOrders().map(o => o.id));
+  const added = (result.orders || []).filter(o => !before.has(o.id)).map(o => Number(String(o.date).slice(0, 4))).filter(Boolean);
+  const years = (result.orders || []).map(o => Number(String(o.date).slice(0, 4))).filter(Boolean);
+  if (added.length) state.moneyYear = Math.max(...added);
   else if (!state.moneyYear && years.length) state.moneyYear = Math.max(...years);
   state.etsyImport = null;
-  writeEtsy({ orders, costs, seen, shipFeesMoved: true, adsMoved: true }, 'Imported. Everything stays editable below.');
+  writeEtsy(result, `Imported ${imp.plans.length} file${imp.plans.length === 1 ? '' : 's'}. Everything stays editable below.`);
 }
 
 // Typing a sale in, or fixing one: the same form. Saving marks it edited, so a later import won't overwrite it.
@@ -1580,13 +1617,13 @@ function renderEtsyCard(year, site) {
       <ol class="field-help">
         <li><strong>Sales:</strong> on Etsy, open Shop Manager, then Settings, then Options, then the Download Data tab. Under Orders pick <em>Orders</em>, the month and year, and tap Download CSV. Do the same with <em>Order Items</em> if you want item names.</li>
         <li><strong>Fees and shipping labels:</strong> Shop Manager, then Finances, then Monthly statements. Pick the month and tap Download CSV.</li>
-        <li>Upload each file here. Import the Orders file first, then the statement for the same month. You'll see what will be added before anything is saved, and importing the same file twice doesn't count anything twice.</li>
+        <li>Upload them here. You can pick many files at once, like a whole year: the Orders file, the Order Items file and all 12 statements together. The site puts them in the right order by itself. You'll see what will be added before anything is saved, and uploading the same file twice doesn't count anything twice.</li>
       </ol>
       <div class="field-help">Etsy sometimes moves these menus; if they're not there, search Etsy's help for "download data" or "monthly statement".</div>
     </details>
     <div class="money-controls">
-      <button type="button" class="btn-sm" id="etsy-upload" onclick="document.getElementById('etsy-file').click()">Upload an Etsy file (.csv)</button>
-      <input type="file" id="etsy-file" accept=".csv,.xlsx,.xls,text/csv" hidden onchange="etsyFileChosen(this)" />
+      <button type="button" class="btn-sm" id="etsy-upload" onclick="document.getElementById('etsy-file').click()">Upload Etsy files (.csv, one or many)</button>
+      <input type="file" id="etsy-file" accept=".csv,.xlsx,.xls,text/csv" multiple hidden onchange="etsyFileChosen(this)" />
       ${editing ? '' : renderEtsyForm()}
     </div>
     <div class="alert error" id="etsy-err"></div>

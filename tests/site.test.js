@@ -253,7 +253,7 @@ const STATES = {
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
   'owner etsy spreadsheet': "(async () => { await (" + asOwner('money') + "); localStorage.setItem('soloprint_etsy_view', 'sheet'); state.etsyView = 'sheet'; state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 1 }, { id: 'e2', date: new Date().getFullYear() + '-03-03', items: 'Market sale', sale: 12 }], seen: ['2026-02-03|fee|Transaction fee: Shipping|Order #3100000001|0.39'] }; render(); })()",
-  'owner money with etsy': "(async () => { await (" + asOwner('money') + "); state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 0 }], costs: [{ id: 'c1', date: new Date().getFullYear() + '-02-01', what: 'Listing fees', amount: 0.4 }] }; state.etsyEdit = ''; state.etsyImport = { kind: 'orders', fileName: 'EtsySoldOrders.csv', add: [], update: [], keep: 1, costs: [], fees: [], items: [], skipped: 0 }; render(); })()",
+  'owner money with etsy': "(async () => { await (" + asOwner('money') + "); state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 0 }], costs: [{ id: 'c1', date: new Date().getFullYear() + '-02-01', what: 'Listing fees', amount: 0.4 }] }; state.etsyEdit = ''; state.etsyImport = { plans: [{ kind: 'orders', fileName: 'EtsySoldOrders.csv', add: [], update: [], keep: 1, costs: [], fees: [], items: [], skipped: 0 }, { kind: 'statement', fileName: 'etsy_statement.csv', add: [], update: [], keep: 0, covered: 0, costs: [], fees: [], items: [], skipped: 2 }], bad: ['notes.csv'], result: state.ownerPrivate.etsy }; render(); })()",
   'design page with parts': "(async () => { await loadGallery(); openWork('g2'); })()",
   'request with a color per part': "(async () => { await loadGallery(); requestGalleryItem('g2'); })()",
   'owner gallery parts': "(async () => { await " + asOwner('gallery') + "; editGalleryItem('g2'); })()",
@@ -1824,6 +1824,41 @@ const STATES = {
     await page.waitForFunction(() => !document.getElementById('etsy-shipfee-fix'));
     const [a, b] = db.private.etsy.orders;
     assert(a.fees === 3 && a.label === 5.59 && b.fees === 1 && db.private.etsy.shipFeesMoved === true, JSON.stringify(db.private.etsy));
+    await page.close();
+  });
+  await check('etsy: a whole year at once: many files in one pick, put in order, one preview, saved once', async () => {
+    const db = fixtures();
+    const year = new Date().getFullYear(), yy = String(year).slice(2);
+    db.private.money = { costPerKg: 20, expenses: [] };
+    const page = await open(db);
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#etsy-card');
+    const orders = 'Sale Date,Order ID,Full Name,Order Value,Discount Amount,Shipping Discount,Shipping,Sales Tax,Order Total,Card Processing Fees,Adjusted Order Total,Adjusted Card Processing Fees\n'
+      + `01/05/${yy},3200000001,Ann B,20.00,0,0,5.00,0,25.00,1.00,--,--\n` + `02/07/${yy},3200000002,Cy D,40.00,0,0,5.00,0,45.00,1.60,--,--\n`;
+    const st = (m, id, amt) => 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n' + `"${m} 9, ${year}",Shipping,USPS shipping label,Order #${id},USD,--,-$${amt},-$${amt},--\n`;
+    // statements picked first, and an unrelated file: the site still reads the Orders file first
+    await page.setInputFiles('#etsy-file', [
+      { name: `etsy_statement_${year}_2.csv`, mimeType: 'text/csv', buffer: Buffer.from(st('February', '3200000002', '6.10')) },
+      { name: `etsy_statement_${year}_1.csv`, mimeType: 'text/csv', buffer: Buffer.from(st('January', '3200000001', '4.50')) },
+      { name: 'notes.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b\n1,2\n') },
+      { name: 'EtsySoldOrders.csv', mimeType: 'text/csv', buffer: Buffer.from(orders) }]);
+    await page.waitForSelector('#etsy-preview');
+    const pv = await page.textContent('#etsy-preview');
+    assert(/3 Etsy files, 2 new sales/.test(pv) && /notes\.csv/.test(pv) && !db.private.etsy, pv);
+    const order = await page.$$eval('#etsy-preview .etsy-file summary', els => els.map(e => e.textContent));
+    assert(/Orders file/.test(order[0]) && /_1\.csv/.test(order[1]) && /_2\.csv/.test(order[2]), `in order: ${order}`);
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => document.querySelector('#etsy-card .alert.success'));
+    const e = db.private.etsy;
+    const a = e.orders.find(o => o.etsyId === '3200000001'), c = e.orders.find(o => o.etsyId === '3200000002');
+    assert(e.orders.length === 2 && a.label === 4.5 && c.label === 6.1 && e.seen.length === 2, JSON.stringify(e));
+    // the same year again adds nothing
+    await page.setInputFiles('#etsy-file', [{ name: 'EtsySoldOrders.csv', mimeType: 'text/csv', buffer: Buffer.from(orders) }, { name: `etsy_statement_${year}_1.csv`, mimeType: 'text/csv', buffer: Buffer.from(st('January', '3200000001', '4.50')) }]);
+    await page.waitForSelector('#etsy-preview');
+    await page.click('#etsy-apply');
+    await page.waitForFunction(() => !document.getElementById('etsy-preview'));
+    await page.waitForTimeout(200);
+    assert(db.private.etsy.orders.length === 2 && db.private.etsy.orders.find(o => o.etsyId === '3200000001').label === 4.5, JSON.stringify(db.private.etsy.orders));
     await page.close();
   });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
