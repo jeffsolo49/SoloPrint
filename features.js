@@ -1407,12 +1407,15 @@ function etsyPlan(rows, fileName) {
       if (/deposit|reserve/.test(type) || /^deposit|reserve/i.test(title) || !date || !net) { plan.skipped++; return; }
       const etsyId = etsyOrderNumber(info) || etsyOrderNumber(title), o = etsyId && (have.get(etsyId) || fresh.get(etsyId));
       if (type === 'sale' && etsyId && have.has(etsyId)) { plan.skipped++; return; }   // counted from the Orders file
-      if (/^(tax|vat|sales tax)/.test(type) && /sales tax|paid by buyer|remitted/i.test(title)) { plan.skipped++; return; }   // buyer's sales tax: Etsy pays it
-      const amount = Math.abs(net), credit = net > 0 && type !== 'sale';
+      // Buyer's sales tax: Etsy pays it, so it's never profit. A sale read from the statement includes it, so it's taken back out of that sale.
+      const buyerTax = /^(tax|vat|sales tax)/.test(type) && /sales tax|paid by buyer|remitted/i.test(title);
+      if (buyerTax && !(o && o.fromStatement)) { plan.skipped++; return; }
+      const amount = Math.abs(net), credit = net > 0 && type !== 'sale' && !buyerTax;
       const print = [date, type, title, info, amount].join('|') + (credit ? '|credit' : '');
       if (seen.has(print)) { plan.keep++; return; }
       if (etsyCoveredBySummary(date)) plan.covered++;
       plan.seen.push(print);
+      if (buyerTax) { plan.fees.push({ etsyId, amount, tax: true, cat: 'tax', what: title }); return; }
       if (type === 'sale') {
         const gross = val(amtText) || net, sale = { etsyId: etsyId || '', date, buyer: '', sale: etsyNum(net), shipping: 0, tax: etsyNum(Math.max(0, gross - net)), cardFee: 0, refund: 0, fromStatement: true };
         if (etsyId) { plan.add.push(sale); fresh.set(etsyId, sale); } else plan.costs.push({ date, what: `${title}${info ? ` (${info})` : ''}`.slice(0, 120), amount: -amount, kind: 'fee' });
@@ -1485,7 +1488,8 @@ function etsyPreviewLines(p) {
     if (p.keep) lines.push(`${p.keep} you edited by hand, left as they are`);
   } else if (p.kind === 'items') lines.push(`Item names for ${p.items.length} sale${p.items.length === 1 ? '' : 's'}`);
   else {
-    const labels = p.fees.filter(f => f.label), fees = p.fees.filter(f => !f.label && !f.ads && !f.refund), refunds = p.fees.filter(f => f.refund);
+    const labels = p.fees.filter(f => f.label), fees = p.fees.filter(f => !f.label && !f.ads && !f.refund && !f.tax), refunds = p.fees.filter(f => f.refund), taxes = p.fees.filter(f => f.tax);
+    if (taxes.length) lines.push(`Sales tax buyers paid, taken out of ${taxes.length} sale${taxes.length === 1 ? '' : 's'} (${money2(taxes.reduce((s, f) => s + f.amount, 0))}): Etsy pays it, so it isn't profit`);
     if (p.add.length) lines.push(`${p.add.length} sale${p.add.length === 1 ? '' : 's'} not in your Orders file yet (${money2(p.add.reduce((s, o) => s + o.sale, 0))}). Upload that month's Orders file for names and the full breakdown`);
     if (refunds.length) lines.push(`${refunds.length} refund${refunds.length === 1 ? '' : 's'} to buyers (${money2(refunds.reduce((s, f) => s + f.amount, 0))})`);
     const ads = p.fees.filter(f => f.ads).map(f => f.amount).concat(p.costs.filter(c => c.kind === 'ads').map(c => c.amount));
@@ -1535,6 +1539,7 @@ function etsyApplyPlan(data, p) {
     p.add.forEach(u => orders.push({ id: settingsId(), items: '', label: 0, grams: null, material: null, note: '', ...u, fees: 0 }));
     p.fees.forEach(f => {
       const o = find(f.etsyId); if (!o) return;
+      if (f.tax) { if (o.fromStatement) { o.sale = etsyNum(etsyNum(o.sale) - f.amount); o.tax = etsyNum(etsyNum(o.tax) + f.amount); } return; }
       if (f.refund) { o.stmtRefund = etsyNum(etsyNum(o.stmtRefund) + f.amount); o.refund = etsyNum(Math.max(etsyNum(o.refund), o.stmtRefund)); return; }
       const k = f.label ? 'label' : f.ads ? 'ads' : 'fees';
       o[k] = etsyNum(etsyNum(o[k]) + f.amount);
