@@ -1968,6 +1968,35 @@ const STATES = {
     await page.waitForFunction(() => /Added 1 unshipped order/.test(document.body.textContent));
     o = db.private.etsy_todo.orders.find(x => x.etsyId === '4240000001');
     assert(o && o.buyer === 'Ann Lee' && o.lines[0].what === 'Drying Rack' && /Color:Black/.test(o.lines[0].color) && !db.private.etsy_todo.orders.some(x => x.etsyId === '4240000002'), JSON.stringify(db.private.etsy_todo));
+    // The order shows open, with Etsy's title (only orders from the file have one) and a tick box per piece
+    assert(o.title === 'Drying Rack' && /Drying Rack/.test(await page.textContent(`#todo-${o.id} .todo-o-title`)), JSON.stringify(o));
+    await page.check(`#todo-pc-${o.lines[0].id}-1`);
+    await page.waitForFunction(id => /1 of 1 printed/.test(document.querySelector(`#todo-${id} .todo-progress`).textContent), o.id);
+    assert(db.private.etsy_todo.orders.find(x => x.id === o.id).lines[0].printed === 1, 'ticked = printed');
+    await page.uncheck(`#todo-pc-${o.lines[0].id}-1`);
+    await page.waitForFunction(id => /0 of 1 printed/.test(document.querySelector(`#todo-${id} .todo-progress`).textContent), o.id);
+    await page.close();
+  });
+  await check('etsy to make: parts added from a design show a picture of that part in its color; a hand-typed order has no title', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.parts = [{ id: 'pa', name: 'Base', grams: 40 }, { id: 'pb', name: 'Spine', grams: 10 }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: 'pa' }, { hexes: ['#0a3c80'], part: 'pb' }], combos: [{ id: 'c1', name: 'Red and black', colors: { pa: 'red', pb: 'black' } }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('etsytodo'));
+    await page.waitForSelector('#todo-add');
+    await page.waitForFunction(() => state.galleryLoaded);
+    await page.selectOption('#todo-design', 'g1');
+    await page.selectOption('#todo-combo', 'c1');
+    await page.fill('#todo-dqty', '2');
+    await page.click('text=Add its parts');
+    await page.click('#todo-save');
+    await page.waitForSelector('#todo-orders .todo-order');
+    const o = db.private.etsy_todo.orders[0];
+    assert(!o.title && o.lines.length === 2 && o.lines[0].galleryId === 'g1' && o.lines[0].partId === 'pa' && o.lines[0].color === 'Red' && o.lines[1].color === 'Black', JSON.stringify(o));
+    assert(!(await page.$(`#todo-${o.id} .todo-o-title`)), 'no title when typed by hand');
+    const pics = await page.$$eval(`#todo-${o.id} .todo-pic canvas`, els => els.map(e => [e.getAttribute('aria-label'), JSON.parse(e.dataset.cm).focus]));
+    assert(JSON.stringify(pics) === JSON.stringify([['Base in Red', 0], ['Spine in Black', 1]]), JSON.stringify(pics));
+    assert(await page.$$eval(`#todo-${o.id} .todo-piece`, els => els.length) === 4, 'two tick boxes for each part (2 of each)');
     await page.close();
   });
   await check('etsy: statements count every sale, refund and credit (not deposits); charges for orders not uploaded yet are flagged, then move onto them', async () => {
@@ -2053,6 +2082,77 @@ const STATES = {
     await page.waitForFunction(() => !document.getElementById('etsy-preview'));
     await page.waitForTimeout(200);
     assert(db.private.etsy.orders.length === 2 && db.private.etsy.orders.find(o => o.etsyId === '3200000001').label === 4.5, JSON.stringify(db.private.etsy.orders));
+    await page.close();
+  });
+  await check('amazon invoice: a photo is read into purchases, roll grams on stock and a new color, after checking', async () => {
+    const db = fixtures();
+    const year = new Date().getFullYear();
+    db.private.money = { costPerKg: 20, expenses: [] };
+    db.private.inventory = { black: { grams: 300 } };
+    const invoice = [`Final Details for Order #113-1234567-1234567`, `Order Placed: November 3, ${year}`, 'Amazon.com order number: 113-1234567-1234567',
+      'Items Ordered Price', '1 of: SUNLU PLA Filament 1.75mm 1KG Spool, Black $19.99', 'Sold by: SUNLU', 'Condition: New',
+      '2 of: ELEGOO PLA Filament Bundle 2 Pack 1kg each,', 'Red and Blue $17.99', 'Sold by: ELEGOO', '1 of: 0.4mm Brass Nozzles 10 pcs $8.99',
+      'Item(s) Subtotal: $64.96', 'Shipping & Handling: $0.00', 'Total before tax: $64.96', 'Estimated tax to be collected: $5.36', 'Grand Total: $70.32'].join('\n');
+    const page = await open(db);
+    await page.evaluate(text => { window.Tesseract = { recognize: async () => ({ data: { text } }) }; }, invoice);
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#invoice-read-money');
+    await page.setInputFiles('#invoice-file-money', { name: 'invoice.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([255, 216, 255]) });
+    await page.waitForSelector('#invoice-review-money');
+    const lines = await page.evaluate(() => state.invoice.lines.map(l => [l.colorId || l.newColor || '-', l.grams, l.amount]));
+    // the nozzles aren't filament: shown, not added; tax is only the filament's share (5.36 x 55.97 / 64.96)
+    assert(JSON.stringify(lines) === JSON.stringify([['black', 1000, 19.99], ['red', 2000, 17.99], ['Blue', 2000, 17.99], ['-', 0, 8.99], ['-', 0, 4.62]]), JSON.stringify(lines));
+    const tot = await page.textContent('#invoice-total-money');
+    assert(/Adding \$60\.59 of filament/.test(tot) && /whole invoice was \$70\.32/.test(tot) && /1 other item not added/.test(tot), tot);
+    assert(await page.inputValue('#inv-date-money') === `${year}-11-03` && !db.private.money.expenses.length, 'nothing saved before checking');
+    await page.fill('#inv-new-money-2', 'Royal Blue');
+    await page.click('#invoice-add-money');
+    await page.waitForFunction(() => /Added 4 purchases/.test((document.getElementById('invoice-status-money') || {}).textContent || ''));
+    const m = db.private.money, inv = db.private.inventory, blue = db.settings.colors.find(c => c.name === 'Royal Blue');
+    assert(m.expenses.length === 4 && !m.expenses.some(e => /Nozzle/.test(e.what)) && Math.abs(m.expenses.reduce((t, e) => t + e.amount, 0) - 60.59) < 0.001 && m.expenses.every(e => e.date === `${year}-11-03` && /^Amazon: /.test(e.what)) && m.invoices.join() === '113-1234567-1234567', JSON.stringify(m));
+    assert(blue && inv.black.grams === 1300 && inv.red.grams === 2000 && inv[blue.id].grams === 2000, JSON.stringify({ inv, colors: db.settings.colors }));
+    // the same invoice again: warned it was already added
+    await page.setInputFiles('#invoice-file-money', { name: 'invoice.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([255, 216, 255]) });
+    await page.waitForSelector('#invoice-review-money');
+    assert(/already added this Amazon order/.test(await page.textContent('#invoice-review-money')), 'warns about a repeat');
+    await page.close();
+  });
+  await check('amazon invoice: a real PDF is read; only filament (PLA, TPU) is added, not the glue', async () => {
+    const db = fixtures();
+    db.private.money = { costPerKg: 20, expenses: [] };
+    const page = await open(db);
+    const lib = require('path').join(__dirname, 'node_modules/pdfjs-dist/build/');
+    await page.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/**', route => route.fulfill({ path: lib + (/worker/.test(route.request().url()) ? 'pdf.worker.min.js' : 'pdf.min.js'), contentType: 'text/javascript' }));
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#invoice-read-money');
+    await page.setInputFiles('#invoice-file-money', require('path').join(__dirname, 'fixtures/amazon-invoice.pdf'));
+    await page.waitForSelector('#invoice-review-money', { timeout: 15000 });
+    const lines = await page.evaluate(() => state.invoice.lines.map(l => [l.colorId || l.newColor || '-', l.grams, l.amount, !!(l.filament || l.tax)]));
+    // TPU (clear = a new Transparent color) and PLA red are filament; the glue is not; tax 1.95 x 44.98 / 49.97
+    assert(JSON.stringify(lines) === JSON.stringify([['Transparent', 1000, 24.99, true], ['red', 1000, 19.99, true], ['-', 0, 4.99, false], ['-', 0, 1.76, true]]), JSON.stringify(lines));
+    assert(await page.inputValue('#inv-date-money') === '2026-10-12' && /113-7654321-7654321/.test(await page.textContent('#invoice-review-money')), 'date and order number from the PDF');
+    await page.click('#invoice-add-money');
+    await page.waitForFunction(() => /Added 3 purchases/.test((document.getElementById('invoice-status-money') || {}).textContent || ''));
+    const m = db.private.money;
+    assert(m.expenses.length === 3 && !m.expenses.some(e => /Glue/i.test(e.what)) && Math.abs(m.expenses.reduce((t, e) => t + e.amount, 0) - 46.74) < 0.001, JSON.stringify(m.expenses));
+    assert(db.settings.colors.some(c => c.name === 'Transparent') && db.private.inventory.red.grams === 1000, JSON.stringify(db.private.inventory));
+    await page.close();
+  });
+  await check('amazon order details page saved as a PDF: the item under the summary, not the ads; the discount counts', async () => {
+    const db = fixtures();
+    db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });
+    db.private.money = { costPerKg: 20, expenses: [] };
+    const page = await open(db);
+    const lib = require('path').join(__dirname, 'node_modules/pdfjs-dist/build/');
+    await page.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/**', route => route.fulfill({ path: lib + (/worker/.test(route.request().url()) ? 'pdf.worker.min.js' : 'pdf.min.js'), contentType: 'text/javascript' }));
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#invoice-read-money');
+    await page.setInputFiles('#invoice-file-money', require('path').join(__dirname, 'fixtures/amazon-order-details.pdf'));
+    await page.waitForSelector('#invoice-review-money', { timeout: 15000 });
+    const lines = await page.evaluate(() => state.invoice.lines.map(l => [l.colorId || l.newColor || '-', l.grams, l.amount, !!(l.filament || l.tax)]));
+    // 2 pack of 1 kg white for $16.99; tax $1.33 less the $0.85 promotion = $0.48
+    assert(JSON.stringify(lines) === JSON.stringify([['white', 2000, 16.99, true], ['-', 0, 0.48, true]]), JSON.stringify(lines));
+    assert(await page.inputValue('#inv-date-money') === '2026-07-30' && /Adding \$17\.47 of filament/.test(await page.textContent('#invoice-total-money')), await page.textContent('#invoice-total-money'));
     await page.close();
   });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
