@@ -38,7 +38,7 @@ function fixtures() {
     settings: { about: { text: 'I print custom designs in my spare time.', replyTime: 'I usually reply within a day.' },
       links: { messenger: 'https://m.me/soloprint' },
       colors: [{ id: 'black', name: 'Black', hex: '#1e1e24' }, { id: 'red', name: 'Red', hex: '#d22b2b' }, { id: 'silk', name: 'Silk Gold', hex: '#d4af37', special: true }],
-      reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1' }] },
+      reviews: [{ id: 'r1', name: 'Mike T.', text: 'Came out perfect.', designId: 'g1', rating: 4.5, source: 'etsy' }] },
     private: {}, reviews: {}, colorIdeas: [], uploads: [], drafts: {}, messages: [], linkRequests: [],
     log: []
   };
@@ -1743,7 +1743,12 @@ const STATES = {
     assert(/\$25\.02/.test(await page.textContent('#etsy-panel')), await page.textContent('#etsy-panel'));
     // Grouped by month, newest month open; search by order number.
     await page.evaluate(() => { state.etsyOpenGroup = ''; render(); });
-    assert((await page.$$eval('.etsy-group', els => els.map(d => d.open))).join() === 'true,true,false', 'year, then its newest month open, the rest folded');
+    const opens = await page.$$eval('.etsy-group', els => els.map(d => d.open));
+    assert(opens[0] && opens.filter(Boolean).length === 2, `the year, then its newest month with sales open, the rest folded: ${opens}`);
+    // Months without sales still show, with their costs.
+    const groupNames = await page.$$eval('.etsy-group > summary .etsy-group-name', els => els.map(x => x.textContent));
+    const now = new Date();
+    if (now.getFullYear() === year && now.getMonth() >= 3) assert(groupNames.some(n => /April/.test(n)) && /No sales this month/.test(await page.textContent('#etsy-panel')), groupNames.join('|'));
     await page.fill('#etsy-q', '3100000001');
     await page.waitForFunction(() => document.querySelectorAll('.etsy-order').length === 1);
     await page.fill('#etsy-q', '');
@@ -1935,6 +1940,31 @@ const STATES = {
     assert(/\$28\.25/.test(await page.textContent('#etsy-profit')), await page.textContent('#etsy-profit'));
     await page.close();
   });
+  await check("reviews: import Etsy's reviews.json, pick which to show, stars and 'on Etsy' on the site", async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('settings/reviews'));
+    await page.waitForSelector('#review-file', { state: 'attached' });
+    const json = JSON.stringify([{ reviewer: 'Andrea', date_reviewed: '10/23/2026', star_rating: 5, message: 'So happy with these, they are just as advertised! Thank you!', order_id: 4197256027 },
+      { reviewer: 'Sign in with Apple user', date_reviewed: '06/07/2025', star_rating: 4, message: 'These really work!', order_id: 3689566968 },
+      { reviewer: 'Mike', date_reviewed: '01/01/2026', star_rating: 5, message: 'Came out perfect.', order_id: 1 }]);
+    await page.setInputFiles('#review-file', { name: 'reviews.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+    await page.waitForSelector('#review-import');
+    assert(/already on your site/.test(await page.textContent('#review-import')), 'a review already shown is left out');
+    await page.click('#review-import-add');
+    await page.waitForFunction(() => !document.getElementById('review-import'));
+    await page.click('#settings-save');
+    await page.waitForTimeout(300);
+    const rv = db.settings.reviews;
+    const andrea = rv.find(r => r.name === 'Andrea'), apple = rv.find(r => /really work/.test(r.text));
+    assert(rv.length === 3 && andrea.rating === 5 && andrea.source === 'etsy' && andrea.date === '2026-10-23' && apple.name === '' && apple.rating === 4, JSON.stringify(rv));
+    await page.close();
+    const home = await open(db);
+    await home.waitForSelector('.review');
+    const txt = await home.textContent('.reviews');
+    assert(/on Etsy/.test(txt) && /★★★★★/.test(txt), txt);
+    await home.close();
+  });
   await check('etsy to make: add an order with parts and colors, print list by color, mark printed, finish; import unshipped orders', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -2037,7 +2067,8 @@ const STATES = {
       + `"May 3, ${y}",Fee,Transaction fee: Mug,Order #3300000001,USD,--,-$1.00,-$1.00,--\n`
       + `"May 6, ${y}",Refund,Refund to buyer for Order #3300000001,,USD,-$5.00,--,-$5.00,--\n`
       + `"May 7, ${y}",Fee,Credit for listing fee,Listing #5,USD,--,$0.50,$0.50,--\n`
-      + `"May 9, ${y}",Deposit,"$100.00 sent to your bank account",,USD,--,--,-$100.00,--\n`;
+      + `"May 9, ${y}",Deposit,"$100.00 sent to your bank account",,USD,--,--,-$100.00,--\n`
+      + `"May 10, ${y}",Payment,"Card Payment","Visa ending in 1517",USD,--,$1.74,$1.74,--\n`;
     await page.setInputFiles('#etsy-file', { name: `etsy_statement_${y}_5.csv`, mimeType: 'text/csv', buffer: Buffer.from(st) });
     await page.waitForSelector('#etsy-preview');
     await page.click('#etsy-apply');
@@ -2047,7 +2078,7 @@ const STATES = {
     assert(mug && mug.sale === 23.5 && mug.tax === 1.5 && mug.fees === 1 && mug.refund === 5, JSON.stringify(e));
     const cup = e.orders.find(o => o.etsyId === "3300000002");
     assert(cup && cup.sale === 10 && cup.tax === 0.8, `buyer sales tax taken out of the sale: ${JSON.stringify(cup)}`);
-    assert(e.costs.some(c => c.amount === -0.5) && !e.costs.some(c => /bank/.test(c.what)), JSON.stringify(e.costs));
+    assert(e.costs.some(c => c.amount === -0.5) && !e.costs.some(c => /bank|Card Payment/.test(c.what)), JSON.stringify(e.costs));
     // The Orders file for the orphan's order: its charge moves onto it.
     await page.setInputFiles('#etsy-file', { name: 'EtsySoldOrders.csv', mimeType: 'text/csv', buffer: Buffer.from('Sale Date,Order ID,Full Name,Order Value,Discount Amount,Shipping Discount,Shipping,Sales Tax,Order Total,Card Processing Fees,Adjusted Order Total,Adjusted Card Processing Fees\n' + `05/02/${yy},3400000001,Lu,30,0,0,0,0,30,1,--,--\n`) });
     await page.waitForSelector('#etsy-preview');
