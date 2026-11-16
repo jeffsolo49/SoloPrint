@@ -1437,6 +1437,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
       <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab==='help'?'active':''}" onclick="setOwnerTab('help')">Help</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
   `;
@@ -2276,6 +2277,8 @@ function renderOwnerApp() {
         ? renderOwnerSettingsPage()
         : state.ownerTab === 'practice'
         ? renderPracticePage()
+        : state.ownerTab === 'help'
+        ? renderWikiPage()
         : state.ownerTab === 'etsytodo'
         ? renderEtsyTodoPage()
         : state.ownerTab === 'numbers'

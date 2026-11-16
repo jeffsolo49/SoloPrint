@@ -1357,3 +1357,10 @@ html.owner-mode, :root {
 .todo-piece { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 10px; border: 2px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 700; }
 .todo-piece input { width: 22px; height: 22px; margin: 0; }
 .todo-piece.on { border-color: var(--green); }
+
+/* Owner Help (wiki) */
+.wiki-area { margin: 18px 0 6px; font-size: 15px; }
+.wiki-entry { border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; margin: 6px 0; background: var(--surface); }
+.wiki-entry > summary { cursor: pointer; padding: 12px 0; min-height: 44px; font-weight: 700; display: flex; align-items: center; }
+.wiki-steps { margin: 0 0 10px 20px; line-height: 1.6; font-size: 14px; }
+.wiki-entry .money-controls { margin-bottom: 10px; }
