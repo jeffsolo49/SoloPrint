@@ -1251,7 +1251,7 @@ html.owner-mode, :root {
   --sec-ads: #7e22ce; --sec-ads-rgb: 126,34,206;
   --sec-fees: #b45309; --sec-fees-rgb: 180,83,9;
   --sec-shipping: #0f766e; --sec-shipping-rgb: 15,118,110;
-  --sec-profit: #15803d; --sec-profit-rgb: 21,128,61;
+  --sec-profit: #166534; --sec-profit-rgb: 22,101,52;
   --sec-material: #6b7280; --sec-material-rgb: 107,114,128;
 }
 @media (prefers-color-scheme: dark) {
@@ -1313,3 +1313,24 @@ html.owner-mode, :root {
 .todo-from { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 10px 0; }
 .todo-from legend { font-weight: 700; padding: 0 6px; }
 .todo-done > summary { cursor: pointer; min-height: 24px; }
+
+/* Etsy profit & loss: period tiles, years that fold open to months */
+.sec-overview { --sec: var(--sec-profit); --sec-rgb: var(--sec-profit-rgb); }
+.etsy-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 16px; }
+.etsy-kpi { border: 1px solid var(--border); border-top: 4px solid var(--sec-profit); border-radius: 12px; padding: 12px; background: rgba(var(--sec-profit-rgb), 0.06); }
+.etsy-kpi.all { background: rgba(var(--sec-profit-rgb), 0.14); }
+.etsy-kpi-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.etsy-kpi-val { font-size: 24px; font-weight: 800; color: var(--sec-profit); font-variant-numeric: tabular-nums; margin: 4px 0; }
+.etsy-kpi-val.neg { color: var(--red); }
+.etsy-kpi-sub { font-size: 13px; color: var(--text); }
+.etsy-kpi-change { font-size: 13px; font-weight: 700; margin-top: 4px; color: var(--muted); }
+.etsy-kpi-change.up { color: var(--sec-profit); }
+.etsy-kpi-change.down { color: var(--red); }
+.etsy-pl th.sec-orders, .etsy-pl th.sec-fees, .etsy-pl th.sec-shipping, .etsy-pl th.sec-ads, .etsy-pl th.sec-material, .etsy-pl th.sec-profit { color: var(--sec); }
+.etsy-pl td, .etsy-pl tfoot td { font-variant-numeric: tabular-nums; }
+.etsy-pl .etsy-pl-profit { color: var(--sec-profit); }
+.etsy-pl .etsy-pl-profit.neg { color: var(--red); }
+.etsy-pl tbody tr:nth-child(even) { background: rgba(var(--sec-profit-rgb), 0.04); }
+.etsy-pl tfoot tr { background: rgba(var(--sec-profit-rgb), 0.1); }
+.etsy-year > .etsy-group { margin: 8px 10px; }
+.etsy-year > .table-scroll { margin: 0 10px 10px; }
