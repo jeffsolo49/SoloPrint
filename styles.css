@@ -1214,3 +1214,7 @@ html.owner-mode .card { border-width: 1px; box-shadow: none; }
 .etsy-lines dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .etsy-lines .etsy-total { border-top: 1px solid var(--border); padding-top: 4px; font-weight: 700; color: var(--text); }
 .etsy-form input[type="checkbox"] { width: 24px; height: 24px; flex: none; }
+
+/* The site was updated while this page was open */
+.new-version-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1000; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  max-width: calc(100vw - 32px); padding: 10px 14px; border-radius: 12px; background: var(--surface); color: var(--text); border: 2px solid var(--accent); box-shadow: 0 6px 24px rgba(0,0,0,0.3); font-size: 14px; }

@@ -1242,9 +1242,26 @@ async function loadLastUpdate() {
     const res = await fetch(DEPLOYS_URL, { cache: 'no-store' });
     const list = res.ok ? await res.json() : [];
     const at = Date.parse(list && list[0] && list[0].created_at);
-    if (Number.isFinite(at)) lastUpdateAt = at;
+    if (Number.isFinite(at)) {
+      // The first time seen is the version this page is running; a later one means the page is out of date.
+      if (!pageDeployAt) pageDeployAt = at;
+      else if (at > pageDeployAt) showNewVersionBar();
+      lastUpdateAt = at;
+    }
   } catch (e) { /* offline: keep the last time we knew */ }
   refreshUpdateBadge();
+}
+// A page left open keeps running the code it opened with, so a newer version of the site asks to reload.
+let pageDeployAt = 0;
+function showNewVersionBar() {
+  if (document.getElementById('new-version')) return;
+  const bar = document.createElement('div');
+  bar.id = 'new-version';
+  bar.className = 'new-version-bar';
+  bar.setAttribute('role', 'status');
+  bar.innerHTML = '<span>The site was just updated. Reload to get the newest version.</span> <button type="button" class="btn-sm">Reload now</button>';
+  bar.querySelector('button').addEventListener('click', () => location.reload());
+  document.body.appendChild(bar);
 }
 function startUpdateBadge() {
   loadLastUpdate();
