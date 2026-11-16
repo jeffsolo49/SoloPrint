@@ -1240,8 +1240,16 @@ function etsyAllTime() { return etsyTotals(''); }
 function etsyTotals(y) {
   const orders = etsyOrders().filter(o => String(o.date).startsWith(y)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const costs = etsyCosts().filter(c => String(c.date).startsWith(y)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  // Counted: an active yearly summary, plus everything it doesn't cover (uploads inside it wait until it's replaced).
   const active = etsyActiveSummaries();
+  return { orders, costs, t: etsyCalc(orders, costs, active), summaries: active.filter(s => String(s.date).startsWith(y)), activeAll: active };
+}
+// Money for any period (a 'YYYY' or 'YYYY-MM' prefix, '' = all time): the same rule everywhere, so months add up to years.
+function etsyPeriod(prefix, active) {
+  const p = String(prefix || '');
+  return etsyCalc(etsyOrders().filter(o => String(o.date).startsWith(p)), etsyCosts().filter(c => String(c.date).startsWith(p)), active || etsyActiveSummaries());
+}
+function etsyCalc(orders, costs, active) {
+  // Counted: an active yearly summary, plus everything it doesn't cover (uploads inside it wait until it's replaced).
   const counted = orders.filter(o => (o.summary ? active.includes(o) : !etsyCoveredBySummary(o.date, active)));
   const countedCosts = costs.filter(c => etsyCostCounted(c, active));
   const sum = f => etsyNum(counted.reduce((s, o) => s + f(o), 0));
@@ -1250,7 +1258,7 @@ function etsyTotals(y) {
     labels: etsyNum(sum(o => etsyNum(o.label)) + costSum('shipping')), material: sum(etsyMaterial), tax: sum(o => etsyNum(o.tax)),
     other: costSum('fees'), ads: etsyNum(sum(o => etsyNum(o.ads)) + costSum('ads')) };
   t.profit = etsyNum(t.sales - t.fees - t.labels - t.material - t.other - t.ads);
-  return { orders, costs, t, summaries: active.filter(s => String(s.date).startsWith(y)), activeAll: active };
+  return t;
 }
 
 // Reading Etsy's files: columns are found by name, so their order (and extra columns) don't matter.
@@ -1647,8 +1655,8 @@ const ETSY_COLUMNS = [['date', 'Date', o => o.date], ['order', 'Order #', o => S
   ['label', 'Shipping costs', o => etsyNum(o.label)], ['ads', 'Marketing', o => etsyNum(o.ads)], ['material', 'Material', etsyMaterial], ['costs', 'All costs', etsyCostTotal], ['profit', 'Profit', etsyProfit]];
 const ETSY_SORTS = [['date', 'desc', 'Newest first'], ['date', 'asc', 'Oldest first'], ['profit', 'desc', 'Most profit'], ['profit', 'asc', 'Least profit'],
   ['costs', 'desc', 'Highest costs'], ['sale', 'desc', 'Biggest sales'], ['order', 'asc', 'Order number']];
-const ETSY_TABS = [['orders', 'Orders'], ['ads', 'Marketing'], ['fees', 'Fees'], ['shipping', 'Shipping']];
-const ETSY_GROUPS = [['week', 'Week'], ['month', 'Month'], ['year', 'Year'], ['all', 'All time']];
+const ETSY_TABS = [['overview', 'Profit & loss'], ['orders', 'Orders'], ['ads', 'Marketing'], ['fees', 'Fees'], ['shipping', 'Shipping']];
+const ETSY_GROUPS = [['yearmonth', 'Year, then month'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year'], ['all', 'All time']];
 function etsyCostTotal(o) { return etsyNum(etsyNum(o.fees) + etsyNum(o.label) + etsyNum(o.ads) + etsyMaterial(o)); }
 function etsySaleName(o) { return [o.buyer, o.items].filter(Boolean).join(': ') || (o.summary ? 'Yearly summary' : 'Etsy sale'); }
 function etsyPref(key, def) {
@@ -1687,13 +1695,19 @@ function etsyGroupLabel(key, by) {
   if (by === 'month') return new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   return 'Week of ' + new Date(key + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
-// Groups rows (each with a date) by period, newest period first; the newest one starts open.
+// Groups rows (each with a date) by period, newest period first; the newest one starts open (or the one asked for,
+// state.etsyOpenGroup). "Year, then month": each year folds open to its months.
 function etsyGrouped(rows, by, body, head) {
-  const groups = new Map();
-  rows.forEach(r => { const k = etsyGroupKey(r.date, by); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  const groups = new Map(), want = String(state.etsyOpenGroup || '');
+  const level = by === 'yearmonth' ? 'year' : by;
+  rows.forEach(r => { const k = etsyGroupKey(r.date, level); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
   const keys = [...groups.keys()].sort().reverse();
-  return keys.map((k, n) => `<details class="etsy-group"${n === 0 || by === 'all' ? ' open' : ''}><summary><span class="etsy-group-name">${esc(etsyGroupLabel(k, by))}</span><span class="etsy-group-sum">${head(groups.get(k))}</span></summary>
-    ${body(groups.get(k))}</details>`).join('');
+  return keys.map((k, n) => {
+    const open = want ? want.startsWith(k) || k.startsWith(want) : n === 0 || by === 'all';
+    const inner = by === 'yearmonth' ? etsyGrouped(groups.get(k), 'month', body, head) : body(groups.get(k));
+    return `<details class="etsy-group${by === 'yearmonth' ? ' etsy-year' : ''}" id="etsy-g-${esc(k)}"${open ? ' open' : ''}><summary><span class="etsy-group-name">${esc(etsyGroupLabel(k, level))}</span><span class="etsy-group-sum">${head(groups.get(k), k, level)}</span></summary>
+    ${inner}</details>`;
+  }).join('');
 }
 // Charges of one kind: per order (from the order's totals) plus charges not tied to one order.
 function etsyCostKind(c) {
@@ -1710,12 +1724,12 @@ function etsyTabRows(tab, orders, costs) {
 }
 function etsyMatches(q, ...parts) { return !q || parts.join(' ').toLowerCase().includes(q); }
 function renderEtsyTabs(year, orders, costs) {
-  const tab = etsyPref('etsyTab', 'orders'), by = etsyPref('etsyGroup', 'month'), q = String(state.etsyQuery || '').trim().toLowerCase();
+  const tab = etsyPref('etsyTab', 'overview'), by = etsyPref('etsyGroup', 'yearmonth'), q = String(state.etsyQuery || '').trim().toLowerCase();
   const act = etsyActiveSummaries(), pending = r => etsyPending(r, act);
   const tag = o => pending(o) ? '<div class="etsy-pending">Not counted yet: inside your yearly summary</div>' : o.summary ? '<div class="gallery-meta">Yearly summary (counted until your monthly uploads replace it)</div>' : '';
   const tabs = `<div class="etsy-tabs" role="tablist" aria-label="Etsy money by type">${ETSY_TABS.map(([k, label]) => `<button type="button" role="tab" id="etsy-tab-${k}" aria-selected="${tab === k}" aria-controls="etsy-panel" class="etsy-tab sec-${k}${tab === k ? ' on' : ''}" onclick="setEtsyPref('etsyTab', '${k}', 'etsy-tab-${k}')">${label}</button>`).join('')}</div>`;
   const s = etsySort(), sortNow = ETSY_SORTS.findIndex(x => x[0] === s.key && x[1] === s.dir), view = etsyView();
-  const controls = `<div class="money-controls etsy-view-controls">
+  const controls = tab === 'overview' ? '' : `<div class="money-controls etsy-view-controls">
       <div class="field" style="margin-bottom:0;flex:2;"><label for="etsy-q">Search order number, buyer or item</label>
         <input type="search" id="etsy-q" value="${esc(state.etsyQuery || '')}" oninput="state.etsyQuery = this.value; state.etsyMax = 0; clearTimeout(window.etsyQT); window.etsyQT = setTimeout(() => { render(); const el = document.getElementById('etsy-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250)" /></div>
       <div class="field" style="margin-bottom:0;"><label for="etsy-group">Group by</label>
@@ -1730,9 +1744,10 @@ function renderEtsyTabs(year, orders, costs) {
       </div>` : ''}
     </div>`;
   let body = '';
-  if (tab === 'orders') {
+  if (tab === 'overview') body = renderEtsyOverview(act);
+  else if (tab === 'orders') {
     const list = etsySorted(orders.filter(o => etsyMatches(q, o.etsyId, o.buyer, o.items, o.note, o.date)));
-    if (!list.length) body = `<p class="field-help">${q ? 'No sales match that search.' : `No Etsy sales in ${year} yet. Upload Etsy's files, or add one by hand.`}</p>`;
+    if (!list.length) body = `<p class="field-help">${q ? 'No sales match that search.' : `No Etsy sales yet. Upload Etsy's files, or add one by hand.`}</p>`;
     else if (view === 'sheet') {
       const max = state.etsyMax || 50, shown = list.slice(0, max);
       const sum = f => etsyNum(list.filter(o => !pending(o)).reduce((n, o) => n + f(o), 0));
@@ -1758,7 +1773,8 @@ function renderEtsyTabs(year, orders, costs) {
         </dl>${o.tax ? `<div class="field-help">Sales tax Etsy collected and paid for you: ${money2(o.tax)} (not counted)</div>` : ''}
         <div class="money-controls">${etsyEditButton(o)}</div></details></li>`;
       body = etsyGrouped(list, by, rows => `<ul class="etsy-orders etsy-table">${rows.map(one).join('')}</ul>`,
-        rows => { const c = rows.filter(o => !pending(o)); return `${rows.length} sale${rows.length === 1 ? '' : 's'} · profit ${money2(c.reduce((n, o) => n + etsyProfit(o), 0))}`; });
+        (rows, key, level) => { if (!q && (level === 'year' || level === 'month')) { const t = etsyPeriod(key, act); return `${t.orders} sale${t.orders === 1 ? '' : 's'} · sales ${money2(t.sales)} · profit ${money2(t.profit)}`; }
+          const c = rows.filter(o => !pending(o)); return `${rows.length} sale${rows.length === 1 ? '' : 's'} · profit ${money2(c.reduce((n, o) => n + etsyProfit(o), 0))}`; });
     }
   } else {
     const rows = etsyTabRows(tab, orders, costs).filter(r => etsyMatches(q, r.order, r.buyer, r.what, r.date));
@@ -1771,7 +1787,7 @@ function renderEtsyTabs(year, orders, costs) {
           <td>${r.amount < 0 ? `${money2(-r.amount)} credit` : money2(r.amount)}</td>
           <td>${r.c ? `<button type="button" class="btn-sm danger" onclick="removeEtsyCost('${esc(r.c.id)}')" aria-label="Remove ${esc(r.what)}">✕</button>` : etsyEditButton(r.o)}</td></tr>`).join('')}</tbody></table></div>`,
       list => `${list.length} charge${list.length === 1 ? '' : 's'} · ${money2(list.filter(counted).reduce((n, r) => n + r.amount, 0))}`)
-      : `<p class="field-help">${q ? 'Nothing matches that search.' : `No ${name} in ${year} yet.`}</p>`;
+      : `<p class="field-help">${q ? 'Nothing matches that search.' : `No ${name} yet.`}</p>`;
     const today = new Date().toISOString().slice(0, 10), kind = { ads: 'ads', fees: 'fee', shipping: 'label' }[tab];
     body += `<details class="etsy-add-charge"><summary>Add a ${tab === 'ads' ? 'marketing charge' : tab === 'fees' ? 'fee or credit' : 'shipping cost'} by hand</summary>
       <div class="expense-form">
@@ -1784,10 +1800,46 @@ function renderEtsyTabs(year, orders, costs) {
   }
   return `${tabs}<div id="etsy-panel" class="etsy-panel sec-${tab}" role="tabpanel" aria-labelledby="etsy-tab-${tab}">${controls}${body}</div>`;
 }
+// Profit & loss: tiles for this month, last month, this year, last year and all time (with the change on the period before),
+// then every year as a row that folds open to its months, with sales, each kind of cost, profit and margin.
+function etsyMonthKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+function etsyOpenMonth(key) { state.etsyOpenGroup = key; state.etsyQuery = ''; setEtsyPref('etsyTab', 'orders'); document.getElementById('etsy-g-' + key)?.scrollIntoView({ block: 'start' }); }
+function renderEtsyOverview(act) {
+  const now = new Date(), y = now.getFullYear();
+  const thisM = etsyMonthKey(now), lastM = etsyMonthKey(new Date(y, now.getMonth() - 1, 1));
+  const pct = (a, b) => (b ? Math.round((a - b) / Math.abs(b) * 100) : null);
+  const change = (cur, prev, what) => { const d = etsyNum(cur.profit - prev.profit), p = pct(cur.profit, prev.profit);
+    return `<div class="etsy-kpi-change ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${d > 0 ? '▲' : d < 0 ? '▼' : '='} ${money2(Math.abs(d))}${p !== null ? ` (${Math.abs(p)}%)` : ''} vs ${what}</div>`; };
+  const tile = (label, t, extra, cls) => `<div class="etsy-kpi ${cls || ''}"><div class="etsy-kpi-label">${esc(label)}</div><div class="etsy-kpi-val ${t.profit < 0 ? 'neg' : ''}">${money2(t.profit)}</div>
+    <div class="etsy-kpi-sub">${t.orders} sale${t.orders === 1 ? '' : 's'} · sales ${money2(t.sales)}</div>${extra || ''}</div>`;
+  const tm = etsyPeriod(thisM, act), lm = etsyPeriod(lastM, act), ty = etsyPeriod(String(y), act), ly = etsyPeriod(String(y - 1), act), all = etsyPeriod('', act);
+  const monthName = k => new Date(Number(k.slice(0, 4)), Number(k.slice(5, 7)) - 1, 1).toLocaleDateString('en-US', { month: 'long' });
+  const tiles = `<div class="etsy-kpis">
+    ${tile(`This month (${monthName(thisM)})`, tm, change(tm, lm, 'last month'))}${tile(`Last month (${monthName(lastM)})`, lm)}
+    ${tile(`This year (${y})`, ty, change(ty, ly, String(y - 1)))}${tile(`Last year (${y - 1})`, ly)}${tile('All time', all, '', 'all')}</div>`;
+  const dates = etsyOrders().map(o => o.date).concat(etsyCosts().map(c => c.date)).filter(Boolean);
+  const years = [...new Set(dates.map(d => String(d).slice(0, 4)))].sort().reverse();
+  if (!years.length) return tiles + '<p class="field-help">No Etsy sales yet. Upload Etsy\'s files, or add a sale by hand.</p>';
+  const cells = t => `<td>${t.orders}</td><td>${money2(t.sales)}</td><td>${money2(t.fees + t.other)}</td><td>${money2(t.labels)}</td><td>${money2(t.ads)}</td><td>${money2(t.material)}</td>
+    <td class="etsy-pl-profit ${t.profit < 0 ? 'neg' : ''}"><strong>${money2(t.profit)}</strong></td><td>${t.sales ? Math.round(t.profit / t.sales * 100) + '%' : '–'}</td>`;
+  const head = `<thead><tr><th scope="col">Month</th><th scope="col">Sales #</th><th scope="col" class="sec-orders">Sales</th><th scope="col" class="sec-fees">Fees</th><th scope="col" class="sec-shipping">Shipping</th><th scope="col" class="sec-ads">Marketing</th><th scope="col" class="sec-material">Material</th><th scope="col" class="sec-profit">Profit</th><th scope="col">Margin</th></tr></thead>`;
+  const table = years.map((yr, n) => {
+    const t = etsyPeriod(yr, act);
+    const months = [...new Set(dates.filter(d => String(d).startsWith(yr)).map(d => String(d).slice(0, 7)))].sort().reverse();
+    return `<details class="etsy-group etsy-year etsy-pl-year" id="etsy-pl-${yr}"${n === 0 ? ' open' : ''}><summary><span class="etsy-group-name">${yr}</span>
+        <span class="etsy-group-sum">${t.orders} sale${t.orders === 1 ? '' : 's'} · sales ${money2(t.sales)} · profit ${money2(t.profit)}</span></summary>
+      <div class="table-scroll"><table class="money-table etsy-pl">${head}
+        <tbody>${months.map(m => `<tr><th scope="row"><button type="button" class="btn-link" onclick="etsyOpenMonth('${m}')" aria-label="${esc(etsyGroupLabel(m, 'month'))}: open its orders">${esc(monthName(m))}</button></th>${cells(etsyPeriod(m, act))}</tr>`).join('')}</tbody>
+        <tfoot><tr><th scope="row">${yr} total</th>${cells(t)}</tr></tfoot></table></div></details>`;
+  }).join('');
+  return `${tiles}<h4 class="cm-heading">Profit and loss by year and month</h4>
+    <p class="field-help">Tap a year to open its months, and a month to see its orders. Sales are after refunds, without the sales tax Etsy pays for you. Your shipping transaction fees are under Shipping.</p>
+    ${table}`;
+}
 // From a charge to its order: switch to Orders, find it and open it.
 function etsyOpenOrder(id) {
   const o = etsyOrders().find(x => x.id === id);
-  state.etsyTab = 'orders'; state.etsyView = 'orders'; state.etsyQuery = o && o.etsyId ? String(o.etsyId) : '';
+  state.etsyTab = 'orders'; state.etsyView = 'orders'; state.etsyQuery = o && o.etsyId ? String(o.etsyId) : ''; state.etsyOpenGroup = o ? String(o.date).slice(0, 7) : '';
   render();
   const el = document.getElementById('etsy-o-' + id);
   if (el) { el.open = true; el.scrollIntoView({ block: 'center' }); el.querySelector('summary')?.focus(); }
@@ -1798,14 +1850,12 @@ function etsyOrphanCharges(costs) {
   return costs.filter(c => { const id = etsyOrderNumber(c.what); return id && !known.has(id) && etsyNum(c.amount) > 0; });
 }
 function renderEtsyCard(year, site) {
-  const all = state.etsyAllYears;
-  const { orders, costs, t, summaries } = all ? etsyAllTime() : etsyYear(year);
+  const { orders, costs, t, summaries } = etsyAllTime(), ty = etsyYear(year).t;
   const editing = state.etsyEdit !== undefined && state.etsyEdit !== null;
   const orphans = etsyOrphanCharges(costs), orphanMonths = [...new Set(orphans.map(c => String(c.date).slice(0, 7)))].sort();
-  const scope = all ? 'all years' : year;
   const line = (label, amount, minus, tabKey) => `<dt class="${tabKey ? 'sec-' + tabKey : 'sec-material'}">${tabKey ? `<button type="button" class="btn-link" onclick="setEtsyPref('etsyTab', '${tabKey}', 'etsy-tab-${tabKey}')">${esc(label)}</button>` : esc(label)}</dt><dd>${minus ? '−' : ''}${money2(amount)}</dd>`;
   return `<div class="card" id="etsy-card">
-    <h3 class="card-title">Etsy sales in ${scope}</h3>
+    <h3 class="card-title">Etsy sales</h3>
     <details class="etsy-how"><summary>How to get your files from Etsy</summary>
       <ol class="field-help">
         <li><strong>Sales:</strong> on Etsy, open Shop Manager, then Settings, then Options, then the Download Data tab. Under Orders pick <em>Orders</em>, the month and year, and tap Download CSV. Do the same with <em>Order Items</em> if you want item names.</li>
@@ -1818,14 +1868,13 @@ function renderEtsyCard(year, site) {
       <button type="button" class="btn-sm" id="etsy-upload" onclick="document.getElementById('etsy-file').click()">Upload Etsy files (.csv, one or many)</button>
       <input type="file" id="etsy-file" accept=".csv,.xlsx,.xls,text/csv" multiple hidden onchange="etsyFileChosen(this)" />
       ${editing ? '' : renderEtsyForm()}
-      <label class="special-order-check etsy-all-years"><input type="checkbox" id="etsy-all" ${all ? 'checked' : ''} onchange="state.etsyAllYears = this.checked; render(); document.getElementById('etsy-all')?.focus();" /> Show all years</label>
     </div>
     <div class="alert error" id="etsy-err"></div>
     ${state.etsyMsg ? `<div class="alert success" style="display:block;" role="status">${esc(state.etsyMsg)}</div>` : ''}
     ${state.etsyImport ? renderEtsyPreview(state.etsyImport) : ''}
     ${editing ? renderEtsyForm() : ''}
     <div class="etsy-profit-box">
-      <div class="etsy-profit-head"><span>Etsy profit${all ? '' : ` in ${year}`}</span><strong id="etsy-profit" class="${t.profit < 0 ? 'neg' : ''}">${money2(t.profit)}</strong></div>
+      <div class="etsy-profit-head"><span>Etsy profit, all years</span><strong id="etsy-profit" class="${t.profit < 0 ? 'neg' : ''}">${money2(t.profit)}</strong></div>
       <details class="etsy-how-total"><summary>How this is worked out</summary>
         <dl class="etsy-lines">
           ${line(`Sales with shipping paid (${t.orders} sale${t.orders === 1 ? '' : 's'}, after refunds)`, t.sales, false, 'orders')}
@@ -1842,7 +1891,7 @@ function renderEtsyCard(year, site) {
       <div class="stat-card sec-material"><div class="stat-val">${money2(t.material)}</div><div class="stat-label">Material (est.)</div></div>
       <div class="stat-card sec-profit"><div class="stat-val">${money2(t.profit)}</div><div class="stat-label">Etsy profit</div></div>
     </div>
-    ${all ? '' : `<p class="field-help both-shops" id="both-shops"><strong>Both shops in ${year}:</strong> sales ${money2(site.sales + t.sales)}, marketing ${money2((site.ads || 0) + t.ads)}, profit after material, Etsy fees, shipping, marketing, your expenses and ads ${money2(site.sales - site.material - site.expenses - (site.ads || 0) + t.profit)}.</p>`}
+    <p class="field-help both-shops" id="both-shops"><strong>Both shops in ${year}:</strong> sales ${money2(site.sales + ty.sales)}, marketing ${money2((site.ads || 0) + ty.ads)}, profit after material, Etsy fees, shipping, marketing, your expenses and ads ${money2(site.sales - site.material - site.expenses - (site.ads || 0) + ty.profit)}.</p>
     ${orphans.length ? `<div class="warn-note" id="etsy-orphans">${orphans.length} charge${orphans.length === 1 ? '' : 's'} (${money2(orphans.reduce((n, c) => n + etsyNum(c.amount), 0))}) ${orphans.length === 1 ? 'is' : 'are'} for Etsy orders whose sale isn't uploaded yet, so profit looks lower than it really is. Upload the Orders file${orphanMonths.length === 1 ? '' : 's'} (or monthly statement${orphanMonths.length === 1 ? '' : 's'}) for ${esc(orphanMonths.map(etsyMonthName).join(', '))}: the charges then move onto their orders.</div>` : ''}
     ${(() => { const m = etsyShipFeeMoves(etsyOrders()), ship = m.filter(x => x.to === 'label').length, ads = m.length - ship;
       const parts = [ship && `${ship} shipping transaction fee${ship === 1 ? '' : 's'} (shipping costs)`, ads && `${ads} Offsite Ads fee${ads === 1 ? '' : 's'} (marketing)`].filter(Boolean);
@@ -1851,7 +1900,7 @@ function renderEtsyCard(year, site) {
       return `<div class="etsy-preview etsy-summary-note"><strong>${esc(String(s.date).slice(0, 4))} totals use your yearly summary (through ${esc(s.date)}).</strong> Upload the rest of your monthly files and it's replaced by month-by-month detail, with Offsite Ads shown on the orders they came from.
         ${st.length ? `<div>Monthly statements still needed: ${esc(st.map(m => etsyMonthName(m.month)).join(', '))}.</div>` : ''}${od.length ? `<div>Orders files still needed: ${esc(od.map(m => etsyMonthName(m.month)).join(', '))}.</div>` : ''}
         <div class="field-help">Anything you upload for those months is saved and shown, marked "not counted yet", so nothing counts twice.</div></div>`; }).join('')}
-    ${renderEtsyTabs(scope, orders, costs)}
+    ${renderEtsyTabs('', orders, costs)}
   </div>`;
 }
 

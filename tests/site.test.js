@@ -1699,6 +1699,7 @@ const STATES = {
     assert(!JSON.stringify(e).includes('Springfield'), 'addresses are never kept');
     await pick('EtsySoldOrderItems.csv', 'Sale Date,Item Name,Buyer,Quantity,Price,Order ID\n' + `02/03/${yy},Dragon,samlee,2,15.00,3100000001\n`);
     await page.click('#etsy-apply');
+    await page.evaluate(() => setEtsyPref('etsyTab', 'orders'));
     await page.waitForFunction(() => /Dragon x2/.test(document.getElementById('etsy-card').textContent));
     const statement = 'Date,Type,Title,Info,Currency,Amount,Fees & Taxes,Net,Tax Details\n'
       + `"February 3, ${year}",Sale,Payment for Order #3100000001,,USD,$38.00,--,$38.00,--\n`
@@ -1725,6 +1726,14 @@ const STATES = {
     await page.waitForFunction(() => !document.getElementById('etsy-preview'));
     assert(db.private.etsy.orders.length === 2 && db.private.etsy.orders.find(o => o.etsyId === '3100000001').fees === 3.39, JSON.stringify(db.private.etsy.orders));
     // Edit by hand: 100 g at $20/kg = $2 material; profit 30 + 6 - 3.39 - 5.59 - 2 = 25.02.
+    // Profit & loss: the year folds open to its months, each with its own profit; tapping a month opens its orders.
+    await page.evaluate(() => setEtsyPref('etsyTab', 'overview'));
+    const pl = await page.textContent('#etsy-panel');
+    assert(new RegExp(`${year}`).test(pl) && /March/.test(pl) && /February/.test(pl) && /Margin/.test(pl), pl);
+    assert(!(await page.$('#etsy-all')), 'all years always show: no checkbox');
+    await page.click('button[aria-label^="February"]');
+    await page.waitForSelector('#etsy-tab-orders[aria-selected="true"]');
+    assert(await page.evaluate(y => document.getElementById('etsy-g-' + y + '-02').open, year), 'February opens');
     await page.evaluate(() => document.querySelectorAll('#etsy-card details').forEach(d => { d.open = true; }));
     await page.click('button[aria-label^="Edit Etsy sale ' + year + '-02-03"]');
     await page.fill('#etsy-f-grams', '100');
@@ -1733,7 +1742,8 @@ const STATES = {
     assert(db.private.etsy.orders.find(o => o.etsyId === '3100000001').edited === true, 'edited by hand');
     assert(/\$25\.02/.test(await page.textContent('#etsy-panel')), await page.textContent('#etsy-panel'));
     // Grouped by month, newest month open; search by order number.
-    assert((await page.$$eval('.etsy-group', els => els.map(d => d.open))).join() === 'true,false', 'newest month open, the rest folded');
+    await page.evaluate(() => { state.etsyOpenGroup = ''; render(); });
+    assert((await page.$$eval('.etsy-group', els => els.map(d => d.open))).join() === 'true,true,false', 'year, then its newest month open, the rest folded');
     await page.fill('#etsy-q', '3100000001');
     await page.waitForFunction(() => document.querySelectorAll('.etsy-order').length === 1);
     await page.fill('#etsy-q', '');
