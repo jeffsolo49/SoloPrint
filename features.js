@@ -41,6 +41,8 @@ const RULE_FIELDS = [
     ['specialGramRate', 'Filament, special colors ($ per gram)', 0.001, g => `$${(g * 1000).toFixed(2)} per kg`],
     ['depositPercent', 'Deposit customers can pay first (% of the total, 0 = none)', 5],
     ['logoPrice', 'Company logo add-on ($ per print)', 0.5],
+    ['freeColors', 'Colors included in a print (more costs extra)', 1],
+    ['colorFee', 'Extra colors charge ($ per print with more colors than that; 0 = none)', 0.5],
     ['shippingFee', 'Shipping deposit added to the final payment ($; the unused part is refunded)', 1],
     ['packagingFee', 'Packaging kept from the shipping deposit ($)', 0.5]
   ]],
@@ -2332,8 +2334,8 @@ const OWNER_WIKI = [
     steps: ['Settings > Filament & colors.', '"Add a color", type its name (the swatch color is guessed from the name), and optionally a price per gram, a real-life photo, a link and a description.', 'Tap Save at the bottom.'], go: ['settings', 'colors'] },
   { id: 'stock', area: 'Settings', title: 'Filament stock on hand', keys: 'stock inventory grams roll low running out hidden',
     steps: ['Settings > Filament & colors > Stock on hand.', 'Type how many grams you have, or tap "+ 1 kg roll". Set "Warn me at" for each color.', 'Grams come off when printing is done. A color at 0 g is hidden from customers until you add more.'], go: ['settings', 'colors'] },
-  { id: 'prices', area: 'Settings', title: 'Prices and rules', keys: 'prices rules base fee per minute per gram deposit percent shipping deposit logo price venmo username',
-    steps: ['Settings > Prices & rules.', 'Change the base fee, print time and material rates, deposit %, shipping deposit, logo price, Venmo username and reminder timing.', 'Sent quotes keep the prices they were sent with.'], go: ['settings', 'prices'] },
+  { id: 'prices', area: 'Settings', title: 'Prices and rules', keys: 'prices rules base fee per minute per gram deposit percent shipping deposit logo price venmo username extra colors multi-color surcharge',
+    steps: ['Settings > Prices & rules.', 'Change the base fee, print time and material rates, deposit %, shipping deposit, logo price, the extra colors charge (how many colors are included and the $ per print for more), Venmo username and reminder timing.', 'Sent quotes keep the prices they were sent with.'], go: ['settings', 'prices'] },
   { id: 'emails', area: 'Settings', title: 'Change the wording of any email', keys: 'emails wording templates text placeholders',
     steps: ['Settings > Emails.', 'Pick an email and change its subject or text. Words in {curly brackets} are filled in for each order.', 'Save. To change one email just once, edit it in the pop-up when you send it instead.'], go: ['settings', 'emails'] },
   { id: 'wording', area: 'Settings', title: 'Site wording, FAQ and what customers see', keys: 'wording site text faq show hide features about links how it works material note',
@@ -2904,10 +2906,19 @@ function renderPartColors(item, i) {
       </div>
     </div>`).join('')}
     ${renderColorInfo(item)}
+    ${item.designParts.filter(p => !p.optional || p.include).length > Number(currentRules().freeColors) ? colorFeeNote(item) : ''}
     <div class="field-help">Want a color I don't carry for a part? Say so under "Anything you'd like changed?"</div>
   </fieldset>`;
 }
 
+// The note about the extra colors charge, where customers pick colors. Stands out once they've picked more.
+function colorFeeNote(item) {
+  const rules = currentRules();
+  if (!(Number(rules.colorFee) > 0)) return '';
+  const over = colorCount(item) > Number(rules.freeColors);
+  const text = t('colorFeeNote').replace(/\{free\}/g, rules.freeColors).replace(/\{price\}/g, `$${Number(rules.colorFee).toFixed(2)}`);
+  return `<div class="field-help color-fee-note ${over ? 'over' : ''}">${over ? `<strong>This print has ${colorCount(item)} colors (+$${Number(rules.colorFee).toFixed(2)} each print).</strong> ` : ''}${esc(text)}</div>`;
+}
 // Design page: the parts and their weights.
 function renderDesignParts(g) {
   if (!featureOn('designParts')) return '';
@@ -3049,6 +3060,7 @@ const SITE_TEXT = [
     ['requestThis', '"Request this" button', 'Request this'],
     ['logoOffer', 'Design page: company logo add-on note ({price} = the logo price from Prices)', 'Want your company logo on it? I can add it for {price} more per item. Tick "Add my company logo" when you request it, and I\'ll ask you for the logo file.'],
     ['logoCheckbox', 'Request form: company logo tick box ({price} = the logo price)', 'Add my company logo (+{price} each)'],
+    ['colorFeeNote', 'Request form: note about the extra colors charge ({free} = colors included, {price} = the charge from Prices)', 'Up to {free} colors are included. Using more than {free} colors adds {price} per print, because each extra color means more color changes and more work on every print.'],
     ['colorIdeasTitle', 'Design page: color ideas heading', 'Color ideas'],
     ['colorIdeasNote', 'Design page: under the color ideas heading', 'This design repainted in other colors, to help you choose. Colors on a screen are close, not exact.'],
     ['colorIdeasOwn', 'Design page: button to pick your own colors', 'Pick your own'],
@@ -3372,7 +3384,7 @@ function renderOeEstimate(it) {
   const d = oeDraft();
   const rules = rulesFor(d || {});
   const set = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
-  const fixed = set === null ? null : set + logoCharge(it, rules);
+  const fixed = set === null ? null : set + addOnCharge(it, rules);
   const qty = Math.max(1, parseInt(it.qty, 10) || 1);
   if (fixed !== null) return `<div class="price-big">$${(fixed * qty).toFixed(2)}</div><div class="field-help">Fixed price: $${fixed.toFixed(2)} each${qty > 1 ? ` × ${qty}` : ''}.</div>`;
   const minutes = Number(it.minutes) || Number(it.knownMinutes) || 0;
@@ -4452,6 +4464,7 @@ function detailsItemsText(b) {
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${filamentLabel(it)}`];
     if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
     if (it.logo) lines.push('   Add your company logo: yes');
+    if (colorCharge(it, rulesFor(b))) lines.push(`   More than ${rulesFor(b).freeColors} colors: +$${colorCharge(it, rulesFor(b)).toFixed(2)} per print (extra color changes)`);
     if (it.link) lines.push(`   Link: ${it.link}`);
     if (it.notes) lines.push(`   Notes: ${it.notes}`);
     return lines.join('\n');

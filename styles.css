@@ -1407,3 +1407,7 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
   html.jump-on .main.owner-main { margin-bottom: 76px; }
 }
 @media print { .jump-nav { display: none; } }
+
+/* Extra colors charge note (colorFeeNote) */
+.color-fee-note { margin: 6px 0 8px; }
+.color-fee-note.over { border-left: 4px solid var(--accent2); padding: 6px 10px; background: var(--surface); border-radius: 6px; color: var(--text); }

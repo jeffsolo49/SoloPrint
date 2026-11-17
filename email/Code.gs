@@ -940,11 +940,13 @@ const RULE_DEFAULTS = {
   shippingFee: 15,         // shipping DEPOSIT added to the final payment ($1 packaging + the rest for postage); the unused part is refunded
   packagingFee: 1,         // $ of the shipping deposit kept for the envelope and packaging
   logoPrice: 1,            // $ per print to add the customer's company logo (the "Add my logo" box)
+  freeColors: 2,           // colors included in a print's price
+  colorFee: 2,             // $ per print with more colors than that (more color changes = more work; 0 = no charge)
   lowStockGrams: 200,      // warn when a color is down to this many grams (each color can override)
   venmo: 'Jeffrey-Sol-3'   // Venmo username for the Pay button and email link
 };
 const LEGACY_RATES = { baseFee: 2, minuteRate: 0.024, gramRate: 0.024, specialGramRate: 0.034 };
-const RATE_KEYS = ['baseFee', 'minuteRate', 'gramRate', 'specialGramRate', 'logoPrice'];
+const RATE_KEYS = ['baseFee', 'minuteRate', 'gramRate', 'specialGramRate', 'logoPrice', 'freeColors', 'colorFee'];
 const DEFAULT_MATERIAL_NOTE = 'All prints are PLA unless noted or requested.';
 // Terms a customer agrees to before approving a quote that includes a custom design (editable in Site
 // Settings -> Wording; each quote keeps the exact text it was sent with).
@@ -999,8 +1001,8 @@ function beforeQuote(phase) { return !phase || phase === 'estimate' || phase ===
 function orderRules(order, settings) {
   const rules = shopRules(settings);
   const saved = cleanQuoteRates(order && order.rates);
-  if (Object.keys(saved).length) return Object.assign(rules, { colorRates: {} }, saved);
-  if (order && order.phase && !beforeQuote(order.phase)) return Object.assign(rules, LEGACY_RATES, { colorRates: {} });
+  if (Object.keys(saved).length) return Object.assign(rules, { colorRates: {}, colorFee: 0 }, saved);
+  if (order && order.phase && !beforeQuote(order.phase)) return Object.assign(rules, LEGACY_RATES, { colorRates: {}, colorFee: 0 });
   return rules;
 }
 // The rates a quote saves (and keeps), including any per-color rates.
@@ -1078,12 +1080,28 @@ function logoCharge(item, rules) {
   if (own !== null && own !== undefined && own !== '' && isFinite(Number(own)) && Number(own) >= 0) return 0;
   return Number(rules && rules.logoPrice) || 0;
 }
+// How many different colors one print uses (the same color picked for two parts counts once).
+function colorCount(item) {
+  if (!item || typeof item !== 'object') return 1;
+  return new Set(itemParts(item).map(p => colorKey(p.colorId || p.name || p.filType))).size;
+}
+// More colors than the price includes (rule freeColors, 2) adds rule colorFee per print: every extra color
+// means more color changes and more work. Not added on top of the owner's own price for the item.
+function colorCharge(item, rules) {
+  if (!item || typeof item !== 'object' || !rules) return 0;
+  const own = item.ownerPrice;
+  if (own !== null && own !== undefined && own !== '' && isFinite(Number(own)) && Number(own) >= 0) return 0;
+  const free = isFinite(Number(rules.freeColors)) ? Number(rules.freeColors) : 2;
+  return colorCount(item) > free ? Number(rules.colorFee) || 0 : 0;
+}
+// Add-ons charged per print on top of the price: the company logo and extra colors.
+function addOnCharge(item, rules) { return logoCharge(item, rules) + colorCharge(item, rules); }
 // Price of one print. `colors` is an item (all its colors) or a single filament type.
 function printPrice(minutes, grams, colors, rules) {
   const fixed = colors && typeof colors === 'object' ? fixedPrice(colors) : null;
-  if (fixed !== null) return fixed + logoCharge(colors, rules);
+  if (fixed !== null) return fixed + addOnCharge(colors, rules);
   const material = colors && typeof colors === 'object' ? colorsMaterial(colors, grams, rules) : Number(grams) * filamentRate(colors, rules);
-  return rules.baseFee + Number(minutes) * rules.minuteRate + material + logoCharge(colors, rules);
+  return rules.baseFee + Number(minutes) * rules.minuteRate + material + addOnCharge(colors, rules);
 }
 // What the order pays for special order rolls: the owner's amount once set, else the usual roll price
 // (nothing when every special color comes from the customer's leftover roll).
@@ -1282,6 +1300,7 @@ function itemLines(rec, withPrices, site) {
     if (extras.length) lines.push(`   Also: ${extras.map(p => p.name + (p.filType === 'leftover' ? ' (leftover roll)' : '')).join(', ')}`);
     if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
     if (it.logo) lines.push('   Add company logo: yes (please reply with your logo file)');
+    if (colorCharge(it, rules)) lines.push(`   More than ${rules.freeColors} colors: +$${money(colorCharge(it, rules))} per print (extra color changes)`);
     if (withPrices && itemPriced(it)) {
       const each = printPrice(it.minutes, it.grams, it, rules);
       lines.push(`   Price: $${money(each * qty)}${qty > 1 ? ` ($${money(each)} each)` : ''}`);
