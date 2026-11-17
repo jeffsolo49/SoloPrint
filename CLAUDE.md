@@ -121,6 +121,12 @@ Owner menu "Help" (`help` tab, `renderWikiPage` in features.js): step-by-step en
 a search box matching every typed word against title, area, keywords and steps (`wikiMatches`, results redrawn in place so typing keeps focus), and the owner's own notes (owner_private key `wiki`, { entries: [{ id, title, text }] }, shown as "My notes").
 **When you add or change an owner feature, add or update its entry in `OWNER_WIKI`** (exact button names).
 
+## Section buttons (owner)
+
+Every owner page with 2+ sections gets a button per section on the right that stays in view (`buildJumpNav` at the end of features.js, `#jump-nav` outside `#app-root`;
+under 1000px wide a "Sections" button opens the list). Built from the page after each redraw (a MutationObserver): each top-level `.card`'s heading, plus `.wiki-area` and
+`.email-group-title`, so a new card with a `.card-title` gets its button by itself. Highlights the section in view (`markJumpActive`).
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves
