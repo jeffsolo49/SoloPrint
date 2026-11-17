@@ -1981,13 +1981,28 @@ const STATES = {
     await page.fill('#todo-color', 'Red');
     await page.click('text=Add part');
     await page.click('#todo-save');
-    await page.waitForFunction(() => document.querySelectorAll('#todo-print .todo-color').length === 2);
+    // One list: color buttons on top (how many left in each color) filter it.
+    await page.waitForFunction(() => document.querySelectorAll('.todo-colorbar .todo-chip').length === 3);
+    assert(!(await page.$('#todo-print')), 'no second, separate print list');
     let o = db.private.etsy_todo.orders[0];
     assert(o.etsyId === '4233804505' && o.lines.length === 2 && o.lines[0].qty === 2, JSON.stringify(o));
-    assert(/Black\s*2 to print/.test(await page.textContent('#todo-print')), await page.textContent('#todo-print'));
-    await page.click('#todo-print button[aria-label^="Printed one Base"]');
-    await page.waitForFunction(() => /Black\s*1 to print/.test(document.getElementById('todo-print').textContent));
+    assert(/Black · 2 to print/.test(await page.textContent('.todo-colorbar')), await page.textContent('.todo-colorbar'));
+    await page.click('.todo-chip:has-text("Red")');
+    await page.waitForFunction(() => document.querySelectorAll('#todo-orders .todo-parts li').length === 1 && /Spine/.test(document.querySelector('#todo-orders .todo-parts').textContent));
+    await page.click('.todo-chip:has-text("All colors")');
+    await page.check(`#todo-pc-${o.lines[0].id}-1`);
+    await page.waitForFunction(() => /Black · 1 to print/.test(document.querySelector('.todo-colorbar').textContent));
     assert(db.private.etsy_todo.orders[0].lines[0].printed === 1, 'printed one');
+    // Fix a mistake in place: change a part's color and count, and remove a part.
+    await page.click('button[aria-label="Change Spine"]');
+    await page.fill(`#tl-color-${o.lines[1].id}`, 'Blue');
+    await page.fill(`#tl-qty-${o.lines[1].id}`, '3');
+    await page.click('.todo-line-edit button:has-text("Save")');
+    await page.waitForFunction(() => /Blue · 3 to print/.test(document.querySelector('.todo-colorbar').textContent));
+    assert(db.private.etsy_todo.orders[0].lines[1].color === 'Blue' && db.private.etsy_todo.orders[0].lines[1].qty === 3, JSON.stringify(db.private.etsy_todo.orders[0]));
+    await page.click('button[aria-label="Remove Spine"]');
+    await page.waitForFunction(() => !/Spine/.test(document.getElementById('todo-orders').textContent));
+    assert(db.private.etsy_todo.orders[0].lines.length === 1, 'part removed');
     await page.click('text=Shipped: done');
     await page.waitForFunction(() => /Finished \(1\)/.test(document.body.textContent));
     assert(db.private.etsy_todo.orders[0].done === true, 'finished');
@@ -2006,6 +2021,14 @@ const STATES = {
     assert(db.private.etsy_todo.orders.find(x => x.id === o.id).lines[0].printed === 1, 'ticked = printed');
     await page.uncheck(`#todo-pc-${o.lines[0].id}-1`);
     await page.waitForFunction(id => /0 of 1 printed/.test(document.querySelector(`#todo-${id} .todo-progress`).textContent), o.id);
+    // Imported orders can be deleted, and so can finished ones.
+    await page.click(`#todo-${o.id} button:has-text("Delete order")`);
+    await page.waitForFunction(id => !document.getElementById('todo-' + id), o.id);
+    assert(!db.private.etsy_todo.orders.some(x => x.id === o.id), 'imported order deleted');
+    await page.click('.todo-done summary');
+    await page.click('.todo-done button:has-text("Delete")');
+    await page.waitForFunction(() => !document.querySelector('.todo-done'));
+    assert(!db.private.etsy_todo.orders.length, JSON.stringify(db.private.etsy_todo));
     await page.close();
   });
   await check('etsy to make: parts added from a design show a picture of that part in its color; a hand-typed order has no title', async () => {
