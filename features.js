@@ -2256,6 +2256,8 @@ const OWNER_WIKI = [
     steps: ['Tap Change Password in the owner menu.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
   { id: 'updated', area: 'Getting started', title: 'Is the site up to date? (Updated N min ago, Reload now)', keys: 'update new version reload refresh deploy live',
     steps: ['The small "Updated N min ago" note shows when the site last changed.', 'If the site is updated while you have it open, a bar offers "Reload now". Tap it to get the newest version.', 'Settings > Updates lists every change made to the site.'], go: ['settings', 'updates'] },
+  { id: 'sections', area: 'Getting started', title: 'Jump between sections of a page', keys: 'side buttons sections scroll navigate long page jump menu',
+    steps: ['On any owner page with more than one section, a button for each section sits on the right side and stays there while you scroll.', 'Tap a button to jump to that section. The section you are reading is highlighted.', 'On a phone, tap the round "Sections" button at the bottom right to open the list, then tap a section.'] },
   { id: 'app', area: 'Getting started', title: 'Put the site on your home screen like an app', keys: 'install app icon home screen iphone android',
     steps: ['iPhone: open the site in Safari, tap Share, then "Add to Home Screen".', 'Android or Chrome: open the menu (three dots), then "Install app" or "Add to Home screen".'] },
   { id: 'bell', area: 'Getting started', title: 'The bell: notifications and phone alerts', keys: 'notifications alerts bell new request approved color idea unread',
@@ -5452,4 +5454,91 @@ function addEtsyReviews() {
   state.reviewImport = null;
   render();
   showAlert('review-import-err', `Added ${picked.length} review${picked.length === 1 ? '' : 's'}. Tap Save to put them on your site.`, 'success');
+}
+
+// ── SECTION BUTTONS (owner) ──
+// Every owner page with 2+ sections gets a button per section on the side that stays in view while
+// scrolling (on a phone: a "Sections" button that opens the list). Built from the page itself after each
+// redraw: each top-level card's heading, plus Help's area headings, so new cards get a button by themselves.
+function jumpHeadings() {
+  const main = document.querySelector('#main.owner-main');
+  if (!main) return [];
+  const found = new Set();
+  main.querySelectorAll('.card').forEach(c => {
+    if (c.parentElement.closest('.card') || c.closest('.modal-backdrop, .mail-modal')) return;
+    const h = c.querySelector('.card-title, .email-card-title, h2, h3, summary');
+    if (h && h.closest('.card') === c) found.add(h);
+  });
+  main.querySelectorAll('.wiki-area, .email-group-title').forEach(h => found.add(h));
+  return [...found].filter(h => h.offsetParent || h.tagName === 'SUMMARY')
+    .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+    .map(h => {
+      const copy = h.cloneNode(true);
+      copy.querySelectorAll('.email-to, .swatch-note, .nav-badge, .badge, button, input, select').forEach(x => x.remove());
+      const name = copy.textContent.replace(/\s+/g, ' ').split(' · ')[0].trim();
+      return { h, name: name.length > 34 ? name.slice(0, 32) + '…' : name };
+    }).filter(x => x.name);
+}
+let jumpList = [];
+function buildJumpNav() {
+  let nav = document.getElementById('jump-nav');
+  jumpList = state.view === 'owner' && state.ownerUnlocked ? jumpHeadings() : [];
+  const on = jumpList.length >= 2;
+  document.documentElement.classList.toggle('jump-on', on);
+  if (!on) { if (nav) nav.remove(); return; }
+  if (!nav) {
+    nav = document.createElement('nav');
+    nav.id = 'jump-nav';
+    nav.className = 'jump-nav';
+    nav.setAttribute('aria-label', 'Sections on this page');
+    document.body.appendChild(nav);
+  }
+  const open = nav.classList.contains('open');
+  const html = `<button type="button" class="jump-toggle" aria-expanded="${open}" onclick="toggleJumpNav()">Sections</button>
+    <ol class="jump-list">${jumpList.map((x, i) => `<li><button type="button" class="jump-btn" data-jump="${i}" onclick="jumpTo(${i})">${esc(x.name)}</button></li>`).join('')}</ol>`;
+  if (nav.dataset.html !== html) { nav.innerHTML = html; nav.dataset.html = html; }
+  markJumpActive();
+}
+function toggleJumpNav(force) {
+  const nav = document.getElementById('jump-nav');
+  if (!nav) return;
+  const open = typeof force === 'boolean' ? force : !nav.classList.contains('open');
+  nav.classList.toggle('open', open);
+  nav.querySelector('.jump-toggle').setAttribute('aria-expanded', open);
+}
+function jumpTo(i) {
+  const x = jumpList[i];
+  if (!x || !x.h.isConnected) return;
+  const details = x.h.tagName === 'SUMMARY' ? x.h.parentElement : null;
+  if (details && !details.open) details.open = true;
+  const target = x.h.closest('.card') && !x.h.matches('.wiki-area, .email-group-title') ? x.h.closest('.card') : x.h;
+  target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  if (!x.h.hasAttribute('tabindex') && !/^(SUMMARY|BUTTON|A)$/.test(x.h.tagName)) x.h.setAttribute('tabindex', '-1');
+  x.h.focus({ preventScroll: true });
+  toggleJumpNav(false);
+  setTimeout(markJumpActive, 400);
+}
+// The section you're reading is highlighted (the last one whose heading has passed under the top bar).
+function markJumpActive() {
+  const nav = document.getElementById('jump-nav');
+  if (!nav || !jumpList.length) return;
+  let cur = 0;
+  jumpList.forEach((x, i) => { if (x.h.isConnected && x.h.getBoundingClientRect().top < 140) cur = i; });
+  if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) cur = jumpList.length - 1;
+  nav.querySelectorAll('.jump-btn').forEach(b => {
+    const on = +b.dataset.jump === cur;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+}
+if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+  let jumpTimer = 0;
+  const later = () => { clearTimeout(jumpTimer); jumpTimer = setTimeout(buildJumpNav, 120); };
+  document.addEventListener('DOMContentLoaded', () => {
+    const root = document.getElementById('app-root');
+    if (root) new MutationObserver(later).observe(root, { childList: true, subtree: true });
+    addEventListener('scroll', () => requestAnimationFrame(markJumpActive), { passive: true });
+    addEventListener('resize', later);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleJumpNav(false); });
+  });
 }

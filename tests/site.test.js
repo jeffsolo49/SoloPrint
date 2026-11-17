@@ -2251,6 +2251,31 @@ const STATES = {
     assert(/Bambu settings/.test(await page.textContent('#wiki-results')) && /My notes/.test(await page.textContent('#wiki-results')), await page.textContent('#wiki-results'));
     await page.close();
   });
+  await check('owner pages with several sections get side buttons that jump to each section (a Sections button on a phone)', async () => {
+    const page = await open(fixtures(), { width: 1280, height: 700 });
+    await page.evaluate(asOwner('money'));
+    await page.waitForSelector('#jump-nav .jump-btn');
+    const names = await page.$$eval('#jump-nav .jump-btn', els => els.map(e => e.textContent));
+    assert(names.includes('Etsy sales') && names.includes('Expenses in 2026'), JSON.stringify(names));
+    assert(await page.isVisible('#jump-nav .jump-btn') && !(await page.isVisible('.jump-toggle')), 'buttons show on the side');
+    await page.click('.jump-btn:has-text("Etsy sales")');
+    await page.waitForFunction(() => document.querySelector('.jump-btn.active').textContent === 'Etsy sales');
+    const top = await page.evaluate(() => [...document.querySelectorAll('#main .card-title')].find(h => h.textContent === 'Etsy sales').getBoundingClientRect().top);
+    assert(top > 0 && top < 200, 'scrolled to Etsy sales: ' + top);
+    await page.evaluate(() => setOwnerTab('settings'));
+    await page.waitForFunction(() => [...document.querySelectorAll('#jump-nav .jump-btn')].some(b => b.textContent === 'Contact links'));
+    await page.evaluate(() => { state.ownerTab = 'dashboard'; render(); });
+    await page.waitForFunction(() => !document.getElementById('jump-nav'));
+    await page.setViewportSize({ width: 390, height: 760 });
+    await page.evaluate(() => setOwnerTab('help'));
+    await page.waitForSelector('.jump-toggle');
+    assert(!(await page.isVisible('.jump-btn')), 'list closed on a phone');
+    await page.click('.jump-toggle');
+    await page.click('.jump-btn:has-text("Money")');
+    await page.waitForFunction(() => !document.querySelector('#jump-nav').classList.contains('open'));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };

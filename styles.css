@@ -1386,3 +1386,24 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .todo-chip .swatch { border: 1px solid var(--border); }
 .todo-fix { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .todo-line-edit { display: block; background: rgba(var(--sec-orders-rgb), 0.06); border-radius: 10px; padding: 8px; }
+
+/* Section buttons on owner pages (features.js buildJumpNav) */
+.jump-nav { position: fixed; z-index: 90; }
+.jump-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.jump-btn { width: 100%; text-align: left; min-height: 36px; padding: 6px 10px; border: 2px solid var(--btn-border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; line-height: 1.25; cursor: pointer; }
+.jump-btn:hover { border-color: var(--accent2); }
+.jump-btn.active { background: var(--accent2); border-color: var(--accent2); color: var(--on-accent); font-weight: 700; }
+.jump-toggle { display: none; }
+#main .card, #main .wiki-area, #main .email-group-title { scroll-margin-top: 76px; }
+@media (min-width: 1000px) {
+  html.jump-on .main.owner-main { max-width: none; margin: 24px 200px 40px 16px; }
+  .jump-nav { top: 76px; right: 12px; width: 176px; max-height: calc(100vh - 92px); overflow-y: auto; padding: 2px; }
+}
+@media (max-width: 999px) {
+  .jump-nav { right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .jump-toggle { display: block; order: 2; min-height: 44px; padding: 10px 16px; border-radius: 22px; border: 2px solid var(--accent2); background: var(--accent2); color: var(--on-accent); font-weight: 700; box-shadow: 0 4px 14px rgba(0,0,0,0.25); cursor: pointer; }
+  .jump-list { display: none; order: 1; width: min(260px, calc(100vw - 24px)); max-height: 60vh; overflow-y: auto; padding: 8px; background: var(--surface); border: 2px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+  .jump-nav.open .jump-list { display: flex; }
+  html.jump-on .main.owner-main { margin-bottom: 76px; }
+}
+@media print { .jump-nav { display: none; } }
