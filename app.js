@@ -216,7 +216,7 @@ function rulesFor(batch) { return orderRules(batch, state.settings); }
 // Pass an item to price all of its colors, or a filament type for a single-color price.
 function calcPerPrint(mins, grams, filType, rules = currentRules()) {
   const fixed = filType && typeof filType === 'object' ? fixedPrice(filType) : null;
-  if (fixed !== null) return fixed + logoCharge(filType, rules);
+  if (fixed !== null) return fixed + addOnCharge(filType, rules);
   if (!mins || !grams) return null;
   return printPrice(mins, grams, filType, rules);
 }
@@ -1814,6 +1814,7 @@ function renderExtraColors(item, i) {
   const rollsLooked = state.leftoverRollsFor === colorKey(state.clientEmail);
   return `<div class="extra-colors">
     <div class="field-help" style="margin-top:0;">Other colors in this print (optional). You can mix colors I carry with your leftover roll.</div>
+    ${colorFeeNote(item)}
     <div class="filament-pills" role="group" aria-label="Other colors in this print">
       ${extraColorChoices(item).map((c, n) => {
         const on = extras.some(p => sameColorPart(p, c));
@@ -1878,10 +1879,10 @@ function pickColor(i, colorId) {
 function renderCustomerPricePreview(item) {
   if (setPriceOf(item)) {
     const qty = Math.max(1, Number(item.qty) || 1);
-    const logo = logoCharge(item, currentRules()), each = setPriceOf(item) + logo;
+    const logo = logoCharge(item, currentRules()), extra = colorCharge(item, currentRules()), each = setPriceOf(item) + logo + extra;
     return `<div class="price-preview-box" style="margin-top:12px;">
       <div class="price-big">$${(each * qty).toFixed(2)}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${each.toFixed(2)} each${logo ? ` (includes $${logo.toFixed(2)} for your logo)` : ''}${qty > 1 ? ` · quantity ${qty}` : ''}. I'll confirm your order after reviewing your request.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${each.toFixed(2)} each${logo || extra ? ` (includes ${[logo ? `$${logo.toFixed(2)} for your logo` : '', extra ? `$${extra.toFixed(2)} for the extra colors` : ''].filter(Boolean).join(' and ')})` : ''}${qty > 1 ? ` · quantity ${qty}` : ''}. I'll confirm your order after reviewing your request.</div>
     </div>`;
   }
   const minutes = item.knownFromLibrary ? item.knownMinutes : totalPrintMinutes(item.printHours, item.printMinutes);
@@ -1900,6 +1901,7 @@ function renderCustomerPricePreview(item) {
     <div style="font-size:12px;color:var(--muted);margin-top:4px;">$${perPrint.toFixed(2)} per print · ${fmtTime(minutes)} · ${allGrams.toFixed(1)}g · quantity ${qty}</div>
     <div class="price-breakdown">${priceBreakdown(minutes, allGrams, colorsRate(item, rules, grams), qty, rules)}</div>
     ${renderColorLines(item, grams, rules)}
+    ${colorCharge(item, rules) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">Includes $${colorCharge(item, rules).toFixed(2)} per print for using more than ${rules.freeColors} colors.</div>` : ''}
     ${usesSpecialSpool(item) ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">+ about $${rules.rollCost} for the ${fmtRoll(rules.rollGrams)} special order roll, instead of a material charge (confirmed in your quote)</div>` : ''}
     ${isSpecialOrder(item) && item.useLeftover ? `<div style="font-size:12px;font-weight:600;margin-top:8px;">No material charge: printed from your leftover roll.</div>` : ''}
     <div style="font-size:12px;color:var(--muted);margin-top:8px;">This is an automated estimate, not an exact cost. We'll review your request and confirm your quote.</div>
@@ -4939,7 +4941,7 @@ function previewOwnerItem(batchId, i) {
   const rules = rulesFor(batch);
   readOwnerColorGrams(batchId, i, it);
   const set = fixedPrice({ ...it, setPrice: ownerSetPrice(it) });
-  const fixed = set === null ? null : set + logoCharge(it, rules);
+  const fixed = set === null ? null : set + addOnCharge(it, rules);
   if (fixed !== null) {
     document.getElementById(`opval-${batchId}-${i}`).textContent = `$${(fixed * it.qty).toFixed(2)}${it.qty > 1 ? ' total' : ''}`;
     document.getElementById(`opsub-${batchId}-${i}`).textContent = 'Fixed price per print; time and grams are just for your records.';
@@ -4952,7 +4954,8 @@ function previewOwnerItem(batchId, i) {
   const total = colorGrams(it, grams).reduce((s, g) => s + g, 0);
   document.getElementById(`opsub-${batchId}-${i}`).textContent = priceBreakdown(mins, total, colorsRate(it, rules, grams), it.qty, rules)
     + (itemParts(it).length > 1 ? '\n' + colorLines(it, grams, rules).join('\n') : '')
-    + (logoCharge(it, rules) ? `\nIncludes company logo: $${logoCharge(it, rules).toFixed(2)} each` : '');
+    + (logoCharge(it, rules) ? `\nIncludes company logo: $${logoCharge(it, rules).toFixed(2)} each` : '')
+    + (colorCharge(it, rules) ? `\nIncludes more than ${rules.freeColors} colors: $${colorCharge(it, rules).toFixed(2)} each` : '');
   pEl.style.display = 'block';
 }
 

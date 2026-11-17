@@ -880,6 +880,26 @@ const STATES = {
     await page.close();
   });
 
+  await check('more than 2 colors adds the extra colors charge per print (not on old quotes or an owner price); the form explains it', async () => {
+    const page = await open(fixtures());
+    const r = await page.evaluate(() => {
+      const two = { filType: 'black', extraColors: [{ name: 'Red', filType: 'color', colorId: 'red' }] };
+      const three = { filType: 'black', extraColors: [{ name: 'Red', filType: 'color', colorId: 'red' }, { name: 'White', filType: 'white' }] };
+      const same = { filType: 'color', colorId: 'red', color: 'Red', extraColors: [{ name: 'Red', filType: 'color', colorId: 'red' }, { name: 'Black', filType: 'black' }] };
+      const rules = currentRules();
+      return { two: printPrice(60, 30, two, rules), three: printPrice(60, 30, three, rules), same: colorCharge(same, rules),
+        own: colorCharge({ ...three, ownerPrice: 10 }, rules), oldQuote: colorCharge(three, orderRules({ phase: 'quote_sent', rates: { baseFee: 2 } }, state.settings)),
+        newQuote: colorCharge(three, orderRules({ phase: 'quote_sent', rates: quoteRates(rules) }, state.settings)) };
+    });
+    assert(Math.abs(r.three - r.two - 2) < 0.001 && r.same === 0 && r.own === 0 && r.oldQuote === 0 && r.newQuote === 2, JSON.stringify(r));
+    await page.evaluate(() => { state.draftItems[0].mode = 'idea'; updateDraft(0, 'notes', 'A sign'); state.draftItems[0].showExtras = true; render(); toggleExtraColor(0, 0); });
+    assert(!(await page.$('.color-fee-note.over')) && /Up to 2 colors are included/.test(await page.textContent('.color-fee-note')), 'note before 3 colors');
+    await page.evaluate(() => toggleExtraColor(0, 1));
+    assert(/This print has 3 colors/.test(await page.textContent('.color-fee-note.over')), 'stands out at 3 colors');
+    assert(!/privilege/i.test(await page.textContent('.color-fee-note')), 'no privilege wording');
+    await page.close();
+  });
+
   console.log('\nOwner tools:');
   await check('dashboard loads recent orders; Load all fetches everything', async () => {
     const db = fixtures();
