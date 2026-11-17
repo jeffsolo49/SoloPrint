@@ -5144,6 +5144,9 @@ function renderEtsyTodoPage() {
     byColor.get(key).rows.push({ o, l });
   }));
   const colors = [...byColor.values()].sort((a, b) => b.rows.reduce((n, r) => n + todoLeft(r.l), 0) - a.rows.reduce((n, r) => n + todoLeft(r.l), 0));
+  // A color button shows only the orders with parts left to print in that color, and only those parts.
+  const fc = byColor.has(state.todoColor) ? state.todoColor : '';
+  const shown = fc ? open.filter(o => (o.lines || []).some(l => todoLeft(l) && String(l.color || 'No color picked').trim().toLowerCase() === fc)) : open;
   const swatch = name => { const hex = todoColorHex(name); return hex ? `<span class="swatch" style="background:${esc(hex)}" aria-hidden="true"></span>` : ''; };
   const who = o => `${o.etsyId ? '#' + esc(o.etsyId) : 'Etsy order'}${o.buyer ? ' · ' + esc(o.buyer) : ''}`;
   const colorList = (state.settings.colors || []).map(c => c.name).concat(['Black', 'White']).filter((v, i, a) => a.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i);
@@ -5160,29 +5163,30 @@ function renderEtsyTodoPage() {
     </div>
     <div class="alert error" id="todo-err"></div>
     ${state.todoMsg ? `<div class="alert success" style="display:block;" role="status">${esc(state.todoMsg)}</div>` : ''}
-    <div class="card todo-print" id="todo-print">
-      <h3 class="card-title">Print list by color</h3>
-      ${colors.length ? colors.map(c => `<div class="todo-color">
-          <h4 class="todo-color-name">${swatch(c.name)}${esc(c.name)} <span class="todo-count">${c.rows.reduce((n, r) => n + todoLeft(r.l), 0)} to print</span></h4>
-          <ul class="todo-lines">${c.rows.map(({ o, l }) => `<li><span><strong>${todoLeft(l)} × ${esc(l.what)}</strong> <span class="gallery-meta">${who(o)}</span> ${todoDue(o)}</span>
-            <button type="button" class="btn-sm" onclick="todoPrinted('${esc(o.id)}', '${esc(l.id)}', 1)" aria-label="Printed one ${esc(l.what)} in ${esc(c.name)} for ${o.etsyId ? 'order ' + esc(o.etsyId) : 'this order'}">Printed 1</button></li>`).join('')}</ul></div>`).join('')
-        : `<p class="field-help">${open.length ? 'Everything is printed. Mark the orders shipped below.' : 'Nothing to print. Add an Etsy order below.'}</p>`}
-    </div>
     <div class="card" id="todo-orders">
       <h3 class="card-title">Waiting to finish (${open.length})</h3>
-      ${open.length ? open.map(o => { const lines = o.lines || [], tot = lines.reduce((n, l) => n + (Number(l.qty) || 1), 0), got = lines.reduce((n, l) => n + Math.min(Number(l.printed) || 0, Number(l.qty) || 1), 0);
+      ${colors.length ? `<div class="todo-colorbar" role="group" aria-label="Show parts in one color">
+        <button type="button" class="todo-chip${fc ? '' : ' on'}" aria-pressed="${!fc}" onclick="state.todoColor = ''; render();">All colors</button>
+        ${colors.map(c => { const key = c.name.toLowerCase(), n = c.rows.reduce((x, r) => x + todoLeft(r.l), 0);
+          return `<button type="button" class="todo-chip${fc === key ? ' on' : ''}" aria-pressed="${fc === key}" onclick="state.todoColor = state.todoColor === '${esc(key)}' ? '' : '${esc(key)}'; render();">${swatch(c.name)}${esc(c.name)} · ${n} to print</button>`; }).join('')}
+      </div>` : open.length ? '<p class="field-help">Everything is printed. Mark the orders shipped.</p>' : ''}
+      ${shown.length ? shown.map(o => { const lines = o.lines || [], tot = lines.reduce((n, l) => n + (Number(l.qty) || 1), 0), got = lines.reduce((n, l) => n + Math.min(Number(l.printed) || 0, Number(l.qty) || 1), 0);
+        const vis = fc ? lines.filter(l => String(l.color || 'No color picked').trim().toLowerCase() === fc) : lines;
         return `<section class="todo-order" id="todo-${esc(o.id)}" aria-label="${o.etsyId ? 'Etsy order ' + esc(o.etsyId) : 'Etsy order'}">
           <div class="todo-o-head"><span class="todo-o-who">${who(o)}</span> ${todoDue(o)} <span class="todo-progress${got >= tot && tot ? ' all' : ''}">${got} of ${tot} printed</span></div>
           ${o.title ? `<div class="todo-o-title">${esc(o.title)}</div>` : ''}
           ${o.note ? `<p class="field-help">${esc(o.note)}</p>` : ''}
-          <ul class="todo-parts">${lines.map(l => `<li class="${todoLeft(l) ? '' : 'printed'}">
+          <ul class="todo-parts">${vis.map(l => state.todoLineEdit === l.id ? todoLineForm(o, l, colorList) : `<li class="${todoLeft(l) ? '' : 'printed'}">
             ${todoPicture(o, l)}
             <span class="todo-part-text">${swatch(l.color)}${Number(l.qty) || 1} × <strong>${esc(l.what)}</strong>${l.color ? ` · ${esc(l.color)}` : ''}</span>
-            ${todoPieces(o, l)}</li>`).join('')}</ul>
+            ${todoPieces(o, l)}
+            <span class="todo-fix"><button type="button" class="btn-sm" onclick="state.todoLineEdit = '${esc(l.id)}'; render(); document.getElementById('tl-what-${esc(l.id)}')?.focus();" aria-label="Change ${esc(l.what)}">Change</button>
+              <button type="button" class="btn-sm danger" onclick="todoLineRemove('${esc(o.id)}', '${esc(l.id)}')" aria-label="Remove ${esc(l.what)}">Remove</button></span></li>`).join('')}</ul>
+          ${fc && vis.length < lines.length ? `<div class="field-help">${lines.length - vis.length} more part${lines.length - vis.length === 1 ? '' : 's'} in other colors.</div>` : ''}
           <div class="money-controls"><button type="button" class="btn-sm" onclick="todoFinish('${esc(o.id)}')">Shipped: done</button>
-            <button type="button" class="btn-sm" onclick="todoEdit('${esc(o.id)}')">Edit</button>
-            <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')">Delete</button></div>
-        </section>`; }).join('') : '<p class="field-help">No Etsy orders waiting.</p>'}
+            <button type="button" class="btn-sm" onclick="todoEdit('${esc(o.id)}')">Edit order</button>
+            <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')">Delete order</button></div>
+        </section>`; }).join('') : `<p class="field-help">${open.length ? 'No parts in that color left to print.' : 'No Etsy orders waiting. Add one below.'}</p>`}
     </div>
     <div class="card" id="todo-add">
       <h3 class="card-title">${d.id ? 'Edit this Etsy order' : 'Add an Etsy order'}</h3>
@@ -5224,7 +5228,31 @@ function renderEtsyTodoPage() {
     </div>
     ${done.length ? `<details class="card todo-done"><summary><strong>Finished (${done.length})</strong></summary>
       <ul class="todo-lines">${done.map(o => `<li><span>${who(o)} · ${esc((o.lines || []).map(l => `${Number(l.qty) || 1} × ${l.what}`).join(', '))}</span>
-        <button type="button" class="btn-sm" onclick="todoReopen('${esc(o.id)}')">Put back</button></li>`).join('')}</ul></details>` : ''}`;
+        <span class="todo-fix"><button type="button" class="btn-sm" onclick="todoReopen('${esc(o.id)}')">Put back</button>
+        <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')" aria-label="Delete finished order ${o.etsyId ? esc(o.etsyId) : ''}">Delete</button></span></li>`).join('')}</ul></details>` : ''}`;
+}
+// Fixing one part in place: what it is, its color and how many.
+function todoLineForm(o, l, colorList) {
+  const id = esc(l.id);
+  return `<li class="todo-line-edit"><div class="expense-form">
+    <div class="field" style="flex:2;"><label for="tl-what-${id}">Part or item</label><input type="text" id="tl-what-${id}" maxlength="80" value="${esc(l.what)}" /></div>
+    <div class="field"><label for="tl-color-${id}">Color</label><input type="text" id="tl-color-${id}" maxlength="60" list="tl-colors-${id}" value="${esc(l.color || '')}" />
+      <datalist id="tl-colors-${id}">${colorList.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist></div>
+    <div class="field"><label for="tl-qty-${id}">How many</label><input type="number" id="tl-qty-${id}" min="1" step="1" value="${Number(l.qty) || 1}" /></div>
+  </div><div class="money-controls"><button type="button" class="btn-sm" onclick="todoLineSave('${esc(o.id)}', '${id}')">Save</button>
+    <button type="button" class="btn-sm" onclick="state.todoLineEdit = ''; render();">Cancel</button></div></li>`;
+}
+function todoLineSave(oid, lid) {
+  const v = k => String((document.getElementById(`tl-${k}-${lid}`) || {}).value || '').trim();
+  if (!v('what')) { showAlert('todo-err', 'Type the part or item.', 'error'); return; }
+  state.todoLineEdit = '';
+  todoChange(oid, o => { (o.lines || []).forEach(l => { if (l.id === lid) { l.what = v('what').slice(0, 80); l.color = v('color').slice(0, 60); l.qty = Math.max(1, Math.min(999, parseInt(v('qty'), 10) || 1)); l.printed = Math.min(Number(l.printed) || 0, l.qty); } }); return o; }, 'Saved.');
+}
+function todoLineRemove(oid, lid) {
+  const o = etsyTodo().find(x => x.id === oid), l = o && (o.lines || []).find(x => x.id === lid);
+  if (!l || !confirm(`Remove "${l.what}" from ${o.etsyId ? 'order #' + o.etsyId : 'this order'}?`)) return;
+  if ((o.lines || []).length === 1 && confirm('That was its only part. Delete the whole order from this list?')) { saveEtsyTodo(etsyTodo().filter(x => x.id !== oid), 'Deleted.'); return; }
+  todoChange(oid, x => ({ ...x, lines: (x.lines || []).filter(y => y.id !== lid) }), 'Removed.');
 }
 // A tick box per piece printed (a counter past 12). Ticking box k marks k printed; unticking it marks k - 1.
 function todoPieces(o, l) {
