@@ -2312,13 +2312,13 @@ const OWNER_WIKI = [
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" on the Designs page.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
     steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
-    steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
+    steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -2926,6 +2926,7 @@ function reversePartColors(i) {
 }
 
 function renderPartColors(item, i) {
+  if (item.caddy || isCaddyDesign(state.gallery.find(x => x.id === item.galleryId))) return renderCaddyItemColors(item, i);
   const choices = partColorChoices();
   return `<fieldset class="part-colors">
     <legend>Choose a color for each part</legend>
@@ -3409,7 +3410,7 @@ function designEstimate(g, colors, opts) {
 // The design page's own choices before "Request this": optional add-on parts and the company logo.
 function designOpts(id) {
   state.designOpts = state.designOpts || {};
-  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '', edition: '' });
+  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '', edition: '', acc: {}, skipMain: false });
 }
 function applyDesignOpts(item, opts) {
   if (!opts) return item;
@@ -3425,7 +3426,7 @@ function refreshDesignPrice(id, focusId) {
   if (!g) return;
   if (document.getElementById('color-ideas')) { refreshColorIdeas(id, focusId); return; }
   const el = document.getElementById('work-price');
-  if (el) el.innerHTML = renderWorkPrice(g);
+  if (el) { el.innerHTML = renderWorkPrice(g); paintColorPreviews(); }
   if (focusId) document.getElementById(focusId)?.focus();
 }
 function setDesignAddOn(id, partId, on, k) {
@@ -3671,7 +3672,7 @@ function cleanColorMap(m, parts) {
     ids.forEach(id => { const k = c && c.colors && c.colors[id]; if (/^[a-z0-9-]{1,40}$/.test(String(k))) colors[id] = k; });
     return { id: /^[A-Za-z0-9_-]{1,40}$/.test(String(c && c.id)) ? c.id : `c${n + 1}`, name: cleanText(c && c.name, 40).trim(), colors, photo: safeImageUrl(c && c.photo) };
   });
-  return { photo, regions, combos };
+  return { photo, photoAlt: safeImageUrl(m.photoAlt), regions, combos };
 }
 
 // A color key (a color's id, or black / white when no colors are set up; blank = White) as { name, hex }.
@@ -3904,7 +3905,7 @@ function cmCombosFor(g, choices) {
   // Customers see ideas whose colors are all in stock; the owner sees every idea.
   return g.colorMap.combos.filter(c => c.name && (state.ownerUnlocked || Object.values(c.colors).every(k => keys.includes(k))));
 }
-function cmShown(g) { return featureOn('colorIdeas') && featureOn('designParts') && (g.parts || []).length > 0 && cmUsable(g.colorMap); }
+function cmShown(g) { return !isCaddyDesign(g) && featureOn('colorIdeas') && featureOn('designParts') && (g.parts || []).length > 0 && cmUsable(g.colorMap); }
 function cmViewColors(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g || !cmShown(g)) return null;
@@ -4306,6 +4307,9 @@ function renderColorMapForm(f) {
       <input type="file" accept="image/*" id="cm-upload" onchange="uploadColorMapPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
     ${m ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap = null; state.cmJoin = []; render();">Remove picture</button>' : ''}
     <span class="field-help" id="cm-status" role="status"></span>
+    ${f.id === CADDY_MAIN.id ? `<div class="field-help" style="margin-top:8px;"><strong>Catheter Caddy:</strong> upload the BACK view first (the one that shows the drawers), with the body, the dividers and handle, the drawers and the drawer tabs each a different solid color, then match those areas to the parts: Base, walls and Top Shelf and Joining Clips = body; Handle and grips, Dividers = secondary; Rear Drawers = drawers; Drawer pull tabs = tabs. The color picker repaints it. Want a Front button too? Add a front view in the same colors below.</div>
+      ${m ? `<label class="btn-sm">${m.photoAlt ? 'Change front view' : 'Add front view'}<input type="file" accept="image/*" id="cm-upload-alt" onchange="uploadColorMapAltPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
+      ${m.photoAlt ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.photoAlt = \'\'; render();">Remove front view</button>' : ''}` : ''}` : ''}
     ${!m ? '' : `
       <h4 class="cm-heading">Which part is each colored area?</h4>
       ${parts.length ? '' : '<div class="alert error" style="display:block;">Add the parts above first (with names), then match each area to a part.</div>'}
@@ -4497,12 +4501,34 @@ async function uploadColorMapPhoto(file) {
     // A new picture of the same design keeps the parts already matched to colors that are still there.
     const old = (f.colorMap && f.colorMap.regions) || [];
     const partFor = hex => { const lab = cmLab(...cmRgb(hex)); const o = old.find(r => r.part && r.hexes.some(h => cmDistance(lab, cmLab(...cmRgb(h))) < 6)); return o ? o.part : ''; };
-    f.colorMap = { photo, regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: partFor(r.hex) })), combos: (f.colorMap && f.colorMap.combos) || [] };
+    f.colorMap = { photo, photoAlt: (f.colorMap && f.colorMap.photoAlt) || '', regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: partFor(r.hex) })), combos: (f.colorMap && f.colorMap.combos) || [] };
     render();
     if (status()) status().textContent = `Found ${f.colorMap.regions.length} colored areas. Pick a part for each, then save.`;
   } catch (e) {
     console.error('Color photo error:', e);
     if (status()) status().textContent = /unsupported/.test(e.message) ? "That picture isn't a format this browser can read. Try a PNG or JPG." : "Couldn't upload. Check that you're logged in and try again.";
+  }
+}
+// The caddy's second view: painted with the same areas, so it must use the same colors as the main picture.
+async function uploadColorMapAltPhoto(file) {
+  const f = state.galleryForm, token = getOwnerToken();
+  const status = () => document.getElementById('cm-status');
+  if (!f || !f.colorMap || !file) return;
+  if (!token) { if (status()) status().textContent = 'Please log in again to upload.'; return; }
+  if (status()) status().textContent = 'Uploading the front view...';
+  try {
+    const { blob, pixels } = await cmPrepare(file);
+    if (!blob) throw new Error('resize failed');
+    const path = `${f.id}/colors-front-${Date.now()}.png`;
+    await uploadStoredPhoto(path, blob, token, false, 'image/png');
+    const photo = GALLERY_PUBLIC_PREFIX + path;
+    cmImages.set(photo, Promise.resolve(pixels));
+    f.colorMap.photoAlt = photo;
+    render();
+    const s = status(); if (s) s.textContent = 'Front view added. Save the design to keep it.';
+  } catch (e) {
+    console.error('Front view error:', e);
+    if (status()) status().textContent = "Couldn't upload. Check that you're logged in and try again.";
   }
 }
 async function redoColorAreas(detail) {
@@ -4529,6 +4555,7 @@ function detailsItemsText(b) {
     if (it.preorder === true) lines.push('   Pre-order: made first come, first served');
     if (it.versionName) lines.push(`   Version: ${it.versionName}${it.packIncluded ? ' (Joining Kit included)' : it.needsPack ? ' (needs the joining pack)' : ''}`);
     if (it.editionName) lines.push(`   Color edition: ${it.editionName}`);
+    if (it.caddy) lines.push(`   Colors: ${caddySummary(it.caddy)}`);
     if (it.matchOrder) lines.push(`   Matches order: ${it.matchOrder}`);
     if (it.logo) lines.push('   Add your company logo: yes');
     if (colorCharge(it, rulesFor(b))) lines.push(`   More than ${rulesFor(b).freeColors} colors: +$${colorCharge(it, rulesFor(b)).toFixed(2)} per print (extra color changes)`);
@@ -5847,6 +5874,7 @@ function setItemVersion(i, vid) {
   if (!(item.designParts || []).length) applyVersion(item, g, vid);
   const has = state.draftItems.some(x => x.packFor === g.id);
   if (item.needsPack && !item.packIncluded && !has) { const pk = packItemFor(g); if (pk) state.draftItems.push(pk); }
+  if (item.caddy) caddyPackSync(item);
   if ((!item.needsPack || item.packIncluded) && has) state.draftItems = state.draftItems.filter(x => x.packFor !== g.id);
   render();
   queueDraftSave();
@@ -5883,6 +5911,61 @@ function joinSuggestion(b) {
   }
   return '';
 }
+// ── ACCESSORIES ──
+// An accessory is a design listed under another design's `accessories`. It has no listing of its own: customers add it
+// from the main design's page (quantity per accessory) and it is requested together with the main design. They can also
+// tick "I only want accessories" to leave the main design out.
+function isAccessory(g) { return !!g && state.gallery.some(m => m.id !== g.id && (m.accessories || []).includes(g.id)); }
+function accessoryDesigns(g) {
+  return ((g && g.accessories) || []).map(id => state.gallery.find(x => x.id === id && x.published)).filter(Boolean);
+}
+function accessoryPicks(g, opts) {
+  const acc = (opts && opts.acc) || {};
+  return accessoryDesigns(g).map(d => ({ design: d, qty: Math.max(0, Math.min(20, parseInt(acc[d.id], 10) || 0)) })).filter(a => a.qty > 0);
+}
+function accessoryItemFor(g, a, qty) {
+  return { ...blankItem(), ...galleryItemFields(a), mode: 'gallery', qty: Math.max(1, qty || 1), accessoryFor: g.id };
+}
+function renderAccessoryPicker(g, opts) {
+  const list = accessoryDesigns(g);
+  if (!list.length) return '';
+  const acc = opts.acc || {};
+  return `<fieldset class="version-picker accessory-picker" id="accessory-picker"><legend>Accessories</legend>
+    <div class="field-help">${opts.skipMain ? 'Choose how many of each you want.' : `Add any of these to your request. They're ordered together with the ${esc(g.title)}.`}</div>
+    ${list.map((a, k) => {
+      const price = designEstimate(a);
+      const first = String(a.description || '').split(/\n\s*\n/)[0];
+      return `<div class="accessory-row"><div class="field" style="max-width:110px;"><label for="acc-qty-${k}">${esc(a.title)} quantity</label>
+        <input type="number" id="acc-qty-${k}" min="0" max="20" step="1" inputmode="numeric" value="${esc(acc[a.id] || 0)}" onchange="setAccessoryQty('${esc(g.id)}', '${esc(a.id)}', this.value, ${k})" /></div>
+        <div class="accessory-info"><strong>${esc(a.title)}</strong> <span class="gallery-meta">${price !== null ? `$${price.toFixed(2)} each` : 'Price confirmed in your quote'}</span>
+        <div class="field-help">${esc(first)}</div>
+        ${a.description ? `<details><summary>Details</summary><div class="work-writeup">${renderWriteup(a.description)}</div></details>` : ''}</div></div>`;
+    }).join('')}
+    <label class="special-order-check"><input type="checkbox" id="acc-only" ${opts.skipMain ? 'checked' : ''} onchange="setAccessoriesOnly('${esc(g.id)}', this.checked)" /> I only want accessories (not the ${esc(g.title)})</label>
+    <div class="alert error" id="acc-err" role="alert"></div></fieldset>`;
+}
+function setAccessoryQty(id, aid, v, k) {
+  designOpts(id).acc[aid] = Math.max(0, Math.min(20, parseInt(v, 10) || 0));
+  refreshDesignPrice(id, `acc-qty-${k}`);
+}
+function setAccessoriesOnly(id, on) {
+  designOpts(id).skipMain = !!on;
+  refreshDesignPrice(id, 'acc-only');
+}
+function renderAccessoriesForm(f) {
+  f.accessories = f.accessories || [];
+  const others = state.gallery.filter(x => x.id !== f.id && !(x.accessories || []).length);
+  return `<fieldset class="owner-edit-item accessories-fields">
+    <legend>Accessories (optional)</legend>
+    <div class="field-help">Tick the designs that are accessories for this one. They stop being listed on their own and are ordered from this design's page (a quantity for each), together with this design. Customers can also choose accessories only. Hide or show each accessory design as you like; only shown ones appear.</div>
+    ${others.length ? others.map((x, k) => `<label class="special-order-check"><input type="checkbox" id="acc-pick-${k}" ${f.accessories.includes(x.id) ? 'checked' : ''} onchange="toggleFormAccessory('${esc(x.id)}', this.checked)" /> ${esc(x.title || 'Untitled')}${x.published ? '' : ' (hidden)'}</label>`).join('') : '<div class="field-help">Add the accessories as their own designs first.</div>'}
+  </fieldset>`;
+}
+function toggleFormAccessory(id, on) {
+  const f = state.galleryForm; if (!f) return;
+  f.accessories = (f.accessories || []).filter(x => x !== id);
+  if (on) f.accessories.push(id);
+}
 function renderVersionsForm(f) {
   f.versions = f.versions || [];
   const others = state.gallery.filter(x => x.id !== f.id);
@@ -5910,6 +5993,7 @@ function renderVersionsForm(f) {
 // ── EDITIONS (Two-Tone / Three-Tone / Four-Tone) ──
 function editionOf(g, id) { const es = (g && g.editions) || []; return es.find(e => e.id === id) || es[0] || null; }
 function applyEdition(item, g, id) {
+  if (isCaddyDesign(g)) return item;   // the caddy has its own three-step color picker
   const e = editionOf(g, id);
   if (!e) return item;
   item.editionId = e.id; item.editionName = e.name; item.groupMerge = { ...e.merge };
@@ -5917,7 +6001,7 @@ function applyEdition(item, g, id) {
   return item;
 }
 function renderEditionPicker(g, selected, onpick) {
-  if (!g || !(g.editions || []).length) return '';
+  if (!g || !(g.editions || []).length || isCaddyDesign(g)) return '';
   const e = editionOf(g, selected);
   return `<fieldset class="version-picker"><legend>Color edition</legend>
     ${g.editions.map(x => `<label class="special-order-check"><input type="radio" name="edition-${esc(g.id)}" value="${esc(x.id)}" ${x.id === e.id ? 'checked' : ''} onchange="${onpick(x.id)}" /> ${esc(x.name)}${x.desc ? ` <span class="field-help">${esc(x.desc)}</span>` : ''}</label>`).join('')}</fieldset>`;
@@ -5933,7 +6017,7 @@ function setItemEdition(i, eid) {
 // The pairs that must not share a color (the drawer tabs and the drawers), judged after the edition merged groups.
 function colorsClash(item) {
   const g = item && item.galleryId && state.gallery.find(x => x.id === item.galleryId);
-  if (!g || !(g.contrast || []).length || !(item.designParts || []).length) return false;
+  if (!g || isCaddyDesign(g) || !(g.contrast || []).length || !(item.designParts || []).length) return false;
   const colorOf = grp => { const p = item.designParts.find(q => q.group === grp && (!q.optional || q.include)); return p ? p.colorId : null; };
   return g.contrast.some(([a, b]) => { const x = colorOf(a), y = colorOf(b); return x && y && x === y; });
 }
@@ -5952,6 +6036,7 @@ function renderFulfilment(b) {
     (it.designParts || []).filter(p => !p.optional || p.include).forEach(p => { const k = partGroup(p, it.groupMerge) || p.name; colors[k] = cmColor(p.colorId).name; });
     const adds = (it.designParts || []).filter(p => p.optional && p.include).map(p => p.name);
     lines.push(`<div class="fulfil-item"><strong>${Math.max(1, Number(it.qty) || 1)} x ${esc(it.name || 'Item')}</strong>${it.versionName ? ` - ${esc(it.versionName)}` : ''}${it.editionName ? ` - ${esc(it.editionName)}` : ''}
+      ${it.caddy ? `<div><strong>${esc(caddySummary(it.caddy))}</strong></div><div class="field-help">Handle grips: ${esc(it.caddy.secondary)}. Joining Kit hinge, clips and Side Bridges: ${esc(it.caddy.body)}.</div>` : ''}
       ${Object.keys(colors).length ? `<div>${Object.keys(colors).map(k => `${esc(k)}: ${esc(colors[k])}`).join(' · ')}</div>` : (it.color ? `<div>Color: ${esc(it.color)}</div>` : '')}
       ${it.packIncluded ? '<div>Includes: 1 x Joining Kit</div>' : ''}${adds.length ? `<div>Add-ons: ${esc(adds.join(', '))}</div>` : ''}
       ${it.matchOrder ? `<div>Match to order #${esc(it.matchOrder)}</div>` : it.askOrder ? '<div>No order number: check colors with the customer</div>' : ''}
@@ -6053,8 +6138,187 @@ const CADDY_MAIN = {
 };
 
 function caddyExists() { return state.gallery.some(g => g.id === CADDY_MAIN.id); }
+// ── CATHETER CADDY COLOR PICKER ──
+// Three steps replace the old color editions: 1 body (walls, floors, Top Shelf, Joining Clips), 2 secondary
+// (dividers and handle), 3 drawers. The drawer tabs always contrast with the drawers and are not a choice.
+// Only 18 combinations exist; the preview picture for each is presets/caddy/caddy_<Body>_<Secondary>_<Drawer>_<front|back>.png.
+// The choice is kept on the item as `caddy` { body, secondary, drawer, tab, style } and applied to the design's
+// color groups (Shell = body, Accent = secondary, Drawer = drawers, Tab = tabs), so prices, grams and emails follow.
+const CADDY_ACCENTS = ['Red', 'Green', 'Blue', 'Orange'];
+const CADDY_IMG_DIR = 'presets/caddy/';
+const CADDY_HEX = { White: '#f4f4f4', Black: '#1e1e24', Red: '#c0141c', Green: '#1fa043', Blue: '#1038d8', Orange: '#f26a10' };
+const CADDY_GROUPS = { 'Shell colour': 'body', 'Accent colour': 'secondary', 'Drawer colour': 'drawer', 'Tab colour': 'tab' };
+function isCaddyDesign(g) { return !!g && g.id === CADDY_MAIN.id; }
+function caddyOpposite(b) { return b === 'Black' ? 'White' : 'Black'; }
+function caddySecondaryOk(c, name) { return name !== c.body && (name === caddyOpposite(c.body) || CADDY_ACCENTS.includes(name)); }
+function caddyDrawerOk(c, name) {
+  return c.secondary === caddyOpposite(c.body) ? (name === c.secondary || CADDY_ACCENTS.includes(name)) : name === c.secondary;
+}
+// Puts any choice into a valid combination: the same color as the body is never the secondary, and a drawer color that is no
+// longer allowed becomes the secondary color. Tabs and style follow from the drawers.
+function caddyFix(c) {
+  const out = { body: c && c.body === 'Black' ? 'Black' : 'White', secondary: '', drawer: '', tab: '', style: '' };
+  out.secondary = c && caddySecondaryOk(out, c.secondary) ? c.secondary : caddyOpposite(out.body);
+  out.drawer = c && caddyDrawerOk(out, c.drawer) ? c.drawer : out.secondary;
+  out.tab = out.drawer === out.secondary ? out.body : out.secondary;
+  out.style = out.drawer === out.secondary ? '2-color' : '3-color';
+  return out;
+}
+function cleanCaddy(c) { return c && typeof c === 'object' && ['White', 'Black'].includes(c.body) ? caddyFix(c) : null; }
+function caddySet(c, field, value) { return caddyFix({ ...caddyFix(c), [field]: value }); }
+function caddySummary(c) { return `${c.style}: ${c.body} body · ${c.secondary} dividers and handle · ${c.drawer} drawers · ${c.tab} drawer tabs`; }
+function caddyAlt(c) { return `${c.body} body, ${c.secondary} dividers and handle, ${c.drawer} drawers, ${c.tab} drawer tabs`; }
+function caddyImage(c, view) { return `${CADDY_IMG_DIR}caddy_${c.body}_${c.secondary}_${c.drawer}_${view === 'back' ? 'back' : 'front'}.png`; }
+let caddyPreloaded = false;
+function caddyPreload() {
+  if (caddyPreloaded) return;
+  caddyPreloaded = true;
+  ['White', 'Black'].forEach(body => {
+    const opp = caddyOpposite(body);
+    [opp, ...CADDY_ACCENTS].forEach(sec => (sec === opp ? [opp, ...CADDY_ACCENTS] : [sec]).forEach(drawer =>
+      ['front', 'back'].forEach(v => { const im = new Image(); im.src = caddyImage({ body, secondary: sec, drawer }, v); })));
+  });
+}
+// A color name as the customer's stock has it (key for part colors), or null when it isn't carried.
+function caddyColorChoice(name) { return partColorChoices().find(x => String(x.name).trim().toLowerCase() === name.toLowerCase()) || null; }
+// Applies the combination to the item's parts by color group, then re-works the item's colors and grams.
+function applyCaddyColors(item) {
+  if (!item.caddy || !(item.designParts || []).length) return;
+  const c = item.caddy = caddyFix(item.caddy);
+  item.groupMerge = {};
+  item.designParts.forEach(p => {
+    const name = CADDY_GROUPS[p.group] && c[CADDY_GROUPS[p.group]], ch = name && caddyColorChoice(name);
+    if (ch) p.colorId = ch.key;
+  });
+  applyPartColors(item);
+  caddyPackSync(item);
+}
+// The Joining Kit's hinge, clips and Side Bridges follow the body color.
+function caddyPackSync(item) {
+  if (!item.caddy) return;
+  const ch = caddyColorChoice(item.caddy.body);
+  if (!ch) return;
+  (state.draftItems || []).filter(x => x.packFor && x.packFor === item.galleryId).forEach(x => { x.colorId = ch.colorId || ''; x.color = ch.colorId ? ch.name : ''; x.filType = ch.filType; });
+}
+// The caddy colors they chose before (this request first, then their past requests), for "Match my first caddy".
+function caddyEarlier(i) {
+  const mine = (state.draftItems || []).find((x, j) => j !== i && x.caddy);
+  if (mine) return mine.caddy;
+  for (const b of state.batches || []) { const it = (b.items || []).find(x => x.caddy); if (it) return it.caddy; }
+  return null;
+}
+// The preview: the design's color-ideas photo repainted in the chosen colors (the owner uploads one photo and matches its areas
+// to the parts), or, without one, the ready-made picture for that combination.
+function caddyPreviewHtml(g, c, view, parts) {
+  const m = g && g.colorMap;
+  if (!(m && cmUsable(m))) return `<img src="${esc(caddyImage(c, view))}" alt="${esc(caddyAlt(c))}" width="640" height="640" onerror="photoFailed(this, 'text')" />`;
+  const colors = {};
+  (parts || []).forEach(p => { const name = CADDY_GROUPS[p.group] && c[CADDY_GROUPS[p.group]], ch = name && caddyColorChoice(name); if (ch) colors[p.id] = ch.key; });
+  return cmCanvas(view === 'front' && m.photoAlt ? { ...m, photo: m.photoAlt } : m, parts || [], colors, caddyAlt(c));
+}
+function renderCaddyPicker(c, view, scope, ref) {
+  caddyPreload();
+  const g = scope === 'design' ? state.gallery.find(x => x.id === ref) : state.gallery.find(x => x.id === (state.draftItems[Number(ref)] || {}).galleryId);
+  const parts = scope === 'design' ? (g && g.parts) : (state.draftItems[Number(ref)] || {}).designParts;
+  const painted = !!(g && g.colorMap && cmUsable(g.colorMap));
+  const twoViews = !painted || !!g.colorMap.photoAlt;
+  const call = (field, v) => `caddyPick('${scope}', '${esc(ref)}', '${field}', '${v}')`;
+  const swatch = (field, name, ok) => {
+    const ch = caddyColorChoice(name), on = c[field] === name, usable = ok && !!ch;
+    return `<button type="button" class="caddy-swatch ${on ? 'on' : ''}" id="caddy-${scope}-${esc(ref)}-${field}-${name}" aria-label="${name}${ok && !ch ? ' (not in stock)' : ''}" aria-pressed="${on}" ${usable ? '' : 'disabled'} onclick="${call(field, name)}">
+      <span class="caddy-dot" style="background:${esc((ch && ch.hex) || CADDY_HEX[name])}" aria-hidden="true"></span><span>${name}</span></button>`;
+  };
+  const all = ['White', 'Black', ...CADDY_ACCENTS];
+  const vb = (v, label) => `<button type="button" class="btn-sm caddy-view ${view === v ? 'on' : ''}" aria-pressed="${view === v}" onclick="caddyView('${scope}', '${esc(ref)}', '${v}')">${label}</button>`;
+  const earlier = scope === 'item' ? caddyEarlier(Number(ref)) : null;
+  return `<div class="caddy-picker" id="caddy-picker-${scope}-${esc(ref)}">
+    <div class="caddy-preview">${caddyPreviewHtml(g, c, view, parts)}</div>
+    ${twoViews ? `<div class="caddy-views" role="group" aria-label="Preview side">${vb('front', 'Front')}${vb('back', 'Back (drawers)')}</div>` : ''}
+    <div class="caddy-step"><div class="caddy-step-title">1. Body <span class="field-help">walls, floors, Top Shelf, Joining Clips</span></div><div class="caddy-swatches">${['White', 'Black'].map(n => swatch('body', n, true)).join('')}</div></div>
+    <div class="caddy-step"><div class="caddy-step-title">2. Secondary color <span class="field-help">dividers and handle</span></div><div class="caddy-swatches">${all.map(n => swatch('secondary', n, caddySecondaryOk(c, n))).join('')}</div></div>
+    <div class="caddy-step"><div class="caddy-step-title">3. Drawer color <span class="field-help">the 3 rear drawers</span></div><div class="caddy-swatches">${all.map(n => swatch('drawer', n, caddyDrawerOk(c, n))).join('')}</div></div>
+    <div class="caddy-summary" aria-live="polite">${esc(caddySummary(c))}</div>
+    ${earlier && JSON.stringify(caddyFix(earlier)) !== JSON.stringify(c) ? `<button type="button" class="btn-sm" id="caddy-match-${esc(ref)}" onclick="caddyMatch(${Number(ref)})">Match my first caddy</button>` : ''}
+  </div>`;
+}
+function caddyPick(scope, ref, field, value) {
+  const focus = `caddy-${scope}-${ref}-${field}-${value}`;
+  if (scope === 'design') {
+    const o = designOpts(ref);
+    o.caddy = caddySet(o.caddy, field, value);
+    refreshDesignPrice(ref, focus);
+    return;
+  }
+  const item = state.draftItems[Number(ref)];
+  if (!item) return;
+  item.caddy = caddySet(item.caddy, field, value);
+  applyCaddyColors(item);
+  render();
+  queueDraftSave();
+  document.getElementById(focus)?.focus();
+}
+function caddyView(scope, ref, v) {
+  if (scope === 'design') { designOpts(ref).caddyView = v; refreshDesignPrice(ref, `caddy-picker-design-${ref}`); document.querySelector(`#caddy-picker-design-${ref} .caddy-view.on`)?.focus(); return; }
+  const item = state.draftItems[Number(ref)];
+  if (!item) return;
+  item.caddyView = v;
+  render();
+  document.querySelector(`#caddy-picker-item-${ref} .caddy-view.on`)?.focus();
+}
+function caddyMatch(i) {
+  const item = state.draftItems[i], e = caddyEarlier(i);
+  if (!item || !e) return;
+  item.caddy = caddyFix(e);
+  applyCaddyColors(item);
+  render();
+  queueDraftSave();
+}
+// On the design page.
+function renderCaddyDesignPicker(g, opts) {
+  opts.caddy = caddyFix(opts.caddy);
+  return `<fieldset class="version-picker"><legend>Choose your colors</legend>${renderCaddyPicker(opts.caddy, opts.caddyView || 'front', 'design', g.id)}</fieldset>`;
+}
+// On the request form, in place of the color row for each part (only the add-ons keep their tick boxes).
+function renderCaddyItemColors(item, i) {
+  if (!item.caddy) { item.caddy = caddyFix({}); applyCaddyColors(item); }
+  return `<fieldset class="part-colors"><legend>Choose your colors</legend>
+    <div class="field-help">${esc(materialNote())}</div>
+    ${renderCaddyPicker(item.caddy, item.caddyView || 'front', 'item', String(i))}
+    ${item.designParts.map((p, k) => !p.optional ? '' : `<label class="special-order-check part-add"><input type="checkbox" id="part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="setPartIncluded(${i}, ${k}, this.checked)" />
+      Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>`).join('')}
+    <div class="field-help">Handle grips follow the secondary color; the Joining Kit's hinge, clips and Side Bridges follow the body color.</div>
+  </fieldset>`;
+}
+
+// A caddy set up before accessories became part of ordering the caddy: one tap links them.
+function caddyAccessoryIds() { return CADDY_ACCESSORIES.map(a => a[0]).filter(id => state.gallery.some(g => g.id === id)); }
+function renderCaddyLinkAccessories() {
+  const main = state.gallery.find(g => g.id === CADDY_MAIN.id);
+  if (!main || (main.accessories || []).length || !caddyAccessoryIds().length) return '';
+  return `<div class="card" id="caddy-link-acc">
+    <h3 class="card-title">Catheter Caddy accessories</h3>
+    <div class="field-help">The accessories are still their own listings. One tap makes them part of ordering the Catheter Caddy: they stop being listed on their own, and customers add them (with a quantity) on the caddy's page, or choose accessories only. Each accessory still needs to be shown (not hidden) to appear.</div>
+    <button type="button" class="btn-sm" id="caddy-link-go" onclick="linkCaddyAccessories()">Make accessories part of the caddy order</button>
+    <div class="alert error" id="caddy-link-err"></div>
+  </div>`;
+}
+async function linkCaddyAccessories() {
+  const main = state.gallery.find(g => g.id === CADDY_MAIN.id);
+  if (!main) return;
+  const btn = document.getElementById('caddy-link-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await writeGalleryItem({ ...main, accessories: caddyAccessoryIds() });
+    await loadGallery();
+    render();
+  } catch (e) {
+    console.error('Caddy accessories error:', e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Make accessories part of the caddy order'; }
+    showAlert('caddy-link-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
+  }
+}
 function renderCaddySetup() {
-  if (caddyExists()) return '';
+  if (caddyExists()) return renderCaddyLinkAccessories();
   return `<div class="card" id="caddy-setup">
     <h3 class="card-title">Catheter Caddy pre-order</h3>
     <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two-, Three- and Four-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
@@ -6065,13 +6329,13 @@ function renderCaddySetup() {
 async function setupCatheterCaddy() {
   const btn = document.getElementById('caddy-go');
   if (btn) { btn.disabled = true; btn.textContent = 'Setting up...'; }
-  const base = { published: false, sortOrder: 0, preorder: true, preorderReady: '', filType: 'white', colorId: '', minutes: null, grams: null, price: null, videos: [], photos: [], parts: [], colorMap: null, versions: [], packId: '', editions: [], contrast: [], sideWall: false, colorFeeIncluded: false };
+  const base = { published: false, sortOrder: 0, preorder: true, preorderReady: '', filType: 'white', colorId: '', minutes: null, grams: null, price: null, videos: [], photos: [], parts: [], colorMap: null, versions: [], packId: '', accessories: [], editions: [], contrast: [], sideWall: false, colorFeeIncluded: false };
   const list = [];
   CADDY_ACCESSORIES.forEach(([id, title, short, long, box, side]) => list.push({ ...base, id, title, description: CADDY_TEXT(short, long, box), sideWall: side }));
   const [kid, ktitle, kshort, klong, kbox] = CADDY_JOINING_KIT;
   list.push({ ...base, id: kid, title: ktitle, description: CADDY_TEXT(kshort, klong, kbox) });
-  list.push({ ...base, id: CADDY_MAIN.id, title: CADDY_MAIN.title, description: CADDY_MAIN.description, price: 50, colorFeeIncluded: true, packId: kid,
-    parts: CADDY_MAIN.parts.map(p => ({ ...p, grams: null, photo: '', price: null, defaultColor: '', minutes: null })), editions: CADDY_MAIN.editions, versions: CADDY_MAIN.versions,
+  list.push({ ...base, id: CADDY_MAIN.id, title: CADDY_MAIN.title, description: CADDY_MAIN.description, price: 50, colorFeeIncluded: true, packId: kid, accessories: CADDY_ACCESSORIES.map(a => a[0]),
+    parts: CADDY_MAIN.parts.map(p => ({ ...p, grams: null, photo: '', price: null, defaultColor: '', minutes: null })), editions: [], versions: CADDY_MAIN.versions,
     contrast: [['Tab colour', 'Drawer colour']] });
   try {
     for (const g of list) {
