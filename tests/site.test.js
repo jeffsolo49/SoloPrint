@@ -2401,6 +2401,38 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('Catheter Caddy pre-order: one-tap set-up, editions merge color groups, tabs must contrast, $50 single / $100 joined, pre-order terms and timing', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#caddy-go');
+    await page.click('#caddy-go');
+    await page.waitForFunction(() => state.gallery.some(g => g.id === 'catheter-caddy'));
+    assert(Object.keys(db.gallery).filter(k => /^(catheter|syringe|blood|scissors|clipper|label|sharps|gauze|glove|cage|drawer|pole)/.test(k)).length === 15, Object.keys(db.gallery).join(','));
+    assert(db.gallery['catheter-caddy'].published === false && db.gallery['glove-box-holder'].data.sideWall === true, 'hidden, side wall flag');
+    // timing: launch Nov 25, 5 days, +1 per extra unit, the Dec 3-7 break is skipped
+    const dates = await page.evaluate(() => [1, 2, 4].map(n => ymdOf(preorderReadyDate(n, state.settings, new Date('2026-11-17T12:00:00')))));
+    assert(JSON.stringify(dates) === '["2026-11-30","2026-12-01","2026-12-08"]', JSON.stringify(dates));
+    // customer side
+    db.gallery['catheter-caddy'].published = true;
+    await page.evaluate(async () => { state.view = 'client'; await loadGallery(); setTab('gallery'); openWork('catheter-caddy'); });
+    await page.waitForSelector('.version-picker');
+    const note = await page.textContent('.preorder-note');
+    assert(/credit card checkout/.test(note) && /Venmo/.test(note) && /cancel as long as I have not already begun printing/.test(note) && /Some assembly is required/.test(note) && /Shipping is based on your location/.test(note) && /Estimated ready to ship/.test(note), note);
+    const prices = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const o = v => ({ include: {}, logo: false, version: v, edition: 'four' });
+      return [designEstimate(g, null, o('single')), designEstimate(g, null, o('pair')), designEstimateItem(g, { shell: 'red', handle: 'black', drawers: 'blue', tabs: 'white' }, o('single')).designParts.map(p => p.colorId).join()]; });
+    assert(prices[0] === 50 && prices[1] === 100, JSON.stringify(prices));
+    await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); designOpts('catheter-caddy').edition = 'two'; designOpts('catheter-caddy').version = 'pair'; requestGalleryItem('catheter-caddy'); });
+    const it = await page.evaluate(() => { const i = state.draftItems[0]; return [i.editionName, i.versionName, i.packIncluded, i.preorder, state.draftItems.length]; });
+    assert(JSON.stringify(it) === '["Two-Tone","Joined pair",true,true,1]', JSON.stringify(it));
+    // Two-Tone: drawers follow Accent, tabs follow Shell. Same color for both = tabs match drawers = blocked
+    const clash = await page.evaluate(() => { const i = state.draftItems[0]; setPartColor(0, 0, 'black'); setPartColor(0, 2, 'black'); const a = colorsClash(i); setPartColor(0, 2, 'red'); return [a, colorsClash(i), i.designParts.find(p => p.id === 'drawers').colorId, i.designParts.find(p => p.id === 'tabs').colorId]; });
+    assert(clash[0] === true && clash[1] === false && clash[2] === 'red' && clash[3] === 'black', JSON.stringify(clash));
+    // no deposit option for pre-orders, and the emails say so
+    const pay = await page.evaluate(() => { const o = { items: [{ preorder: true }], phase: 'quote_sent' }; return [orderRules(o, state.settings).depositPercent, payWording(o, orderRules(o, state.settings)).howPaying]; });
+    assert(pay[0] === 0 && /pay in full/.test(pay[1]), JSON.stringify(pay));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };
