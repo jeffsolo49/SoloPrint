@@ -1469,3 +1469,5 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .caddy-swatch:disabled { opacity: .4; cursor: not-allowed; }
 .caddy-dot { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(128,128,128,.7); display: inline-block; }
 .caddy-summary { font-weight: 700; }
+.accessories-fields .special-order-check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 4px 0; }
+.accessories-fields .special-order-check input { width: 24px; height: 24px; flex: 0 0 auto; }
