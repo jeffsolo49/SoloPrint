@@ -2520,6 +2520,32 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('the Catheter Caddy set-up can be removed in one tap: the caddy, kit and accessories go; other designs stay', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#caddy-go');
+    await page.click('#caddy-go');
+    await page.waitForSelector('#caddy-remove-go');
+    assert(Object.keys(db.gallery).length === 18, Object.keys(db.gallery).length);
+    await page.click('#caddy-remove-go');
+    await page.waitForFunction(() => !document.getElementById('caddy-remove'));
+    assert(Object.keys(db.gallery).sort().join() === 'g1,g2,g3', Object.keys(db.gallery).join());
+    assert(!(await page.$('#caddy-go')), 'set-up card stays hidden after removing');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('the caddy description is saved once in Help > My notes, and not added again after it is deleted', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    for (let t = 0; t < 30 && !(db.private.wiki && db.private.wiki.entries); t++) await page.waitForTimeout(100);
+    assert(db.private.wiki.entries.length === 1 && /Stop digging through drawers/.test(db.private.wiki.entries[0].text) && /In the box: 1 caddy/.test(db.private.wiki.entries[0].text), JSON.stringify(db.private.wiki));
+    await page.evaluate(async () => { await writeWikiNotes([]); await loadBatches(); });
+    await page.waitForTimeout(400);
+    assert(db.private.wiki.entries.length === 0 && db.private.wiki.seeded.includes('saved-caddy-description'), 'not added again after deleting');
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };

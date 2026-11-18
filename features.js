@@ -2424,7 +2424,7 @@ function renderWikiPage() {
     </div>`;
 }
 async function writeWikiNotes(entries) {
-  state.ownerPrivate = { ...(state.ownerPrivate || {}), wiki: { entries } };
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), wiki: { ...((state.ownerPrivate && state.ownerPrivate.wiki) || {}), entries } };
   try { await saveOwnerPrivate('wiki'); return true; }
   catch (e) { showAlert('wiki-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); return false; }
 }
@@ -6052,9 +6052,41 @@ const CADDY_MAIN = {
   ]
 };
 
+function caddyIds() { return [CADDY_MAIN.id, CADDY_JOINING_KIT[0]].concat(CADDY_ACCESSORIES.map(a => a[0])); }
 function caddyExists() { return state.gallery.some(g => g.id === CADDY_MAIN.id); }
+function caddyHidden() { try { return localStorage.getItem('soloprint_caddy_hidden') === '1'; } catch (e) { return false; } }
+// Designs page: one tap removes the caddy, the Joining Kit and every accessory the set-up made. Uploaded picture files stay in storage.
+function renderCaddyRemove() {
+  const here = state.gallery.filter(g => caddyIds().includes(g.id));
+  if (!here.length) return '';
+  return `<div class="card" id="caddy-remove">
+    <h3 class="card-title">Remove the Catheter Caddy pre-order</h3>
+    <div class="field-help">Starting over? This deletes the ${here.length} design${here.length === 1 ? '' : 's'} the set-up made (the caddy, the Joining Kit and the accessories). Orders and people interested are not touched, and picture files you uploaded stay in storage.</div>
+    <button type="button" class="btn-sm danger" id="caddy-remove-go" onclick="removeCatheterCaddy()">Remove the caddy and all its accessories</button>
+    <div class="alert error" id="caddy-remove-err"></div>
+  </div>`;
+}
+async function removeCatheterCaddy() {
+  const here = state.gallery.filter(g => caddyIds().includes(g.id));
+  if (!here.length) return;
+  if (!confirm(`Delete the Catheter Caddy and ${here.length - 1} other design${here.length === 2 ? '' : 's'} (accessories and the Joining Kit)? This cannot be undone.`)) return;
+  const btn = document.getElementById('caddy-remove-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing...'; }
+  try {
+    if (previewActive()) { const pv = previewData(); pv.gallery = pv.gallery.filter(x => !caddyIds().includes(x.id)); await savePreview(); }
+    else for (const g of here) await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(g.id)}`, { method: 'DELETE' });
+    try { localStorage.setItem('soloprint_caddy_hidden', '1'); } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.error('Caddy removal error:', e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Remove the caddy and all its accessories'; }
+    showAlert('caddy-remove-err', "Couldn't remove them. If you were logged out, log in again and retry.", 'error');
+    return;
+  }
+  await loadGallery();
+  render();
+}
 function renderCaddySetup() {
-  if (caddyExists()) return '';
+  if (caddyExists() || caddyHidden()) return '';
   return `<div class="card" id="caddy-setup">
     <h3 class="card-title">Catheter Caddy pre-order</h3>
     <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two-, Three- and Four-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
@@ -6299,3 +6331,14 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
   const l = leadSaved();
   if (l && l.pending && EMAIL_OK.test(l.email)) saveLead(l).then(() => { try { localStorage.setItem(LEAD_KEY, JSON.stringify({ ...l, pending: false })); } catch (e) { /* ignore */ } }).catch(() => {});
 });
+
+// Notes the owner asked to keep: added once to Help > My notes (never added again, even if deleted).
+const SEEDED_NOTES = [{ id: 'saved-caddy-description', title: 'Catheter Caddy: product description (saved for later)', text: CADDY_MAIN.description }];
+async function seedWikiNotes() {
+  if (!state.ownerPrivate || state.ownerPrivateError) return;
+  const d = state.ownerPrivate.wiki || {}, done = Array.isArray(d.seeded) ? d.seeded : [];
+  const todo = SEEDED_NOTES.filter(n => !done.includes(n.id));
+  if (!todo.length) return;
+  state.ownerPrivate = { ...state.ownerPrivate, wiki: { entries: todo.map(n => ({ id: n.id, title: n.title, text: n.text })).concat(ownerWikiNotes()), seeded: done.concat(todo.map(n => n.id)) } };
+  try { await saveOwnerPrivate('wiki'); } catch (e) { /* tried again next time */ }
+}
