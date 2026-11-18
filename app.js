@@ -534,6 +534,7 @@ function cleanItem(it) {
     versionCount: Math.max(1, Math.min(4, parseInt(it.versionCount, 10) || 1)),
     needsPack: it.needsPack === true,
     packFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.packFor)) ? it.packFor : '',   // a joining pack added with this design
+    caddy: cleanCaddy(it.caddy),   // the Catheter Caddy color picker's choice (features.js)
     accessoryFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.accessoryFor)) ? it.accessoryFor : '',   // an accessory picked on this design's page
     designParts: cleanDesignParts(it.designParts, true),
     basePrice: cleanNumber(it.basePrice),
@@ -3810,7 +3811,7 @@ function renderWorkPrice(g) {
   if (opts.skipMain && accessoryDesigns(g).length) return `${renderAccessoryPicker(g, opts)}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">${esc(materialNote())}</div>
     <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button></div>`;
-  const picker = renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
+  const picker = (isCaddyDesign(g) ? renderCaddyDesignPicker(g, opts) : renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
   if (price === null && (g.preorder || (g.versions || []).length || accessoryDesigns(g).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">Price confirmed in your quote.</div>
     <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
@@ -3939,6 +3940,7 @@ function requestGalleryItem(id, colors) {
   if ((g.versions || []).length && !(state.designOpts || {})[id]) applyVersion(item, g, '');
   if ((g.editions || []).length && !(state.designOpts || {})[id]) applyEdition(item, g, '');
   applyPartColors(item);
+  if (isCaddyDesign(g)) { item.caddy = caddyFix(opts0 && opts0.caddy); applyCaddyColors(item); }
   state.galleryOpen = '';
   setDesignUrl('');
   const first = state.draftItems[0];
@@ -3950,6 +3952,7 @@ function requestGalleryItem(id, colors) {
   accs.forEach(a => adds.push(accessoryItemFor(g, a.design, a.qty)));
   if (firstIsEmpty) state.draftItems.splice(0, 1, ...adds);
   else state.draftItems.push(...adds);
+  if (item.caddy) caddyPackSync(item);
   state.clientTab = 'submit';
   render();
   showAlert('submit-ok', `Added ${skipMain ? 'your accessories' : `"${g.title}"` + (accs.length ? ' and your accessories' : '')} to your request. Add your name and email, then submit.`, 'success');

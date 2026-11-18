@@ -2453,7 +2453,7 @@ const STATES = {
     assert(/Special Request \(no specific color\)/.test(kept), kept);
     await page.close();
   });
-  await check('Catheter Caddy pre-order: one-tap set-up, editions merge color groups, tabs must contrast, $50 single / $100 joined, pre-order terms and timing', async () => {
+  await check('Catheter Caddy pre-order: one-tap set-up, the three-step color picker, $50 single / $100 joined, pre-order terms and timing', async () => {
     const db = fixtures();
     const page = await open(db);
     await page.evaluate(leadIn);
@@ -2472,15 +2472,46 @@ const STATES = {
     await page.waitForSelector('.version-picker');
     const note = await page.textContent('.preorder-note');
     assert(/credit card checkout/.test(note) && /Venmo/.test(note) && /cancel as long as I have not already begun printing/.test(note) && /Some assembly is required/.test(note) && /Site policies still apply to unclaimed items/.test(note) && /Shipping is based on your location/.test(note) && /Estimated ready to ship/.test(note), note);
-    const prices = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const o = v => ({ include: {}, logo: false, version: v, edition: 'four' });
-      return [designEstimate(g, null, o('single')), designEstimate(g, null, o('pair')), designEstimateItem(g, { shell: 'red', handle: 'black', drawers: 'blue', tabs: 'white' }, o('single')).designParts.map(p => p.colorId).join()]; });
+    const prices = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const o = v => ({ include: {}, logo: false, version: v });
+      return [designEstimate(g, null, o('single')), designEstimate(g, null, o('pair'))]; });
     assert(prices[0] === 50 && prices[1] === 100, JSON.stringify(prices));
-    await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); designOpts('catheter-caddy').edition = 'two'; designOpts('catheter-caddy').version = 'pair'; requestGalleryItem('catheter-caddy'); });
-    const it = await page.evaluate(() => { const i = state.draftItems[0]; return [i.editionName, i.versionName, i.packIncluded, i.preorder, state.draftItems.length]; });
-    assert(JSON.stringify(it) === '["Two-Tone","Joined pair",true,true,1]', JSON.stringify(it));
-    // Two-Tone: drawers follow Accent, tabs follow Shell. Same color for both = tabs match drawers = blocked
-    const clash = await page.evaluate(() => { const i = state.draftItems[0]; setPartColor(0, 0, 'black'); setPartColor(0, 2, 'black'); const a = colorsClash(i); setPartColor(0, 2, 'red'); return [a, colorsClash(i), i.designParts.find(p => p.id === 'drawers').colorId, i.designParts.find(p => p.id === 'tabs').colorId]; });
-    assert(clash[0] === true && clash[1] === false && clash[2] === 'red' && clash[3] === 'black', JSON.stringify(clash));
+    // the three-step color picker replaces the editions: 18 combinations, tabs follow the drawers
+    const combos = await page.evaluate(() => {
+      const seen = new Set(), names = ['White', 'Black', 'Red', 'Green', 'Blue', 'Orange'];
+      names.forEach(b => names.forEach(sec => names.forEach(d => { const c = caddyFix({ body: b, secondary: sec, drawer: d }); seen.add([c.body, c.secondary, c.drawer, c.tab, c.style].join('/')); })));
+      return [seen.size, [...seen].filter(x => /2-color/.test(x)).length, [...seen].filter(x => /3-color/.test(x)).length, caddyFix({}).tab];
+    });
+    assert(combos[0] === 18 && combos[1] === 10 && combos[2] === 8 && combos[3] === 'White', JSON.stringify(combos));
+    await page.evaluate(() => {
+      state.settings.colors = [['white', 'White'], ['black', 'Black'], ['red', 'Red'], ['green', 'Green'], ['blue', 'Blue'], ['orange', 'Orange']].map(([id, name]) => ({ id, name, hex: '#888888' }));
+      designOpts('catheter-caddy').version = 'pair'; refreshDesignPrice('catheter-caddy', ''); render();
+    });
+    await page.waitForSelector('.caddy-picker');
+    assert(!(await page.$('text=Color edition')), 'old edition picker gone');
+    const sum = async () => (await page.textContent('.caddy-summary')).trim();
+    assert(await sum() === '2-color: White body · Black dividers and handle · Black drawers · White drawer tabs', await sum());
+    await page.click('#caddy-design-catheter-caddy-secondary-Red');
+    assert(await sum() === '2-color: White body · Red dividers and handle · Red drawers · White drawer tabs', await sum());
+    assert(await page.isDisabled('#caddy-design-catheter-caddy-drawer-Black') && !(await page.isDisabled('#caddy-design-catheter-caddy-drawer-Red')), 'only the accent for the drawers');
+    await page.click('#caddy-design-catheter-caddy-body-Black');
+    assert(await page.isDisabled('#caddy-design-catheter-caddy-secondary-Black') && await page.getAttribute('#caddy-design-catheter-caddy-body-Black', 'aria-pressed') === 'true', 'body color cannot be the secondary');
+    await page.click('#caddy-design-catheter-caddy-secondary-White');
+    assert(await sum() === '3-color: Black body · White dividers and handle · Red drawers · White drawer tabs', await sum());
+    const img = await page.getAttribute('.caddy-preview img', 'src');
+    assert(/caddy_Black_White_Red_front\.png$/.test(img), img);
+    await page.click('.caddy-view:not(.on)');
+    assert(/caddy_Black_White_Red_back\.png$/.test(await page.getAttribute('.caddy-preview img', 'src')), 'back view');
+    await page.evaluate(() => requestGalleryItem('catheter-caddy'));
+    const it = await page.evaluate(() => { const i = state.draftItems[0]; const c = id => i.designParts.find(p => p.id === id).colorId;
+      return [i.versionName, i.packIncluded, i.preorder, state.draftItems.length, JSON.stringify(i.caddy), c('shell'), c('clips'), c('handle'), c('dividers'), c('drawers'), c('tabs')]; });
+    assert(JSON.stringify(it) === JSON.stringify(['Joined pair', true, true, 1, '{"body":"Black","secondary":"White","drawer":"Red","tab":"White","style":"3-color"}', 'black', 'black', 'white', 'white', 'red', 'white']), JSON.stringify(it));
+    // on the request form the same picker is there, and "Match my first caddy" copies it to a second one
+    await page.waitForSelector('#caddy-picker-item-0');
+    await page.evaluate(() => { state.designOpts = {}; requestGalleryItem('catheter-caddy'); });
+    await page.waitForSelector('#caddy-match-1');
+    await page.click('#caddy-match-1');
+    assert(await page.evaluate(() => JSON.stringify(state.draftItems[1].caddy) === JSON.stringify(state.draftItems[0].caddy)), 'second caddy matches the first');
+    assert(!page.errors.length, page.errors.join('; '));
     // no deposit option for pre-orders, and the emails say so
     const pay = await page.evaluate(() => { const o = { items: [{ preorder: true }], phase: 'quote_sent' }; return [orderRules(o, state.settings).depositPercent, payWording(o, orderRules(o, state.settings)).howPaying]; });
     assert(pay[0] === 0 && /pay in full/.test(pay[1]), JSON.stringify(pay));
