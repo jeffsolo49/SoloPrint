@@ -2309,6 +2309,8 @@ const OWNER_WIKI = [
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+  { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
+    steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -2783,6 +2785,7 @@ function cleanDesignParts(list, withChoice) {
       grams: Number(p && p.grams) > 0 && Number(p.grams) <= 100000 ? Math.round(Number(p.grams) * 10) / 10 : null,
       photo: safeImageUrl(p && p.photo),
       optional: !!(p && p.optional),   // an add-on the customer can choose; otherwise always included
+      group: cleanText(p && p.group, 40).trim(),   // parts with the same group share one color choice
       price: p && p.optional && Number(p.price) > 0 && Number(p.price) <= 100000 ? Math.round(Number(p.price) * 100) / 100 : null,
       defaultColor: /^[a-z0-9-]{1,40}$/.test(String(p && p.defaultColor)) ? p.defaultColor : '',   // owner's starting color (id or black/white)
       minutes: p && p.optional && Number(p.minutes) > 0 && Number(p.minutes) <= 100000 ? Math.round(Number(p.minutes)) : null   // add-on's extra print time
@@ -2799,12 +2802,24 @@ function cleanDesignParts(list, withChoice) {
 function partColorChoices() { return stockedColors().map(c => ({ ...c, key: c.colorId || c.filType })); }
 
 // `choices` defaults to the customer's in-stock colors; the owner's edit form passes all colors.
+// Parts with the same color group share one color: the first one on show leads and the others follow it.
+function partLead(parts, k) {
+  const p = parts[k];
+  if (!p || !p.group) return k;
+  const at = parts.findIndex(q => q.group === p.group && (!q.optional || q.include));
+  return at < 0 ? k : at;
+}
+function syncGroupColors(parts) {
+  parts.forEach((p, k) => { if (p.group) { const lead = partLead(parts, k); if (lead !== k && parts[lead].colorId) p.colorId = parts[lead].colorId; } });
+}
 function applyPartColors(item, choicesIn) {
   if (!(item.designParts || []).length) return;
+  syncGroupColors(item.designParts);
+  const n = Math.max(1, Number(item.versionCount) || 1);   // a version with several of the main item (the double version)
   // Add-on parts count only when the customer chose them; a design with a set price adds their prices.
   const addOns = item.designParts.filter(p => p.optional && p.include);
-  if (item.basePrice > 0) item.setPrice = item.basePrice + addOns.reduce((s, p) => s + (p.price || 0), 0);
-  if (item.baseMinutes > 0) item.knownMinutes = item.baseMinutes + addOns.reduce((s, p) => s + (p.minutes || 0), 0);
+  if (item.basePrice > 0) item.setPrice = (item.basePrice + addOns.reduce((s, p) => s + (p.price || 0), 0)) * n;
+  if (item.baseMinutes > 0) item.knownMinutes = (item.baseMinutes + addOns.reduce((s, p) => s + (p.minutes || 0), 0)) * n;
   const parts = item.designParts.filter(p => p.include !== false);
   if (!parts.length) { item.extraColors = []; item.mainParts = ''; return; }
   const choices = choicesIn || partColorChoices();
@@ -2825,9 +2840,9 @@ function applyPartColors(item, choicesIn) {
   item.color = main.c.colorId ? main.c.name : '';
   item.filType = main.c.filType;
   item.mainParts = main.names.join(', ');
-  if (hasGrams) item.grams = Math.round((groups.length > 1 ? main.grams : groups.reduce((s, g) => s + g.grams, 0)) * 10) / 10;
+  if (hasGrams) item.grams = Math.round((groups.length > 1 ? main.grams : groups.reduce((s, g) => s + g.grams, 0)) * n * 10) / 10;
   item.extraColors = groups.slice(1).map(g => ({ name: g.c.name, filType: g.c.filType, colorId: g.c.colorId || '', leftoverFrom: '',
-    grams: hasGrams ? Math.round(g.grams * 10) / 10 : null, parts: g.names.join(', ') }));
+    grams: hasGrams ? Math.round(g.grams * n * 10) / 10 : null, parts: g.names.join(', ') }));
 }
 
 // A request keeps a copy of its design's parts (it's saved in the customer's draft). Bring that copy up to date
@@ -2870,7 +2885,8 @@ function setPartIncluded(i, k, on) {
 function setPartColor(i, k, key) {
   const item = state.draftItems[i];
   if (!item || !item.designParts[k]) return;
-  item.designParts[k].colorId = key;
+  const grp = item.designParts[k].group;
+  item.designParts.forEach((q, j) => { if (j === k || (grp && q.group === grp)) q.colorId = key; });
   applyPartColors(item);
   render();
   queueDraftSave();
@@ -2897,17 +2913,17 @@ function renderPartColors(item, i) {
     <div class="field-help">${esc(materialNote())}</div>
     ${cmRequestPreview(item)}
     ${reverseColors(Object.fromEntries(item.designParts.filter(p => !p.optional || p.include).map(p => [p.id, p.colorId]))) ? `<button type="button" class="btn-sm" id="part-reverse-${i}" onclick="reversePartColors(${i})">Reverse colors</button>` : ''}
-    ${item.designParts.map((p, k) => `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
+    ${item.designParts.map((p, k) => { const lead = partLead(item.designParts, k); return p.group && !p.optional && lead !== k ? '' : `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
       ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="field">
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="setPartIncluded(${i}, ${k}, this.checked)" />
           Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
-        ${p.optional && !p.include ? '' : `<label for="part-color-${i}-${k}">${p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
+        ${p.optional && !p.include ? '' : p.group && lead !== k ? `<div class="field-help">Same color as ${esc(p.group)}.</div>` : `<label for="part-color-${i}-${k}">${p.group ? `${esc(p.group)} <span class="field-help">(${esc(item.designParts.filter((q, j) => q.group === p.group && (!q.optional || q.include) && partLead(item.designParts, j) === lead).map(q => q.name).join(', '))})</span>` : p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional && !p.group ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
         <div class="color-pick">${colorDot(p.colorId)}<select id="part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="setPartColor(${i}, ${k}, this.value)">
           ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
         </select></div>`}
       </div>
-    </div>`).join('')}
+    </div>`; }).join('')}
     ${renderColorInfo(item)}
     ${item.designParts.filter(p => !p.optional || p.include).length > Number(currentRules().freeColors) ? colorFeeNote(item) : ''}
     <div class="field-help">Want a color I don't carry for a part? Say so under "Anything you'd like changed?"</div>
@@ -2952,6 +2968,9 @@ function renderDesignPartsForm(f) {
           <input type="text" id="part-name-${n}" value="${esc(p.name || '')}" maxlength="80" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].name = this.value" /></div>
         <div class="field"><label for="part-grams-${n}">Grams</label>
           <input type="number" id="part-grams-${n}" value="${esc(p.grams || '')}" min="0" step="0.1" placeholder="e.g. 40" oninput="state.galleryForm.parts[${n}].grams = this.value" /></div>
+        <div class="field"><label for="part-group-${n}">Color group (optional)</label>
+          <input type="text" id="part-group-${n}" value="${esc(p.group || '')}" maxlength="40" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].group = this.value" />
+          <div class="field-help">Parts with the same group name always share one color. Customers pick a color per group, never per part.</div></div>
         <div class="field"><label for="part-default-${n}">Starting color</label>
           <select id="part-default-${n}" onchange="state.galleryForm.parts[${n}].defaultColor = this.value">
             <option value="">White (default)</option>
@@ -3360,10 +3379,12 @@ function designEstimate(g, colors, opts) {
 // The design page's own choices before "Request this": optional add-on parts and the company logo.
 function designOpts(id) {
   state.designOpts = state.designOpts || {};
-  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false });
+  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '' });
 }
 function applyDesignOpts(item, opts) {
   if (!opts) return item;
+  const dg = item.galleryId && state.gallery.find(x => x.id === item.galleryId);
+  if (dg && (dg.versions || []).length) applyVersion(item, dg, opts.version);
   (item.designParts || []).forEach(p => { if (p.optional) p.include = !!opts.include[p.id]; });
   item.logo = featureOn('logoAddOn') && !!opts.logo;
   return item;
@@ -3617,7 +3638,7 @@ function cleanColorMap(m, parts) {
   const combos = (Array.isArray(m.combos) ? m.combos : []).slice(0, 16).map((c, n) => {
     const colors = {};
     ids.forEach(id => { const k = c && c.colors && c.colors[id]; if (/^[a-z0-9-]{1,40}$/.test(String(k))) colors[id] = k; });
-    return { id: /^[A-Za-z0-9_-]{1,40}$/.test(String(c && c.id)) ? c.id : `c${n + 1}`, name: cleanText(c && c.name, 40).trim(), colors };
+    return { id: /^[A-Za-z0-9_-]{1,40}$/.test(String(c && c.id)) ? c.id : `c${n + 1}`, name: cleanText(c && c.name, 40).trim(), colors, photo: safeImageUrl(c && c.photo) };
   });
   return { photo, regions, combos };
 }
@@ -3641,7 +3662,7 @@ function cmPartColors(parts, chosen, choices) {
   });
   return out;
 }
-function cmUsable(m) { return !!(m && m.regions.some(r => r.part)); }
+function cmUsable(m) { return !!(m && (m.regions.some(r => r.part) || m.combos.some(c => c.photo))); }
 function cmHexes(m) { return m.regions.flatMap(r => r.hexes); }
 function cmCanvas(m, parts, colors, label, cls = '', focus = -1) {
   const on = r => r.part && parts.some(p => p.id === r.part);
@@ -3871,10 +3892,10 @@ function renderColorIdeas(g) {
     <div class="cm-picks" role="group" aria-label="${esc(t('colorIdeasTitle'))}">
       ${combos.map(c => `<button type="button" class="btn-sm" id="cm-pick-${esc(c.id)}" aria-pressed="${v.pick === c.id}" onclick="setCmPick('${esc(g.id)}', '${esc(c.id)}')">${esc(c.name)}</button>`).join('')}
       ${cmSavedFor(g.id).map(s => `<button type="button" class="btn-sm" id="cm-pick-s-${esc(s.id)}" aria-pressed="${v.pick === `s-${s.id}`}" onclick="setCmPick('${esc(g.id)}', 's-${esc(s.id)}')">${esc(s.name)} (mine)</button>`).join('')}
-      <button type="button" class="btn-sm" id="cm-pick-own" aria-pressed="${v.pick === 'own'}" onclick="setCmPick('${esc(g.id)}', 'own')">${esc(t('colorIdeasOwn'))}</button>
+      ${g.colorMap.regions.some(r => r.part) ? `<button type="button" class="btn-sm" id="cm-pick-own" aria-pressed="${v.pick === 'own'}" onclick="setCmPick('${esc(g.id)}', 'own')">${esc(t('colorIdeasOwn'))}</button>` : ''}
     </div>
-    ${cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
-    ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => `<div class="field"><label for="cm-own-${k}">${esc(p.name)}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
+    ${(combos.find(c => c.id === v.pick) || {}).photo ? `<img class="cm-canvas cm-photo" src="${esc(combos.find(c => c.id === v.pick).photo)}" alt="${esc(`${g.title}: ${cmDescribe(g.parts, colors)}`)}" referrerpolicy="no-referrer" />` : cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
+    ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => p.group && g.parts.findIndex(q => q.group === p.group) !== k ? '' : `<div class="field"><label for="cm-own-${k}">${esc(p.group || p.name)}${p.group ? ` (${esc(g.parts.filter(q => q.group === p.group).map(q => q.name).join(', '))})` : ''}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
       <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
       </select></div></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
@@ -3921,7 +3942,8 @@ function setCmPick(id, pick) {
 function setCmOwn(id, partId, key, k) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
-  cmView(g, []).own[partId] = key;
+  const mine = g.parts.find(p => p.id === partId);
+  g.parts.forEach(p => { if (p.id === partId || (mine && mine.group && p.group === mine.group)) cmView(g, []).own[p.id] = key; });
   refreshColorIdeas(id, `cm-own-${k}`);
 }
 
@@ -4292,6 +4314,10 @@ function renderColorMapForm(f) {
               <div class="color-pick">${colorDot(cc[p.id])}<select id="cm-combo-${n}-${k}" class="color-select" style="${colorTextStyle(cc[p.id])}" onchange="setCmComboColor(${n}, '${esc(p.id)}', this.value, 'cm-combo-${n}-${k}')">
                 ${choices.map(o => `<option value="${esc(o.key)}" style="${colorTextStyle(o.key)}" ${o.key === cc[p.id] ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
               </select></div></div>`).join('')}
+            <div class="cm-combo-photo">${c.photo ? `<img src="${esc(c.photo)}" alt="Photo for ${esc(c.name || 'this idea')}" loading="lazy" />` : ''}
+              <label class="btn-sm">${c.photo ? 'Change photo' : 'Add a photo in these colors'}<input type="file" accept="image/*" onchange="uploadComboPhoto(${n}, this.files[0]); this.value='';" style="display:none;" /></label>
+              ${c.photo ? `<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos[${n}].photo = ''; render();">Remove photo</button>` : ''}
+              <span class="field-help" id="cm-combo-photo-status-${n}" role="status"></span></div>
             <button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos.splice(${n}, 1); render();" aria-label="Remove color idea ${n + 1}">Remove idea</button>
           </div>
         </div>`; }).join('')}
@@ -4470,6 +4496,7 @@ function detailsItemsText(b) {
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${filamentLabel(it)}`];
     if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
     if (it.preorder === true) lines.push('   Pre-order: made first come, first served');
+    if (it.versionName) lines.push(`   Version: ${it.versionName}${it.needsPack ? ' (needs the joining pack)' : ''}`);
     if (it.logo) lines.push('   Add your company logo: yes');
     if (colorCharge(it, rulesFor(b))) lines.push(`   More than ${rulesFor(b).freeColors} colors: +$${colorCharge(it, rulesFor(b)).toFixed(2)} per print (extra color changes)`);
     if (it.link) lines.push(`   Link: ${it.link}`);
@@ -5681,4 +5708,130 @@ async function uploadReviewPhotos(n, files) {
   if (added) render();
   const again = document.getElementById(`rv-photo-status-${n}`);
   if (added && again) again.textContent = `Added ${added} photo${added > 1 ? 's' : ''}. Tap Save to keep them.`;
+}
+
+async function uploadComboPhoto(n, file) {
+  const f = state.galleryForm, combo = f && f.colorMap && f.colorMap.combos[n];
+  const status = document.getElementById(`cm-combo-photo-status-${n}`);
+  const token = getOwnerToken();
+  if (!combo || !file || !token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
+  if (status) status.textContent = 'Uploading...';
+  try {
+    const blob = await resizePhoto(file);
+    if (!blob) throw new Error('resize failed');
+    const path = `${f.id}/scheme-${Date.now()}-${n}.jpg`;
+    await uploadStoredPhoto(path, blob, token);
+    combo.photo = GALLERY_PUBLIC_PREFIX + path;
+    render();
+  } catch (e) {
+    console.error('Color idea photo error:', e);
+    if (status) status.textContent = "Couldn't upload that photo. Try a JPG or PNG.";
+  }
+}
+
+// ── VERSIONS (single / double) AND THE JOINING PACK ──
+// A design can have versions ({ id, name, count (how many of the main item), needsPack }); the print time,
+// grams and price are the single version's times `count`. A version that needs the pack adds the design
+// chosen as the joining pack (`packId`) to the request. Customers ordering two singles are nudged to the
+// double (their own history, and the owner sees the same flag on the order).
+function cleanVersions(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 4).map((v, n) => ({
+    id: /^[A-Za-z0-9_-]{1,40}$/.test(String(v && v.id)) ? v.id : `v${n + 1}`,
+    name: cleanText(v && v.name, 40).trim(),
+    count: Math.max(1, Math.min(4, parseInt(v && v.count, 10) || 1)),
+    needsPack: !!(v && v.needsPack)
+  })).filter(v => v.name);
+}
+function versionOf(g, id) { const vs = (g && g.versions) || []; return vs.find(v => v.id === id) || vs[0] || null; }
+// Gives an item (made by galleryItemFields) the chosen version: how many mains it holds and whether it needs the pack.
+function applyVersion(item, g, id) {
+  const v = versionOf(g, id);
+  if (!v) return item;
+  item.versionId = v.id; item.versionName = v.name; item.versionCount = v.count; item.needsPack = !!v.needsPack;
+  if (!(item.designParts || []).length && v.count > 1) {
+    if (g.grams) item.grams = Math.round(g.grams * v.count * 10) / 10;
+    if (g.minutes) item.knownMinutes = g.minutes * v.count;
+    if (g.price > 0) item.setPrice = g.price * v.count;
+  }
+  return item;
+}
+function packDesign(g) { return g && g.packId ? state.gallery.find(x => x.id === g.packId && x.published) : null; }
+// The pack as a request item that goes with a main item.
+function packItemFor(g) {
+  const p = packDesign(g);
+  if (!p) return null;
+  return { ...blankItem(), ...galleryItemFields(p), mode: 'gallery', qty: 1, packFor: g.id };
+}
+function renderVersionPicker(g, selected, onpick) {
+  if (!g || !(g.versions || []).length) return '';
+  const v = versionOf(g, selected);
+  const pack = packDesign(g);
+  return `<fieldset class="version-picker"><legend>Version</legend>
+    ${g.versions.map(x => `<label class="special-order-check"><input type="radio" name="version-${esc(g.id)}" value="${esc(x.id)}" ${x.id === v.id ? 'checked' : ''} onchange="${onpick(x.id)}" /> ${esc(x.name)}${x.count > 1 ? ` <span class="field-help">(${x.count} of the main item${x.needsPack ? ', joined with the ' + esc(pack ? pack.title : 'joining pack') : ''})</span>` : ''}</label>`).join('')}
+    ${v.needsPack ? `<div class="field-help">This version needs the ${esc(pack ? pack.title : 'joining pack')}, so it's added to your request.</div>` : ''}</fieldset>`;
+}
+function setDesignVersion(id, vid) {
+  designOpts(id).version = vid;
+  refreshDesignPrice(id, '');
+}
+// On the request form: switch an item's version (adds or removes the pack that goes with it).
+function setItemVersion(i, vid) {
+  const item = state.draftItems[i], g = item && state.gallery.find(x => x.id === item.galleryId);
+  if (!item || !g) return;
+  applyVersion(item, g, vid);
+  item.versionCount = versionOf(g, vid).count;
+  applyPartColors(item);
+  if (!(item.designParts || []).length) applyVersion(item, g, vid);
+  const has = state.draftItems.some(x => x.packFor === g.id);
+  if (item.needsPack && !has) { const pk = packItemFor(g); if (pk) state.draftItems.push(pk); }
+  if (!item.needsPack && has) state.draftItems = state.draftItems.filter(x => x.packFor !== g.id);
+  render();
+  queueDraftSave();
+}
+// Their history: how many single (one main item) units of a design they have in all their requests.
+function singleUnits(batches, gid) {
+  return batches.reduce((s, b) => s + (b.items || []).filter(it => it.galleryId === gid && (Number(it.versionCount) || 1) === 1 && !it.packFor)
+    .reduce((t, it) => t + Math.max(1, Number(it.qty) || 1), 0), 0);
+}
+function hasPackFor(batches, g) {
+  return batches.some(b => (b.items || []).some(it => it.packFor === g.id || it.galleryId === g.packId || (it.galleryId === g.id && (Number(it.versionCount) || 1) > 1)));
+}
+// Request form hint: two or more of the single, in this request or with what they've already ordered.
+function joinHint(item, i) {
+  const g = state.gallery.find(x => x.id === item.galleryId);
+  if (!g || !g.packId || !(g.versions || []).some(v => v.count > 1) || (Number(item.versionCount) || 1) > 1 || !packDesign(g)) return '';
+  const before = singleUnits(state.batches, g.id), now = Math.max(1, Number(item.qty) || 1);
+  if (now + before < 2 || hasPackFor(state.batches, g)) return '';
+  const dbl = g.versions.find(v => v.count > 1);
+  return `<div class="preorder-note join-hint" role="status"><strong>${before ? `You already have ${before} of these.` : `Getting ${now} of these?`}</strong>
+    The ${esc(dbl.name)} version joins two together${dbl.needsPack ? ` with the ${esc(packDesign(g).title)}` : ''}. <button type="button" class="btn-sm" onclick="setItemVersion(${i}, '${esc(dbl.id)}')">Switch to ${esc(dbl.name)}</button></div>`;
+}
+// Owner: the same nudge, from this client's other orders.
+function joinSuggestion(b) {
+  const email = String(b.clientEmail || '').trim().toLowerCase();
+  if (!email) return '';
+  const mine = state.batches.filter(x => String(x.clientEmail || '').trim().toLowerCase() === email);
+  for (const it of b.items || []) {
+    const g = state.gallery.find(x => x.id === it.galleryId);
+    if (!g || !g.packId || !(g.versions || []).some(v => v.count > 1) || (Number(it.versionCount) || 1) > 1 || it.packFor) continue;
+    if (singleUnits(mine, g.id) >= 2 && !hasPackFor(mine, g)) return `Has ${singleUnits(mine, g.id)} separate ${g.title} and no joining pack: suggest the ${g.versions.find(v => v.count > 1).name} version or the pack.`;
+  }
+  return '';
+}
+function renderVersionsForm(f) {
+  f.versions = f.versions || [];
+  const others = state.gallery.filter(x => x.id !== f.id);
+  return `<fieldset class="owner-edit-item versions-fields">
+    <legend>Versions (optional)</legend>
+    <div class="field-help">For a product that comes as, say, a single and a double. Print time, grams and price are for ONE main item; a version with 2 uses double. Set the joining pack's own design below, and the double adds it to the request.</div>
+    ${f.versions.map((v, n) => `<div class="part-form-row"><div class="row2" style="flex:1;min-width:0;">
+      <div class="field"><label for="ver-name-${n}">Version ${n + 1} name</label><input type="text" id="ver-name-${n}" maxlength="40" value="${esc(v.name || '')}" placeholder="Single" oninput="state.galleryForm.versions[${n}].name = this.value" /></div>
+      <div class="field"><label for="ver-count-${n}">Main items in it</label><input type="number" id="ver-count-${n}" min="1" max="4" step="1" value="${esc(v.count || 1)}" oninput="state.galleryForm.versions[${n}].count = this.value" /></div>
+      <label class="special-order-check"><input type="checkbox" id="ver-pack-${n}" ${v.needsPack ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].needsPack = this.checked" /> Needs the joining pack</label></div>
+      <div class="part-form-actions"><button type="button" class="btn-sm danger" onclick="state.galleryForm.versions.splice(${n}, 1); render();" aria-label="Remove version ${n + 1}">Remove</button></div></div>`).join('')}
+    ${f.versions.length < 4 ? `<button type="button" class="btn-sm" id="add-version" onclick="state.galleryForm.versions.push({ id: 'v' + Date.now().toString(36), name: '', count: ${f.versions.length ? 2 : 1}, needsPack: false }); render();">+ Add a version</button>` : ''}
+    <div class="field" style="max-width:320px;margin-top:8px;"><label for="gallery-pack">Joining pack (another design)</label>
+      <select id="gallery-pack" onchange="updateGalleryForm('packId', this.value)"><option value="">None</option>${others.map(x => `<option value="${esc(x.id)}" ${f.packId === x.id ? 'selected' : ''}>${esc(x.title || 'Untitled')}</option>`).join('')}</select>
+      <div class="field-help">Add the accessory pack as its own design first. Customers who order two singles are nudged to the double or the pack.</div></div>
+  </fieldset>`;
 }

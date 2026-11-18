@@ -136,6 +136,12 @@ Requested items keep `preorder: true` (`galleryItemFields`, `cleanItem`). Shared
 Owner: Designs page "Pre-orders" card (`renderPreorderLists`, `preorderQueue`: paid deposits by `queueTime`, then the rest by request time), a desk chip and "Number N of M" on the order (`preorderPlace`). Normal order steps and deposits; nothing new in the database.
 The line customers see: `settings.preorderLine` ({ designId: [deposit times] }, times only, kept by `syncTopWork` via `preorderLineFromOrders` and after every owner order save/delete; `cleanPreorderLine`) feeds shared `preorderLine`/`preorderLineText`, so the customer's order and the emails say "You're number N in line" (or how many are ahead before their deposit). The owner types `preorderEta` ("Expected print and ship time", `renderPreorderEta`, `savePreorderEta`; card and order screen); shared `preorderEtaText` shows it to the customer.
 
+## Versions, joining pack, color groups
+
+Gallery data: `versions` ([{ id, name, count, needsPack }], `cleanVersions`), `packId` (the joining pack's own design), parts' `group` (same group = one shared color: `partLead`, `syncGroupColors` run inside `applyPartColors`; the request form shows one row per group, `setPartColor` sets the whole group, design-page "pick your own" is per group) and color ideas' `photo` (`uploadComboPhoto`; a picked idea with a photo shows it instead of the repainted picture, `cmUsable` is true when any idea has a photo; "Pick your own" hides when no area is mapped).
+Print time, grams and price are for one main item: `applyVersion` (and `applyPartColors` via `item.versionCount`) multiply them by the version's `count`. Items keep `versionId/versionName/versionCount/needsPack/packFor`. `requestGalleryItem` and `setItemVersion` add or remove the pack item (`packItemFor`, `packFor` = the main design). A design with versions or Pre-order can be requested before it has a price ("Price confirmed in your quote").
+The nudge: `joinHint` on the request form (their `state.batches` history: `singleUnits`, `hasPackFor`) and `joinSuggestion(b)` for the owner (all orders with the same email; chip "Joining pack?"). Details emails list "Version: ...". The extra colors charge still applies by color count.
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves
