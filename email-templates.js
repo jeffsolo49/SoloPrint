@@ -426,7 +426,7 @@ const PREORDER_TEXT = {
   secure: "There is no credit card checkout on this site, for your own security: I don't want anyone's sensitive information processed through the site. Don't have Venmo? Contact me and we'll find another way to pay.",
   ship: 'Shipping is based on your location and is requested in a separate payment. Everything is made as flat as possible to keep shipping as cheap as possible.',
   cancel: 'You can cancel as long as I have not already begun printing any of your products. Once printing begins I will not accept cancellation, unless the colors selected have been specifically requested by someone else already in line.',
-  policy: 'My other store policies still apply. If shipping is not paid for, your order is eventually resold, per my policy.',
+  policy: 'Site policies still apply to unclaimed items.',
   assembly: 'Some assembly is required.'
 };
 // Print timing for pre-orders (Settings > Prices & rules > Pre-order timing): printing starts at the launch date,

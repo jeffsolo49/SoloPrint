@@ -3099,7 +3099,7 @@ const SITE_TEXT = [
     ['preorderSecure', 'Pre-orders: no credit card checkout, and what to do without Venmo', PREORDER_TEXT.secure],
     ['preorderShip', 'Pre-orders: shipping', PREORDER_TEXT.ship],
     ['preorderCancel', 'Pre-orders: cancellation', PREORDER_TEXT.cancel],
-    ['preorderPolicy', 'Pre-orders: other store policies (unpaid shipping)', PREORDER_TEXT.policy],
+    ['preorderPolicy', 'Pre-orders: site policies for unclaimed items', PREORDER_TEXT.policy],
     ['preorderAssembly', 'Pre-orders: assembly', PREORDER_TEXT.assembly],
     ['contrastNote', 'Request form: when the drawer tabs match the drawers', 'The drawer tabs need to contrast with the drawers - please pick a different colour.'],
     ['sideWallNote', 'Request form: more than two side-wall accessories', 'A caddy takes one side-wall accessory on each side wall (a joined pair, one on each outside side). If you are using the Hinge it takes the clip slots on one side, so only one side-wall accessory fits. Please remove one or tell me how you plan to use them.'],

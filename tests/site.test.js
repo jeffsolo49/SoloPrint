@@ -2430,7 +2430,7 @@ const STATES = {
     await page.evaluate(async () => { state.view = 'client'; await loadGallery(); setTab('gallery'); openWork('catheter-caddy'); });
     await page.waitForSelector('.version-picker');
     const note = await page.textContent('.preorder-note');
-    assert(/credit card checkout/.test(note) && /Venmo/.test(note) && /cancel as long as I have not already begun printing/.test(note) && /Some assembly is required/.test(note) && /other store policies still apply/.test(note) && /Shipping is based on your location/.test(note) && /Estimated ready to ship/.test(note), note);
+    assert(/credit card checkout/.test(note) && /Venmo/.test(note) && /cancel as long as I have not already begun printing/.test(note) && /Some assembly is required/.test(note) && /Site policies still apply to unclaimed items/.test(note) && /Shipping is based on your location/.test(note) && /Estimated ready to ship/.test(note), note);
     const prices = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const o = v => ({ include: {}, logo: false, version: v, edition: 'four' });
       return [designEstimate(g, null, o('single')), designEstimate(g, null, o('pair')), designEstimateItem(g, { shell: 'red', handle: 'black', drawers: 'blue', tabs: 'white' }, o('single')).designParts.map(p => p.colorId).join()]; });
     assert(prices[0] === 50 && prices[1] === 100, JSON.stringify(prices));
