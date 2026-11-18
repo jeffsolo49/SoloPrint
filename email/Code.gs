@@ -685,7 +685,7 @@ function emailVars(rec, custom, site) {
     remainder: money(fp.remainder),
     shippingFee: money(fp.fee),
     remainderLink: total ? venmoUrl(rec, fp.remainder, rules, 'balance') : '',
-    materialNote: (site && site.materialNote) || DEFAULT_MATERIAL_NOTE,
+    materialNote: ((site && site.materialNote) || DEFAULT_MATERIAL_NOTE) + ' ' + colorDelayText(site),
     queueNote: queueNote(rec, site),
     designTermsNote: rec.designTerms ? 'This order includes a custom design. When you approve your quote, you will be asked to read and agree to my custom design terms.' : '',
     orderLink: orderLink(rec),
@@ -1165,6 +1165,13 @@ function payWording(rec, rules) {
 }
 // Pre-orders: a new design that isn't ready yet (the design's "Pre-order" box; each requested item keeps
 // `preorder`). They take a deposit and are made first come, first served, in the order deposits come in.
+// A note on every order page and in the quote email: custom colors can mean waiting for more material.
+const DEFAULT_COLOR_DELAY_NOTE = "A note on custom colors: if I don't have enough of your color on hand for a print this size, I'll order more material first, which can add a short delay before I start. I'll let you know if that applies to your order. Thank you for your patience!";
+function colorDelayText(settings) {
+  const own = settings && settings.siteText && settings.siteText.colorDelayNote;
+  const text = own && own.live ? String(own.text || '').trim() : '';
+  return text || DEFAULT_COLOR_DELAY_NOTE;
+}
 const DEFAULT_PREORDER_NOTE = "This is a pre-order of a new design that isn't ready yet. Pre-orders are made on a first come, first served basis: your place in line is set by when your payment comes in.";
 // The rest of the pre-order terms (each editable as site text).
 const PREORDER_TEXT = {

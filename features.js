@@ -161,7 +161,7 @@ function orderAgain(id) {
 
 function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
-  return `${orderIsPreorder(b) && !delivered ? renderPreorderNote(null, b) : ''}<div class="order-extras">
+  return `${orderIsPreorder(b) && !delivered ? renderPreorderNote(null, b) : ''}${delivered ? '' : `<div class="field-help color-delay-note">${esc(colorDelayNote())}</div>`}<div class="order-extras">
     ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>` : ''}
     ${delivered ? `<button type="button" class="btn-sm btn-gold" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
@@ -2930,6 +2930,7 @@ function renderPartColors(item, i) {
   return `<fieldset class="part-colors">
     <legend>Choose a color for each part</legend>
     <div class="field-help">${esc(materialNote())}</div>
+    <div class="field-help color-delay-note">${esc(colorDelayNote())}</div>
     ${cmRequestPreview(item)}
     ${reverseColors(Object.fromEntries(item.designParts.filter(p => !p.optional || p.include).map(p => [p.id, p.colorId]))) ? `<button type="button" class="btn-sm" id="part-reverse-${i}" onclick="reversePartColors(${i})">Reverse colors</button>` : ''}
     ${item.designParts.map((p, k) => { const mg = item.groupMerge, pg = partGroup(p, mg), lead = partLead(item.designParts, k, mg); return p.group && !p.optional && lead !== k ? '' : `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
@@ -3100,6 +3101,7 @@ const SITE_TEXT = [
   ['Past work', [
     ['gallerySub', 'Past work page, small text', 'Designs we\'ve made before, with the story behind each one. Want one? Tap "Request this".'],
     ['requestThis', '"Request this" button', 'Request this'],
+    ['colorDelayNote', 'Every order page and the quote email: custom colors can delay production', DEFAULT_COLOR_DELAY_NOTE],
     ['preorderThis', 'Pre-order designs: the request button', 'Pre-order this'],
     ['preorderPay', 'Pre-orders: how they are paid', PREORDER_TEXT.pay],
     ['preorderSecure', 'Pre-orders: no credit card checkout, and what to do without Venmo', PREORDER_TEXT.secure],
@@ -4889,7 +4891,7 @@ function practiceVars(order) {
     refund: postageRefund(o, rules) ? postageRefund(o, rules).refund.toFixed(2) : '',
     refundNote: postageRefund(o, rules) ? (postageRefund(o, rules).refund > 0 ? `I'll send your $${postageRefund(o, rules).refund.toFixed(2)} shipping deposit refund by Venmo.` : 'Postage used up the whole shipping deposit, so there is no refund this time.') : '',
     deposit: fp.deposit.toFixed(2), remainder: fp.remainder.toFixed(2), shippingFee: fp.fee.toFixed(2), shippingDeposit: fp.fee.toFixed(2), remainderLink: total ? venmoPayUrl(o, fp.remainder, 'balance') : '',
-    materialNote: materialNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
+    materialNote: materialNote() + ' ' + colorDelayNote(), queueNote: '', designTermsNote: '', orderLink: '(link to their order page)', siteLink: location.origin,
     delivery: [o.deliveryDate && `Ship date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking number: ${o.deliveryTracking}`].filter(Boolean).join('\n'),
     photo: '', vacationNote: vacationText(state.settings.vacation), reviewLink: '(link to the review form)', detailsQuestions: o.detailsQuestions || '', detailsItems: detailsBreakdown(o) };
   vars.invoiceSummary = invoiceSummary(vars, o, total || 0, rules);
