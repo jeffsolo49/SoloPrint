@@ -223,7 +223,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 }
 
 // 'settings/colors' opens a Settings section.
-const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
+const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'One-tap set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const leadIn = "(() => { state.clientName = 'Test Person'; state.clientEmail = 't@example.com'; localStorage.setItem('soloprint_preorder_lead', JSON.stringify({ email: 't@example.com', designs: [] })); })()";
 const STATES = {
   'home': '0',
@@ -2438,6 +2438,32 @@ const STATES = {
     await page.evaluate(() => requestGalleryItem('m2'));
     items = await page.evaluate(() => state.draftItems.map(it => [it.name, it.qty, it.accessoryFor || '']));
     assert(JSON.stringify(items) === JSON.stringify([['Label Holder', 3, 'm2']]), JSON.stringify(items));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('owner simplification: Money sections fold, and a design becomes a pre-order with one button', async () => {
+    const page = await open(fixtures());
+    await page.evaluate(asOwner('money'));
+    await page.evaluate(() => { state.moneyOpenAll = false; state.moneyFold = {}; render(); });
+    await page.waitForSelector('#money-fold-all');
+    assert(await page.$$eval('details.fold-card[open]', els => els.length) === 0, 'sections start folded');
+    assert(await page.isVisible('.money-stats'), 'the totals stay open');
+    await page.click('#money-fold-all');
+    assert(await page.$$eval('details.fold-card:not([open])', els => els.length) === 0, 'open all');
+    await page.click('#money-fold-all');
+    await page.click('summary:has-text("Expenses")');
+    assert(await page.isVisible('#exp-what'), 'one fold opens on its own');
+    // design form: Make this a pre-order, then its settings
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#gallery-preorder-on');
+    assert(!(await page.$('#gallery-preorder-ready')) && !(await page.$('#add-version')), 'nothing about pre-orders until asked');
+    await page.click('#gallery-preorder-on');
+    await page.waitForSelector('#gallery-preorder-ready');
+    assert(await page.evaluate(() => state.galleryForm.preorder === true) && await page.isVisible('#add-version'), 'pre-order on, its settings open');
+    await page.click('#gallery-preorder-settings');
+    assert(!(await page.$('#gallery-preorder-ready')), 'settings fold away');
+    await page.click('#gallery-preorder-off');
+    assert(await page.evaluate(() => state.galleryForm.preorder === false), 'back to a normal design');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

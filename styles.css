@@ -1474,3 +1474,13 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 
 .owner-advanced { margin: 12px 0; }
 .owner-advanced > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+
+.fold-card > summary.fold-summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; font-size: 1.05em; }
+.fold-card[open] > summary.fold-summary { margin-bottom: 10px; }
+.fold-card .card { box-shadow: none; padding-left: 0; padding-right: 0; border: 0; }
+.fold-bar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+.preorder-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.design-options { margin: 8px 0; }
+
+.fold-card > summary.fold-summary .card-title { margin: 0; }
+.preorder-actions .btn-sm { white-space: normal; text-align: left; }

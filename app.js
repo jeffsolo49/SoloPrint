@@ -2312,7 +2312,7 @@ function renderOwnerApp() {
         : state.ownerTab === 'numbers'
         ? renderNumbersPage()
         : state.ownerTab === 'money' || state.ownerTab === 'analytics'
-        ? renderOwnerMoneyPage() + renderOwnerOrdersList() + renderOwnerAnalyticsPage()
+        ? renderMoneyFolds(renderOwnerMoneyPage() + renderOwnerOrdersList() + renderOwnerAnalyticsPage())
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'calculator' || state.ownerTab === 'library'
@@ -4011,11 +4011,7 @@ function renderOwnerGalleryPage() {
       <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
     </div>
     ${renderColorIdeasInbox()}
-    ${renderPreorderLists()}
-    ${renderPreorderLeads()}
-    ${renderCaddySetup()}
     ${state.rackDone ? `<div class="alert success" style="display:block;">${esc(state.rackDone)}</div>` : ''}
-    ${renderDryingRackSetup()}
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
@@ -4052,13 +4048,13 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
-      <details class="owner-advanced" ${state.galleryAdvOpen || f.preorder || (f.versions || []).length || (f.accessories || []).length || (f.editions || []).length || f.packId ? 'open' : ''} ontoggle="state.galleryAdvOpen = this.open">
-        <summary>More options: pre-order, versions, accessories, color editions</summary>
-        ${renderPreorderFormFields(f)}
+      ${renderPreorderButtons(f)}
+      ${state.galleryAdvOpen ? `<div class="design-options">
+        ${f.preorder ? renderPreorderFormFields(f) : ''}
         ${renderVersionsForm(f)}
         ${renderAccessoriesForm(f)}
         ${renderEditionsForm(f)}
-      </details>
+      </div>` : ''}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4084,13 +4080,15 @@ function renderOwnerGalleryPage() {
           </div>
         </div>
       </div>`;
-    }).join('')}</div>` : (state.galleryLoaded && !state.galleryError ? `<div class="empty-state"><div class="empty-state-text">No gallery items yet</div><div class="empty-state-sub">Add your first finished project above.</div></div>` : '')}`;
+    }).join('')}</div>` : (state.galleryLoaded && !state.galleryError ? `<div class="empty-state"><div class="empty-state-text">No gallery items yet</div><div class="empty-state-sub">Add your first finished project above.</div></div>` : '')}
+    ${renderDesignFolds()}`;
 }
 
 function editGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
   state.cmJoin = [];
+  state.galleryAdvOpen = false;
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
