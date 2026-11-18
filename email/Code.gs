@@ -1154,7 +1154,33 @@ function preorderNoteText(settings) {
 }
 // In the quote, confirmed and deposit emails a pre-order gets this note instead of a days estimate.
 function preorderQueueNote(rec, settings) {
-  return orderIsPreorder(rec) && ['quote_sent', 'order_received'].includes(rec.phase) ? preorderNoteText(settings) : '';
+  if (!orderIsPreorder(rec) || !['quote_sent', 'order_received'].includes(rec.phase)) return '';
+  return [preorderNoteText(settings), preorderLineText(rec, settings), preorderEtaText(rec)].filter(Boolean).join(' ');
+}
+// The line for a pre-order. The owner's site keeps, per design, only the times deposits came in
+// (settings.preorderLine { designId: [iso, ...] }, open pre-orders that have paid a deposit): no names.
+function preorderDesignId(rec) {
+  const it = ((rec && rec.items) || []).find(x => x && x.preorder === true);
+  return (it && String(it.galleryId || '')) || '_';
+}
+function preorderLine(rec, settings) {
+  const times = settings && settings.preorderLine && settings.preorderLine[preorderDesignId(rec)];
+  const list = Array.isArray(times) ? times : [];
+  const at = queueTime(rec);
+  if (at) return { paid: true, n: list.filter(t => String(t) < String(at)).length + 1 };
+  return { paid: false, ahead: list.length };
+}
+function preorderLineText(rec, settings) {
+  const line = preorderLine(rec, settings);
+  if (line.paid) return line.n === 1 ? "You're first in line for this pre-order." : "You're number " + line.n + ' in line for this pre-order.';
+  return line.ahead
+    ? (line.ahead === 1 ? '1 pre-order is' : line.ahead + ' pre-orders are') + ' ahead so far. Your place in line is set when your deposit comes in.'
+    : 'No deposits are in yet: pay your deposit to be first in line.';
+}
+// The owner's expected print and ship time, once they've typed one on the order.
+function preorderEtaText(rec) {
+  const eta = String((rec && rec.preorderEta) || '').trim();
+  return eta ? 'Expected to print and ship: ' + eta + '.' : '';
 }
 // The "place in line" line in the quote, confirmed and deposit emails (Code.gs queueNote; the site's email previews).
 function queueNoteText(rec, queue, rules) {

@@ -1418,3 +1418,9 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .preorder-note > div { margin-top: 4px; }
 .preorder-list { margin: 4px 0 12px 20px; line-height: 1.8; font-size: 14px; }
 .preorder-design { margin: 12px 0 2px; font-size: 15px; }
+
+.preorder-line { font-size: 15px; }
+.preorder-eta { margin: 4px 0 8px; font-size: 13px; }
+.preorder-eta label { display: block; font-weight: 600; margin-bottom: 2px; }
+.preorder-eta-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.preorder-eta-row input { max-width: 220px; }

@@ -161,7 +161,7 @@ function orderAgain(id) {
 
 function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
-  return `${orderIsPreorder(b) && !delivered ? renderPreorderNote() : ''}<div class="order-extras">
+  return `${orderIsPreorder(b) && !delivered ? renderPreorderNote(null, b) : ''}<div class="order-extras">
     ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>` : ''}
     ${delivered ? `<button type="button" class="btn-sm btn-gold" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
@@ -232,8 +232,9 @@ async function syncTopWork() {
     if (!state.settingsLoaded) return;
     if (!state.galleryLoaded) await loadGallery();
     const ids = galleryBestSellers(state.batches, state.gallery.filter(g => g.published));
-    if (JSON.stringify(ids) === JSON.stringify(state.settings.topWork || [])) return;
-    await saveSettings({ ...state.settings, topWork: ids });
+    const line = preorderLineFromOrders(state.batches);
+    if (JSON.stringify(ids) === JSON.stringify(state.settings.topWork || []) && JSON.stringify(line) === JSON.stringify(state.settings.preorderLine || {})) return;
+    await saveSettings({ ...state.settings, topWork: ids, preorderLine: line });
   } catch (e) { /* the home page falls back to the newest designs */ }
 }
 
@@ -2307,7 +2308,7 @@ const OWNER_WIKI = [
   { id: 'design-add', area: 'Designs', title: 'Add or change a design', keys: 'design gallery past work new design photos price set price publish',
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
-    steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+    steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -5567,10 +5568,36 @@ if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') 
 // keep `preorder`; the quote, confirmed and deposit emails and the customer's order say pre-orders are made
 // first come, first served (site text preorderNote, shared preorderQueueNote), and deposits set the order.
 function requestLabel(g) { return g && g.preorder ? t('preorderThis') : t('requestThis'); }
-function renderPreorderNote(g) {
+// `g`: a design (its page); `b`: the customer's own order (adds their place in line and the expected time).
+function renderPreorderNote(g, b) {
   if (g && !g.preorder) return '';
+  const line = b ? [preorderLineText(b, state.settings), preorderEtaText(b)].filter(Boolean) : [];
   return `<div class="preorder-note"><span class="preorder-badge">${esc(t('preorderBadge'))}</span>${g && g.preorderReady ? ` <strong>Expected: ${esc(g.preorderReady)}</strong>` : ''}
-    <div>${esc(t('preorderNote'))}</div></div>`;
+    <div>${esc(t('preorderNote'))}</div>${line.map((l, n) => `<div${n ? '' : ' class="preorder-line"'}><strong>${esc(l)}</strong></div>`).join('')}</div>`;
+}
+// Deposit times of open pre-orders per design (what customers' place in line is counted from).
+function preorderLineFromOrders(batches) {
+  const out = {};
+  batches.filter(b => (b.phase || 'estimate') !== 'delivered' && orderIsPreorder(b) && queueTime(b)).forEach(b => {
+    (out[preorderDesignId(b)] = out[preorderDesignId(b)] || []).push(queueTime(b));
+  });
+  Object.keys(out).forEach(k => out[k].sort());
+  return cleanPreorderLine(out);
+}
+// The owner types when a pre-order should print and ship (customers see it on their order and in emails).
+function renderPreorderEta(b, where) {
+  const id = esc(b.id), first = queueTime(b) && preorderQueue(((b.items || []).find(it => it.preorder === true) || {}).galleryId || '')[0] === b;
+  return `<div class="preorder-eta"><label for="eta-${where}-${id}">${first ? 'First in line: expected print and ship time' : 'Expected print and ship time'}</label>
+    <span class="preorder-eta-row"><input type="text" id="eta-${where}-${id}" maxlength="80" value="${esc(b.preorderEta || '')}" placeholder="e.g. Jan 12-15" onkeydown="if(event.key==='Enter'){savePreorderEta('${id}','${where}')}" />
+    <button type="button" class="btn-sm" onclick="savePreorderEta('${id}', '${where}')">Save</button></span></div>`;
+}
+async function savePreorderEta(id, where) {
+  const b = state.batches.find(x => x.id === id), input = document.getElementById(`eta-${where}-${id}`);
+  if (!b || !input) return;
+  const before = b.preorderEta || '';
+  b.preorderEta = input.value.trim().slice(0, 80);
+  if (!(await upsertBatch(b))) { b.preorderEta = before; return; }
+  render();
 }
 function renderPreorderFormFields(f) {
   return `<fieldset class="owner-edit-item preorder-fields">
@@ -5600,10 +5627,10 @@ function renderPreorderLists() {
   if (!designs.length && !others.length) return '';
   const rows = list => list.length ? `<ol class="preorder-list">${list.map(b => `<li><button type="button" class="btn-link" onclick="focusOwnerOrder('${esc(b.id)}')">${esc(b.clientName || b.clientEmail || 'No name')}</button>
       · ${esc(String((b.items || []).filter(it => it.preorder === true).reduce((s, it) => s + (Number(it.qty) || 1), 0)))} item(s)
-      · ${queueTime(b) ? `deposit in ${esc(fmtShort(queueTime(b)))}` : beforeQuote(b.phase) ? 'needs a quote' : b.phase === 'quote_sent' ? 'quote sent' : 'waiting for the deposit'}</li>`).join('')}</ol>` : '<div class="field-help">No pre-orders yet.</div>';
+      · ${queueTime(b) ? `deposit in ${esc(fmtShort(queueTime(b)))}` : beforeQuote(b.phase) ? 'needs a quote' : b.phase === 'quote_sent' ? 'quote sent' : 'waiting for the deposit'}${renderPreorderEta(b, 'card')}</li>`).join('')}</ol>` : '<div class="field-help">No pre-orders yet.</div>';
   return `<div class="card preorders-card" id="preorders">
     <h3 class="card-title">Pre-orders</h3>
-    <div class="field-help">First come, first served: paid deposits first, by when they came in, then the ones still waiting. Tap a name to open the order.</div>
+    <div class="field-help">First come, first served: paid deposits first, by when they came in, then the ones still waiting. Tap a name to open the order. Type an expected print and ship time on any order (most useful for whoever is first in line); the customer sees it on their order and in their emails, along with their place in line.</div>
     ${designs.map(g => `<h4 class="preorder-design">${esc(g.title || 'Untitled')}${g.preorderReady ? ` <span class="gallery-meta">expected ${esc(g.preorderReady)}</span>` : ''}</h4>${rows(preorderQueue(g.id))}`).join('')}
     ${others.length ? `<h4 class="preorder-design">Launched designs, pre-orders still open</h4>${rows(others)}` : ''}
   </div>`;
