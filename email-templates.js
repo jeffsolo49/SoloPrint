@@ -29,7 +29,7 @@ const EMAIL_TEMPLATES = {
   quote: {
     label: 'Quote ready', to: 'Customer', when: 'You tap "Send quote" on a new request.',
     subject: 'Your SoloPrint quote: ${total}',
-    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nShipping is not included in this total. It depends on where you live: with your final payment I collect a ${shippingDeposit} shipping deposit. After I mail your package, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\nHow paying works: you can pay in full, or pay a {depositPercent}% deposit first and the rest when your print is done. Paying in two parts means two separate Venmo payments.\n\nIf it looks good, tap "Looks good" here: {orderLink}\nTapping it confirms your details, and I\'ll send you the deposit request right away. Nothing is charged until you pay it. Questions? Just reply to this email.\n\n{footer}'
+    body: 'Hi {name},\n\nYour quote for {title} is ready.\n\n{itemsWithPrices}\n\nSpecial order roll: ${specialRoll}\n{extraCharges}\nTotal: ${total}\n{materialNote}\n\n{designTermsNote}\n{queueNote}\n\nShipping is not included in this total. It depends on where you live: with your final payment I collect a ${shippingDeposit} shipping deposit. After I mail your package, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\n{howPaying}\n\nIf it looks good, tap "Looks good" here: {orderLink}\nTapping it confirms your details, and I\'ll send you the deposit request right away. Nothing is charged until you pay it. Questions? Just reply to this email.\n\n{footer}'
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
@@ -44,7 +44,7 @@ const EMAIL_TEMPLATES = {
   confirmed: {
     label: 'Order confirmed (printing)', to: 'Customer', when: 'You tap "Confirm order" after the customer taps "Looks good" (or right away, if orders confirm themselves).',
     subject: 'Your SoloPrint order is confirmed',
-    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\nTo get in line, you have two choices:\n\n1) Pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo now: {depositLink}\n   You will make a second Venmo payment for the rest when your print is done.\n\n2) Or pay everything now, ${amountDue}, in one Venmo payment: {venmoLink}\n\n(The links fill in the amount and a short note.)\n\nShipping is separate. When your print is done I collect a ${shippingDeposit} shipping deposit with your final payment. After I mail it, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\n{footer}'
+    body: 'Hi {name},\n\nGood news: your order for {title} is confirmed and queued for the printer.\n{queueNote}\n\nTotal: ${amountDue}\n{payIntro}\n\n1) Pay a ${depositDue} deposit ({depositPercent}% of the total) with Venmo now: {depositLink}\n   {secondPaymentNote}\n\n{orPay} ${amountDue}, in one Venmo payment: {venmoLink}\n\n(The links fill in the amount and a short note.)\n\nShipping is separate. When your print is done I collect a ${shippingDeposit} shipping deposit with your final payment. After I mail it, I refund the part that wasn\'t spent on packaging and postage, based on the actual cost.\n\n{footer}'
   },
   final_payment_needed: {
     label: 'Printing complete', to: 'Customer', when: 'You tap "Printing done" (not sent when they have already paid in full).',
@@ -106,6 +106,10 @@ const EMAIL_PLACEHOLDERS = {
   specialRoll: 'Special order roll cost',
   amountDue: 'Total, only while unpaid',
   depositDue: 'The deposit to ask for, while no deposit is paid',
+  payIntro: 'Confirmed email: "you have two choices" (changes to pay in full when there is no deposit option)',
+  secondPaymentNote: 'Confirmed email: the note about the second payment (blank when there is no deposit)',
+  orPay: 'Confirmed email: the start of the pay-in-full line',
+  howPaying: 'Quote email: how paying works',
   depositPercent: 'The deposit percent from Settings > Prices',
   depositLink: 'Venmo link with the deposit filled in',
   deposit: 'The deposit they paid (type it on the order after you get it), 0.00 if none',
@@ -257,9 +261,11 @@ function beforeQuote(phase) { return !phase || phase === 'estimate' || phase ===
 function orderRules(order, settings) {
   const rules = shopRules(settings);
   const saved = cleanQuoteRates(order && order.rates);
-  if (Object.keys(saved).length) return Object.assign(rules, { colorRates: {}, colorFee: 0 }, saved);
-  if (order && order.phase && !beforeQuote(order.phase)) return Object.assign(rules, LEGACY_RATES, { colorRates: {}, colorFee: 0 });
-  return rules;
+  let out = rules;
+  if (Object.keys(saved).length) out = Object.assign(rules, { colorRates: {}, colorFee: 0 }, saved);
+  else if (order && order.phase && !beforeQuote(order.phase)) out = Object.assign(rules, LEGACY_RATES, { colorRates: {}, colorFee: 0 });
+  if (orderIsPreorder(order)) out.depositPercent = 0;   // pre-orders are paid in full
+  return out;
 }
 // The rates a quote saves (and keeps), including any per-color rates.
 function quoteRates(rules) {
@@ -344,7 +350,7 @@ function colorCount(item) {
 // More colors than the price includes (rule freeColors, 2) adds rule colorFee per print: every extra color
 // means more color changes and more work. Not added on top of the owner's own price for the item.
 function colorCharge(item, rules) {
-  if (!item || typeof item !== 'object' || !rules) return 0;
+  if (!item || typeof item !== 'object' || !rules || item.colorFeeIncluded === true) return 0;
   const own = item.ownerPrice;
   if (own !== null && own !== undefined && own !== '' && isFinite(Number(own)) && Number(own) >= 0) return 0;
   const free = isFinite(Number(rules.freeColors)) ? Number(rules.freeColors) : 2;
@@ -397,20 +403,76 @@ function daysText(min, max) {
   return min === max ? 'about ' + min + ' day' + (min === 1 ? '' : 's') : 'about ' + min + '-' + max + ' days';
 }
 function aheadText(n) { return n === 0 ? 'no orders ahead of yours' : n + ' order' + (n === 1 ? '' : 's') + ' ahead of yours'; }
+// Wording for how paying works. With no deposit option (rule depositPercent 0, which is how pre-orders are
+// treated) everything is paid in full, in one Venmo payment.
+function payWording(rec, rules) {
+  const pct = Math.round(Number(rules && rules.depositPercent) || 0);
+  if (pct > 0 && !orderIsPreorder(rec)) return {
+    payIntro: 'To get in line, you have two choices:',
+    secondPaymentNote: 'You will make a second Venmo payment for the rest when your print is done.',
+    orPay: '2) Or pay everything now,',
+    howPaying: 'How paying works: you can pay in full, or pay a ' + pct + '% deposit first and the rest when your print is done. Paying in two parts means two separate Venmo payments.'
+  };
+  return { payIntro: 'To get in line, pay in full (there is no deposit option):', secondPaymentNote: '', orPay: 'Pay everything now,',
+    howPaying: 'How paying works: pay in full, in one Venmo payment, once you confirm your order.' };
+}
 // Pre-orders: a new design that isn't ready yet (the design's "Pre-order" box; each requested item keeps
 // `preorder`). They take a deposit and are made first come, first served, in the order deposits come in.
-const DEFAULT_PREORDER_NOTE = "This is a pre-order of a new design that isn't ready yet. Pre-orders are made on a first come, first served basis: your place in line is set by when your deposit comes in.";
+const DEFAULT_PREORDER_NOTE = "This is a pre-order of a new design that isn't ready yet. Pre-orders are made on a first come, first served basis: your place in line is set by when your payment comes in.";
+// The rest of the pre-order terms (each editable as site text).
+const PREORDER_TEXT = {
+  note: DEFAULT_PREORDER_NOTE,
+  pay: 'Pre-orders are paid in full by Venmo when you confirm your order. There is no deposit option.',
+  secure: "There is no credit card checkout on this site, for your own security: I don't want anyone's sensitive information processed through the site. Don't have Venmo? Contact me and we'll find another way to pay.",
+  ship: 'Shipping is based on your location and is requested in a separate payment. Everything is made as flat as possible to keep shipping as cheap as possible.',
+  cancel: 'You can cancel as long as I have not already begun printing any of your products. Once printing begins I will not accept cancellation, unless the colors selected have been specifically requested by someone else already in line.',
+  policy: 'Site policies still apply to unclaimed items.',
+  assembly: 'Some assembly is required.'
+};
+// Print timing for pre-orders (Settings > Prices & rules > Pre-order timing): printing starts at the launch date,
+// takes `days` for the first item and `extraDays` for each extra item or unit, and skips planned breaks.
+const PREORDER_TIMING = { launch: '2026-11-25', days: 5, extraDays: 1, breaks: [{ id: 'b1', name: 'Vacation', from: '2026-12-03', to: '2026-12-07' }, { id: 'b2', name: 'Christmas break', from: '', to: '' }] };
 function orderIsPreorder(order) { return !!(order && (order.items || []).some(it => it && it.preorder === true)); }
 // The owner's own wording (site text "preorderNote", when live), else the default.
-function preorderNoteText(settings) {
-  const own = settings && settings.siteText && settings.siteText.preorderNote;
+function preorderText(settings, key) {
+  const own = settings && settings.siteText && settings.siteText['preorder' + key.charAt(0).toUpperCase() + key.slice(1)];
   const text = own && own.live ? String(own.text || '').trim() : '';
-  return text || DEFAULT_PREORDER_NOTE;
+  return text || PREORDER_TEXT[key];
+}
+function preorderNoteText(settings) { return preorderText(settings, 'note'); }
+function preorderTiming(settings) {
+  const own = settings && settings.preorderTiming;
+  return own && typeof own === 'object' ? Object.assign({}, PREORDER_TIMING, own) : PREORDER_TIMING;
+}
+function ymdOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+// The day an order of `units` main items should be ready to ship, starting from `now`.
+function preorderReadyDate(units, settings, now) {
+  const t = preorderTiming(settings), breaks = (t.breaks || []).filter(b => b && b.from && b.to);
+  let left = Math.ceil(Math.max(1, Number(t.days) || 5) + Math.max(0, (Number(units) || 1) - 1) * Math.max(0, Number(t.extraDays) || 0));
+  let d = new Date(now || Date.now()); d.setHours(12, 0, 0, 0);
+  const launch = t.launch ? new Date(t.launch + 'T12:00:00') : null;
+  if (launch && isFinite(launch) && launch > d) d = launch;
+  for (let guard = 0; left > 0 && guard < 500; guard++) {
+    d = new Date(d.getTime() + 86400000);
+    const k = ymdOf(d);
+    if (!breaks.some(b => k >= b.from && k <= b.to)) left--;
+  }
+  return d;
+}
+function preorderUnits(rec) {
+  return Math.max(1, ((rec && rec.items) || []).reduce((s, it) => s + Math.max(1, Number(it && it.qty) || 1) * Math.max(1, Number(it && it.versionCount) || 1), 0));
+}
+function preorderEstimateText(units, settings, now) {
+  const d = preorderReadyDate(units, settings, now), t = preorderTiming(settings);
+  const launch = t.launch && new Date(t.launch + 'T12:00:00');
+  return 'Estimated ready to ship: ' + fmtShortDate(d.toISOString()) + ' (' + (launch && launch > new Date(now || Date.now()) ? 'printing starts ' + fmtShortDate(launch.toISOString()) + ', ' : '') + 'planned breaks are skipped, and more items or a larger quantity take longer).';
 }
 // In the quote, confirmed and deposit emails a pre-order gets this note instead of a days estimate.
 function preorderQueueNote(rec, settings) {
   if (!orderIsPreorder(rec) || !['quote_sent', 'order_received'].includes(rec.phase)) return '';
-  return [preorderNoteText(settings), preorderLineText(rec, settings), preorderEtaText(rec)].filter(Boolean).join(' ');
+  const terms = rec.phase === 'quote_sent' ? ['pay', 'secure', 'ship', 'cancel', 'policy', 'assembly'].map(k => preorderText(settings, k)) : [];
+  const when = preorderEtaText(rec) || preorderEstimateText(preorderUnits(rec), settings);
+  return [preorderNoteText(settings)].concat(terms, [preorderLineText(rec, settings), when]).filter(Boolean).join(' ');
 }
 // The line for a pre-order. The owner's site keeps, per design, only the times deposits came in
 // (settings.preorderLine { designId: [iso, ...] }, open pre-orders that have paid a deposit): no names.
@@ -429,8 +491,8 @@ function preorderLineText(rec, settings) {
   const line = preorderLine(rec, settings);
   if (line.paid) return line.n === 1 ? "You're first in line for this pre-order." : "You're number " + line.n + ' in line for this pre-order.';
   return line.ahead
-    ? (line.ahead === 1 ? '1 pre-order is' : line.ahead + ' pre-orders are') + ' ahead so far. Your place in line is set when your deposit comes in.'
-    : 'No deposits are in yet: pay your deposit to be first in line.';
+    ? (line.ahead === 1 ? '1 pre-order is' : line.ahead + ' pre-orders are') + ' ahead so far. Your place in line is set when your payment comes in.'
+    : 'No payments are in yet: pay to be first in line.';
 }
 // The owner's expected print and ship time, once they've typed one on the order.
 function preorderEtaText(rec) {

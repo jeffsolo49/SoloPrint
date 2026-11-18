@@ -144,7 +144,7 @@ async function loadBatches(asCustomer = false) {
       ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); syncTopWork(); }
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); applyPreview(); syncTopWork(); }
     else {
       // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
       const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));
@@ -523,6 +523,13 @@ function cleanItem(it) {
     logo: it.logo === true,   // "Add my company logo" add-on (rules.logoPrice per print)
     preorder: it.preorder === true,   // from a design marked Pre-order (made first come, first served)
     versionId: /^[A-Za-z0-9_-]{1,40}$/.test(String(it.versionId)) ? it.versionId : '',   // single / double...
+    packIncluded: it.packIncluded === true,
+    askOrder: it.askOrder === true,
+    matchOrder: cleanText(it.matchOrder, 40).trim(),
+    colorFeeIncluded: it.colorFeeIncluded === true,
+    editionId: /^[A-Za-z0-9_-]{1,40}$/.test(String(it.editionId)) ? it.editionId : '',
+    editionName: cleanText(it.editionName, 40).trim(),
+    groupMerge: Object.fromEntries(Object.entries(it.groupMerge && typeof it.groupMerge === 'object' ? it.groupMerge : {}).slice(0, 8).map(([k, v]) => [cleanText(k, 40), cleanText(v, 40)])),
     versionName: cleanText(it.versionName, 40).trim(),
     versionCount: Math.max(1, Math.min(4, parseInt(it.versionCount, 10) || 1)),
     needsPack: it.needsPack === true,
@@ -1374,6 +1381,7 @@ function render() {
       </div>
     </header>
     <div class="build-badge build-badge-phone" title="When the site was last updated" ${updateBadgeText() ? '' : 'hidden'}>${updateBadgeText()}</div>
+    ${renderPreviewBar()}
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
   `;
   attachAll();
@@ -1446,6 +1454,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='help'?'active':''}" onclick="setOwnerTab('help')">Help</button>
+      <button class="nav-tab ${state.ownerTab==='preview'?'active':''}" onclick="setOwnerTab('preview')">Preview${previewActive() ? '<span class="nav-badge">on</span>' : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
   `;
@@ -1982,7 +1991,7 @@ function galleryItemFields(g) {
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
     estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
     designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: p.defaultColor || '', include: !p.optional })) : [], extraColors: [], mainParts: '',
-    basePrice: g.price > 0 ? g.price : null, baseMinutes: g.minutes || null, preorder: !!g.preorder
+    basePrice: g.price > 0 ? g.price : null, baseMinutes: g.minutes || null, preorder: !!g.preorder, colorFeeIncluded: !!g.colorFeeIncluded
   };
 }
 
@@ -2139,8 +2148,8 @@ function renderItemBlock(item, i) {
           <div class="field-help">${esc(materialNote())}</div>
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
-        ${mode === 'gallery' && item.preorder ? renderPreorderNote() : ''}
-        ${mode === 'gallery' && item.galleryId ? renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) : ''}
+        ${mode === 'gallery' && item.preorder ? renderPreorderNote(null, null, draftPreorderUnits()) : ''}
+        ${mode === 'gallery' && item.galleryId ? renderEditionPicker(state.gallery.find(x => x.id === item.galleryId), item.editionId, eid => `setItemEdition(${i}, '${eid}')`) + renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) + (item.askOrder ? `<div class="field"><label for="match-order-${i}">Order number of your first caddy (optional)</label><input type="text" id="match-order-${i}" maxlength="40" value="${esc(item.matchOrder || '')}" oninput="state.draftItems[${i}].matchOrder = this.value; queueDraftSave();" /><div class="field-help">${item.matchOrder ? 'I will match your colors to that order.' : 'Pick the same edition and colors as your first one so the pair matches.'}</div></div>` : '') + sideWallNote(state.draftItems) : ''}
         ${mode === 'gallery' && featureOn('logoAddOn') ? `<label class="special-order-check" style="margin-bottom:10px;"><input type="checkbox" id="logo-${i}" ${item.logo ? 'checked' : ''} onchange="updateDraft(${i},'logo',this.checked); updateCustomerPricePreview(${i})" />
           ${esc(logoText('logoCheckbox'))}</label>` : ''}
         <div class="field" style="margin-bottom:10px;max-width:160px;">
@@ -2292,6 +2301,8 @@ function renderOwnerApp() {
         ? renderPracticePage()
         : state.ownerTab === 'help'
         ? renderWikiPage()
+        : state.ownerTab === 'preview'
+        ? renderPreviewPage()
         : state.ownerTab === 'etsytodo'
         ? renderEtsyTodoPage()
         : state.ownerTab === 'numbers'
@@ -2797,6 +2808,7 @@ function renderOrderFolds(b, st) {
   const total = b.items.every(itemPriced) ? orderSum(b) : null;
   return `<div class="desk-folds">
     ${renderSendEmailFold(b)}
+    ${renderFulfilment(b)}
     <details class="desk-fold"><summary>Their request (${b.items.length} item${b.items.length === 1 ? '' : 's'}, sent ${esc(createdLabel)})</summary>
       <div class="owner-item-summary-list">
         ${b.items.map((it, i) => `<div class="owner-item-summary">
@@ -3095,6 +3107,7 @@ function cleanSettings(raw) {
     galleryNote: cleanText(d.galleryNote, 200).trim(),
     preorderLine: cleanPreorderLine(d.preorderLine),
     topWork: (Array.isArray(d.topWork) ? d.topWork : []).filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(String(id))).slice(0, 5),
+    preorderTiming: cleanPreorderTiming(d.preorderTiming),
     siteText: cleanSiteText(d.siteText),
     faq: cleanFaq(d.faq),
     features: cleanFeatures(d.features),
@@ -3113,6 +3126,8 @@ async function loadSettings() {
   try {
     const rows = await supaFetch('/site_settings?id=eq.1&select=data');
     if (rows && rows[0]) state.settings = cleanSettings(rows[0].data);
+    state.liveSettings = state.settings;
+    if (previewActive()) state.settings = cleanSettings(previewData().settings);
     state.settingsError = false;
     state.settingsLoaded = true;   // saving settings before this would overwrite them with defaults
   } catch (e) {
@@ -3124,6 +3139,15 @@ async function loadSettings() {
 // Saves only what changed since `base` (what this page last loaded), on top of the latest saved settings,
 // so a page left open on another device (or a background save) can't put back an older FAQ, colors, etc.
 // Per design: when each open pre-order's deposit came in (times only, no names), so customers see their place in line.
+function cleanPreorderTiming(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const date = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? v : '');
+  return { launch: date(raw.launch), days: Math.max(1, Math.min(120, Number(raw.days) || 5)), extraDays: Math.max(0, Math.min(60, Number(raw.extraDays) || 0)),
+    breaks: (Array.isArray(raw.breaks) ? raw.breaks : []).slice(0, 8).map((b, n) => ({ id: /^[A-Za-z0-9_-]{1,40}$/.test(String(b && b.id)) ? b.id : `b${n + 1}`, name: cleanText(b && b.name, 40).trim(), from: date(b && b.from), to: date(b && b.to) })) };
+}
+function draftPreorderUnits() {
+  return Math.max(1, state.draftItems.filter(it => it.preorder).reduce((s, it) => s + Math.max(1, Number(it.qty) || 1) * Math.max(1, Number(it.versionCount) || 1), 0));
+}
 function cleanPreorderLine(raw) {
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
@@ -3137,6 +3161,15 @@ function cleanPreorderLine(raw) {
 async function saveSettings(next, base = state.settings) {
   const mine = cleanSettings(next), was = cleanSettings(base);
   let latest = was;
+  if (previewActive()) {
+    // Preview mode: the change is kept in the preview, never on the live site.
+    const pv = previewData(), keep = cleanSettings(pv.settings), merged = { ...keep };
+    Object.keys(mine).forEach(k => { if (JSON.stringify(mine[k]) !== JSON.stringify(was[k])) merged[k] = mine[k]; });
+    pv.settings = cleanSettings(merged);
+    await savePreview();
+    state.settings = cleanSettings(pv.settings);
+    return;
+  }
   const rows = await supaFetch('/site_settings?id=eq.1&select=data');
   if (rows && rows[0]) latest = cleanSettings(rows[0].data);
   const merged = { ...latest };
@@ -3424,7 +3457,7 @@ function renderOwnerSettingsPage() {
     </div>
 `,
     colors: renderColorSettingsCard(d),
-    prices: renderRulesSettings(d),
+    prices: renderRulesSettings(d) + renderPreorderTimingSettings(d),
     wording: renderWordingSettings(d),
     vacation: renderVacationSettings(d),
     text: renderSiteTextSettings(d),
@@ -3600,6 +3633,10 @@ function cleanGalleryItem(row) {
     colorMap: cleanColorMap(data.colorMap, cleanDesignParts(data.parts)),   // photo repainted in other colors, features.js
     preorder: data.preorder === true,   // a new design taking pre-orders (deposits, first come, first served)
     versions: cleanVersions(data.versions),   // single / double ...
+    editions: cleanEditions(data.editions),
+    contrast: cleanContrast(data.contrast),
+    sideWall: data.sideWall === true,
+    colorFeeIncluded: data.colorFeeIncluded === true,
     packId: /^[A-Za-z0-9_-]{1,64}$/.test(String(data.packId)) ? data.packId : '',   // the joining pack's design
     preorderReady: cleanText(data.preorderReady, 80)   // when it should be ready, in the owner's words
   };
@@ -3766,7 +3803,7 @@ function renderWorkDetail(g) {
 function renderWorkPrice(g) {
   const colors = cmViewColors(g.id), opts = designOpts(g.id);
   const price = designEstimate(g, colors, opts);
-  const picker = renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`);
+  const picker = renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`);
   if (price === null && (g.preorder || (g.versions || []).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">Price confirmed in your quote.</div>
     <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
@@ -3797,7 +3834,8 @@ function galleryPriceLabel(g) { return g.price > 0 ? 'each' : 'each · automated
 async function loadGallery() {
   try {
     const rows = await supaFetch('/gallery_items?select=id,data,published,sort_order,created_at&order=sort_order.asc,created_at.desc');
-    state.gallery = (rows || []).map(cleanGalleryItem).filter(Boolean);
+    state.liveGalleryRows = rows || [];
+    state.gallery = (previewActive() ? previewGalleryRows() : rows || []).map(cleanGalleryItem).filter(Boolean);
     state.galleryError = false;
   } catch (e) {
     console.error('Gallery load error:', e);
@@ -3887,6 +3925,7 @@ function requestGalleryItem(id, colors) {
   if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
   applyDesignOpts(item, (state.designOpts || {})[id]);
   if ((g.versions || []).length && !(state.designOpts || {})[id]) applyVersion(item, g, '');
+  if ((g.editions || []).length && !(state.designOpts || {})[id]) applyEdition(item, g, '');
   applyPartColors(item);
   state.galleryOpen = '';
   setDesignUrl('');
@@ -3952,6 +3991,7 @@ function renderOwnerGalleryPage() {
     </div>
     ${renderColorIdeasInbox()}
     ${renderPreorderLists()}
+    ${renderCaddySetup()}
     ${state.rackDone ? `<div class="alert success" style="display:block;">${esc(state.rackDone)}</div>` : ''}
     ${renderDryingRackSetup()}
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
@@ -3992,6 +4032,7 @@ function renderOwnerGalleryPage() {
       </div>
       ${renderPreorderFormFields(f)}
       ${renderVersionsForm(f)}
+      ${renderEditionsForm(f)}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4030,22 +4071,29 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId, editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, sideWall: g.sideWall, colorFeeIncluded: g.colorFeeIncluded
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// The saved shape of a design (a gallery_items row).
+function galleryRowOf(g) {
+  return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
+    data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
+}
 async function writeGalleryItem(g) {
+  if (previewActive()) {
+    const rows = previewData().gallery, row = galleryRowOf(g), at = rows.findIndex(x => x.id === row.id);
+    if (at >= 0) rows[at] = { ...row, created_at: rows[at].created_at || row.created_at }; else rows.push(row);
+    await savePreview();
+    return;
+  }
+  const row = galleryRowOf(g);
   await supaFetch('/gallery_items', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({
-      id: g.id,
-      published: g.published,
-      sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '' }
-    })
+    body: JSON.stringify({ id: row.id, published: row.published, sort_order: row.sort_order, data: row.data })
   });
 }
 
@@ -4062,7 +4110,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '',
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], sideWall: !!f.sideWall, colorFeeIncluded: !!f.colorFeeIncluded,
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
@@ -4210,8 +4258,11 @@ async function deleteGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g || !confirm(`Delete "${g.title || 'this item'}" from the gallery? This cannot be undone.`)) return;
   try {
-    await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await deleteStoredPhotos(g.photos.concat(g.parts.map(p => p.photo).filter(Boolean)));
+    if (previewActive()) { const pv = previewData(); pv.gallery = pv.gallery.filter(x => x.id !== id); await savePreview(); }
+    else {
+      await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await deleteStoredPhotos(g.photos.concat(g.parts.map(p => p.photo).filter(Boolean)));
+    }
   } catch (e) {
     alert("Couldn't delete it. If you were logged out, log in again and retry.");
   }
@@ -4915,6 +4966,7 @@ async function submitBatch() {
     showAlert('submit-err', `Your ${over.roll.color} roll has about ${over.roll.left.toFixed(0)} g left, but this request needs about ${over.grams.toFixed(0)} g. Choose "Order a new roll instead" for some items.`, 'error');
     return;
   }
+  if (items.some(colorsClash)) { showAlert('submit-err', t('contrastNote'), 'error'); return; }
   const noColor = state.draftItems.findIndex(it => items.includes(it) && isSpecialOrder(it) && !String(it.specialColor || '').trim());
   if (noColor >= 0) {
     showAlert('submit-err', 'Please type the special order color and material you would like.', 'error');
