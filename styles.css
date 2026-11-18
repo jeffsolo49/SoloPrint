@@ -1443,3 +1443,7 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .preview-bar { position: sticky; top: 64px; z-index: 95; display: flex; gap: 8px 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 8px 16px 0; padding: 8px 12px; border-radius: 10px; border: 2px solid var(--accent2); background: var(--surface); color: var(--text); font-size: 14px; }
 .preview-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .preview-list { margin: 4px 0 0 20px; line-height: 1.7; }
+
+/* Tick boxes in the design form's Versions and Editions blocks: big enough to tap, and spaced apart */
+.editions-fields .special-order-check, .versions-fields .special-order-check { min-height: 32px; margin: 0 0 6px; }
+.editions-fields .special-order-check input[type="checkbox"], .versions-fields .special-order-check input[type="checkbox"] { width: 24px; height: 24px; min-height: 24px; margin: 0; }
