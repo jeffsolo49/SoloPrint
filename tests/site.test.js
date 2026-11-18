@@ -260,6 +260,8 @@ const STATES = {
   'owner etsy spreadsheet': "(async () => { await (" + asOwner('money') + "); localStorage.setItem('soloprint_etsyView', 'sheet'); state.etsyView = 'sheet'; state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 1 }, { id: 'e2', date: new Date().getFullYear() + '-03-03', items: 'Market sale', sale: 12 }], seen: ['2026-02-03|fee|Transaction fee: Shipping|Order #3100000001|0.39'] }; render(); })()",
   'owner etsy to make': "(async () => { await (" + asOwner('etsytodo') + "); state.ownerPrivate.etsy_todo = { orders: [{ id: 't1', etsyId: '4233804505', buyer: 'Jen', due: '2026-01-01', note: 'Gift', createdAt: '2026-01-01T00:00:00Z', done: false, lines: [{ id: 'l1', what: 'Base', color: 'Black', qty: 2, printed: 1 }, { id: 'l2', what: 'Spine', color: 'Red', qty: 1, printed: 0 }] }, { id: 't2', etsyId: '1', buyer: 'Bo', done: true, doneAt: '2026-01-02T00:00:00Z', lines: [{ id: 'l3', what: 'Hook', color: 'White', qty: 1, printed: 1 }] }] }; state.todoOpen = 't1'; state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [{ id: 'd1', what: 'Base', color: 'Blue', qty: 1, printed: 0 }] }; render(); })()",
   'owner money with etsy': "(async () => { await (" + asOwner('money') + "); state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 0 }], costs: [{ id: 'c1', date: new Date().getFullYear() + '-02-01', what: 'Listing fees', amount: 0.4 }] }; state.etsyEdit = ''; state.etsyImport = { plans: [{ kind: 'orders', fileName: 'EtsySoldOrders.csv', add: [], update: [], keep: 1, costs: [], fees: [], items: [], skipped: 0 }, { kind: 'statement', fileName: 'etsy_statement.csv', add: [], update: [], keep: 0, covered: 0, costs: [], fees: [], items: [], skipped: 2 }], bad: ['notes.csv'], result: state.ownerPrivate.etsy }; render(); })()",
+  'design page pre-order': "(async () => { await loadGallery(); state.gallery[0].preorder = true; state.gallery[0].preorderReady = 'early January'; openWork('g1'); })()",
+  'owner gallery pre-order': "(async () => { await " + asOwner('gallery') + "; state.gallery[0].preorder = true; state.batches[0].items[0].preorder = true; state.batches[0].items[0].galleryId = 'g1'; state.galleryForm.preorder = true; render(); })()",
   'design page with parts': "(async () => { await loadGallery(); openWork('g2'); })()",
   'request with a color per part': "(async () => { await loadGallery(); requestGalleryItem('g2'); })()",
   'owner gallery parts': "(async () => { await " + asOwner('gallery') + "; editGalleryItem('g2'); })()",
@@ -2293,6 +2295,32 @@ const STATES = {
     await page.click('.jump-toggle');
     await page.click('.jump-btn:has-text("Money")');
     await page.waitForFunction(() => !document.querySelector('#jump-nav').classList.contains('open'));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('pre-orders: a design marked Pre-order says first come, first served everywhere; the owner sees the pre-orders by deposit time', async () => {
+    const db = fixtures();
+    Object.assign(db.gallery.g1.data, { preorder: true, preorderReady: 'early January' });
+    db.jobs.p1 = { id: 'p1', clientName: 'Second', clientEmail: 's@example.com', createdAt: ago(900), phase: 'order_received', paymentStatus: 'deposit_received', depositAt: ago(100), items: [{ name: 'Dragon Organizer', qty: 1, galleryId: 'g1', preorder: true, filType: 'black', minutes: 150, grams: 85 }] };
+    db.jobs.p2 = { id: 'p2', clientName: 'First', clientEmail: 'f@example.com', createdAt: ago(50), phase: 'order_received', paymentStatus: 'deposit_received', depositAt: ago(300), items: [{ name: 'Dragon Organizer', qty: 2, galleryId: 'g1', preorder: true, filType: 'black', minutes: 150, grams: 85 }] };
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); });
+    await page.waitForSelector('.gallery-card .preorder-badge');
+    assert(await page.isVisible('.gallery-card button:has-text("Pre-order this")'), 'pre-order button');
+    await page.evaluate(() => openWork('g1'));
+    const note = await page.textContent('.preorder-note');
+    assert(/first come, first served/.test(note) && /early January/.test(note), note);
+    await page.evaluate(() => requestGalleryItem('g1'));
+    assert(await page.evaluate(() => state.draftItems[0].preorder === true), 'item keeps preorder');
+    assert(/first come, first served/.test(await page.textContent('#main .preorder-note')), 'note on the request form');
+    const q = await page.evaluate(() => [preorderQueueNote({ phase: 'quote_sent', items: [{ preorder: true }] }, state.settings), preorderQueueNote({ phase: 'quote_sent', items: [{}] }, state.settings)]);
+    assert(/first come, first served/.test(q[0]) && q[1] === '', JSON.stringify(q));
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#preorders');
+    const names = await page.$$eval('#preorders .preorder-list li button', els => els.map(e => e.textContent));
+    assert(JSON.stringify(names) === '["First","Second"]', JSON.stringify(names));
+    await page.click('#preorders button:has-text("Second")');
+    await page.waitForFunction(() => /Number 2 of 2/.test(document.querySelector('.desk-order') && document.querySelector('.desk-order').textContent));
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

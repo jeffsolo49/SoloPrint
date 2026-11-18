@@ -397,6 +397,20 @@ function daysText(min, max) {
   return min === max ? 'about ' + min + ' day' + (min === 1 ? '' : 's') : 'about ' + min + '-' + max + ' days';
 }
 function aheadText(n) { return n === 0 ? 'no orders ahead of yours' : n + ' order' + (n === 1 ? '' : 's') + ' ahead of yours'; }
+// Pre-orders: a new design that isn't ready yet (the design's "Pre-order" box; each requested item keeps
+// `preorder`). They take a deposit and are made first come, first served, in the order deposits come in.
+const DEFAULT_PREORDER_NOTE = "This is a pre-order of a new design that isn't ready yet. Pre-orders are made on a first come, first served basis: your place in line is set by when your deposit comes in.";
+function orderIsPreorder(order) { return !!(order && (order.items || []).some(it => it && it.preorder === true)); }
+// The owner's own wording (site text "preorderNote", when live), else the default.
+function preorderNoteText(settings) {
+  const own = settings && settings.siteText && settings.siteText.preorderNote;
+  const text = own && own.live ? String(own.text || '').trim() : '';
+  return text || DEFAULT_PREORDER_NOTE;
+}
+// In the quote, confirmed and deposit emails a pre-order gets this note instead of a days estimate.
+function preorderQueueNote(rec, settings) {
+  return orderIsPreorder(rec) && ['quote_sent', 'order_received'].includes(rec.phase) ? preorderNoteText(settings) : '';
+}
 // The "place in line" line in the quote, confirmed and deposit emails (Code.gs queueNote; the site's email previews).
 function queueNoteText(rec, queue, rules) {
   const custom = orderIsCustom(rec);

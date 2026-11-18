@@ -520,6 +520,7 @@ function cleanItem(it) {
     leftoverFrom: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.leftoverFrom)) ? it.leftoverFrom : '',
     mainParts: cleanText(it.mainParts, 200),
     logo: it.logo === true,   // "Add my company logo" add-on (rules.logoPrice per print)
+    preorder: it.preorder === true,   // from a design marked Pre-order (made first come, first served)
     designParts: cleanDesignParts(it.designParts, true),
     basePrice: cleanNumber(it.basePrice),
     baseMinutes: cleanNumber(it.baseMinutes),   // a design's print time before add-ons   // a design's set price before add-ons (the owner re-reads it when quoting)
@@ -1974,7 +1975,7 @@ function galleryItemFields(g) {
     knownFromLibrary: !(g.price > 0) && !!(g.minutes && g.grams), knownPrompted: true, previewImage: g.photos[0] || '',
     estimateSource: `the ${galleryName()} gallery`, setPrice: g.price > 0 ? g.price : null,
     designParts: featureOn('designParts') ? (g.parts || []).map(p => ({ ...p, colorId: p.defaultColor || '', include: !p.optional })) : [], extraColors: [], mainParts: '',
-    basePrice: g.price > 0 ? g.price : null, baseMinutes: g.minutes || null
+    basePrice: g.price > 0 ? g.price : null, baseMinutes: g.minutes || null, preorder: !!g.preorder
   };
 }
 
@@ -2131,6 +2132,7 @@ function renderItemBlock(item, i) {
           <div class="field-help">${esc(materialNote())}</div>
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
+        ${mode === 'gallery' && item.preorder ? renderPreorderNote() : ''}
         ${mode === 'gallery' && featureOn('logoAddOn') ? `<label class="special-order-check" style="margin-bottom:10px;"><input type="checkbox" id="logo-${i}" ${item.logo ? 'checked' : ''} onchange="updateDraft(${i},'logo',this.checked); updateCustomerPricePreview(${i})" />
           ${esc(logoText('logoCheckbox'))}</label>` : ''}
         <div class="field" style="margin-bottom:10px;max-width:160px;">
@@ -2344,7 +2346,7 @@ function focusOwnerOrder(id) {
 
 function renderDeskRow(b, selected) {
   const tone = { red: 'cust-red', slate: 'cust-slate' };
-  const chips = (b.phase || 'estimate') === 'delivered' && !orderNeeds(b).length ? [['Finished', 'slate']] : orderNeeds(b);
+  const chips = ((b.phase || 'estimate') === 'delivered' && !orderNeeds(b).length ? [['Finished', 'slate']] : orderNeeds(b)).concat(orderIsPreorder(b) ? [['Pre-order', 'slate']] : []);
   return `<button type="button" class="desk-row tone-${deskTone(b)} ${selected ? 'active' : ''}" aria-pressed="${selected}" onclick="openDeskOrder('${esc(b.id)}')">
     <span class="desk-name">${esc(b.clientName || b.clientEmail || 'No name')}</span>
     <span class="desk-when">${esc(new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</span>
@@ -2668,6 +2670,7 @@ function renderOwnerBatch(b) {
       </div>
       <div class="desk-bar" aria-hidden="true">${DESK_STEPS.map((s, i) => `<i class="${i + 1 < st.n ? 'done' : i + 1 === st.n ? 'now' : ''}"></i>`).join('')}</div>
       ${b.designTerms && !beforeQuote(phase) ? `<div><span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting for them to agree'}</span></div>` : ''}
+      ${orderIsPreorder(b) ? `<div><span class="preorder-badge">Pre-order</span> <span class="field-help">${esc(preorderPlace(b))}</span></div>` : ''}
       <div class="desk-stepname">${st.n > 6 ? 'Finished' : `Step ${st.n} of 6 · ${esc(st.label)}`}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
     </div>
     ${editing ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>` : `${renderNextStep(b, st)}${renderOwnerConversation(b)}`}
@@ -2792,6 +2795,7 @@ function renderOrderFolds(b, st) {
           <div class="owner-order-summary-value"><strong>${esc(it.name || 'Unnamed')}</strong>${it.qty > 1 ? ` x ${it.qty}` : ''}</div>
           <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
           ${colorPartsText(it) ? `<div class="owner-order-summary-value">Which parts: ${esc(colorPartsText(it))}</div>` : ''}
+          ${it.preorder ? '<div class="owner-order-summary-value"><strong>Pre-order</strong> (made first come, first served)</div>' : ''}
           ${it.logo ? '<div class="owner-order-summary-value"><strong>Add their company logo</strong> (ask for the logo file)</div>' : ''}
           <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">Open model</a>` : esc(it.link || 'Not provided')}</div>
           <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
@@ -3570,7 +3574,9 @@ function cleanGalleryItem(row) {
     price: cleanNumber(data.price),   // set price that replaces the calculated estimate
     videos: cleanVideoIds(data.videos),
     parts: cleanDesignParts(data.parts),
-    colorMap: cleanColorMap(data.colorMap, cleanDesignParts(data.parts))   // photo repainted in other colors, features.js
+    colorMap: cleanColorMap(data.colorMap, cleanDesignParts(data.parts)),   // photo repainted in other colors, features.js
+    preorder: data.preorder === true,   // a new design taking pre-orders (deposits, first come, first served)
+    preorderReady: cleanText(data.preorderReady, 80)   // when it should be ready, in the owner's words
   };
 }
 
@@ -3721,6 +3727,7 @@ function renderWorkDetail(g) {
     ${renderVideos(g)}
     ${renderDesignParts(g)}
     <div class="card">
+      ${renderPreorderNote(g)}
       ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}
         <label class="special-order-check" style="margin-top:8px;"><input type="checkbox" id="design-logo" ${designOpts(g.id).logo ? 'checked' : ''} onchange="setDesignLogo('${esc(g.id)}', this.checked)" /> ${esc(logoText('logoCheckbox'))}</label></div>` : ''}
@@ -3741,7 +3748,7 @@ function renderWorkPrice(g) {
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
             ${g.price > 0 ? '' : `<div class="gallery-meta">${colors ? 'In the colors picked above' : (g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g, null, opts)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
-          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('requestThis'))}</button>
+          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button>
         </div>
         <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>`;
 }
@@ -3828,12 +3835,13 @@ function renderGalleryTab() {
       return `<div class="gallery-card">
         ${renderGalleryPhoto(g)}
         <div class="gallery-body">
-          <div class="gallery-title">${esc(g.title || 'Untitled')}</div>
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.preorder ? ` <span class="preorder-badge">${esc(t('preorderBadge'))}</span>` : ''}</div>
+          ${g.preorder && g.preorderReady ? `<div class="gallery-meta">Expected: ${esc(g.preorderReady)}</div>` : ''}
           <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
-            ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(t('requestThis'))}</button>` : ''}
+            ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button>` : ''}
           </div>
         </div>
       </div>`;
@@ -3911,6 +3919,7 @@ function renderOwnerGalleryPage() {
       <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
     </div>
     ${renderColorIdeasInbox()}
+    ${renderPreorderLists()}
     ${state.rackDone ? `<div class="alert success" style="display:block;">${esc(state.rackDone)}</div>` : ''}
     ${renderDryingRackSetup()}
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
@@ -3949,6 +3958,7 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
+      ${renderPreorderFormFields(f)}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -3964,7 +3974,7 @@ function renderOwnerGalleryPage() {
       return `<div class="gallery-card ${g.published ? '' : 'hidden-item'}">
         ${renderGalleryPhoto(g)}
         <div class="gallery-body">
-          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}</div>
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
@@ -3987,7 +3997,7 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4001,7 +4011,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '' }
     })
   });
 }
@@ -4019,7 +4029,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '',
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(),
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
