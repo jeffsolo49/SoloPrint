@@ -2309,6 +2309,8 @@ const OWNER_WIKI = [
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+  { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
+    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
     steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
@@ -2811,18 +2813,21 @@ function partColorChoices() { return stockedColors().map(c => ({ ...c, key: c.co
 
 // `choices` defaults to the customer's in-stock colors; the owner's edit form passes all colors.
 // Parts with the same color group share one color: the first one on show leads and the others follow it.
-function partLead(parts, k) {
+// An edition can merge a group into another (Two-Tone: the drawers follow the accent color), `merge` = { group: into }.
+function partGroup(p, merge) { return p && p.group ? ((merge && merge[p.group]) || p.group) : ''; }
+function partLead(parts, k, merge) {
   const p = parts[k];
   if (!p || !p.group) return k;
-  const at = parts.findIndex(q => q.group === p.group && (!q.optional || q.include));
+  const g = partGroup(p, merge);
+  const at = parts.findIndex(q => partGroup(q, merge) === g && (!q.optional || q.include));
   return at < 0 ? k : at;
 }
-function syncGroupColors(parts) {
-  parts.forEach((p, k) => { if (p.group) { const lead = partLead(parts, k); if (lead !== k && parts[lead].colorId) p.colorId = parts[lead].colorId; } });
+function syncGroupColors(parts, merge) {
+  parts.forEach((p, k) => { if (p.group) { const lead = partLead(parts, k, merge); if (lead !== k && parts[lead].colorId) p.colorId = parts[lead].colorId; } });
 }
 function applyPartColors(item, choicesIn) {
   if (!(item.designParts || []).length) return;
-  syncGroupColors(item.designParts);
+  syncGroupColors(item.designParts, item.groupMerge);
   const n = Math.max(1, Number(item.versionCount) || 1);   // a version with several of the main item (the double version)
   // Add-on parts count only when the customer chose them; a design with a set price adds their prices.
   const addOns = item.designParts.filter(p => p.optional && p.include);
@@ -2893,8 +2898,8 @@ function setPartIncluded(i, k, on) {
 function setPartColor(i, k, key) {
   const item = state.draftItems[i];
   if (!item || !item.designParts[k]) return;
-  const grp = item.designParts[k].group;
-  item.designParts.forEach((q, j) => { if (j === k || (grp && q.group === grp)) q.colorId = key; });
+  const grp = partGroup(item.designParts[k], item.groupMerge);
+  item.designParts.forEach((q, j) => { if (j === k || (grp && partGroup(q, item.groupMerge) === grp)) q.colorId = key; });
   applyPartColors(item);
   render();
   queueDraftSave();
@@ -2921,19 +2926,20 @@ function renderPartColors(item, i) {
     <div class="field-help">${esc(materialNote())}</div>
     ${cmRequestPreview(item)}
     ${reverseColors(Object.fromEntries(item.designParts.filter(p => !p.optional || p.include).map(p => [p.id, p.colorId]))) ? `<button type="button" class="btn-sm" id="part-reverse-${i}" onclick="reversePartColors(${i})">Reverse colors</button>` : ''}
-    ${item.designParts.map((p, k) => { const lead = partLead(item.designParts, k); return p.group && !p.optional && lead !== k ? '' : `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
+    ${item.designParts.map((p, k) => { const mg = item.groupMerge, pg = partGroup(p, mg), lead = partLead(item.designParts, k, mg); return p.group && !p.optional && lead !== k ? '' : `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
       ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="field">
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="setPartIncluded(${i}, ${k}, this.checked)" />
           Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
-        ${p.optional && !p.include ? '' : p.group && lead !== k ? `<div class="field-help">Same color as ${esc(p.group)}.</div>` : `<label for="part-color-${i}-${k}">${p.group ? `${esc(p.group)} <span class="field-help">(${esc(item.designParts.filter((q, j) => q.group === p.group && (!q.optional || q.include) && partLead(item.designParts, j) === lead).map(q => q.name).join(', '))})</span>` : p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional && !p.group ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
+        ${p.optional && !p.include ? '' : p.group && lead !== k ? `<div class="field-help">Same color as ${esc(pg)}.</div>` : `<label for="part-color-${i}-${k}">${p.group ? `${esc(pg)} <span class="field-help">(${esc(item.designParts.filter((q, j) => partGroup(q, mg) === pg && (!q.optional || q.include) && partLead(item.designParts, j, mg) === lead).map(q => q.name).join(', '))})</span>` : p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional && !p.group ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
         <div class="color-pick">${colorDot(p.colorId)}<select id="part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="setPartColor(${i}, ${k}, this.value)">
           ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
         </select></div>`}
       </div>
     </div>`; }).join('')}
+    ${colorsClash(item) ? `<div class="alert error" style="display:block;" role="alert">${esc(t('contrastNote'))}</div>` : ''}
     ${renderColorInfo(item)}
-    ${item.designParts.filter(p => !p.optional || p.include).length > Number(currentRules().freeColors) ? colorFeeNote(item) : ''}
+    ${item.designParts.filter(p => !p.optional || p.include).length > Number(currentRules().freeColors) && !item.colorFeeIncluded ? colorFeeNote(item) : ''}
     <div class="field-help">Want a color I don't carry for a part? Say so under "Anything you'd like changed?"</div>
   </fieldset>`;
 }
@@ -3089,6 +3095,14 @@ const SITE_TEXT = [
     ['gallerySub', 'Past work page, small text', 'Designs we\'ve made before, with the story behind each one. Want one? Tap "Request this".'],
     ['requestThis', '"Request this" button', 'Request this'],
     ['preorderThis', 'Pre-order designs: the request button', 'Pre-order this'],
+    ['preorderPay', 'Pre-orders: how they are paid', PREORDER_TEXT.pay],
+    ['preorderSecure', 'Pre-orders: no credit card checkout, and what to do without Venmo', PREORDER_TEXT.secure],
+    ['preorderShip', 'Pre-orders: shipping', PREORDER_TEXT.ship],
+    ['preorderCancel', 'Pre-orders: cancellation', PREORDER_TEXT.cancel],
+    ['preorderPolicy', 'Pre-orders: other store policies (unpaid shipping)', PREORDER_TEXT.policy],
+    ['preorderAssembly', 'Pre-orders: assembly', PREORDER_TEXT.assembly],
+    ['contrastNote', 'Request form: when the drawer tabs match the drawers', 'The drawer tabs need to contrast with the drawers - please pick a different colour.'],
+    ['sideWallNote', 'Request form: more than two side-wall accessories', 'A caddy takes one side-wall accessory on each side wall (a joined pair, one on each outside side). If you are using the Hinge it takes the clip slots on one side, so only one side-wall accessory fits. Please remove one or tell me how you plan to use them.'],
     ['preorderBadge', 'Pre-order designs: the label on the design', 'Pre-order'],
     ['preorderNote', 'Pre-orders: the first come, first served note (design page, request form, their order and the quote, confirmed and deposit emails)', DEFAULT_PREORDER_NOTE],
     ['logoOffer', 'Design page: company logo add-on note ({price} = the logo price from Prices)', 'Want your company logo on it? I can add it for {price} more per item. Tick "Add my company logo" when you request it, and I\'ll ask you for the logo file.'],
@@ -3387,12 +3401,13 @@ function designEstimate(g, colors, opts) {
 // The design page's own choices before "Request this": optional add-on parts and the company logo.
 function designOpts(id) {
   state.designOpts = state.designOpts || {};
-  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '' });
+  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '', edition: '' });
 }
 function applyDesignOpts(item, opts) {
   if (!opts) return item;
   const dg = item.galleryId && state.gallery.find(x => x.id === item.galleryId);
   if (dg && (dg.versions || []).length) applyVersion(item, dg, opts.version);
+  if (dg && (dg.editions || []).length) applyEdition(item, dg, opts.edition);
   (item.designParts || []).forEach(p => { if (p.optional) p.include = !!opts.include[p.id]; });
   item.logo = featureOn('logoAddOn') && !!opts.logo;
   return item;
@@ -4504,7 +4519,9 @@ function detailsItemsText(b) {
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${filamentLabel(it)}`];
     if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
     if (it.preorder === true) lines.push('   Pre-order: made first come, first served');
-    if (it.versionName) lines.push(`   Version: ${it.versionName}${it.needsPack ? ' (needs the joining pack)' : ''}`);
+    if (it.versionName) lines.push(`   Version: ${it.versionName}${it.packIncluded ? ' (Joining Kit included)' : it.needsPack ? ' (needs the joining pack)' : ''}`);
+    if (it.editionName) lines.push(`   Color edition: ${it.editionName}`);
+    if (it.matchOrder) lines.push(`   Matches order: ${it.matchOrder}`);
     if (it.logo) lines.push('   Add your company logo: yes');
     if (colorCharge(it, rulesFor(b))) lines.push(`   More than ${rulesFor(b).freeColors} colors: +$${colorCharge(it, rulesFor(b)).toFixed(2)} per print (extra color changes)`);
     if (it.link) lines.push(`   Link: ${it.link}`);
@@ -4858,6 +4875,7 @@ function practiceVars(order) {
   const vars = { name: o.clientName, customerName: o.clientName, customerEmail: o.clientEmail, title: orderTitle(o), submitted: formatAustinTime(o.createdAt),
     items: detailsItemsText(o), itemsWithPrices: withPrices, estimate: est ? est.toFixed(2) : '', total: total ? total.toFixed(2) : '',
     specialRoll: '', extraCharges: '', amountDue: left > 0 ? left.toFixed(2) : '', venmoLink: left > 0 ? venmoPayUrl(o, left, o.paymentStatus === 'deposit_received' ? 'balance' : 'full') : '',
+    ...payWording(o, rules),
     depositDue: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? depositAmount(o, total, rules).toFixed(2) : '',
     depositPercent: String(Math.round(Number(rules.depositPercent) || 0)),
     depositLink: left > 0 && o.paymentStatus !== 'deposit_received' && depositAmount(o, total || 0, rules) > 0 && depositAmount(o, total || 0, rules) < total ? venmoPayUrl(o, depositAmount(o, total, rules), 'deposit') : '',
@@ -5604,11 +5622,15 @@ if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') 
 // first come, first served (site text preorderNote, shared preorderQueueNote), and deposits set the order.
 function requestLabel(g) { return g && g.preorder ? t('preorderThis') : t('requestThis'); }
 // `g`: a design (its page); `b`: the customer's own order (adds their place in line and the expected time).
-function renderPreorderNote(g, b) {
+function renderPreorderNote(g, b, units) {
   if (g && !g.preorder) return '';
-  const line = b ? [preorderLineText(b, state.settings), preorderEtaText(b)].filter(Boolean) : [];
+  const msg = state.settings.links && state.settings.links.messenger;
+  const u = b ? preorderUnits(b) : units || (g ? (versionOf(g, designOpts(g.id).version) || { count: 1 }).count : 1);
+  const line = [b ? preorderLineText(b, state.settings) : '', b && b.preorderEta ? preorderEtaText(b) : preorderEstimateText(u, state.settings)].filter(Boolean);
   return `<div class="preorder-note"><span class="preorder-badge">${esc(t('preorderBadge'))}</span>${g && g.preorderReady ? ` <strong>Expected: ${esc(g.preorderReady)}</strong>` : ''}
-    <div>${esc(t('preorderNote'))}</div>${line.map((l, n) => `<div${n ? '' : ' class="preorder-line"'}><strong>${esc(l)}</strong></div>`).join('')}</div>`;
+    <div>${esc(t('preorderNote'))}</div>${line.map((l, n) => `<div${n ? '' : ' class="preorder-line"'}><strong>${esc(l)}</strong></div>`).join('')}
+    <ul class="preorder-terms">${['Pay', 'Secure', 'Ship', 'Cancel', 'Policy', 'Assembly'].map(k => `<li>${esc(t('preorder' + k))}</li>`).join('')}</ul>
+    ${msg ? `<a class="btn-sm btn-contact-sm" href="${esc(msg)}" target="_blank" rel="noopener noreferrer">Contact me (no Venmo? start here)</a>` : ''}</div>`;
 }
 // Deposit times of open pre-orders per design (what customers' place in line is counted from).
 function preorderLineFromOrders(batches) {
@@ -5747,8 +5769,30 @@ function cleanVersions(list) {
     id: /^[A-Za-z0-9_-]{1,40}$/.test(String(v && v.id)) ? v.id : `v${n + 1}`,
     name: cleanText(v && v.name, 40).trim(),
     count: Math.max(1, Math.min(4, parseInt(v && v.count, 10) || 1)),
-    needsPack: !!(v && v.needsPack)
+    needsPack: !!(v && v.needsPack),
+    packIncluded: !!(v && v.packIncluded),   // the joining parts are in the price (no separate pack item)
+    price: Number(v && v.price) > 0 && Number(v.price) <= 100000 ? Math.round(Number(v.price) * 100) / 100 : null,   // this version's own set price
+    tbd: !!(v && v.tbd),   // price confirmed in the quote
+    askOrder: !!(v && v.askOrder),   // asks for the order number of the one they already own
+    note: cleanText(v && v.note, 300).trim()
   })).filter(v => v.name);
+}
+// Editions (Two-Tone ...): which color groups are merged into others, and the print files for the seller.
+function cleanEditions(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 5).map((e, n) => {
+    const merge = {};
+    Object.keys((e && e.merge) || {}).slice(0, 8).forEach(k => { const v = e.merge[k]; if (k && v && k !== v) merge[cleanText(k, 40).trim()] = cleanText(v, 40).trim(); });
+    return { id: /^[A-Za-z0-9_-]{1,40}$/.test(String(e && e.id)) ? e.id : `e${n + 1}`, name: cleanText(e && e.name, 40).trim(), desc: cleanText(e && e.desc, 300).trim(), merge, files: cleanText(e && e.files, 400).trim() };
+  }).filter(e => e.name);
+}
+function cleanContrast(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 4).map(p => [cleanText(p && p[0], 40).trim(), cleanText(p && p[1], 40).trim()]).filter(p => p[0] && p[1]);
+}
+function mergeText(m) { return Object.keys(m || {}).map(k => `${k} > ${m[k]}`).join('; '); }
+function parseMerge(text) {
+  const out = {};
+  String(text || '').split(/[;\n]/).forEach(s => { const [a, b] = s.split('>').map(x => x.trim()); if (a && b && a !== b) out[a] = b; });
+  return out;
 }
 function versionOf(g, id) { const vs = (g && g.versions) || []; return vs.find(v => v.id === id) || vs[0] || null; }
 // Gives an item (made by galleryItemFields) the chosen version: how many mains it holds and whether it needs the pack.
@@ -5756,7 +5800,10 @@ function applyVersion(item, g, id) {
   const v = versionOf(g, id);
   if (!v) return item;
   item.versionId = v.id; item.versionName = v.name; item.versionCount = v.count; item.needsPack = !!v.needsPack;
-  if (!(item.designParts || []).length && v.count > 1) {
+  item.packIncluded = !!v.packIncluded; item.askOrder = !!v.askOrder;
+  if (v.tbd) { item.setPrice = null; item.basePrice = null; }
+  else if (v.price > 0) { item.setPrice = v.price; item.basePrice = v.price / v.count; }
+  if (!(item.designParts || []).length && v.count > 1 && !(v.price > 0) && !v.tbd) {
     if (g.grams) item.grams = Math.round(g.grams * v.count * 10) / 10;
     if (g.minutes) item.knownMinutes = g.minutes * v.count;
     if (g.price > 0) item.setPrice = g.price * v.count;
@@ -5776,7 +5823,7 @@ function renderVersionPicker(g, selected, onpick) {
   const pack = packDesign(g);
   return `<fieldset class="version-picker"><legend>Version</legend>
     ${g.versions.map(x => `<label class="special-order-check"><input type="radio" name="version-${esc(g.id)}" value="${esc(x.id)}" ${x.id === v.id ? 'checked' : ''} onchange="${onpick(x.id)}" /> ${esc(x.name)}${x.count > 1 ? ` <span class="field-help">(${x.count} of the main item${x.needsPack ? ', joined with the ' + esc(pack ? pack.title : 'joining pack') : ''})</span>` : ''}</label>`).join('')}
-    ${v.needsPack ? `<div class="field-help">This version needs the ${esc(pack ? pack.title : 'joining pack')}, so it's added to your request.</div>` : ''}</fieldset>`;
+    ${v.needsPack && !v.packIncluded ? `<div class="field-help">This version needs the ${esc(pack ? pack.title : 'joining pack')}, so it's added to your request.</div>` : ''}${v.packIncluded ? '<div class="field-help">The Joining Kit is included.</div>' : ''}${v.note ? `<div class="field-help">${esc(v.note)}</div>` : ''}</fieldset>`;
 }
 function setDesignVersion(id, vid) {
   designOpts(id).version = vid;
@@ -5791,8 +5838,8 @@ function setItemVersion(i, vid) {
   applyPartColors(item);
   if (!(item.designParts || []).length) applyVersion(item, g, vid);
   const has = state.draftItems.some(x => x.packFor === g.id);
-  if (item.needsPack && !has) { const pk = packItemFor(g); if (pk) state.draftItems.push(pk); }
-  if (!item.needsPack && has) state.draftItems = state.draftItems.filter(x => x.packFor !== g.id);
+  if (item.needsPack && !item.packIncluded && !has) { const pk = packItemFor(g); if (pk) state.draftItems.push(pk); }
+  if ((!item.needsPack || item.packIncluded) && has) state.draftItems = state.draftItems.filter(x => x.packFor !== g.id);
   render();
   queueDraftSave();
 }
@@ -5807,12 +5854,13 @@ function hasPackFor(batches, g) {
 // Request form hint: two or more of the single, in this request or with what they've already ordered.
 function joinHint(item, i) {
   const g = state.gallery.find(x => x.id === item.galleryId);
-  if (!g || !g.packId || !(g.versions || []).some(v => v.count > 1) || (Number(item.versionCount) || 1) > 1 || !packDesign(g)) return '';
+  const dbl0 = g && (g.versions || []).find(v => v.count > 1);
+  if (!g || !dbl0 || (!g.packId && !dbl0.packIncluded) || (Number(item.versionCount) || 1) > 1 || (!dbl0.packIncluded && !packDesign(g))) return '';
   const before = singleUnits(state.batches, g.id), now = Math.max(1, Number(item.qty) || 1);
   if (now + before < 2 || hasPackFor(state.batches, g)) return '';
   const dbl = g.versions.find(v => v.count > 1);
   return `<div class="preorder-note join-hint" role="status"><strong>${before ? `You already have ${before} of these.` : `Getting ${now} of these?`}</strong>
-    The ${esc(dbl.name)} version joins two together${dbl.needsPack ? ` with the ${esc(packDesign(g).title)}` : ''}. <button type="button" class="btn-sm" onclick="setItemVersion(${i}, '${esc(dbl.id)}')">Switch to ${esc(dbl.name)}</button></div>`;
+    I suggest the ${esc(dbl.name)} instead: it joins two together${dbl.packIncluded ? ' and the joining parts are included' : dbl.needsPack ? ` with the ${esc(packDesign(g).title)}` : ''}. <button type="button" class="btn-sm" onclick="setItemVersion(${i}, '${esc(dbl.id)}')">Switch to ${esc(dbl.name)}</button></div>`;
 }
 // Owner: the same nudge, from this client's other orders.
 function joinSuggestion(b) {
@@ -5821,7 +5869,8 @@ function joinSuggestion(b) {
   const mine = state.batches.filter(x => String(x.clientEmail || '').trim().toLowerCase() === email);
   for (const it of b.items || []) {
     const g = state.gallery.find(x => x.id === it.galleryId);
-    if (!g || !g.packId || !(g.versions || []).some(v => v.count > 1) || (Number(it.versionCount) || 1) > 1 || it.packFor) continue;
+    const d0 = g && (g.versions || []).find(v => v.count > 1);
+    if (!g || !d0 || (!g.packId && !d0.packIncluded) || (Number(it.versionCount) || 1) > 1 || it.packFor) continue;
     if (singleUnits(mine, g.id) >= 2 && !hasPackFor(mine, g)) return `Has ${singleUnits(mine, g.id)} separate ${g.title} and no joining pack: suggest the ${g.versions.find(v => v.count > 1).name} version or the pack.`;
   }
   return '';
@@ -5838,8 +5887,194 @@ function renderVersionsForm(f) {
       <label class="special-order-check"><input type="checkbox" id="ver-pack-${n}" ${v.needsPack ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].needsPack = this.checked" /> Needs the joining pack</label></div>
       <div class="part-form-actions"><button type="button" class="btn-sm danger" onclick="state.galleryForm.versions.splice(${n}, 1); render();" aria-label="Remove version ${n + 1}">Remove</button></div></div>`).join('')}
     ${f.versions.length < 4 ? `<button type="button" class="btn-sm" id="add-version" onclick="state.galleryForm.versions.push({ id: 'v' + Date.now().toString(36), name: '', count: ${f.versions.length ? 2 : 1}, needsPack: false }); render();">+ Add a version</button>` : ''}
+    ${f.versions.map((v, n) => `<div class="field-help"><strong>${esc(v.name || 'Version ' + (n + 1))}</strong> extras:</div><div class="row2">
+      <div class="field"><label for="ver-price-${n}">Set price for this version, $ (blank = design price x main items)</label><input type="number" id="ver-price-${n}" min="0" step="0.01" value="${esc(v.price || '')}" oninput="state.galleryForm.versions[${n}].price = this.value" /></div>
+      <div class="field"><label for="ver-note-${n}">Note shown under the version</label><input type="text" id="ver-note-${n}" maxlength="300" value="${esc(v.note || '')}" oninput="state.galleryForm.versions[${n}].note = this.value" /></div></div>
+      <label class="special-order-check"><input type="checkbox" ${v.packIncluded ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].packIncluded = this.checked" /> The joining parts are included in the price</label>
+      <label class="special-order-check"><input type="checkbox" ${v.tbd ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].tbd = this.checked" /> Price confirmed in the quote</label>
+      <label class="special-order-check"><input type="checkbox" ${v.askOrder ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].askOrder = this.checked" /> Ask for the order number of the one they already own</label>`).join('')}
     <div class="field" style="max-width:320px;margin-top:8px;"><label for="gallery-pack">Joining pack (another design)</label>
       <select id="gallery-pack" onchange="updateGalleryForm('packId', this.value)"><option value="">None</option>${others.map(x => `<option value="${esc(x.id)}" ${f.packId === x.id ? 'selected' : ''}>${esc(x.title || 'Untitled')}</option>`).join('')}</select>
       <div class="field-help">Add the accessory pack as its own design first. Customers who order two singles are nudged to the double or the pack.</div></div>
   </fieldset>`;
+}
+
+// ── EDITIONS (Two-Tone / Three-Tone / Four-Tone) ──
+function editionOf(g, id) { const es = (g && g.editions) || []; return es.find(e => e.id === id) || es[0] || null; }
+function applyEdition(item, g, id) {
+  const e = editionOf(g, id);
+  if (!e) return item;
+  item.editionId = e.id; item.editionName = e.name; item.groupMerge = { ...e.merge };
+  if ((item.designParts || []).length) applyPartColors(item);
+  return item;
+}
+function renderEditionPicker(g, selected, onpick) {
+  if (!g || !(g.editions || []).length) return '';
+  const e = editionOf(g, selected);
+  return `<fieldset class="version-picker"><legend>Color edition</legend>
+    ${g.editions.map(x => `<label class="special-order-check"><input type="radio" name="edition-${esc(g.id)}" value="${esc(x.id)}" ${x.id === e.id ? 'checked' : ''} onchange="${onpick(x.id)}" /> ${esc(x.name)}${x.desc ? ` <span class="field-help">${esc(x.desc)}</span>` : ''}</label>`).join('')}</fieldset>`;
+}
+function setDesignEdition(id, eid) { designOpts(id).edition = eid; refreshDesignPrice(id, ''); }
+function setItemEdition(i, eid) {
+  const item = state.draftItems[i], g = item && state.gallery.find(x => x.id === item.galleryId);
+  if (!item || !g) return;
+  applyEdition(item, g, eid);
+  render();
+  queueDraftSave();
+}
+// The pairs that must not share a color (the drawer tabs and the drawers), judged after the edition merged groups.
+function colorsClash(item) {
+  const g = item && item.galleryId && state.gallery.find(x => x.id === item.galleryId);
+  if (!g || !(g.contrast || []).length || !(item.designParts || []).length) return false;
+  const colorOf = grp => { const p = item.designParts.find(q => q.group === grp && (!q.optional || q.include)); return p ? p.colorId : null; };
+  return g.contrast.some(([a, b]) => { const x = colorOf(a), y = colorOf(b); return x && y && x === y; });
+}
+// More than two side-wall accessories in one request: tell them how many fit.
+function sideWallNote(items) {
+  const n = (items || []).reduce((s, it) => { const g = state.gallery.find(x => x.id === it.galleryId); return s + (g && g.sideWall ? Math.max(1, Number(it.qty) || 1) : 0); }, 0);
+  return n > 2 ? `<div class="preorder-note" role="status">${esc(t('sideWallNote'))}</div>` : '';
+}
+// Seller-only: what to print for a pre-order, item by item.
+function renderFulfilment(b) {
+  if (!orderIsPreorder(b)) return '';
+  const rules = state.settings, lines = [];
+  b.items.forEach(it => {
+    const g = state.gallery.find(x => x.id === it.galleryId), ed = g && editionOf(g, it.editionId);
+    const colors = {};
+    (it.designParts || []).filter(p => !p.optional || p.include).forEach(p => { const k = partGroup(p, it.groupMerge) || p.name; colors[k] = cmColor(p.colorId).name; });
+    const adds = (it.designParts || []).filter(p => p.optional && p.include).map(p => p.name);
+    lines.push(`<div class="fulfil-item"><strong>${Math.max(1, Number(it.qty) || 1)} x ${esc(it.name || 'Item')}</strong>${it.versionName ? ` - ${esc(it.versionName)}` : ''}${it.editionName ? ` - ${esc(it.editionName)}` : ''}
+      ${Object.keys(colors).length ? `<div>${Object.keys(colors).map(k => `${esc(k)}: ${esc(colors[k])}`).join(' · ')}</div>` : (it.color ? `<div>Color: ${esc(it.color)}</div>` : '')}
+      ${it.packIncluded ? '<div>Includes: 1 x Joining Kit</div>' : ''}${adds.length ? `<div>Add-ons: ${esc(adds.join(', '))}</div>` : ''}
+      ${it.matchOrder ? `<div>Match to order #${esc(it.matchOrder)}</div>` : it.askOrder ? '<div>No order number: check colors with the customer</div>' : ''}
+      ${ed && ed.files ? `<div class="field-help">Files: ${esc(ed.files)}</div>` : ''}
+      <div class="field-help">${Number(it.grams) > 0 ? `${(Number(it.grams) * Math.max(1, Number(it.qty) || 1)).toFixed(0)} g` : 'grams not entered yet'}${Number(it.knownMinutes || it.minutes) > 0 ? ` · ${fmtTime(Number(it.knownMinutes || it.minutes) * Math.max(1, Number(it.qty) || 1))}` : ' · print time not entered yet'}</div></div>`);
+  });
+  return `<details class="desk-fold"><summary>Fulfilment summary (what to print)</summary>
+    <div class="fulfil">${lines.join('')}<div class="field-help">${esc(preorderEtaText(b) || preorderEstimateText(preorderUnits(b), state.settings))}</div></div></details>`;
+}
+
+// ── Pre-order timing (Settings > Prices & rules) ──
+function renderPreorderTimingSettings(d) {
+  const tm = d.preorderTiming || (d.preorderTiming = JSON.parse(JSON.stringify(PREORDER_TIMING)));
+  tm.breaks = tm.breaks || [];
+  return `<div class="card" id="preorder-timing">
+    <h3 class="card-title">Pre-order timing</h3>
+    <div class="field-help">Customers see an estimated ready-to-ship date on pre-orders. Printing starts at the launch date, takes the days below for the first item, and skips your breaks.</div>
+    <div class="rules-grid">
+      <div class="field"><label for="po-launch">Launch date</label><input type="date" id="po-launch" value="${esc(tm.launch || '')}" oninput="state.settingsDraft.preorderTiming.launch = this.value" /></div>
+      <div class="field"><label for="po-days">Days to print the first item</label><input type="number" id="po-days" min="1" step="1" value="${esc(tm.days)}" oninput="state.settingsDraft.preorderTiming.days = Number(this.value) || 5" /></div>
+      <div class="field"><label for="po-extra">Extra days for each extra item or unit</label><input type="number" id="po-extra" min="0" step="0.5" value="${esc(tm.extraDays)}" oninput="state.settingsDraft.preorderTiming.extraDays = Number(this.value) || 0" /></div>
+    </div>
+    <div class="owner-order-summary-label" style="margin-top:10px;">Breaks (no printing)</div>
+    ${tm.breaks.map((b, n) => `<div class="rules-grid"><div class="field"><label for="po-bn-${n}">Name</label><input type="text" id="po-bn-${n}" maxlength="40" value="${esc(b.name || '')}" oninput="state.settingsDraft.preorderTiming.breaks[${n}].name = this.value" /></div>
+      <div class="field"><label for="po-bf-${n}">From</label><input type="date" id="po-bf-${n}" value="${esc(b.from || '')}" oninput="state.settingsDraft.preorderTiming.breaks[${n}].from = this.value" /></div>
+      <div class="field"><label for="po-bt-${n}">To</label><input type="date" id="po-bt-${n}" value="${esc(b.to || '')}" oninput="state.settingsDraft.preorderTiming.breaks[${n}].to = this.value" /></div>
+      <button type="button" class="btn-sm danger" onclick="state.settingsDraft.preorderTiming.breaks.splice(${n}, 1); render();" aria-label="Remove break ${n + 1}">Remove</button></div>`).join('')}
+    ${tm.breaks.length < 8 ? `<button type="button" class="btn-sm" id="po-add-break" onclick="state.settingsDraft.preorderTiming.breaks.push({ id: 'b' + Date.now().toString(36), name: '', from: '', to: '' }); render();">+ Add a break</button>` : ''}
+    <div class="field-help">A break with no dates is ignored until you fill them in (type the Christmas break dates here).</div>
+  </div>`;
+}
+
+function renderEditionsForm(f) {
+  f.editions = f.editions || [];
+  return `<fieldset class="owner-edit-item editions-fields">
+    <legend>Color editions (optional)</legend>
+    <div class="field-help">For Two-Tone, Three-Tone and so on. Give parts a "Color group" first. "Merge groups" says which groups share a color in that edition, like <em>Drawer colour &gt; Accent colour; Tab colour &gt; Shell colour</em>.</div>
+    ${f.editions.map((e, n) => `<div class="part-form-row"><div class="row2" style="flex:1;min-width:0;">
+      <div class="field"><label for="ed-name-${n}">Edition ${n + 1} name</label><input type="text" id="ed-name-${n}" maxlength="40" value="${esc(e.name || '')}" oninput="state.galleryForm.editions[${n}].name = this.value" /></div>
+      <div class="field"><label for="ed-desc-${n}">Description</label><input type="text" id="ed-desc-${n}" maxlength="300" value="${esc(e.desc || '')}" oninput="state.galleryForm.editions[${n}].desc = this.value" /></div>
+      <div class="field"><label for="ed-merge-${n}">Merge groups</label><input type="text" id="ed-merge-${n}" maxlength="200" value="${esc(e.mergeText ?? mergeText(e.merge))}" oninput="state.galleryForm.editions[${n}].mergeText = this.value" /></div>
+      <div class="field"><label for="ed-files-${n}">Print files (only you see this)</label><input type="text" id="ed-files-${n}" maxlength="400" value="${esc(e.files || '')}" oninput="state.galleryForm.editions[${n}].files = this.value" /></div></div>
+      <div class="part-form-actions"><button type="button" class="btn-sm danger" onclick="state.galleryForm.editions.splice(${n}, 1); render();" aria-label="Remove edition ${n + 1}">Remove</button></div></div>`).join('')}
+    ${f.editions.length < 5 ? `<button type="button" class="btn-sm" id="add-edition" onclick="state.galleryForm.editions.push({ id: 'e' + Date.now().toString(36), name: '', desc: '', mergeText: '', files: '' }); render();">+ Add an edition</button>` : ''}
+    <div class="field" style="max-width:420px;margin-top:8px;"><label for="gallery-contrast">Groups that must not share a color (optional)</label>
+      <input type="text" id="gallery-contrast" maxlength="120" value="${esc(f.contrastText ?? (f.contrast || []).map(p => p.join(' / ')).join('; '))}" placeholder="Tab colour / Drawer colour" oninput="state.galleryForm.contrastText = this.value" /></div>
+    <label class="special-order-check"><input type="checkbox" ${f.colorFeeIncluded ? 'checked' : ''} onchange="state.galleryForm.colorFeeIncluded = this.checked" /> The price already includes extra colors (no more-than-2-colors charge)</label>
+    <label class="special-order-check"><input type="checkbox" ${f.sideWall ? 'checked' : ''} onchange="state.galleryForm.sideWall = this.checked" /> A side-wall accessory (a note appears when someone adds more than two)</label>
+  </fieldset>`;
+}
+
+// ── CATHETER CADDY PRE-ORDER SET-UP (one tap on the Designs page) ──
+// Makes the Catheter Caddy (single / joined pair / second caddy, Two-, Three- and Four-Tone, color groups), the
+// Joining Kit and every accessory as hidden pre-order designs with the product wording as written. No pictures,
+// grams or print times yet: add them in each design, then show it (the "Show" button) when you launch.
+const CADDY_TEXT = (short, long, box) => [short, long, box].filter(Boolean).join('\n\n');
+const SIDE_WALL_LIMIT = "Side-wall limit: a single caddy takes one side-wall accessory on each side wall. A joined pair takes one on each outside side, two in total, because both caddies' clip slots on the same side sit close together. The Hinge from the Joining Kit uses the clip slots on its side, so a hinged pair has room for one side-wall accessory, on the other side.";
+const CADDY_ACCESSORIES = [
+  ['syringe-rack', 'Syringe Rack', 'Drawn-up syringes standing tip-down, sorted by size.', "Keep syringes upright and organised instead of loose in a bin. The Syringe Rack holds 2 x 10/12 mL, 2 x 5/6 mL, 3 x 3 mL and 2 x 1 mL syringes tip-down, hanging by their finger grips, so you can see what's ready and grab the right size first time. It drops into a top-row bin. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: top row, a 54 mm bin (dividers 5 grooves apart).\nIn the box: 1 Syringe Rack.", false],
+  ['blood-tube-rack', 'Blood Tube Rack', 'Collection tubes upright, ready for the next draw.', "No more tubes rolling across the table. The Blood Tube Rack holds 2 x 16 mm and 6 x 13 mm collection tubes standing upright, so they're ready to fill and easy to keep in order. It drops into a top-row bin. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: top row, a 54 mm bin (dividers 5 grooves apart).\nIn the box: 1 Blood Tube Rack.", false],
+  ['scissors-marker-holster', 'Scissors & Marker Holster', 'A place for the tools that always walk away.', "Bandage scissors, the thermometer and your markers get set down and lost. The Holster gives each one its own slot: 2 bandage scissors, 1 digital thermometer, 2 markers and 1 pen. When it's all back in the caddy, you know it's all there. It drops into a top-row bin. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: top row, a 42 mm bin (dividers 4 grooves apart).\nIn the box: 1 Scissors & Marker Holster.", false],
+  ['clipper-blade-holder', 'Clipper Blade Holder', 'Clipper blades stored on edge, protected and easy to pick out.', "Loose clipper blades knock together and get damaged. The Clipper Blade Holder stands 3 detachable blades (#40, #10 and similar) on edge in their own slots, so they stay protected and you can pick out the one you need at a glance. Fits standard-width A5-style blades up to about 13 mm thick (#10, #15, #30, #40); not wide (T) blades. It ships flat, folds up and snaps together by hand.", "Fits: either row, a 54 mm bin (dividers 5 grooves apart).\nIn the box: 1 Clipper Blade Holder.", false],
+  ['label-holder', 'Label Holder', 'Label your caddy by room, team or contents.', "When several caddies look alike, a label tells everyone which one is which. The Label Holder clips over the front wall and takes a 50 x 25 mm write-on card or label, so you can mark it by treatment room, team or contents and change it whenever you need.", "Fits: clips over the front wall between two catheter-row dividers.\nIn the box: 1 Label Holder.", false],
+  ['sharps-container-bracket', 'Sharps Container Bracket', 'Keep your sharps container right where the needles are.', "Disposing of sharps safely is easier when the container is within arm's reach. The Sharps Container Bracket mounts on either side of the caddy and holds a 1-quart sharps container up to 4.75 x 4.75 in, so used needles go straight in without leaving the table. It attaches with the 2 included clips, no tools needed. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: either side wall.\nSide-wall limit: a single caddy takes one side-wall accessory on each side wall. A joined pair takes one on each outside side, two in total, because both caddies' clip slots on the same side sit close together. The Hinge from the Joining Kit uses the clip slots on its side, so a hinged pair has room for one side-wall accessory, on the other side.\nIn the box: 1 Sharps Container Bracket, 2 Hinge Clips.", true],
+  ['gauze-prep-pad-dispenser', 'Gauze & Prep Pad Dispenser', 'Gauze and alcohol prep pads, one pull at a time.', "Two stacks side by side: 2 x 2 in gauze squares and medium alcohol prep pads (packets up to about 1.25 x 2.75 in). Load from the top and pull one from the bottom, so you get a single pad without touching the rest of the stack. It mounts on either side of the caddy with the 2 included clips. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: either side wall.\nSide-wall limit: a single caddy takes one side-wall accessory on each side wall. A joined pair takes one on each outside side, two in total, because both caddies' clip slots on the same side sit close together. The Hinge from the Joining Kit uses the clip slots on its side, so a hinged pair has room for one side-wall accessory, on the other side.\nIn the box: 1 Gauze & Prep Pad Dispenser (folds up, with a slide-in divider and gauze stop), 2 Hinge Clips.", true],
+  ['glove-box-holder', 'Glove Box Holder', 'Gloves on the caddy, ready when you are.', "Stop hunting for gloves. The Glove Box Holder takes a standard 100-count exam-glove box up to 9.6 in long and 3.2 in thick with the dispenser opening facing out, so you can pull a fresh pair without stopping. A removable top bar holds the top of the box, so it stays put however you pull, and lifts out when it's time to swap boxes. It ships flat, folds up and snaps together by hand, and mounts on either side of the caddy with the 2 included clips.", "Fits: either side wall.\nSide-wall limit: a single caddy takes one side-wall accessory on each side wall. A joined pair takes one on each outside side, two in total, because both caddies' clip slots on the same side sit close together. The Hinge from the Joining Kit uses the clip slots on its side, so a hinged pair has room for one side-wall accessory, on the other side.\nIn the box: Glove Box Holder (folding panel, 2 end walls, top bar), 2 Hinge Clips.", true],
+  ['cage-pole-hangers', 'Cage / Pole Hanger pair', 'Hang the caddy right where the patient is.', "Free up table space by hanging the caddy instead. The hangers hook over each end of the carry handle, and their upper hooks fit over cage bars, door edges and the arm of a Pole Clip (up to 15 mm thick). Your supplies hang at the kennel, the cage door or the IV pole.", "Fits: over the carry handle, one at each end.\nIn the box: 2 Cage / Pole Hangers.", false],
+  ['drawer-grid-2x3', 'Drawer Grid 2 x 3', 'Six compartments for the small parts in your drawers.', "Caps, injection ports and T-sets end up in one jumbled pile. The Drawer Grid drops into any rear drawer and splits it into 6 compartments, so every small part has a home and you can see when you're running low. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: any rear drawer.\nIn the box: 1 Drawer Grid 2 x 3 (fold-up tray + slot-together strips).", false],
+  ['drawer-grid-3x3', 'Drawer Grid 3 x 3', 'Nine compartments for the smallest items.', "For the tiniest supplies, the 3 x 3 grid splits a rear drawer into 9 compartments. Mix it with the 2 x 3 grid across your three drawers to suit what you stock. It ships flat and folds up and clicks together by hand, with no glue.", "Fits: any rear drawer.\nIn the box: 1 Drawer Grid 3 x 3 (fold-up tray + slot-together strips).", false],
+  ['pole-clip-19', 'Pole Clip 19 mm', 'Hang your caddy on an IV pole.', "The Pole Clip snaps sideways onto an IV pole and gives the Cage / Pole Hangers an arm to hang from, so the caddy sits at the patient's side and off the floor. Choose the clip that matches your pole: 19 mm (3/4 in) or 25 mm (1 in). Test it on your pole first, and keep the loaded caddy close to the pole.", "Fits: 19 mm (3/4 in) or 25 mm (1 in) IV poles. Use with the Cage / Pole Hanger pair (sold separately).\nIn the box: 1 Pole Clip.", false],
+  ['pole-clip-25', 'Pole Clip 25 mm', 'Hang your caddy on an IV pole.', "The Pole Clip snaps sideways onto an IV pole and gives the Cage / Pole Hangers an arm to hang from, so the caddy sits at the patient's side and off the floor. Choose the clip that matches your pole: 19 mm (3/4 in) or 25 mm (1 in). Test it on your pole first, and keep the loaded caddy close to the pole.", "Fits: 19 mm (3/4 in) or 25 mm (1 in) IV poles. Use with the Cage / Pole Hanger pair (sold separately).\nIn the box: 1 Pole Clip.", false]
+];
+const CADDY_JOINING_KIT = ['catheter-caddy-joining-kit', 'Joining Kit (for two caddies you already own)', 'Turn two caddies into one double-sided supply station.',
+  "Double your storage without doubling your footprint. The Joining Kit joins two caddies back to back, so one person can carry everything with a single handle. Choose how you want them joined: lock them solid with the Joining Clips, or use the Hinge instead of the clips so the pair swings open side by side like a book, giving two fully stocked caddies on the table at once. Two low Side Bridges hook across the joint near the bottom, so the pair stays tight top to bottom, and the Combined Grip ties the handles together for carrying. Use one method or the other: the clips would stop the hinge turning.\n\nEverything snaps on by hand. Nothing to glue, nothing to screw. Every part you need is in one kit, so there's nothing to forget when you add a second caddy later.\n\nGood to know: a locked pair takes a Side Bridge on each side; a hinged pair takes one, on the side away from the Hinge. The Hinge uses the clip slots on one side of the pair, so a hinged pair has room for one side-wall accessory (Sharps Container Bracket, Gauze & Prep Pad Dispenser or Glove Box Holder), on the other side.",
+  "In the box: Combined Grip, Hinge, 4 Hinge Clips, 2 Side Bridges, 6 spare Joining Clips.\nColours: the grip matches your handle; the hinge and clips match your shell."];
+const CADDY_MAIN = {
+  id: 'catheter-caddy', title: 'Catheter Caddy',
+  description: CADDY_TEXT('Every catheter size, tape roll and supply in one carry-anywhere caddy.',
+    "Stop digging through drawers mid-procedure. The Catheter Caddy keeps catheters standing upright and sorted by size in the front row, with a raised top row behind for tape, wraps and everyday supplies. Three pull-out rear drawers hold the small things that usually get lost: caps, ports, T-sets. A sturdy carry handle takes it from the prep table to the treatment room in one trip.\n\nIt ships flat and snaps together by hand with no glue and no tools. The dividers slide into any groove position, so you set the bin widths to suit your supplies and change them whenever you like. Want more room? Two caddies join back to back into one double-sided station. Side-wall accessories fit one per side wall; a joined pair takes one on each outside side, and the Hinge uses one side.",
+    'In the box: 1 caddy (flat-pack), 7 dividers, 3 rear drawers with pull tabs, carry handle, 4 joining clips.'),
+  parts: [
+    { id: 'shell', name: 'Base, walls and Top Shelf', group: 'Shell colour' }, { id: 'clips', name: 'Joining Clips (6)', group: 'Shell colour' },
+    { id: 'handle', name: 'Handle and grips', group: 'Accent colour' }, { id: 'dividers', name: 'Dividers', group: 'Accent colour' },
+    { id: 'drawers', name: 'Rear Drawers', group: 'Drawer colour' }, { id: 'tabs', name: 'Drawer pull tabs', group: 'Tab colour' },
+    { id: 'addsplit', name: 'Split Divider set (9 sizes)', group: 'Accent colour', optional: true },
+    { id: 'addtape', name: 'Tape Post', group: 'Accent colour', optional: true },
+    { id: 'addgrip', name: 'Single Handle Grip', group: 'Accent colour', optional: true }
+  ],
+  editions: [
+    { id: 'two', name: 'Two-Tone', desc: 'Shell in one colour; handle, dividers and drawers in a second colour.', merge: { 'Drawer colour': 'Accent colour', 'Tab colour': 'Shell colour' }, files: '1_Two-Tone/Colour-1_Shell + 1_Two-Tone/Colour-2_Contents' },
+    { id: 'three', name: 'Three-Tone', desc: 'Adds a third colour for the three rear drawers.', merge: { 'Tab colour': 'Accent colour' }, files: '2_Multi-Colour/Colour-1_Shell + 2_Multi-Colour/3-Tone_Contents' },
+    { id: 'four', name: 'Four-Tone', desc: 'Adds a fourth colour for the drawer pull tabs.', merge: {}, files: '2_Multi-Colour/Colour-1_Shell + 2_Multi-Colour/4-Tone_Contents (Colour 4 = Tab colour)' }
+  ],
+  versions: [
+    { id: 'single', name: 'Single caddy', count: 1 },
+    { id: 'pair', name: 'Joined pair', count: 2, price: 100, packIncluded: true, note: 'Two caddies in the same edition and colours, plus one Joining Kit (included). Using the Hinge? It takes the clip slots on one side, so only one side-wall accessory fits.' },
+    { id: 'second', name: 'Add a second caddy to one I already own', count: 1, tbd: true, packIncluded: true, askOrder: true, note: 'Everything you need to join it to your first caddy is included.' }
+  ]
+};
+
+function caddyExists() { return state.gallery.some(g => g.id === CADDY_MAIN.id); }
+function renderCaddySetup() {
+  if (caddyExists()) return '';
+  return `<div class="card" id="caddy-setup">
+    <h3 class="card-title">Catheter Caddy pre-order</h3>
+    <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two-, Three- and Four-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
+    <button type="button" class="btn-sm" id="caddy-go" onclick="setupCatheterCaddy()">Set up the Catheter Caddy pre-order</button>
+    <div class="alert error" id="caddy-err"></div>
+  </div>`;
+}
+async function setupCatheterCaddy() {
+  const btn = document.getElementById('caddy-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Setting up...'; }
+  const base = { published: false, sortOrder: 0, preorder: true, preorderReady: '', filType: 'white', colorId: '', minutes: null, grams: null, price: null, videos: [], photos: [], parts: [], colorMap: null, versions: [], packId: '', editions: [], contrast: [], sideWall: false, colorFeeIncluded: false };
+  const list = [];
+  CADDY_ACCESSORIES.forEach(([id, title, short, long, box, side]) => list.push({ ...base, id, title, description: CADDY_TEXT(short, long, box), sideWall: side }));
+  const [kid, ktitle, kshort, klong, kbox] = CADDY_JOINING_KIT;
+  list.push({ ...base, id: kid, title: ktitle, description: CADDY_TEXT(kshort, klong, kbox) });
+  list.push({ ...base, id: CADDY_MAIN.id, title: CADDY_MAIN.title, description: CADDY_MAIN.description, price: 50, colorFeeIncluded: true, packId: kid,
+    parts: CADDY_MAIN.parts.map(p => ({ ...p, grams: null, photo: '', price: null, defaultColor: '', minutes: null })), editions: CADDY_MAIN.editions, versions: CADDY_MAIN.versions,
+    contrast: [['Tab colour', 'Drawer colour']] });
+  try {
+    for (const g of list) {
+      const item = cleanGalleryItem({ id: g.id, published: false, sort_order: 0, data: { ...g } });
+      await writeGalleryItem(item);
+    }
+    await loadGallery();
+    render();
+  } catch (e) {
+    console.error('Caddy set-up error:', e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Set up the Catheter Caddy pre-order'; }
+    showAlert('caddy-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
+  }
 }
