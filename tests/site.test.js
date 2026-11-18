@@ -2401,6 +2401,18 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('color pickers in owner tools do not list the built-in "(no specific color)" duplicates when your own colors exist', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('calculator'));
+    await page.waitForSelector('#owner-calc-fil');
+    const opts = await page.$$eval('#owner-calc-fil option', els => els.map(e => e.textContent));
+    assert(opts.length > 0 && !opts.some(o => /Black \(no specific|Special Request|Color \(no specific/.test(o)), JSON.stringify(opts));
+    // a saved item that used the built-in one still shows it, so nothing silently changes
+    const kept = await page.evaluate(() => calcColorOptions('special'));
+    assert(/Special Request \(no specific color\)/.test(kept), kept);
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };

@@ -2739,14 +2739,22 @@ async function saveOwnerEdit() {
 // Choices: the colors in Site Settings (by id), plus the plain filament types.
 function calcChoices() {
   return [...state.settings.colors].sort(byName).map(c => ({ value: c.id, name: c.name, part: { name: c.name, filType: c.special ? 'special' : 'color', colorId: c.id } }))
-    .concat(['black', 'white', 'color', 'special'].map(f => ({ value: f, name: FIL_LABEL[f] + (state.settings.colors.length ? ' (no specific color)' : ''), part: { name: FIL_LABEL[f], filType: f, colorId: '' } })));
+    .concat(['black', 'white', 'color', 'special'].map(f => ({ generic: true, value: f, name: FIL_LABEL[f] + (state.settings.colors.length ? ' (no specific color)' : ''), part: { name: FIL_LABEL[f], filType: f, colorId: '' } })));
+}
+// With your own colors set up, the built-in "Black"/"White" are the same as your Black and White colors.
+function calcResolve(value) {
+  if (!state.settings.colors.length || !['black', 'white'].includes(value)) return value;
+  const c = state.settings.colors.find(x => String(x.name).trim().toLowerCase() === value);
+  return c ? c.id : value;
 }
 function calcPart(value) {
-  const c = calcChoices().find(x => x.value === value);
+  const c = calcChoices().find(x => x.value === calcResolve(value));
   return c ? c.part : { name: 'White', filType: 'white', colorId: '' };
 }
+// The built-in "(no specific color)" choices only show when you have no colors set up, or an older saved item uses one.
 function calcColorOptions(selected) {
-  return calcChoices().map(c => `<option value="${esc(c.value)}" ${c.value === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const sel = calcResolve(selected), own = state.settings.colors.length > 0;
+  return calcChoices().filter(c => !own || !c.generic || (c.value === sel && !state.settings.colors.some(x => x.id === c.value))).map(c => `<option value="${esc(c.value)}" ${c.value === sel && (!c.generic || !state.settings.colors.some(x => x.id === c.value)) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
 }
 // The calculator as an item, so it's priced exactly like an order.
 function calcItem(calc) {
