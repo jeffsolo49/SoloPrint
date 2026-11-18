@@ -227,7 +227,7 @@ function galleryBestSellers(batches, gallery) {
 
 async function syncTopWork() {
   try {
-    if (!state.ownerUnlocked || !getOwnerToken()) return;
+    if (!state.ownerUnlocked || !getOwnerToken() || previewActive()) return;
     if (!state.settingsLoaded) await loadSettings();
     if (!state.settingsLoaded) return;
     if (!state.galleryLoaded) await loadGallery();
@@ -2311,6 +2311,8 @@ const OWNER_WIKI = [
     steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
     steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+  { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
+    steps: ['Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
     steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
@@ -6077,4 +6079,134 @@ async function setupCatheterCaddy() {
     if (btn) { btn.disabled = false; btn.textContent = 'Set up the Catheter Caddy pre-order'; }
     showAlert('caddy-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
   }
+}
+
+// ── PREVIEW MODE (owner) ──
+// A private copy of the site's settings and designs (owner_private key `preview`). While preview mode is on, the
+// owner sees the site through it (the customer view too) and every settings or design change is saved there, not
+// on the live site. "Push preview live" then copies what changed onto the live site. Orders, emails and customers
+// are never affected. { settings, base, gallery (rows), baseGallery (rows), startedAt }: `base`/`baseGallery` are
+// the live copy it started from, so only what you changed is pushed and newer live changes elsewhere stay.
+const PREVIEW_FLAG = 'soloprint-preview-on';
+function previewData() { const p = state.ownerPrivate && state.ownerPrivate.preview; return p && p.settings ? p : null; }
+function previewWanted() {
+  if (state.previewOn === undefined) { try { state.previewOn = localStorage.getItem(PREVIEW_FLAG) === '1'; } catch (e) { state.previewOn = false; } }
+  return !!state.previewOn;
+}
+function previewActive() { return !!(state.ownerUnlocked && previewWanted() && previewData()); }
+function setPreviewWanted(on) {
+  state.previewOn = !!on;
+  try { localStorage.setItem(PREVIEW_FLAG, on ? '1' : ''); } catch (e) { /* not kept */ }
+}
+function previewGalleryRows() {
+  return previewData().gallery.slice().sort((a, b) => (a.sort_order - b.sort_order) || String(b.created_at).localeCompare(String(a.created_at)));
+}
+// After the owner's private data loads: show the preview's settings and designs.
+function applyPreview() {
+  if (!previewActive()) return;
+  state.settings = cleanSettings(previewData().settings);
+  state.gallery = previewGalleryRows().map(cleanGalleryItem).filter(Boolean);
+}
+async function savePreview() {
+  try { await saveOwnerPrivate('preview'); }
+  catch (e) { alert("Couldn't save the preview. If you were logged out, log in again and retry."); throw e; }
+}
+async function reloadSiteData() { await loadSettings(); await loadGallery(); render(); }
+async function startPreview() {
+  if (!previewData()) {
+    if (!state.settingsLoaded) await loadSettings();
+    if (!state.galleryLoaded) await loadGallery();
+    const live = state.liveSettings || state.settings, rows = JSON.parse(JSON.stringify(state.liveGalleryRows || []));
+    state.ownerPrivate.preview = { startedAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(live)), base: JSON.parse(JSON.stringify(live)),
+      gallery: JSON.parse(JSON.stringify(rows)), baseGallery: rows };
+    await savePreview();
+  }
+  setPreviewWanted(true);
+  await reloadSiteData();
+}
+async function exitPreview() { setPreviewWanted(false); await reloadSiteData(); }
+async function discardPreview() {
+  if (!confirm('Throw away every change you made in the preview? The live site is not touched.')) return;
+  state.ownerPrivate.preview = {};
+  setPreviewWanted(false);
+  try { await savePreview(); } catch (e) { return; }
+  await reloadSiteData();
+}
+const PREVIEW_SETTING_NAMES = { about: 'About you', links: 'Contact links', colors: 'Filament colors', reviews: 'Customer reviews', emails: 'Email wording', vacation: 'Vacation mode', rules: 'Prices and rules',
+  materialNote: 'Material note', howItWorks: 'How it works', designTerms: 'Custom design terms', galleryNote: 'Gallery note', siteText: 'Site wording', faq: 'FAQ', features: 'Show or hide', preorderTiming: 'Pre-order timing' };
+// What would change on the live site.
+function previewChanges() {
+  const pv = previewData();
+  if (!pv) return { settings: [], designs: [] };
+  const cur = cleanSettings(pv.settings), base = cleanSettings(pv.base);
+  const settings = Object.keys(PREVIEW_SETTING_NAMES).filter(k => JSON.stringify(cur[k]) !== JSON.stringify(base[k])).map(k => PREVIEW_SETTING_NAMES[k]);
+  const baseRows = Object.fromEntries((pv.baseGallery || []).map(x => [x.id, x])), designs = [];
+  const title = row => (row.data && row.data.title) || 'Untitled';
+  pv.gallery.forEach(row => { const b = baseRows[row.id]; if (!b) designs.push({ title: title(row), kind: 'new' }); else if (JSON.stringify([row.published, row.data]) !== JSON.stringify([b.published, b.data])) designs.push({ title: title(row), kind: 'changed' }); });
+  (pv.baseGallery || []).forEach(b => { if (!pv.gallery.some(x => x.id === b.id)) designs.push({ title: title(b), kind: 'removed' }); });
+  return { settings, designs };
+}
+async function pushPreviewLive() {
+  const pv = previewData(), ch = previewChanges();
+  if (!pv) return;
+  if (!ch.settings.length && !ch.designs.length) { alert('Nothing has changed in the preview yet.'); return; }
+  if (!confirm(`Push the preview live? Customers will see these changes right away:\n\n${ch.settings.map(s => '• ' + s).concat(ch.designs.map(d => `• Design "${d.title}" (${d.kind})`)).join('\n')}`)) return;
+  const btn = document.getElementById('preview-push');
+  if (btn) { btn.disabled = true; btn.textContent = 'Pushing...'; }
+  try {
+    setPreviewWanted(false);   // writes below go to the live site
+    await saveSettings(pv.settings, pv.base);
+    const baseRows = Object.fromEntries((pv.baseGallery || []).map(x => [x.id, x]));
+    for (const row of pv.gallery) {
+      const b = baseRows[row.id];
+      if (b && JSON.stringify([row.published, row.data]) === JSON.stringify([b.published, b.data])) continue;
+      await supaFetch('/gallery_items', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id: row.id, published: row.published, sort_order: row.sort_order, data: row.data }) });
+    }
+    for (const b of pv.baseGallery || []) if (!pv.gallery.some(x => x.id === b.id)) await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(b.id)}`, { method: 'DELETE' });
+    state.ownerPrivate.preview = {};
+    await saveOwnerPrivate('preview');
+    state.previewJustPushed = true;
+  } catch (e) {
+    console.error('Push preview error:', e);
+    setPreviewWanted(true);
+    alert("Couldn't push the preview live. Nothing was lost; the preview is still here. If you were logged out, log in again and retry.");
+    if (btn) { btn.disabled = false; btn.textContent = 'Push preview live'; }
+    return;
+  }
+  await reloadSiteData();
+}
+// The bar across the top while preview mode is on.
+function renderPreviewBar() {
+  if (!previewActive()) return '';
+  const n = previewChanges(), count = n.settings.length + n.designs.length;
+  return `<div class="preview-bar" role="region" aria-label="Preview mode">
+    <span><strong>PREVIEW</strong> You're seeing the site with your changes. Customers still see the live site. ${count ? `${count} change${count === 1 ? '' : 's'} waiting.` : 'No changes yet.'}</span>
+    <span class="preview-bar-actions"><button type="button" class="btn-sm" onclick="pushPreviewLive()">Push preview live</button>
+    <button type="button" class="btn-sm" onclick="setOwnerTab('preview')">Details</button></span></div>`;
+}
+function renderPreviewPage() {
+  const has = !!previewData(), on = previewActive(), ch = previewChanges();
+  const list = [...ch.settings.map(s => `<li>${esc(s)}</li>`), ...ch.designs.map(d => `<li>Design "${esc(d.title)}" (${esc(d.kind)})</li>`)];
+  return `
+    <div class="owner-page-header"><div class="section-header"><div><h2 class="section-title">Preview</h2>
+      <div class="section-sub">Try changes and see them on the site before customers do</div></div></div></div>
+    ${state.previewJustPushed ? `<div class="alert success" style="display:block;">The preview is live now. Customers see it.</div>` : ''}
+    <div class="card" id="preview-card">
+      <h3 class="card-title">${on ? 'Preview mode is on' : has ? 'You have a saved preview' : 'Start a preview'}</h3>
+      <div class="field-help">${on
+        ? 'Your changes to Settings and Designs are saved to the preview only. Use "Client view" (top right) to see the site the way customers will. Orders, emails and customers are never touched by the preview.'
+        : 'A preview is a private copy of your site settings and designs. While it is on, every change you make there is saved to the preview, and customers keep seeing the live site until you push it live.'}</div>
+      ${on ? `<div class="owner-order-summary-label" style="margin-top:12px;">Waiting to go live</div>${list.length ? `<ul class="preview-list">${list.join('')}</ul>` : '<div class="field-help">No changes yet. Edit something in Settings or Designs.</div>'}` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        ${on ? `<button type="button" class="btn-sm btn-primary" id="preview-push" onclick="pushPreviewLive()">Push preview live</button>
+          <button type="button" class="btn-sm" onclick="showClientView()">See it as a customer</button>
+          <button type="button" class="btn-sm" onclick="exitPreview()">Turn preview off (keep my changes)</button>
+          <button type="button" class="btn-sm danger" onclick="discardPreview()">Throw away the preview</button>`
+        : has ? `<button type="button" class="btn-sm btn-primary" id="preview-start" onclick="startPreview()">Turn preview on</button>
+          <button type="button" class="btn-sm danger" onclick="discardPreview()">Throw away the preview</button>`
+        : `<button type="button" class="btn-sm btn-primary" id="preview-start" onclick="startPreview()">Start a preview</button>`}
+      </div>
+      <div class="field-help" style="margin-top:10px;">Pushing live copies only what you changed. If you changed something on the live site meanwhile (like approving a review), it stays.</div>
+    </div>`;
 }

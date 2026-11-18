@@ -144,7 +144,7 @@ async function loadBatches(asCustomer = false) {
       ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); syncTopWork(); }
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); applyPreview(); syncTopWork(); }
     else {
       // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
       const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));
@@ -1381,6 +1381,7 @@ function render() {
       </div>
     </header>
     <div class="build-badge build-badge-phone" title="When the site was last updated" ${updateBadgeText() ? '' : 'hidden'}>${updateBadgeText()}</div>
+    ${renderPreviewBar()}
     ${state.view === 'client' ? renderClientApp() : renderOwnerApp()}
   `;
   attachAll();
@@ -1453,6 +1454,7 @@ function renderOwnerNav() {
       <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
       <button class="nav-tab ${state.ownerTab==='help'?'active':''}" onclick="setOwnerTab('help')">Help</button>
+      <button class="nav-tab ${state.ownerTab==='preview'?'active':''}" onclick="setOwnerTab('preview')">Preview${previewActive() ? '<span class="nav-badge">on</span>' : ''}</button>
       <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
     </nav>
   `;
@@ -2299,6 +2301,8 @@ function renderOwnerApp() {
         ? renderPracticePage()
         : state.ownerTab === 'help'
         ? renderWikiPage()
+        : state.ownerTab === 'preview'
+        ? renderPreviewPage()
         : state.ownerTab === 'etsytodo'
         ? renderEtsyTodoPage()
         : state.ownerTab === 'numbers'
@@ -3122,6 +3126,8 @@ async function loadSettings() {
   try {
     const rows = await supaFetch('/site_settings?id=eq.1&select=data');
     if (rows && rows[0]) state.settings = cleanSettings(rows[0].data);
+    state.liveSettings = state.settings;
+    if (previewActive()) state.settings = cleanSettings(previewData().settings);
     state.settingsError = false;
     state.settingsLoaded = true;   // saving settings before this would overwrite them with defaults
   } catch (e) {
@@ -3155,6 +3161,15 @@ function cleanPreorderLine(raw) {
 async function saveSettings(next, base = state.settings) {
   const mine = cleanSettings(next), was = cleanSettings(base);
   let latest = was;
+  if (previewActive()) {
+    // Preview mode: the change is kept in the preview, never on the live site.
+    const pv = previewData(), keep = cleanSettings(pv.settings), merged = { ...keep };
+    Object.keys(mine).forEach(k => { if (JSON.stringify(mine[k]) !== JSON.stringify(was[k])) merged[k] = mine[k]; });
+    pv.settings = cleanSettings(merged);
+    await savePreview();
+    state.settings = cleanSettings(pv.settings);
+    return;
+  }
   const rows = await supaFetch('/site_settings?id=eq.1&select=data');
   if (rows && rows[0]) latest = cleanSettings(rows[0].data);
   const merged = { ...latest };
@@ -3819,7 +3834,8 @@ function galleryPriceLabel(g) { return g.price > 0 ? 'each' : 'each · automated
 async function loadGallery() {
   try {
     const rows = await supaFetch('/gallery_items?select=id,data,published,sort_order,created_at&order=sort_order.asc,created_at.desc');
-    state.gallery = (rows || []).map(cleanGalleryItem).filter(Boolean);
+    state.liveGalleryRows = rows || [];
+    state.gallery = (previewActive() ? previewGalleryRows() : rows || []).map(cleanGalleryItem).filter(Boolean);
     state.galleryError = false;
   } catch (e) {
     console.error('Gallery load error:', e);
@@ -4061,16 +4077,23 @@ function editGalleryItem(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// The saved shape of a design (a gallery_items row).
+function galleryRowOf(g) {
+  return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
+    data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
+}
 async function writeGalleryItem(g) {
+  if (previewActive()) {
+    const rows = previewData().gallery, row = galleryRowOf(g), at = rows.findIndex(x => x.id === row.id);
+    if (at >= 0) rows[at] = { ...row, created_at: rows[at].created_at || row.created_at }; else rows.push(row);
+    await savePreview();
+    return;
+  }
+  const row = galleryRowOf(g);
   await supaFetch('/gallery_items', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({
-      id: g.id,
-      published: g.published,
-      sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded }
-    })
+    body: JSON.stringify({ id: row.id, published: row.published, sort_order: row.sort_order, data: row.data })
   });
 }
 
@@ -4235,8 +4258,11 @@ async function deleteGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g || !confirm(`Delete "${g.title || 'this item'}" from the gallery? This cannot be undone.`)) return;
   try {
-    await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await deleteStoredPhotos(g.photos.concat(g.parts.map(p => p.photo).filter(Boolean)));
+    if (previewActive()) { const pv = previewData(); pv.gallery = pv.gallery.filter(x => x.id !== id); await savePreview(); }
+    else {
+      await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await deleteStoredPhotos(g.photos.concat(g.parts.map(p => p.photo).filter(Boolean)));
+    }
   } catch (e) {
     alert("Couldn't delete it. If you were logged out, log in again and retry.");
   }
