@@ -3075,7 +3075,7 @@ function cleanSettings(raw) {
       name: cleanText(r && r.name, 60).trim(),
       text: cleanText(r && r.text, 600).trim(),
       designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(r && r.designId)) ? r.designId : '',
-      photos: (Array.isArray(r && r.photos) ? r.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 2),
+      photos: (Array.isArray(r && r.photos) ? r.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 4),
       rating: Number(r && r.rating) >= 1 && Number(r.rating) <= 5 ? Math.round(Number(r.rating) * 2) / 2 : null,   // stars, in half steps
       source: r && r.source === 'etsy' ? 'etsy' : '',   // imported from Etsy's reviews.json
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(r && r.date)) ? r.date : ''
@@ -3445,6 +3445,7 @@ function renderOwnerSettingsPage() {
               <option value="">No stars shown</option>${[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1].map(v => `<option value="${v}" ${Number(r.rating) === v ? 'selected' : ''}>${v} star${v === 1 ? '' : 's'}</option>`).join('')}</select></div>
             ${r.source === 'etsy' ? `<div class="field-help" style="align-self:end;">From Etsy${r.date ? `, ${esc(r.date)}` : ''}</div>` : ''}
           </div>
+          ${renderReviewPhotoEditor(r, n)}
           <button class="btn-sm danger" type="button" onclick="state.settingsDraft.reviews.splice(${n}, 1); render();">Remove review</button>
         </div>`).join('')}
       <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>

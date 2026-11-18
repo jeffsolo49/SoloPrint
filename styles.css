@@ -1424,3 +1424,7 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .preorder-eta label { display: block; font-weight: 600; margin-bottom: 2px; }
 .preorder-eta-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .preorder-eta-row input { max-width: 220px; }
+
+.review-photo-edit .review-photos { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.review-photo-item { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.review-photo-item img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; }
