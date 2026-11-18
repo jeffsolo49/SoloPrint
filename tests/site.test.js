@@ -2365,6 +2365,42 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('color groups share one color; versions scale the price and add the joining pack; singles ordered twice are nudged to the double', async () => {
+    const db = fixtures();
+    db.gallery.m1 = { id: 'm1', published: true, sort_order: 5, data: { title: 'Stand', photos: ['https://img.test/m.png'], minutes: 60, grams: 40, preorder: true, packId: 'k1',
+      versions: [{ id: 'v1', name: 'Single', count: 1 }, { id: 'v2', name: 'Double', count: 2, needsPack: true }],
+      parts: [{ id: 'a', name: 'Left', grams: 10, group: 'Body' }, { id: 'b', name: 'Right', grams: 10, group: 'Body' }, { id: 'c', name: 'Trim', grams: 20 }] } };
+    db.gallery.k1 = { id: 'k1', published: true, sort_order: 6, data: { title: 'Joining pack', photos: [], minutes: 10, grams: 5 } };
+    db.jobs.h1 = { id: 'h1', clientName: 'Ann', clientEmail: 'ann@example.com', createdAt: ago(900), phase: 'delivered', items: [{ name: 'Stand', qty: 2, galleryId: 'm1', filType: 'black', versionId: 'v1', versionName: 'Single', versionCount: 1 }] };
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); });
+    const r = await page.evaluate(() => {
+      const g = state.gallery.find(x => x.id === 'm1');
+      const one = designEstimateItem(g, null, { include: {}, logo: false, version: 'v1' });
+      const two = designEstimateItem(g, null, { include: {}, logo: false, version: 'v2' });
+      const grp = designEstimateItem(g, { a: 'red', b: 'black', c: 'white' }, { include: {}, logo: false, version: 'v1' });
+      return { g1: one.grams, g2: two.grams, m1: one.knownMinutes, m2: two.knownMinutes, needs: two.needsPack, left: grp.designParts[0].colorId, right: grp.designParts[1].colorId, price: designEstimate(g, null, { include: {}, logo: false, version: 'v1' }) };
+    });
+    assert(r.g2 === r.g1 * 2 && r.m2 === r.m1 * 2 && r.needs === true && r.left === r.right && r.price > 0, JSON.stringify(r));
+    await page.evaluate(() => { setTab('gallery'); openWork('m1'); });
+    await page.waitForSelector('.version-picker');
+    await page.check('input[name="version-m1"][value="v2"]');
+    await page.evaluate(() => requestGalleryItem('m1'));
+    const items = await page.evaluate(() => state.draftItems.map(it => [it.name, it.versionName || '', it.packFor || '']));
+    assert(JSON.stringify(items) === JSON.stringify([['Stand', 'Double', ''], ['Joining pack', '', 'm1']]), JSON.stringify(items));
+    // one color row for the Body group, one for Trim
+    const rows = await page.$$eval('.part-color-row', els => els.length);
+    assert(rows === 2, 'rows: ' + rows);
+    await page.evaluate(() => setItemVersion(0, 'v1'));
+    assert(await page.evaluate(() => state.draftItems.length) === 1, 'pack removed with the single');
+    // history: two singles before, none with a pack
+    const hint = await page.evaluate(async () => { state.batches = [{ id: 'h1', clientEmail: 'ann@example.com', items: [{ galleryId: 'm1', qty: 2, versionCount: 1 }] }]; return joinHint(state.draftItems[0], 0); });
+    assert(/already have 2 of these/.test(hint) && /Switch to Double/.test(hint), hint);
+    const sug = await page.evaluate(() => { state.batches = [{ id: 'h1', clientEmail: 'ann@example.com', items: [{ galleryId: 'm1', qty: 1, versionCount: 1 }] }, { id: 'h2', clientEmail: 'ANN@example.com', items: [{ galleryId: 'm1', qty: 1, versionCount: 1 }] }]; return joinSuggestion(state.batches[1]); });
+    assert(/suggest the Double/.test(sug), sug);
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };

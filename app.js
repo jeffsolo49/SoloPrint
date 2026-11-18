@@ -522,6 +522,11 @@ function cleanItem(it) {
     mainParts: cleanText(it.mainParts, 200),
     logo: it.logo === true,   // "Add my company logo" add-on (rules.logoPrice per print)
     preorder: it.preorder === true,   // from a design marked Pre-order (made first come, first served)
+    versionId: /^[A-Za-z0-9_-]{1,40}$/.test(String(it.versionId)) ? it.versionId : '',   // single / double...
+    versionName: cleanText(it.versionName, 40).trim(),
+    versionCount: Math.max(1, Math.min(4, parseInt(it.versionCount, 10) || 1)),
+    needsPack: it.needsPack === true,
+    packFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.packFor)) ? it.packFor : '',   // a joining pack added with this design
     designParts: cleanDesignParts(it.designParts, true),
     basePrice: cleanNumber(it.basePrice),
     baseMinutes: cleanNumber(it.baseMinutes),   // a design's print time before add-ons   // a design's set price before add-ons (the owner re-reads it when quoting)
@@ -2135,6 +2140,7 @@ function renderItemBlock(item, i) {
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
         ${mode === 'gallery' && item.preorder ? renderPreorderNote() : ''}
+        ${mode === 'gallery' && item.galleryId ? renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) : ''}
         ${mode === 'gallery' && featureOn('logoAddOn') ? `<label class="special-order-check" style="margin-bottom:10px;"><input type="checkbox" id="logo-${i}" ${item.logo ? 'checked' : ''} onchange="updateDraft(${i},'logo',this.checked); updateCustomerPricePreview(${i})" />
           ${esc(logoText('logoCheckbox'))}</label>` : ''}
         <div class="field" style="margin-bottom:10px;max-width:160px;">
@@ -2348,7 +2354,7 @@ function focusOwnerOrder(id) {
 
 function renderDeskRow(b, selected) {
   const tone = { red: 'cust-red', slate: 'cust-slate' };
-  const chips = ((b.phase || 'estimate') === 'delivered' && !orderNeeds(b).length ? [['Finished', 'slate']] : orderNeeds(b)).concat(orderIsPreorder(b) ? [['Pre-order', 'slate']] : []);
+  const chips = ((b.phase || 'estimate') === 'delivered' && !orderNeeds(b).length ? [['Finished', 'slate']] : orderNeeds(b)).concat(orderIsPreorder(b) ? [['Pre-order', 'slate']] : []).concat(joinSuggestion(b) ? [['Joining pack?', 'slate']] : []);
   return `<button type="button" class="desk-row tone-${deskTone(b)} ${selected ? 'active' : ''}" aria-pressed="${selected}" onclick="openDeskOrder('${esc(b.id)}')">
     <span class="desk-name">${esc(b.clientName || b.clientEmail || 'No name')}</span>
     <span class="desk-when">${esc(new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</span>
@@ -2672,6 +2678,7 @@ function renderOwnerBatch(b) {
       </div>
       <div class="desk-bar" aria-hidden="true">${DESK_STEPS.map((s, i) => `<i class="${i + 1 < st.n ? 'done' : i + 1 === st.n ? 'now' : ''}"></i>`).join('')}</div>
       ${b.designTerms && !beforeQuote(phase) ? `<div><span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting for them to agree'}</span></div>` : ''}
+      ${joinSuggestion(b) ? `<div class="field-help"><strong>Joining pack?</strong> ${esc(joinSuggestion(b))}</div>` : ''}
       ${orderIsPreorder(b) ? `<div><span class="preorder-badge">Pre-order</span> <span class="field-help">${esc(preorderPlace(b))}</span></div>${renderPreorderEta(b, 'desk')}` : ''}
       <div class="desk-stepname">${st.n > 6 ? 'Finished' : `Step ${st.n} of 6 · ${esc(st.label)}`}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
     </div>
@@ -2798,6 +2805,7 @@ function renderOrderFolds(b, st) {
           <div class="owner-order-summary-value">Filament: ${esc(filamentLabel(it))}</div>
           ${colorPartsText(it) ? `<div class="owner-order-summary-value">Which parts: ${esc(colorPartsText(it))}</div>` : ''}
           ${it.preorder ? '<div class="owner-order-summary-value"><strong>Pre-order</strong> (made first come, first served)</div>' : ''}
+          ${it.versionName ? `<div class="owner-order-summary-value"><strong>Version: ${esc(it.versionName)}</strong>${it.needsPack ? ' (needs the joining pack)' : ''}</div>` : ''}
           ${it.logo ? '<div class="owner-order-summary-value"><strong>Add their company logo</strong> (ask for the logo file)</div>' : ''}
           <div class="owner-order-summary-value">Link: ${isWebUrl(it.link) ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">Open model</a>` : esc(it.link || 'Not provided')}</div>
           <div class="owner-order-summary-value">Notes: ${esc(it.notes || 'None')}</div>
@@ -3591,6 +3599,8 @@ function cleanGalleryItem(row) {
     parts: cleanDesignParts(data.parts),
     colorMap: cleanColorMap(data.colorMap, cleanDesignParts(data.parts)),   // photo repainted in other colors, features.js
     preorder: data.preorder === true,   // a new design taking pre-orders (deposits, first come, first served)
+    versions: cleanVersions(data.versions),   // single / double ...
+    packId: /^[A-Za-z0-9_-]{1,64}$/.test(String(data.packId)) ? data.packId : '',   // the joining pack's design
     preorderReady: cleanText(data.preorderReady, 80)   // when it should be ready, in the owner's words
   };
 }
@@ -3756,8 +3766,12 @@ function renderWorkDetail(g) {
 function renderWorkPrice(g) {
   const colors = cmViewColors(g.id), opts = designOpts(g.id);
   const price = designEstimate(g, colors, opts);
+  const picker = renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`);
+  if (price === null && (g.preorder || (g.versions || []).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">Price confirmed in your quote.</div>
+    <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
   if (price === null) return `<div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`;
-  return `<div class="job-divider" style="margin:6px 0 14px;"></div>
+  return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
@@ -3856,7 +3870,7 @@ function renderGalleryTab() {
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
-            ${price !== null ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button>` : ''}
+            ${price !== null || g.preorder || (g.versions || []).length ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button>` : ''}
           </div>
         </div>
       </div>`;
@@ -3872,6 +3886,7 @@ function requestGalleryItem(id, colors) {
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
   if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
   applyDesignOpts(item, (state.designOpts || {})[id]);
+  if ((g.versions || []).length && !(state.designOpts || {})[id]) applyVersion(item, g, '');
   applyPartColors(item);
   state.galleryOpen = '';
   setDesignUrl('');
@@ -3879,6 +3894,8 @@ function requestGalleryItem(id, colors) {
   const firstIsEmpty = state.draftItems.length === 1 && first && !first.name && !first.link && !first.notes;
   if (firstIsEmpty) state.draftItems[0] = item;
   else state.draftItems.push(item);
+  const pk = item.needsPack && !state.draftItems.some(x => x.packFor === g.id) ? packItemFor(g) : null;
+  if (pk) state.draftItems.push(pk);
   state.clientTab = 'submit';
   render();
   showAlert('submit-ok', `Added "${g.title}" to your request. Add your name and email, then submit.`, 'success');
@@ -3974,6 +3991,7 @@ function renderOwnerGalleryPage() {
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
       ${renderPreorderFormFields(f)}
+      ${renderVersionsForm(f)}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4012,7 +4030,7 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4026,7 +4044,7 @@ async function writeGalleryItem(g) {
       id: g.id,
       published: g.published,
       sort_order: g.sortOrder || 0,
-      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '' }
+      data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '' }
     })
   });
 }
@@ -4044,7 +4062,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(),
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '',
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }

@@ -1341,6 +1341,7 @@ function itemLines(rec, withPrices, site) {
     if (extras.length) lines.push(`   Also: ${extras.map(p => p.name + (p.filType === 'leftover' ? ' (leftover roll)' : '')).join(', ')}`);
     if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
     if (it.preorder === true) lines.push('   Pre-order: made first come, first served');
+    if (it.versionName) lines.push(`   Version: ${it.versionName}${it.needsPack ? ' (needs the joining pack)' : ''}`);
     if (it.logo) lines.push('   Add company logo: yes (please reply with your logo file)');
     if (colorCharge(it, rules)) lines.push(`   More than ${rules.freeColors} colors: +$${money(colorCharge(it, rules))} per print (extra color changes)`);
     if (withPrices && itemPriced(it)) {
