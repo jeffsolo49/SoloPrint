@@ -2312,7 +2312,7 @@ const OWNER_WIKI = [
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" on the Designs page.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). Its 36 preview pictures live in presets/caddy.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" on the Designs page.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
@@ -3424,7 +3424,7 @@ function refreshDesignPrice(id, focusId) {
   if (!g) return;
   if (document.getElementById('color-ideas')) { refreshColorIdeas(id, focusId); return; }
   const el = document.getElementById('work-price');
-  if (el) el.innerHTML = renderWorkPrice(g);
+  if (el) { el.innerHTML = renderWorkPrice(g); paintColorPreviews(); }
   if (focusId) document.getElementById(focusId)?.focus();
 }
 function setDesignAddOn(id, partId, on, k) {
@@ -3670,7 +3670,7 @@ function cleanColorMap(m, parts) {
     ids.forEach(id => { const k = c && c.colors && c.colors[id]; if (/^[a-z0-9-]{1,40}$/.test(String(k))) colors[id] = k; });
     return { id: /^[A-Za-z0-9_-]{1,40}$/.test(String(c && c.id)) ? c.id : `c${n + 1}`, name: cleanText(c && c.name, 40).trim(), colors, photo: safeImageUrl(c && c.photo) };
   });
-  return { photo, regions, combos };
+  return { photo, photoAlt: safeImageUrl(m.photoAlt), regions, combos };
 }
 
 // A color key (a color's id, or black / white when no colors are set up; blank = White) as { name, hex }.
@@ -3903,7 +3903,7 @@ function cmCombosFor(g, choices) {
   // Customers see ideas whose colors are all in stock; the owner sees every idea.
   return g.colorMap.combos.filter(c => c.name && (state.ownerUnlocked || Object.values(c.colors).every(k => keys.includes(k))));
 }
-function cmShown(g) { return featureOn('colorIdeas') && featureOn('designParts') && (g.parts || []).length > 0 && cmUsable(g.colorMap); }
+function cmShown(g) { return !isCaddyDesign(g) && featureOn('colorIdeas') && featureOn('designParts') && (g.parts || []).length > 0 && cmUsable(g.colorMap); }
 function cmViewColors(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g || !cmShown(g)) return null;
@@ -4305,6 +4305,9 @@ function renderColorMapForm(f) {
       <input type="file" accept="image/*" id="cm-upload" onchange="uploadColorMapPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
     ${m ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap = null; state.cmJoin = []; render();">Remove picture</button>' : ''}
     <span class="field-help" id="cm-status" role="status"></span>
+    ${f.id === CADDY_MAIN.id ? `<div class="field-help" style="margin-top:8px;"><strong>Catheter Caddy:</strong> upload the BACK view first (the one that shows the drawers), with the body, the dividers and handle, the drawers and the drawer tabs each a different solid color, then match those areas to the parts: Base, walls and Top Shelf and Joining Clips = body; Handle and grips, Dividers = secondary; Rear Drawers = drawers; Drawer pull tabs = tabs. The color picker repaints it. Want a Front button too? Add a front view in the same colors below.</div>
+      ${m ? `<label class="btn-sm">${m.photoAlt ? 'Change front view' : 'Add front view'}<input type="file" accept="image/*" id="cm-upload-alt" onchange="uploadColorMapAltPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
+      ${m.photoAlt ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.photoAlt = \'\'; render();">Remove front view</button>' : ''}` : ''}` : ''}
     ${!m ? '' : `
       <h4 class="cm-heading">Which part is each colored area?</h4>
       ${parts.length ? '' : '<div class="alert error" style="display:block;">Add the parts above first (with names), then match each area to a part.</div>'}
@@ -4496,12 +4499,34 @@ async function uploadColorMapPhoto(file) {
     // A new picture of the same design keeps the parts already matched to colors that are still there.
     const old = (f.colorMap && f.colorMap.regions) || [];
     const partFor = hex => { const lab = cmLab(...cmRgb(hex)); const o = old.find(r => r.part && r.hexes.some(h => cmDistance(lab, cmLab(...cmRgb(h))) < 6)); return o ? o.part : ''; };
-    f.colorMap = { photo, regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: partFor(r.hex) })), combos: (f.colorMap && f.colorMap.combos) || [] };
+    f.colorMap = { photo, photoAlt: (f.colorMap && f.colorMap.photoAlt) || '', regions: findColorRegions(pixels).map(r => ({ hexes: [r.hex], share: r.share, part: partFor(r.hex) })), combos: (f.colorMap && f.colorMap.combos) || [] };
     render();
     if (status()) status().textContent = `Found ${f.colorMap.regions.length} colored areas. Pick a part for each, then save.`;
   } catch (e) {
     console.error('Color photo error:', e);
     if (status()) status().textContent = /unsupported/.test(e.message) ? "That picture isn't a format this browser can read. Try a PNG or JPG." : "Couldn't upload. Check that you're logged in and try again.";
+  }
+}
+// The caddy's second view: painted with the same areas, so it must use the same colors as the main picture.
+async function uploadColorMapAltPhoto(file) {
+  const f = state.galleryForm, token = getOwnerToken();
+  const status = () => document.getElementById('cm-status');
+  if (!f || !f.colorMap || !file) return;
+  if (!token) { if (status()) status().textContent = 'Please log in again to upload.'; return; }
+  if (status()) status().textContent = 'Uploading the front view...';
+  try {
+    const { blob, pixels } = await cmPrepare(file);
+    if (!blob) throw new Error('resize failed');
+    const path = `${f.id}/colors-front-${Date.now()}.png`;
+    await uploadStoredPhoto(path, blob, token, false, 'image/png');
+    const photo = GALLERY_PUBLIC_PREFIX + path;
+    cmImages.set(photo, Promise.resolve(pixels));
+    f.colorMap.photoAlt = photo;
+    render();
+    const s = status(); if (s) s.textContent = 'Front view added. Save the design to keep it.';
+  } catch (e) {
+    console.error('Front view error:', e);
+    if (status()) status().textContent = "Couldn't upload. Check that you're logged in and try again.";
   }
 }
 async function redoColorAreas(detail) {
@@ -6180,8 +6205,21 @@ function caddyEarlier(i) {
   for (const b of state.batches || []) { const it = (b.items || []).find(x => x.caddy); if (it) return it.caddy; }
   return null;
 }
+// The preview: the design's color-ideas photo repainted in the chosen colors (the owner uploads one photo and matches its areas
+// to the parts), or, without one, the ready-made picture for that combination.
+function caddyPreviewHtml(g, c, view, parts) {
+  const m = g && g.colorMap;
+  if (!(m && cmUsable(m))) return `<img src="${esc(caddyImage(c, view))}" alt="${esc(caddyAlt(c))}" width="640" height="640" onerror="photoFailed(this, 'text')" />`;
+  const colors = {};
+  (parts || []).forEach(p => { const name = CADDY_GROUPS[p.group] && c[CADDY_GROUPS[p.group]], ch = name && caddyColorChoice(name); if (ch) colors[p.id] = ch.key; });
+  return cmCanvas(view === 'front' && m.photoAlt ? { ...m, photo: m.photoAlt } : m, parts || [], colors, caddyAlt(c));
+}
 function renderCaddyPicker(c, view, scope, ref) {
   caddyPreload();
+  const g = scope === 'design' ? state.gallery.find(x => x.id === ref) : state.gallery.find(x => x.id === (state.draftItems[Number(ref)] || {}).galleryId);
+  const parts = scope === 'design' ? (g && g.parts) : (state.draftItems[Number(ref)] || {}).designParts;
+  const painted = !!(g && g.colorMap && cmUsable(g.colorMap));
+  const twoViews = !painted || !!g.colorMap.photoAlt;
   const call = (field, v) => `caddyPick('${scope}', '${esc(ref)}', '${field}', '${v}')`;
   const swatch = (field, name, ok) => {
     const ch = caddyColorChoice(name), on = c[field] === name, usable = ok && !!ch;
@@ -6192,8 +6230,8 @@ function renderCaddyPicker(c, view, scope, ref) {
   const vb = (v, label) => `<button type="button" class="btn-sm caddy-view ${view === v ? 'on' : ''}" aria-pressed="${view === v}" onclick="caddyView('${scope}', '${esc(ref)}', '${v}')">${label}</button>`;
   const earlier = scope === 'item' ? caddyEarlier(Number(ref)) : null;
   return `<div class="caddy-picker" id="caddy-picker-${scope}-${esc(ref)}">
-    <div class="caddy-preview"><img src="${esc(caddyImage(c, view))}" alt="${esc(caddyAlt(c))}" width="640" height="640" onerror="photoFailed(this, 'text')" /></div>
-    <div class="caddy-views" role="group" aria-label="Preview side">${vb('front', 'Front')}${vb('back', 'Back (drawers)')}</div>
+    <div class="caddy-preview">${caddyPreviewHtml(g, c, view, parts)}</div>
+    ${twoViews ? `<div class="caddy-views" role="group" aria-label="Preview side">${vb('front', 'Front')}${vb('back', 'Back (drawers)')}</div>` : ''}
     <div class="caddy-step"><div class="caddy-step-title">1. Body <span class="field-help">walls, floors, Top Shelf, Joining Clips</span></div><div class="caddy-swatches">${['White', 'Black'].map(n => swatch('body', n, true)).join('')}</div></div>
     <div class="caddy-step"><div class="caddy-step-title">2. Secondary color <span class="field-help">dividers and handle</span></div><div class="caddy-swatches">${all.map(n => swatch('secondary', n, caddySecondaryOk(c, n))).join('')}</div></div>
     <div class="caddy-step"><div class="caddy-step-title">3. Drawer color <span class="field-help">the 3 rear drawers</span></div><div class="caddy-swatches">${all.map(n => swatch('drawer', n, caddyDrawerOk(c, n))).join('')}</div></div>

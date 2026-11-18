@@ -2505,6 +2505,17 @@ const STATES = {
     const it = await page.evaluate(() => { const i = state.draftItems[0]; const c = id => i.designParts.find(p => p.id === id).colorId;
       return [i.versionName, i.packIncluded, i.preorder, state.draftItems.length, JSON.stringify(i.caddy), c('shell'), c('clips'), c('handle'), c('dividers'), c('drawers'), c('tabs')]; });
     assert(JSON.stringify(it) === JSON.stringify(['Joined pair', true, true, 1, '{"body":"Black","secondary":"White","drawer":"Red","tab":"White","style":"3-color"}', 'black', 'black', 'white', 'white', 'red', 'white']), JSON.stringify(it));
+    // with a color-ideas photo on the caddy, the preview is that photo repainted (one photo = no Front/Back buttons; two = both)
+    const painted = await page.evaluate(() => {
+      const g = state.gallery.find(x => x.id === 'catheter-caddy'), c = caddyFix({ body: 'Black', secondary: 'White', drawer: 'Red' });
+      g.colorMap = { photo: 'https://img.test/caddy-back.png', photoAlt: '', regions: [{ hexes: ['#808080'], part: 'shell' }, { hexes: ['#ff0000'], part: 'drawers' }], combos: [] };
+      const one = renderCaddyPicker(c, 'front', 'design', g.id), cm = cmShown(g);
+      g.colorMap.photoAlt = 'https://img.test/caddy-front.png';
+      const two = renderCaddyPicker(c, 'front', 'design', g.id), back = caddyPreviewHtml(g, c, 'back', g.parts);
+      g.colorMap = null;
+      return [/data-cm/.test(one), /caddy-view/.test(one), /caddy-view/.test(two), /caddy-front/.test(two) && /caddy-back/.test(back), cm];
+    });
+    assert(JSON.stringify(painted) === '[true,false,true,true,false]', JSON.stringify(painted));
     // on the request form the same picker is there, and "Match my first caddy" copies it to a second one
     await page.waitForSelector('#caddy-picker-item-0');
     await page.evaluate(() => { state.designOpts = {}; requestGalleryItem('catheter-caddy'); });
