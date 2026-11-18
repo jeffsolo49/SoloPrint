@@ -534,6 +534,8 @@ function cleanItem(it) {
     versionCount: Math.max(1, Math.min(4, parseInt(it.versionCount, 10) || 1)),
     needsPack: it.needsPack === true,
     packFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.packFor)) ? it.packFor : '',   // a joining pack added with this design
+    caddy: cleanCaddy(it.caddy),   // the Catheter Caddy color picker's choice (features.js)
+    accessoryFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.accessoryFor)) ? it.accessoryFor : '',   // an accessory picked on this design's page
     designParts: cleanDesignParts(it.designParts, true),
     basePrice: cleanNumber(it.basePrice),
     baseMinutes: cleanNumber(it.baseMinutes),   // a design's print time before add-ons   // a design's set price before add-ons (the owner re-reads it when quoting)
@@ -1971,7 +1973,7 @@ function setItemMode(i, mode) {
 
 // Inline picker for "Something from my past work".
 function renderGalleryPicker(i) {
-  const designs = state.gallery.filter(g => g.published);
+  const designs = state.gallery.filter(g => g.published && !isAccessory(g));
   if (!state.galleryLoaded) return `<div class="field-help">Loading designs...</div>`;
   if (!designs.length) return `<div class="field-help">No past designs to pick from yet. Choose "I have a link" or "I have an idea" instead.</div>`;
   return `<div class="field" style="margin-bottom:8px;">
@@ -3641,6 +3643,7 @@ function cleanGalleryItem(row) {
     sideWall: data.sideWall === true,
     colorFeeIncluded: data.colorFeeIncluded === true,
     packId: /^[A-Za-z0-9_-]{1,64}$/.test(String(data.packId)) ? data.packId : '',   // the joining pack's design
+    accessories: [...new Set((Array.isArray(data.accessories) ? data.accessories : []).map(String).filter(x => /^[A-Za-z0-9_-]{1,64}$/.test(x)))].slice(0, 30),   // designs ordered as part of this one, not listed on their own
     preorderReady: cleanText(data.preorderReady, 80)   // when it should be ready, in the owner's words
   };
 }
@@ -3749,7 +3752,7 @@ async function copyDesignLink(id, btn) {
 // Home page "My Work": up to 5 designs (best sellers first, then the newest), then a SEE MORE box.
 const HOME_WORK_COUNT = 5;
 function homeWork() {
-  const designs = state.gallery.filter(g => g.published && g.photos.length);
+  const designs = state.gallery.filter(g => g.published && g.photos.length && !isAccessory(g));
   const top = (state.settings.topWork || []).map(id => designs.find(g => g.id === id)).filter(Boolean);
   const newest = designs.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   return top.concat(newest.filter(g => !top.includes(g))).slice(0, HOME_WORK_COUNT);
@@ -3807,8 +3810,11 @@ function renderWorkPrice(g) {
   if (g.preorder && !preorderLeadOk()) return renderPreorderGate(g);
   const colors = cmViewColors(g.id), opts = designOpts(g.id);
   const price = designEstimate(g, colors, opts);
-  const picker = renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`);
-  if (price === null && (g.preorder || (g.versions || []).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
+  if (opts.skipMain && accessoryDesigns(g).length) return `${renderAccessoryPicker(g, opts)}<div class="job-divider" style="margin:6px 0 14px;"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">${esc(materialNote())}</div>
+    <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button></div>`;
+  const picker = (isCaddyDesign(g) ? renderCaddyDesignPicker(g, opts) : renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
+  if (price === null && (g.preorder || (g.versions || []).length || accessoryDesigns(g).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">Price confirmed in your quote.</div>
     <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
   if (price === null) return `<div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`;
@@ -3878,7 +3884,7 @@ function showGalleryPhoto(id, n) {
 }
 
 function renderGalleryTab() {
-  const items = state.gallery.filter(g => g.published);
+  const items = state.gallery.filter(g => g.published && !isAccessory(g));
   const open = state.galleryOpen && findDesign(state.galleryOpen);
   const header = `
     <div class="section-header">
@@ -3927,23 +3933,32 @@ function requestGalleryItem(id, colors) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!g) return;
   if (g.preorder && !preorderLeadOk()) { openWork(id); setTimeout(() => document.getElementById('preorder-name')?.focus(), 50); return; }
+  const opts0 = (state.designOpts || {})[id];
+  const accs = accessoryPicks(g, opts0);
+  const skipMain = !!(opts0 && opts0.skipMain && accs.length);
+  if (opts0 && opts0.skipMain && !accs.length) { showAlert('acc-err', `Pick at least one accessory, or untick "accessories only" to order the ${g.title}.`, 'error'); return; }
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
   if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
   applyDesignOpts(item, (state.designOpts || {})[id]);
   if ((g.versions || []).length && !(state.designOpts || {})[id]) applyVersion(item, g, '');
   if ((g.editions || []).length && !(state.designOpts || {})[id]) applyEdition(item, g, '');
   applyPartColors(item);
+  if (isCaddyDesign(g)) { item.caddy = caddyFix(opts0 && opts0.caddy); applyCaddyColors(item); }
   state.galleryOpen = '';
   setDesignUrl('');
   const first = state.draftItems[0];
   const firstIsEmpty = state.draftItems.length === 1 && first && !first.name && !first.link && !first.notes;
-  if (firstIsEmpty) state.draftItems[0] = item;
-  else state.draftItems.push(item);
-  const pk = item.needsPack && !state.draftItems.some(x => x.packFor === g.id) ? packItemFor(g) : null;
-  if (pk) state.draftItems.push(pk);
+  const adds = [];
+  if (!skipMain) adds.push(item);
+  const pk = !skipMain && item.needsPack && !state.draftItems.some(x => x.packFor === g.id) ? packItemFor(g) : null;
+  if (pk) adds.push(pk);
+  accs.forEach(a => adds.push(accessoryItemFor(g, a.design, a.qty)));
+  if (firstIsEmpty) state.draftItems.splice(0, 1, ...adds);
+  else state.draftItems.push(...adds);
+  if (item.caddy) caddyPackSync(item);
   state.clientTab = 'submit';
   render();
-  showAlert('submit-ok', `Added "${g.title}" to your request. Add your name and email, then submit.`, 'success');
+  showAlert('submit-ok', `Added ${skipMain ? 'your accessories' : `"${g.title}"` + (accs.length ? ' and your accessories' : '')} to your request. Add your name and email, then submit.`, 'success');
   document.getElementById('submit-ok')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -4040,6 +4055,7 @@ function renderOwnerGalleryPage() {
       </div>
       ${renderPreorderFormFields(f)}
       ${renderVersionsForm(f)}
+      ${renderAccessoriesForm(f)}
       ${renderEditionsForm(f)}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
@@ -4079,7 +4095,7 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId, editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, sideWall: g.sideWall, colorFeeIncluded: g.colorFeeIncluded
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, sideWall: g.sideWall, colorFeeIncluded: g.colorFeeIncluded
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4088,7 +4104,7 @@ function editGalleryItem(id) {
 // The saved shape of a design (a gallery_items row).
 function galleryRowOf(g) {
   return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
-    data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
+    data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
 }
 async function writeGalleryItem(g) {
   if (previewActive()) {
@@ -4118,7 +4134,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], sideWall: !!f.sideWall, colorFeeIncluded: !!f.colorFeeIncluded,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], sideWall: !!f.sideWall, colorFeeIncluded: !!f.colorFeeIncluded,
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
