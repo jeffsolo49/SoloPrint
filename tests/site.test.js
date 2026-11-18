@@ -2507,6 +2507,19 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('custom color delay note: on the request form, design pages, order cards and the quote email; the wording is editable', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await page.waitForSelector('#work-price');
+    assert(/order more material first/.test(await page.textContent('#work-price .color-delay-note')), 'design page');
+    await page.evaluate(() => { state.draftItems[0].mode = 'idea'; setTab('submit'); render(); });
+    assert(/order more material first/.test(await page.textContent('.color-delay-note')), 'request form');
+    const mail = await page.evaluate(() => colorDelayText({}) + '|' + colorDelayText({ siteText: { colorDelayNote: { text: 'My own words', live: true } } }));
+    assert(/order more material first/.test(mail) && /\|My own words$/.test(mail), mail);
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };

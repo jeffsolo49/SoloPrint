@@ -1490,6 +1490,7 @@ const DEFAULT_HOW_IT_WORKS = [
   { title: 'I print it, you pay', text: 'I confirm the order, print it, and you pay by Venmo. Follow every step under My Requests.' }
 ];
 function materialNote() { return state.settings.materialNote || DEFAULT_MATERIAL_NOTE; }
+function colorDelayNote() { return t('colorDelayNote'); }
 const DEFAULT_GALLERY_NOTE = 'Every order is made to your custom specifications.';
 function galleryNote() { return state.settings.galleryNote || DEFAULT_GALLERY_NOTE; }
 // The default terms before the deposit rules were added. A saved, unchanged copy of them follows the
@@ -2147,6 +2148,7 @@ function renderItemBlock(item, i) {
         <div class="field" style="margin-bottom:10px;">
           ${(item.designParts || []).length ? renderPartColors(item, i) : `<label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
           <div class="field-help">${esc(materialNote())}</div>
+          <div class="field-help color-delay-note">${esc(colorDelayNote())}</div>
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
         ${mode === 'gallery' && item.preorder ? renderPreorderNote(null, null, draftPreorderUnits()) : ''}
@@ -3284,7 +3286,7 @@ const EMAIL_SAMPLE = {
 };
 
 function emailPreview(key) {
-  const vars = { ...EMAIL_SAMPLE, vacationNote: vacationText(state.settings.vacation), materialNote: materialNote(),
+  const vars = { ...EMAIL_SAMPLE, vacationNote: vacationText(state.settings.vacation), materialNote: materialNote() + ' ' + colorDelayNote(),
     venmoLink: `https://venmo.com/${currentRules().venmo}?txn=pay&amount=15.68` };
   vars.footer = renderEmailText(emailTemplate('footer', state.emailsDraft).body, vars);
   const t = emailTemplate(key, state.emailsDraft);
@@ -3818,7 +3820,8 @@ function renderWorkPrice(g) {
           </div>
           <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button>
         </div>
-        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>`;
+        <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>
+        <div class="field-help color-delay-note">${esc(colorDelayNote())}</div>`;
 }
 
 function showWorkPhoto(id, n) {
