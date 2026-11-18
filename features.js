@@ -2312,13 +2312,13 @@ const OWNER_WIKI = [
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" on the Designs page.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
     steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
-    steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
+    steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -3407,7 +3407,7 @@ function designEstimate(g, colors, opts) {
 // The design page's own choices before "Request this": optional add-on parts and the company logo.
 function designOpts(id) {
   state.designOpts = state.designOpts || {};
-  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '', edition: '' });
+  return state.designOpts[id] || (state.designOpts[id] = { include: {}, logo: false, version: '', edition: '', acc: {}, skipMain: false });
 }
 function applyDesignOpts(item, opts) {
   if (!opts) return item;
@@ -5881,6 +5881,61 @@ function joinSuggestion(b) {
   }
   return '';
 }
+// ── ACCESSORIES ──
+// An accessory is a design listed under another design's `accessories`. It has no listing of its own: customers add it
+// from the main design's page (quantity per accessory) and it is requested together with the main design. They can also
+// tick "I only want accessories" to leave the main design out.
+function isAccessory(g) { return !!g && state.gallery.some(m => m.id !== g.id && (m.accessories || []).includes(g.id)); }
+function accessoryDesigns(g) {
+  return ((g && g.accessories) || []).map(id => state.gallery.find(x => x.id === id && x.published)).filter(Boolean);
+}
+function accessoryPicks(g, opts) {
+  const acc = (opts && opts.acc) || {};
+  return accessoryDesigns(g).map(d => ({ design: d, qty: Math.max(0, Math.min(20, parseInt(acc[d.id], 10) || 0)) })).filter(a => a.qty > 0);
+}
+function accessoryItemFor(g, a, qty) {
+  return { ...blankItem(), ...galleryItemFields(a), mode: 'gallery', qty: Math.max(1, qty || 1), accessoryFor: g.id };
+}
+function renderAccessoryPicker(g, opts) {
+  const list = accessoryDesigns(g);
+  if (!list.length) return '';
+  const acc = opts.acc || {};
+  return `<fieldset class="version-picker accessory-picker" id="accessory-picker"><legend>Accessories</legend>
+    <div class="field-help">${opts.skipMain ? 'Choose how many of each you want.' : `Add any of these to your request. They're ordered together with the ${esc(g.title)}.`}</div>
+    ${list.map((a, k) => {
+      const price = designEstimate(a);
+      const first = String(a.description || '').split(/\n\s*\n/)[0];
+      return `<div class="accessory-row"><div class="field" style="max-width:110px;"><label for="acc-qty-${k}">${esc(a.title)} quantity</label>
+        <input type="number" id="acc-qty-${k}" min="0" max="20" step="1" inputmode="numeric" value="${esc(acc[a.id] || 0)}" onchange="setAccessoryQty('${esc(g.id)}', '${esc(a.id)}', this.value, ${k})" /></div>
+        <div class="accessory-info"><strong>${esc(a.title)}</strong> <span class="gallery-meta">${price !== null ? `$${price.toFixed(2)} each` : 'Price confirmed in your quote'}</span>
+        <div class="field-help">${esc(first)}</div>
+        ${a.description ? `<details><summary>Details</summary><div class="work-writeup">${renderWriteup(a.description)}</div></details>` : ''}</div></div>`;
+    }).join('')}
+    <label class="special-order-check"><input type="checkbox" id="acc-only" ${opts.skipMain ? 'checked' : ''} onchange="setAccessoriesOnly('${esc(g.id)}', this.checked)" /> I only want accessories (not the ${esc(g.title)})</label>
+    <div class="alert error" id="acc-err" role="alert"></div></fieldset>`;
+}
+function setAccessoryQty(id, aid, v, k) {
+  designOpts(id).acc[aid] = Math.max(0, Math.min(20, parseInt(v, 10) || 0));
+  refreshDesignPrice(id, `acc-qty-${k}`);
+}
+function setAccessoriesOnly(id, on) {
+  designOpts(id).skipMain = !!on;
+  refreshDesignPrice(id, 'acc-only');
+}
+function renderAccessoriesForm(f) {
+  f.accessories = f.accessories || [];
+  const others = state.gallery.filter(x => x.id !== f.id && !(x.accessories || []).length);
+  return `<fieldset class="owner-edit-item accessories-fields">
+    <legend>Accessories (optional)</legend>
+    <div class="field-help">Tick the designs that are accessories for this one. They stop being listed on their own and are ordered from this design's page (a quantity for each), together with this design. Customers can also choose accessories only. Hide or show each accessory design as you like; only shown ones appear.</div>
+    ${others.length ? others.map((x, k) => `<label class="special-order-check"><input type="checkbox" id="acc-pick-${k}" ${f.accessories.includes(x.id) ? 'checked' : ''} onchange="toggleFormAccessory('${esc(x.id)}', this.checked)" /> ${esc(x.title || 'Untitled')}${x.published ? '' : ' (hidden)'}</label>`).join('') : '<div class="field-help">Add the accessories as their own designs first.</div>'}
+  </fieldset>`;
+}
+function toggleFormAccessory(id, on) {
+  const f = state.galleryForm; if (!f) return;
+  f.accessories = (f.accessories || []).filter(x => x !== id);
+  if (on) f.accessories.push(id);
+}
 function renderVersionsForm(f) {
   f.versions = f.versions || [];
   const others = state.gallery.filter(x => x.id !== f.id);
@@ -6051,8 +6106,35 @@ const CADDY_MAIN = {
 };
 
 function caddyExists() { return state.gallery.some(g => g.id === CADDY_MAIN.id); }
+// A caddy set up before accessories became part of ordering the caddy: one tap links them.
+function caddyAccessoryIds() { return CADDY_ACCESSORIES.map(a => a[0]).filter(id => state.gallery.some(g => g.id === id)); }
+function renderCaddyLinkAccessories() {
+  const main = state.gallery.find(g => g.id === CADDY_MAIN.id);
+  if (!main || (main.accessories || []).length || !caddyAccessoryIds().length) return '';
+  return `<div class="card" id="caddy-link-acc">
+    <h3 class="card-title">Catheter Caddy accessories</h3>
+    <div class="field-help">The accessories are still their own listings. One tap makes them part of ordering the Catheter Caddy: they stop being listed on their own, and customers add them (with a quantity) on the caddy's page, or choose accessories only. Each accessory still needs to be shown (not hidden) to appear.</div>
+    <button type="button" class="btn-sm" id="caddy-link-go" onclick="linkCaddyAccessories()">Make accessories part of the caddy order</button>
+    <div class="alert error" id="caddy-link-err"></div>
+  </div>`;
+}
+async function linkCaddyAccessories() {
+  const main = state.gallery.find(g => g.id === CADDY_MAIN.id);
+  if (!main) return;
+  const btn = document.getElementById('caddy-link-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await writeGalleryItem({ ...main, accessories: caddyAccessoryIds() });
+    await loadGallery();
+    render();
+  } catch (e) {
+    console.error('Caddy accessories error:', e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Make accessories part of the caddy order'; }
+    showAlert('caddy-link-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
+  }
+}
 function renderCaddySetup() {
-  if (caddyExists()) return '';
+  if (caddyExists()) return renderCaddyLinkAccessories();
   return `<div class="card" id="caddy-setup">
     <h3 class="card-title">Catheter Caddy pre-order</h3>
     <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two-, Three- and Four-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
@@ -6063,12 +6145,12 @@ function renderCaddySetup() {
 async function setupCatheterCaddy() {
   const btn = document.getElementById('caddy-go');
   if (btn) { btn.disabled = true; btn.textContent = 'Setting up...'; }
-  const base = { published: false, sortOrder: 0, preorder: true, preorderReady: '', filType: 'white', colorId: '', minutes: null, grams: null, price: null, videos: [], photos: [], parts: [], colorMap: null, versions: [], packId: '', editions: [], contrast: [], sideWall: false, colorFeeIncluded: false };
+  const base = { published: false, sortOrder: 0, preorder: true, preorderReady: '', filType: 'white', colorId: '', minutes: null, grams: null, price: null, videos: [], photos: [], parts: [], colorMap: null, versions: [], packId: '', accessories: [], editions: [], contrast: [], sideWall: false, colorFeeIncluded: false };
   const list = [];
   CADDY_ACCESSORIES.forEach(([id, title, short, long, box, side]) => list.push({ ...base, id, title, description: CADDY_TEXT(short, long, box), sideWall: side }));
   const [kid, ktitle, kshort, klong, kbox] = CADDY_JOINING_KIT;
   list.push({ ...base, id: kid, title: ktitle, description: CADDY_TEXT(kshort, klong, kbox) });
-  list.push({ ...base, id: CADDY_MAIN.id, title: CADDY_MAIN.title, description: CADDY_MAIN.description, price: 50, colorFeeIncluded: true, packId: kid,
+  list.push({ ...base, id: CADDY_MAIN.id, title: CADDY_MAIN.title, description: CADDY_MAIN.description, price: 50, colorFeeIncluded: true, packId: kid, accessories: CADDY_ACCESSORIES.map(a => a[0]),
     parts: CADDY_MAIN.parts.map(p => ({ ...p, grams: null, photo: '', price: null, defaultColor: '', minutes: null })), editions: CADDY_MAIN.editions, versions: CADDY_MAIN.versions,
     contrast: [['Tab colour', 'Drawer colour']] });
   try {

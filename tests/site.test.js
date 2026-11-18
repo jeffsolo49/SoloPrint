@@ -2406,6 +2406,41 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('accessories are not listed on their own: they are ordered with the main design (quantity each) or alone', async () => {
+    const db = fixtures();
+    db.gallery.m2 = { id: 'm2', published: true, sort_order: 1, data: { title: 'Caddy', photos: ['https://img.test/c.png'], price: 50, accessories: ['x1', 'x2', 'x3'] } };
+    db.gallery.x1 = { id: 'x1', published: true, sort_order: 2, data: { title: 'Glove Holder', description: 'Holds gloves.\n\nMore detail.', price: 12 } };
+    db.gallery.x2 = { id: 'x2', published: true, sort_order: 3, data: { title: 'Label Holder' } };
+    db.gallery.x3 = { id: 'x3', published: false, sort_order: 4, data: { title: 'Hidden extra', price: 5 } };
+    const page = await open(db);
+    await page.evaluate(leadIn);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); render(); });
+    await page.waitForSelector('.gallery-card');
+    const titles = await page.$$eval('.gallery-title', els => els.map(e => e.textContent.trim()));
+    assert(!titles.some(t => /Glove Holder|Label Holder|Hidden extra/.test(t)) && titles.includes('Caddy'), JSON.stringify(titles));
+    await page.evaluate(() => openWork('m2'));
+    await page.waitForSelector('#accessory-picker');
+    const rows = await page.$$eval('.accessory-row strong', els => els.map(e => e.textContent));
+    assert(JSON.stringify(rows) === JSON.stringify(['Glove Holder', 'Label Holder']), JSON.stringify(rows));
+    // caddy plus two gloves
+    await page.fill('#acc-qty-0', '2'); await page.press('#acc-qty-0', 'Tab');
+    await page.evaluate(() => requestGalleryItem('m2'));
+    let items = await page.evaluate(() => state.draftItems.map(it => [it.name, it.qty, it.accessoryFor || '']));
+    assert(JSON.stringify(items) === JSON.stringify([['Caddy', 1, ''], ['Glove Holder', 2, 'm2']]), JSON.stringify(items));
+    // accessories only
+    await page.evaluate(() => { state.draftItems = [blankItem()]; state.designOpts = {}; setTab('gallery'); openWork('m2'); });
+    await page.waitForSelector('#acc-only');
+    await page.check('#acc-only');
+    await page.evaluate(() => requestGalleryItem('m2'));
+    assert(await page.evaluate(() => state.galleryOpen) === 'm2', 'nothing picked: stays on the design page');
+    assert(/Pick at least one accessory/.test(await page.textContent('#acc-err')), 'asks for one');
+    await page.fill('#acc-qty-1', '3'); await page.press('#acc-qty-1', 'Tab');
+    await page.evaluate(() => requestGalleryItem('m2'));
+    items = await page.evaluate(() => state.draftItems.map(it => [it.name, it.qty, it.accessoryFor || '']));
+    assert(JSON.stringify(items) === JSON.stringify([['Label Holder', 3, 'm2']]), JSON.stringify(items));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('color pickers in owner tools do not list the built-in "(no specific color)" duplicates when your own colors exist', async () => {
     const db = fixtures();
     const page = await open(db);

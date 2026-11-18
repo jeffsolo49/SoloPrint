@@ -1451,3 +1451,8 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .preorder-gate { border: 2px solid var(--accent2); border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: var(--surface); }
 .gate-title { margin: 0 0 4px; font-size: 16px; }
 .lead-list { margin: 6px 0 10px 18px; line-height: 1.8; font-size: 14px; }
+
+.accessory-row { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border, #ddd); }
+.accessory-row .field { flex: 0 0 auto; margin: 0; }
+.accessory-info { flex: 1; min-width: 0; }
+.accessory-info details summary { cursor: pointer; padding: 6px 0; }
