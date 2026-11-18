@@ -1999,6 +1999,7 @@ function pickGalleryForItem(i, id) {
   const item = state.draftItems[i];
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!item || !g) return;
+  if (g.preorder && !preorderLeadOk()) { openWork(id); setTimeout(() => document.getElementById('preorder-name')?.focus(), 50); return; }
   Object.assign(item, galleryItemFields(g), { mode: 'gallery' });
   applyPartColors(item);
   render();
@@ -3801,6 +3802,7 @@ function renderWorkDetail(g) {
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.
 function renderWorkPrice(g) {
+  if (g.preorder && !preorderLeadOk()) return renderPreorderGate(g);
   const colors = cmViewColors(g.id), opts = designOpts(g.id);
   const price = designEstimate(g, colors, opts);
   const picker = renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`);
@@ -3921,6 +3923,7 @@ function renderGalleryTab() {
 function requestGalleryItem(id, colors) {
   const g = state.gallery.find(x => x.id === id && x.published);
   if (!g) return;
+  if (g.preorder && !preorderLeadOk()) { openWork(id); setTimeout(() => document.getElementById('preorder-name')?.focus(), 50); return; }
   const item = { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' };
   if (colors) item.designParts.forEach(p => { if (colors[p.id]) p.colorId = colors[p.id]; });
   applyDesignOpts(item, (state.designOpts || {})[id]);
@@ -3991,6 +3994,7 @@ function renderOwnerGalleryPage() {
     </div>
     ${renderColorIdeasInbox()}
     ${renderPreorderLists()}
+    ${renderPreorderLeads()}
     ${renderCaddySetup()}
     ${state.rackDone ? `<div class="alert success" style="display:block;">${esc(state.rackDone)}</div>` : ''}
     ${renderDryingRackSetup()}

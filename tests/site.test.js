@@ -149,6 +149,7 @@ async function mockBackend(page, db) {
         .sort((a, b) => (a.at ? 0 : 1) - (b.at ? 0 : 1) || String(a.at).localeCompare(String(b.at)));
       return route.fulfill({ json: q });
     }
+    if (rest.startsWith('/request_drafts') && method === 'GET') return owner ? route.fulfill({ json: Object.values(db.drafts).map(d => ({ email: d.email, name: d.name, data: d.data, updated_at: new Date().toISOString() })) }) : route.fulfill({ status: 401, json: {} });
     if (rest.startsWith('/rpc/save_request_draft')) {
       const d = JSON.parse(req.postData());
       db.drafts[d.p_email.toLowerCase()] = { id: '11111111-2222-3333-4444-555555555555', email: d.p_email, name: d.p_name, data: d.p_data };
@@ -223,6 +224,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 
 // 'settings/colors' opens a Settings section.
 const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
+const leadIn = "(() => { state.clientName = 'Test Person'; state.clientEmail = 't@example.com'; localStorage.setItem('soloprint_preorder_lead', JSON.stringify({ email: 't@example.com', designs: [] })); })()";
 const STATES = {
   'home': '0',
   'home with many reviews': "(() => { state.settings.reviews = Array.from({ length: 7 }, (x, k) => ({ id: 'r' + k, name: 'Customer ' + k, text: 'Review number ' + k + ', the print came out great and it arrived fast.' })); render(); })()",
@@ -2305,6 +2307,7 @@ const STATES = {
     db.jobs.p1 = { id: 'p1', clientName: 'Second', clientEmail: 's@example.com', createdAt: ago(900), phase: 'order_received', paymentStatus: 'deposit_received', depositAt: ago(100), items: [{ name: 'Dragon Organizer', qty: 1, galleryId: 'g1', preorder: true, filType: 'black', minutes: 150, grams: 85 }] };
     db.jobs.p2 = { id: 'p2', clientName: 'First', clientEmail: 'f@example.com', createdAt: ago(50), phase: 'order_received', paymentStatus: 'deposit_received', depositAt: ago(300), items: [{ name: 'Dragon Organizer', qty: 2, galleryId: 'g1', preorder: true, filType: 'black', minutes: 150, grams: 85 }] };
     const page = await open(db);
+    await page.evaluate(leadIn);
     await page.evaluate(async () => { await loadGallery(); setTab('gallery'); });
     await page.waitForSelector('.gallery-card .preorder-badge');
     assert(await page.isVisible('.gallery-card button:has-text("Pre-order this")'), 'pre-order button');
@@ -2374,6 +2377,7 @@ const STATES = {
     db.gallery.k1 = { id: 'k1', published: true, sort_order: 6, data: { title: 'Joining pack', photos: [], minutes: 10, grams: 5 } };
     db.jobs.h1 = { id: 'h1', clientName: 'Ann', clientEmail: 'ann@example.com', createdAt: ago(900), phase: 'delivered', items: [{ name: 'Stand', qty: 2, galleryId: 'm1', filType: 'black', versionId: 'v1', versionName: 'Single', versionCount: 1 }] };
     const page = await open(db);
+    await page.evaluate(leadIn);
     await page.evaluate(async () => { await loadGallery(); });
     const r = await page.evaluate(() => {
       const g = state.gallery.find(x => x.id === 'm1');
@@ -2417,6 +2421,7 @@ const STATES = {
   await check('Catheter Caddy pre-order: one-tap set-up, editions merge color groups, tabs must contrast, $50 single / $100 joined, pre-order terms and timing', async () => {
     const db = fixtures();
     const page = await open(db);
+    await page.evaluate(leadIn);
     await page.evaluate(asOwner('gallery'));
     await page.waitForSelector('#caddy-go');
     await page.click('#caddy-go');
@@ -2470,6 +2475,35 @@ const STATES = {
     await page.waitForFunction(() => state.previewJustPushed === true);
     assert(db.settings.materialNote === 'Preview material note' && db.gallery.g1.data.title === 'Dragon (preview)' && db.gallery.gnew && db.gallery.gnew.data.title === 'Brand new thing', JSON.stringify([db.settings.materialNote, db.gallery.g1.data.title]));
     assert(!db.private.preview.settings, 'preview cleared after pushing');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('pre-orders step 1: name and email first, saved at once, then the options; the owner sees who is interested', async () => {
+    const db = fixtures();
+    Object.assign(db.gallery.g1.data, { preorder: true });
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await page.waitForSelector('#preorder-gate');
+    assert(!(await page.$('.version-picker')) && !(await page.$('#work-price button:has-text("Pre-order this")')), 'no options before step 1');
+    await page.evaluate(() => requestGalleryItem('g1'));
+    assert(await page.evaluate(() => state.draftItems.every(it => !it.galleryId)), 'request blocked without step 1');
+    await page.click('#preorder-continue');
+    assert(/name/.test(await page.textContent('#preorder-gate-err')), 'asks for the name');
+    await page.fill('#preorder-name', 'Pat Lee');
+    await page.fill('#preorder-email', 'not-an-email');
+    await page.click('#preorder-continue');
+    assert(/valid email/.test(await page.textContent('#preorder-gate-err')), 'asks for a real email');
+    await page.fill('#preorder-email', 'pat@example.com');
+    await page.click('#preorder-continue');
+    for (let t = 0; t < 10 && !db.drafts['pat@example.com']; t++) await page.waitForTimeout(100);   // well under the 3 second draft delay
+    assert(db.drafts['pat@example.com'] && db.drafts['pat@example.com'].name === 'Pat Lee' && db.drafts['pat@example.com'].data.lead.designs[0].id === 'g1', JSON.stringify(db.drafts));
+    await page.waitForFunction(() => !document.getElementById('preorder-gate'));
+    assert(await page.isVisible('#work-price button:has-text("Pre-order this")'), 'options show after step 1');
+    // owner
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#preorder-leads');
+    const t = await page.textContent('#preorder-leads');
+    assert(/Pat Lee/.test(t) && /pat@example.com/.test(t) && /Dragon Organizer/.test(t), t);
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

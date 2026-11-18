@@ -1447,3 +1447,7 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 /* Tick boxes in the design form's Versions and Editions blocks: big enough to tap, and spaced apart */
 .editions-fields .special-order-check, .versions-fields .special-order-check { min-height: 32px; margin: 0 0 6px; }
 .editions-fields .special-order-check input[type="checkbox"], .versions-fields .special-order-check input[type="checkbox"] { width: 24px; height: 24px; min-height: 24px; margin: 0; }
+
+.preorder-gate { border: 2px solid var(--accent2); border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: var(--surface); }
+.gate-title { margin: 0 0 4px; font-size: 16px; }
+.lead-list { margin: 6px 0 10px 18px; line-height: 1.8; font-size: 14px; }
