@@ -452,7 +452,8 @@ function reviewRequestEmails(records, custom, site) {
 
 // "Want to finish your request?" for drafts left unsent (see supabase/drafts.sql).
 function draftReminderEmails(drafts, custom) {
-  return (drafts || []).filter(d => validEmail(d.clientEmail) && d.id).map(d => {
+  // A pre-order lead with no request started yet is for the owner to follow up; it gets no automatic email.
+  return (drafts || []).filter(d => validEmail(d.clientEmail) && d.id && ((d.data && d.data.items) || []).length).map(d => {
     const items = ((d.data && d.data.items) || []).map(draftItemSummary).filter(Boolean);
     const vars = {
       name: String(d.clientName || '').trim() || 'there',

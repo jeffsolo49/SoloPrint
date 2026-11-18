@@ -177,10 +177,12 @@ function draftHasContent(items) {
 }
 function queueServerDraft(items) {
   const email = String(state.clientEmail || '').trim();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !draftHasContent(items)) return;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !(draftHasContent(items) || leadForDraft(email))) return;
   clearTimeout(serverDraftTimer);
   serverDraftTimer = setTimeout(() => {
     const data = { items: items.map(it => ({ ...cleanItem(it), mode: it.mode, printHours: cleanText(it.printHours, 6), printMinutes: cleanText(it.printMinutes, 6) })) };
+    const lead = leadForDraft(email);
+    if (lead) data.lead = lead;
     supaFetch('/rpc/save_request_draft', { method: 'POST', body: JSON.stringify({ p_email: email, p_name: String(state.clientName || '').trim().slice(0, 120), p_data: data }) })
       .catch(() => {});   // the browser copy is still saved; this one is only for the reminder email
   }, 3000);
@@ -2313,6 +2315,8 @@ const OWNER_WIKI = [
     steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
+  { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
+    steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
     steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
@@ -6210,3 +6214,86 @@ function renderPreviewPage() {
       <div class="field-help" style="margin-top:10px;">Pushing live copies only what you changed. If you changed something on the live site meanwhile (like approving a review), it stays.</div>
     </div>`;
 }
+
+// ── PRE-ORDER STEP 1: NAME AND EMAIL ──
+// A pre-order design asks for a name and email first; nothing else shows until they're given. The moment they
+// continue, the lead is saved to the owner-readable request_drafts (the same table as unfinished requests), so
+// anyone who walks away can be followed up (Designs page "People interested").
+const LEAD_KEY = 'soloprint_preorder_lead';
+function leadSaved() { try { return JSON.parse(localStorage.getItem(LEAD_KEY) || 'null'); } catch (e) { return null; } }
+function leadForDraft(email) {
+  const l = leadSaved();
+  return l && l.email === String(email || '').trim().toLowerCase() ? { designs: (l.designs || []).slice(0, 12), at: l.at } : null;
+}
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+function preorderLeadOk() {
+  const email = String(state.clientEmail || '').trim().toLowerCase(), l = leadSaved();
+  return EMAIL_OK.test(email) && String(state.clientName || '').trim().length >= 2 && !!l && l.email === email;
+}
+function renderPreorderGate(g) {
+  return `<div class="preorder-gate" id="preorder-gate">
+    <h3 class="gate-title">Step 1: your name and email</h3>
+    <div class="field-help">Pre-orders are first come, first served. Tell me who you are so I can hold your place and follow up with you. I only use this to contact you about your pre-order.</div>
+    <div class="field"><label for="preorder-name">Your name</label><input type="text" id="preorder-name" value="${esc(state.clientName || '')}" autocomplete="name" maxlength="120" /></div>
+    <div class="field"><label for="preorder-email">Your email</label><input type="email" id="preorder-email" value="${esc(state.clientEmail || '')}" autocomplete="email" maxlength="200" /></div>
+    <div class="alert error" id="preorder-gate-err" role="alert"></div>
+    <button type="button" class="btn-sm btn-primary" id="preorder-continue" onclick="preorderContinue('${esc(g.id)}')">Continue to choose your options</button>
+  </div>`;
+}
+// What the lead saves: the draft row for this email, keeping any request already started.
+async function saveLead(lead) {
+  const items = (state.draftItems || []).filter(it => hasModeContent(it) || Object.keys(it.modeDrafts || {}).length)
+    .map(it => ({ ...cleanItem(it), mode: it.mode, printHours: cleanText(it.printHours, 6), printMinutes: cleanText(it.printMinutes, 6) }));
+  await supaFetch('/rpc/save_request_draft', { method: 'POST', body: JSON.stringify({ p_email: lead.email, p_name: lead.name.slice(0, 120), p_data: { items, lead: { designs: lead.designs.slice(0, 12), at: lead.at } } }) });
+}
+async function preorderContinue(gid) {
+  const name = String((document.getElementById('preorder-name') || {}).value || '').trim();
+  const email = String((document.getElementById('preorder-email') || {}).value || '').trim();
+  if (name.length < 2) { showAlert('preorder-gate-err', 'Please type your name.', 'error'); document.getElementById('preorder-name')?.focus(); return; }
+  if (!EMAIL_OK.test(email)) { showAlert('preorder-gate-err', 'Please type a valid email, so I can reach you.', 'error'); document.getElementById('preorder-email')?.focus(); return; }
+  const g = state.gallery.find(x => x.id === gid);
+  const old = leadSaved(), same = old && old.email === email.toLowerCase();
+  const designs = (same ? old.designs || [] : []).filter(d => d.id !== gid).concat(g ? [{ id: g.id, title: g.title }] : []);
+  const lead = { email: email.toLowerCase(), name, designs, at: same && old.at ? old.at : new Date().toISOString() };
+  state.clientName = name; state.clientEmail = email;
+  try { localStorage.setItem(LEAD_KEY, JSON.stringify(lead)); } catch (e) { /* kept for this visit only */ }
+  const btn = document.getElementById('preorder-continue');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  // Saved right away, before they go on. If it fails they still continue, and it is retried with the next save.
+  try { await saveLead(lead); } catch (e) { try { localStorage.setItem(LEAD_KEY, JSON.stringify({ ...lead, pending: true })); } catch (e2) { /* ignore */ } }
+  render();
+  document.getElementById('work-price')?.scrollIntoView({ block: 'center' });
+}
+// Owner: people who gave their name and email on a pre-order and haven't ordered.
+async function fetchLeads() {
+  try { state.leads = await supaFetch('/request_drafts?select=email,name,data,updated_at&order=updated_at.desc') || []; }
+  catch (e) { state.leads = []; }
+  state.leadsLoaded = true;
+}
+function leadList() {
+  const ordered = new Set((state.batches || []).map(b => String(b.clientEmail || '').trim().toLowerCase()));
+  return (state.leads || []).filter(l => l && l.data && (l.data.lead || (l.data.items || []).some(it => it && it.preorder)) && !ordered.has(String(l.email || '').trim().toLowerCase()));
+}
+function renderPreorderLeads() {
+  if (!state.leadsLoaded) { if (!state.leadsLoading) { state.leadsLoading = true; fetchLeads().then(() => { state.leadsLoading = false; render(); }); } return ''; }
+  const list = leadList();
+  if (!list.length) return '';
+  return `<div class="card" id="preorder-leads">
+    <h3 class="card-title">People interested (${list.length})</h3>
+    <div class="field-help">They gave their name and email on a pre-order and haven't sent a request. Follow up with them.</div>
+    <ul class="lead-list">${list.map(l => { const d = (l.data.lead && l.data.lead.designs) || [], started = (l.data.items || []).some(it => it && (it.name || it.notes));
+      return `<li><strong>${esc(l.name || 'No name')}</strong> · <a href="mailto:${esc(l.email)}">${esc(l.email)}</a> · ${esc(d.map(x => x.title).join(', ') || 'a pre-order')}${started ? ' · started a request' : ''} · ${esc(new Date(l.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</li>`; }).join('')}</ul>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn-sm" id="leads-copy" onclick="copyLeadEmails()">Copy all emails</button>
+      <button type="button" class="btn-sm" onclick="state.leadsLoaded = false; render();">Refresh</button></div>
+  </div>`;
+}
+async function copyLeadEmails() {
+  const text = leadList().map(l => l.email).join(', ');
+  try { await navigator.clipboard.writeText(text); const b = document.getElementById('leads-copy'); if (b) { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy all emails'; }, 2000); } }
+  catch (e) { prompt('Copy these emails:', text); }
+}
+// A lead that couldn't be saved is saved on the next page load.
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => {
+  const l = leadSaved();
+  if (l && l.pending && EMAIL_OK.test(l.email)) saveLead(l).then(() => { try { localStorage.setItem(LEAD_KEY, JSON.stringify({ ...l, pending: false })); } catch (e) { /* ignore */ } }).catch(() => {});
+});
