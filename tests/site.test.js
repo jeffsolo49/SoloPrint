@@ -2349,6 +2349,22 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('owner can add and remove photos on a review in Settings > Reviews', async () => {
+    const db = fixtures();
+    db.settings = db.settings || {};
+    const page = await open(db);
+    await page.evaluate(asOwner('settings/reviews'));
+    await page.waitForSelector('text=Add a review');
+    await page.click('text=Add a review');
+    await page.setInputFiles('.review-photo-edit input[type=file]', { name: 'cust.png', mimeType: 'image/png', buffer: PNG });
+    await page.waitForSelector('.review-photo-item img');
+    assert(db.uploads.some(u => u.startsWith('gallery/reviews/')), JSON.stringify(db.uploads));
+    assert(await page.evaluate(() => state.settingsDraft.reviews.reduce((t, r) => t + (r.photos || []).length, 0)) === 1, 'photo on the draft review');
+    await page.click('.review-photo-item button');
+    await page.waitForFunction(() => !document.querySelector('.review-photo-item'));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };

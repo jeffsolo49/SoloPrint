@@ -2346,7 +2346,7 @@ const OWNER_WIKI = [
   { id: 'vacation', area: 'Settings', title: 'Vacation mode', keys: 'vacation away closed holiday pause',
     steps: ['Settings > Vacation: turn it on, set the date you\'re back and an optional message.', 'Customers see a notice and the emails mention it.'], go: ['settings', 'vacation'] },
   { id: 'reviews', area: 'Settings', title: 'Approve customer reviews', keys: 'reviews approve stars half star photos testimonials',
-    steps: ['Customers get a review link about a week after shipping (or send it yourself with "Send an email now").', 'Settings > Reviews: "Approve and show" puts a review on the site.'], go: ['settings', 'reviews'] },
+    steps: ['Customers get a review link about a week after shipping (or send it yourself with "Send an email now").', 'Settings > Reviews: "Approve and show" puts a review on the site.', 'On any review, tap "Add photos" to upload pictures (up to 4) that a customer sent you, or "Remove" under a photo to take it off. Tap Save to keep the changes.'], go: ['settings', 'reviews'] },
 
   // Behind the scenes
   { id: 'sql', area: 'Behind the scenes', title: 'When asked to "run the SQL" in Supabase', keys: 'sql supabase database setup run owner-tools',
@@ -5634,4 +5634,51 @@ function renderPreorderLists() {
     ${designs.map(g => `<h4 class="preorder-design">${esc(g.title || 'Untitled')}${g.preorderReady ? ` <span class="gallery-meta">expected ${esc(g.preorderReady)}</span>` : ''}</h4>${rows(preorderQueue(g.id))}`).join('')}
     ${others.length ? `<h4 class="preorder-design">Launched designs, pre-orders still open</h4>${rows(others)}` : ''}
   </div>`;
+}
+
+// ── REVIEW PHOTOS (owner) ──
+// Settings > Reviews: add or remove photos on any review (up to 4), e.g. pictures a customer sent you.
+function renderReviewPhotoEditor(r, n) {
+  const photos = r.photos || [];
+  return `<div class="field review-photo-edit">
+    <label>Photos (optional, up to 4)</label>
+    ${photos.length ? `<div class="review-photos">${photos.map((u, k) => `<span class="review-photo-item"><img src="${esc(u)}" alt="Review photo ${k + 1}" loading="lazy" />
+      <button type="button" class="btn-sm danger" onclick="removeReviewPhoto(${n}, ${k})" aria-label="Remove photo ${k + 1} from this review">Remove</button></span>`).join('')}</div>` : ''}
+    ${photos.length < 4 ? `<label class="btn-sm" style="display:inline-block;">Add photos<input type="file" accept="image/*" multiple style="display:none;" onchange="uploadReviewPhotos(${n}, this.files); this.value='';" /></label>` : ''}
+    <span class="field-help" id="rv-photo-status-${n}" role="status"></span>
+  </div>`;
+}
+function removeReviewPhoto(n, k) {
+  const r = state.settingsDraft && state.settingsDraft.reviews[n];
+  if (!r || !r.photos) return;
+  r.photos.splice(k, 1);
+  render();
+}
+async function uploadReviewPhotos(n, files) {
+  const r = state.settingsDraft && state.settingsDraft.reviews[n];
+  const status = document.getElementById(`rv-photo-status-${n}`);
+  const token = getOwnerToken();
+  if (!r || !token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
+  r.photos = r.photos || [];
+  const list = [...files].slice(0, Math.max(0, 4 - r.photos.length));
+  if (!list.length) { if (status) status.textContent = 'This review already has 4 photos.'; return; }
+  let added = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (status) status.textContent = `Uploading ${i + 1} of ${list.length}...`;
+    try {
+      const blob = await resizePhoto(list[i], 1200);
+      if (!blob) throw new Error('resize failed');
+      const path = `reviews/${String(r.id || 'r').replace(/[^A-Za-z0-9_-]/g, '')}-${Date.now()}-${i}.jpg`;
+      await uploadStoredPhoto(path, blob, token);
+      r.photos.push(GALLERY_PUBLIC_PREFIX + path);
+      added++;
+    } catch (e) {
+      console.error('Review photo error:', e);
+      if (status) status.textContent = /unsupported/.test(e.message) ? `"${list[i].name}" isn't a format this browser can read. Try a JPG or PNG.` : "Couldn't upload. Check that you're logged in.";
+      break;
+    }
+  }
+  if (added) render();
+  const again = document.getElementById(`rv-photo-status-${n}`);
+  if (added && again) again.textContent = `Added ${added} photo${added > 1 ? 's' : ''}. Tap Save to keep them.`;
 }
