@@ -170,6 +170,7 @@ async function upsertBatch(batch) {
       headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify({ id: normalized.id, data: normalized })
     });
+    if (state.ownerUnlocked && orderIsPreorder(normalized)) setTimeout(syncTopWork, 300);
     return true;
   } catch(e) {
     console.error('Upsert error:', e);
@@ -195,7 +196,7 @@ async function submitBatchRemote(batch) {
 }
 
 async function deleteBatchRemote(id) {
-  try { await supaFetch(`/jobs?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch(e) { console.error(e); }
+  try { await supaFetch(`/jobs?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); setTimeout(syncTopWork, 300); } catch(e) { console.error(e); }
 }
 
 
@@ -577,6 +578,7 @@ function normalizeBatch(batch) {
     createdAt: cleanIso(batch.createdAt) || new Date(0).toISOString(),
     customerApprovedAt: cleanIso(batch.customerApprovedAt),
     deliveryNotes: cleanText(batch.deliveryNotes),
+    preorderEta: cleanText(batch.preorderEta, 80).trim(),   // owner's expected print and ship time for a pre-order
     deliveryTracking: cleanText(batch.deliveryTracking, 200),
     deliveryDate: cleanText(batch.deliveryDate, 100),
     postageCost: batch.postageCost === '' || batch.postageCost === null || batch.postageCost === undefined || !(Number(batch.postageCost) >= 0) ? '' : Math.min(1000, Math.round(Number(batch.postageCost) * 100) / 100),
@@ -2670,7 +2672,7 @@ function renderOwnerBatch(b) {
       </div>
       <div class="desk-bar" aria-hidden="true">${DESK_STEPS.map((s, i) => `<i class="${i + 1 < st.n ? 'done' : i + 1 === st.n ? 'now' : ''}"></i>`).join('')}</div>
       ${b.designTerms && !beforeQuote(phase) ? `<div><span class="status quoted">${b.customerApprovedAt ? `Agreed to design terms ${esc(formatAustinTime(b.customerApprovedAt))}` : 'Design terms: waiting for them to agree'}</span></div>` : ''}
-      ${orderIsPreorder(b) ? `<div><span class="preorder-badge">Pre-order</span> <span class="field-help">${esc(preorderPlace(b))}</span></div>` : ''}
+      ${orderIsPreorder(b) ? `<div><span class="preorder-badge">Pre-order</span> <span class="field-help">${esc(preorderPlace(b))}</span></div>${renderPreorderEta(b, 'desk')}` : ''}
       <div class="desk-stepname">${st.n > 6 ? 'Finished' : `Step ${st.n} of 6 · ${esc(st.label)}`}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
     </div>
     ${editing ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>` : `${renderNextStep(b, st)}${renderOwnerConversation(b)}`}
@@ -3083,6 +3085,7 @@ function cleanSettings(raw) {
     materialNote: cleanText(d.materialNote, 200).trim(),
     designTerms: cleanText(d.designTerms, 4000).trim(),
     galleryNote: cleanText(d.galleryNote, 200).trim(),
+    preorderLine: cleanPreorderLine(d.preorderLine),
     topWork: (Array.isArray(d.topWork) ? d.topWork : []).filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(String(id))).slice(0, 5),
     siteText: cleanSiteText(d.siteText),
     faq: cleanFaq(d.faq),
@@ -3112,6 +3115,17 @@ async function loadSettings() {
 
 // Saves only what changed since `base` (what this page last loaded), on top of the latest saved settings,
 // so a page left open on another device (or a background save) can't put back an older FAQ, colors, etc.
+// Per design: when each open pre-order's deposit came in (times only, no names), so customers see their place in line.
+function cleanPreorderLine(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.keys(raw).slice(0, 50).forEach(id => {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !Array.isArray(raw[id])) return;
+    const list = raw[id].map(cleanIso).filter(Boolean).sort().slice(0, 300);
+    if (list.length) out[id] = list;
+  });
+  return out;
+}
 async function saveSettings(next, base = state.settings) {
   const mine = cleanSettings(next), was = cleanSettings(base);
   let latest = was;
