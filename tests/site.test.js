@@ -1548,7 +1548,7 @@ const STATES = {
     const owner = await open(fixtures());
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
-    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Help|Preview|Change Password', tabs.join('|'));
+    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Settings|Help', tabs.join('|'));
     assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|Etsy to make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
