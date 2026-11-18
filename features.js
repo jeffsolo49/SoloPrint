@@ -161,7 +161,7 @@ function orderAgain(id) {
 
 function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
-  return `<div class="order-extras">
+  return `${orderIsPreorder(b) && !delivered ? renderPreorderNote() : ''}<div class="order-extras">
     ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>` : ''}
     ${delivered ? `<button type="button" class="btn-sm btn-gold" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
@@ -2306,6 +2306,8 @@ const OWNER_WIKI = [
   // Designs
   { id: 'design-add', area: 'Designs', title: 'Add or change a design', keys: 'design gallery past work new design photos price set price publish',
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
+  { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
+    steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -3058,6 +3060,9 @@ const SITE_TEXT = [
   ['Past work', [
     ['gallerySub', 'Past work page, small text', 'Designs we\'ve made before, with the story behind each one. Want one? Tap "Request this".'],
     ['requestThis', '"Request this" button', 'Request this'],
+    ['preorderThis', 'Pre-order designs: the request button', 'Pre-order this'],
+    ['preorderBadge', 'Pre-order designs: the label on the design', 'Pre-order'],
+    ['preorderNote', 'Pre-orders: the first come, first served note (design page, request form, their order and the quote, confirmed and deposit emails)', DEFAULT_PREORDER_NOTE],
     ['logoOffer', 'Design page: company logo add-on note ({price} = the logo price from Prices)', 'Want your company logo on it? I can add it for {price} more per item. Tick "Add my company logo" when you request it, and I\'ll ask you for the logo file.'],
     ['logoCheckbox', 'Request form: company logo tick box ({price} = the logo price)', 'Add my company logo (+{price} each)'],
     ['colorFeeNote', 'Request form: note about the extra colors charge ({free} = colors included, {price} = the charge from Prices)', 'Up to {free} colors are included. Using more than {free} colors adds {price} per print, because each extra color means more color changes and more work on every print.'],
@@ -4122,7 +4127,7 @@ function stepEmailPreview(o, key, extra) {
   vars.designTermsNote = o.designTerms ? 'This order includes a custom design. When you approve your quote, you will be asked to read and agree to my custom design terms.' : '';
   vars.photo = (Array.isArray(o.finishedPhotos) ? o.finishedPhotos : []).filter(u => /^https:\/\//.test(String(u)))[0] || '';
   vars.delivery = ['', o.deliveryDate && `Ship date: ${o.deliveryDate}`, o.deliveryTracking && `Tracking number: ${o.deliveryTracking}`, o.deliveryNotes && `Notes: ${o.deliveryNotes}`].filter(x => x !== '' && x).join('\n');
-  vars.queueNote = featureOn('queue') ? queueNoteText(o, queueFromOrders(state.batches.map(x => (x.id === o.id ? o : x))), rules) : '';
+  vars.queueNote = preorderQueueNote(o, state.settings) || featureOn('queue') ? preorderQueueNote(o, state.settings) || queueNoteText(o, queueFromOrders(state.batches.map(x => (x.id === o.id ? o : x))), rules) : '';
   vars.detailsItems = [vars.itemsWithPrices, vars.specialRoll ? 'Special order roll: $' + vars.specialRoll : '', vars.extraCharges, vars.total ? 'Total: $' + vars.total : ''].filter(Boolean).join('\n\n');
   vars.invoiceSummary = invoiceSummary(vars, o, o.items.every(itemPriced) ? orderSum(o) : 0, rules);
   vars.footer = renderEmailText(emailTemplate('footer', custom).body, vars);
@@ -4463,6 +4468,7 @@ function detailsItemsText(b) {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
     const lines = [`${i + 1}) ${it.name || 'Unnamed'}${qty > 1 ? ` x ${qty}` : ''}`, `   ${filamentLabel(it)}`];
     if (colorPartsText(it)) lines.push(`   Which parts: ${colorPartsText(it)}`);
+    if (it.preorder === true) lines.push('   Pre-order: made first come, first served');
     if (it.logo) lines.push('   Add your company logo: yes');
     if (colorCharge(it, rulesFor(b))) lines.push(`   More than ${rulesFor(b).freeColors} colors: +$${colorCharge(it, rulesFor(b)).toFixed(2)} per print (extra color changes)`);
     if (it.link) lines.push(`   Link: ${it.link}`);
@@ -5554,4 +5560,51 @@ if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') 
     addEventListener('resize', later);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleJumpNav(false); });
   });
+}
+
+// ── PRE-ORDERS ──
+// A design marked "Pre-order" (a new product that isn't ready yet) can be requested like any design. Its items
+// keep `preorder`; the quote, confirmed and deposit emails and the customer's order say pre-orders are made
+// first come, first served (site text preorderNote, shared preorderQueueNote), and deposits set the order.
+function requestLabel(g) { return g && g.preorder ? t('preorderThis') : t('requestThis'); }
+function renderPreorderNote(g) {
+  if (g && !g.preorder) return '';
+  return `<div class="preorder-note"><span class="preorder-badge">${esc(t('preorderBadge'))}</span>${g && g.preorderReady ? ` <strong>Expected: ${esc(g.preorderReady)}</strong>` : ''}
+    <div>${esc(t('preorderNote'))}</div></div>`;
+}
+function renderPreorderFormFields(f) {
+  return `<fieldset class="owner-edit-item preorder-fields">
+    <legend>Pre-order</legend>
+    <label class="special-order-check"><input type="checkbox" id="gallery-preorder" ${f.preorder ? 'checked' : ''} onchange="updateGalleryForm('preorder', this.checked); render();" /> Take pre-orders for this design (it isn't ready yet)</label>
+    <div class="field-help">Customers see "${esc(t('preorderBadge'))}", a "${esc(t('preorderThis'))}" button and your first come, first served note (Settings > Wording > site text "preorderNote"). Orders go through the usual steps: you send the quote, they pay a deposit, and the deposits set the order you make them in. Untick this when it's launched.</div>
+    ${f.preorder ? `<div class="field" style="max-width:320px;margin-top:8px;"><label for="gallery-preorder-ready">When it should be ready (optional)</label>
+      <input type="text" id="gallery-preorder-ready" maxlength="80" value="${esc(f.preorderReady || '')}" placeholder="e.g. early January" oninput="updateGalleryForm('preorderReady', this.value)" /></div>` : ''}
+  </fieldset>`;
+}
+// Where an order stands among the pre-orders for the same design: deposits first, by when they came in.
+function preorderQueue(galleryId) {
+  const orders = state.batches.filter(b => (b.phase || 'estimate') !== 'delivered' && (b.items || []).some(it => it.preorder === true && (!galleryId || it.galleryId === galleryId)));
+  const at = b => queueTime(b) || '';
+  return orders.sort((x, y) => (at(x) && at(y) ? at(x).localeCompare(at(y)) : at(x) ? -1 : at(y) ? 1 : String(x.createdAt).localeCompare(String(y.createdAt))));
+}
+function preorderPlace(b) {
+  const gid = ((b.items || []).find(it => it.preorder === true) || {}).galleryId || '';
+  const list = preorderQueue(gid), n = list.indexOf(b) + 1;
+  if (!queueTime(b)) return `No deposit yet: their place is set when it comes in (${list.filter(x => queueTime(x)).length} paid ahead).`;
+  return n ? `Number ${n} of ${list.length} for this design (by deposit time).` : '';
+}
+// Designs page: each pre-order design with its orders in the order to make them.
+function renderPreorderLists() {
+  const designs = state.gallery.filter(g => g.preorder);
+  const others = preorderQueue('').filter(b => !(b.items || []).some(it => it.preorder === true && designs.some(g => g.id === it.galleryId)));
+  if (!designs.length && !others.length) return '';
+  const rows = list => list.length ? `<ol class="preorder-list">${list.map(b => `<li><button type="button" class="btn-link" onclick="focusOwnerOrder('${esc(b.id)}')">${esc(b.clientName || b.clientEmail || 'No name')}</button>
+      · ${esc(String((b.items || []).filter(it => it.preorder === true).reduce((s, it) => s + (Number(it.qty) || 1), 0)))} item(s)
+      · ${queueTime(b) ? `deposit in ${esc(fmtShort(queueTime(b)))}` : beforeQuote(b.phase) ? 'needs a quote' : b.phase === 'quote_sent' ? 'quote sent' : 'waiting for the deposit'}</li>`).join('')}</ol>` : '<div class="field-help">No pre-orders yet.</div>';
+  return `<div class="card preorders-card" id="preorders">
+    <h3 class="card-title">Pre-orders</h3>
+    <div class="field-help">First come, first served: paid deposits first, by when they came in, then the ones still waiting. Tap a name to open the order.</div>
+    ${designs.map(g => `<h4 class="preorder-design">${esc(g.title || 'Untitled')}${g.preorderReady ? ` <span class="gallery-meta">expected ${esc(g.preorderReady)}</span>` : ''}</h4>${rows(preorderQueue(g.id))}`).join('')}
+    ${others.length ? `<h4 class="preorder-design">Launched designs, pre-orders still open</h4>${rows(others)}` : ''}
+  </div>`;
 }

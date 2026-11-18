@@ -127,6 +127,12 @@ Every owner page with 2+ sections gets a button per section on the right that st
 under 1000px wide a "Sections" button opens the list). Built from the page after each redraw (a MutationObserver): each top-level `.card`'s heading, plus `.wiki-area` and
 `.email-group-title`, so a new card with a `.card-title` gets its button by itself. Highlights the section in view (`markJumpActive`).
 
+## Pre-orders
+
+A design with the "Pre-order" box (`preorder`, `preorderReady` on gallery data; `renderPreorderFormFields`) shows a badge, "Pre-order this" (`requestLabel`) and the first come, first served note (`renderPreorderNote`, site text `preorderNote`/`preorderBadge`/`preorderThis`).
+Requested items keep `preorder: true` (`galleryItemFields`, `cleanItem`). Shared `orderIsPreorder`, `preorderNoteText(settings)` (the owner's live site text or `DEFAULT_PREORDER_NOTE`), `preorderQueueNote`: the quote, confirmed and deposit emails' `{queueNote}` is that note instead of a days estimate (Code.gs `queueNote`, site `stepEmailPreview` vars). `{detailsItems}` lists "Pre-order".
+Owner: Designs page "Pre-orders" card (`renderPreorderLists`, `preorderQueue`: paid deposits by `queueTime`, then the rest by request time), a desk chip and "Number N of M" on the order (`preorderPlace`). Normal order steps and deposits; nothing new in the database.
+
 ## Send an email now
 
 Order screen fold "Send an email now" (`renderSendEmailFold`, `MANUAL_EMAILS`, `askSendEmail`, `sendManualEmail` in features.js): the owner previews the exact email and confirms; the site saves
