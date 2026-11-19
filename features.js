@@ -6827,3 +6827,40 @@ async function seedWikiNotes() {
   state.ownerPrivate = { ...state.ownerPrivate, wiki: { entries: todo.map(n => ({ id: n.id, title: n.title, text: n.text })).concat(ownerWikiNotes()), seeded: done.concat(todo.map(n => n.id)) } };
   try { await saveOwnerPrivate('wiki'); } catch (e) { /* tried again next time */ }
 }
+
+// ── Choose a design photo from customers' review photos (Designs form, next to Upload photos) ──
+function reviewPhotoChoices() {
+  const seen = new Set(), out = [];
+  const add = (urls, who, note) => (urls || []).forEach(u => { if (u && !seen.has(u)) { seen.add(u); out.push({ url: u, who: who || 'A customer', note }); } });
+  (state.settings.reviews || []).forEach(rv => add(rv.photos, rv.name, 'shown on the site'));
+  (state.customerReviews || []).forEach(rv => add(rv.photos, rv.name, 'waiting for approval'));
+  return out;
+}
+function toggleReviewPhotoPicker() {
+  state.reviewPicker = !state.reviewPicker;
+  if (state.reviewPicker && !state.customerReviews && !state.customerReviewsError && typeof loadCustomerReviews === 'function') loadCustomerReviews().then(() => render()).catch(() => {});
+  render();
+  document.getElementById('review-photo-open')?.focus();
+}
+function renderReviewPhotoPicker() {
+  const list = reviewPhotoChoices(), have = parseImageLinks((state.galleryForm || {}).photos || '');
+  return `<div class="review-photo-picker" id="review-photo-picker" role="group" aria-label="Review photos">
+    <div class="field-help">Tap a photo to add it to this design (up to 5). Ask the customer first if you can use their picture.</div>
+    ${list.length ? `<div class="review-photo-grid">${list.map((p, i) => `<button type="button" class="review-photo-choice" onclick="addReviewPhotoToDesign(${i})" ${have.includes(p.url) ? 'aria-pressed="true"' : 'aria-pressed="false"'} aria-label="Add the photo from ${esc(p.who)} to this design">
+      <img src="${esc(p.url)}" alt="" loading="lazy" referrerpolicy="no-referrer" /><span>${esc(p.who)}${have.includes(p.url) ? ' (added)' : ''}</span></button>`).join('')}</div>`
+      : '<div class="field-help">No review photos yet. Photos customers add to their reviews show up here.</div>'}
+  </div>`;
+}
+function addReviewPhotoToDesign(i) {
+  const p = reviewPhotoChoices()[i], f = state.galleryForm;
+  if (!p || !f) return;
+  const current = parseImageLinks(f.photos || '');
+  if (current.includes(p.url)) return;
+  if (current.length >= 5) { const s = document.getElementById('gallery-upload-status'); if (s) s.textContent = 'This design already has 5 photos.'; return; }
+  f.photos = current.concat(p.url).join('\n');
+  updateGalleryForm('photos', f.photos);
+  render();
+  const s = document.getElementById('gallery-upload-status');
+  if (s) s.textContent = 'Added. Remember to save.';
+  document.getElementById('review-photo-open')?.focus();
+}

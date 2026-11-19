@@ -2750,6 +2750,20 @@ const STATES = {
     assert(r[0].p1 === 'red' && r[0].p2 === 'red' && !r[0].p3 && r[1].p2 === 'red' && r[1].p3 === 'black', JSON.stringify(r));
     await page.close();
   });
+  await check('design form: Choose from review photos adds a customer\'s review photo to the design', async () => {
+    const db = fixtures();
+    db.settings = { ...(db.settings || {}), reviews: [{ id: 'r1', name: 'Jo K.', text: 'Great print', designId: '', photos: ['https://img.test/rev1.png'] }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#review-photo-open');
+    await page.click('#review-photo-open');
+    await page.waitForSelector('.review-photo-choice');
+    await page.click('.review-photo-choice');
+    await page.waitForFunction(() => /rev1\.png/.test(state.galleryForm.photos));
+    assert(/\(added\)/.test(await page.textContent('.review-photo-choice')), 'marked as added');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };
