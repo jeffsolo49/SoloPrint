@@ -2472,8 +2472,8 @@ function renderOwnerLibraryPage() {
                 const encodedKey = encodeURIComponent(key);
                 const isEditingLink = state.libraryEditingKey === key;
                 return `<tr>
-                  <td><input type="text" id="${rowId}-name" value="${esc(e.name || '')}" placeholder="Name" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
-                  <td>
+                  <td data-label="Name"><input type="text" id="${rowId}-name" value="${esc(e.name || '')}" placeholder="Name" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
+                  <td data-label="Link">
                     <div class="lib-link-cell">
                       ${isEditingLink
                         ? `<input class="lib-link-edit" type="text" id="${rowId}-link" value="${esc(e.link || '')}" placeholder="https://makerworld.com/en/models/..." oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" />`
@@ -2483,12 +2483,12 @@ function renderOwnerLibraryPage() {
                       <button class="btn-sm" type="button" onclick="toggleLibraryLinkEdit('${encodedKey}')">${isEditingLink ? 'Done' : 'Edit'}</button>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Minutes">
                     <input type="number" id="${rowId}-mins" value="${e.minutes || ''}" min="0" step="1" placeholder="mins" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" />
                     <div style="font-size:11px;color:var(--muted);margin-top:4px;">${e.minutes ? fmtMinutesWithHours(e.minutes) : ''}</div>
                   </td>
-                  <td><input type="number" id="${rowId}-grams" value="${e.grams || ''}" min="0" step="0.1" placeholder="grams" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
-                  <td><button class="btn-sm danger btn-icon" type="button" aria-label="Remove saved model" onclick="deleteLibraryEntry('${encodedKey}')">×</button></td>
+                  <td data-label="Grams"><input type="number" id="${rowId}-grams" value="${e.grams || ''}" min="0" step="0.1" placeholder="grams" oninput="queueLibraryRowSave('${encodedKey}', '${rowId}')" /></td>
+                  <td><button class="btn-sm danger btn-icon" type="button" aria-label="Remove saved model" onclick="deleteLibraryEntry('${encodedKey}')">&times;<span class="lib-remove-text"> Remove</span></button></td>
                 </tr>`;
               }).join('')}
             </tbody>
