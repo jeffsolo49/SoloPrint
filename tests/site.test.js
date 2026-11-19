@@ -223,7 +223,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 }
 
 // 'settings/colors' opens a Settings section.
-const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
+const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'One-tap set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const leadIn = "(() => { state.clientName = 'Test Person'; state.clientEmail = 't@example.com'; localStorage.setItem('soloprint_preorder_lead', JSON.stringify({ email: 't@example.com', designs: [] })); })()";
 const STATES = {
   'home': '0',
@@ -1548,7 +1548,7 @@ const STATES = {
     const owner = await open(fixtures());
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
-    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Practice|Settings|Help|Preview|Change Password', tabs.join('|'));
+    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Settings|Help', tabs.join('|'));
     assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|Etsy to make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
@@ -2441,6 +2441,36 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('owner simplification: Money sections fold, and a design becomes a pre-order with one button', async () => {
+    const page = await open(fixtures());
+    await page.evaluate(asOwner('money'));
+    await page.evaluate(() => { state.moneyOpenAll = false; state.moneyFold = {}; render(); });
+    await page.waitForSelector('#money-fold-all');
+    assert(await page.$$eval('details.fold-card[open]', els => els.length) === 0, 'sections start folded');
+    assert(await page.isVisible('.money-stats'), 'the totals stay open');
+    await page.click('#money-fold-all');
+    assert(await page.$$eval('details.fold-card:not([open])', els => els.length) === 0, 'open all');
+    await page.click('#money-fold-all');
+    await page.click('summary:has-text("Expenses")');
+    assert(await page.isVisible('#exp-what'), 'one fold opens on its own');
+    // design form: Make this a pre-order, then its settings
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#gallery-preorder-on');
+    assert(!(await page.$('#gallery-preorder-ready')) && !(await page.$('#add-version')), 'nothing about pre-orders until asked');
+    await page.click('#gallery-preorder-on');
+    await page.waitForSelector('#gallery-preorder-ready');
+    assert(await page.evaluate(() => state.galleryForm.preorder === true), 'pre-order on, its settings open');
+    await page.click('#gallery-opt-accessories');
+    assert(await page.isVisible('#acc-pick-0') || await page.isVisible('text=Add the accessories as their own designs first'), 'accessories open from their own button');
+    await page.click('#gallery-opt-versions');
+    assert(await page.isVisible('#add-version') && !(await page.$('#gallery-preorder-ready')), 'versions open on their own');
+    await page.click('#gallery-opt-versions');
+    assert(!(await page.$('#add-version')), 'a section folds away when its button is tapped again');
+    await page.click('#gallery-preorder-off');
+    assert(await page.evaluate(() => state.galleryForm.preorder === false), 'back to a normal design');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('color pickers in owner tools do not list the built-in "(no specific color)" duplicates when your own colors exist', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -2497,10 +2527,10 @@ const STATES = {
     assert(await page.isDisabled('#caddy-design-catheter-caddy-secondary-Black') && await page.getAttribute('#caddy-design-catheter-caddy-body-Black', 'aria-pressed') === 'true', 'body color cannot be the secondary');
     await page.click('#caddy-design-catheter-caddy-secondary-White');
     assert(await sum() === '3-color: Black body · White dividers and handle · Red drawers · White drawer tabs', await sum());
-    const img = await page.getAttribute('.caddy-preview img', 'src');
+    const img = await page.evaluate(() => caddyImage(designOpts('catheter-caddy').caddy, 'front'));
     assert(/caddy_Black_White_Red_front\.png$/.test(img), img);
     await page.click('.caddy-view:not(.on)');
-    assert(/caddy_Black_White_Red_back\.png$/.test(await page.getAttribute('.caddy-preview img', 'src')), 'back view');
+    assert(await page.evaluate(() => designOpts('catheter-caddy').caddyView) === 'back' && /caddy_Black_White_Red_back\.png$/.test(await page.evaluate(() => caddyImage(designOpts('catheter-caddy').caddy, 'back'))), 'back view');
     await page.evaluate(() => requestGalleryItem('catheter-caddy'));
     const it = await page.evaluate(() => { const i = state.draftItems[0]; const c = id => i.designParts.find(p => p.id === id).colorId;
       return [i.versionName, i.packIncluded, i.preorder, state.draftItems.length, JSON.stringify(i.caddy), c('shell'), c('clips'), c('handle'), c('dividers'), c('drawers'), c('tabs')]; });

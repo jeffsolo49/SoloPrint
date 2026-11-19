@@ -660,7 +660,7 @@ function renderEmailGuide() {
       ${row('You just want to say something, ask a question or answer one.', 'Send message', 'Your own words by email (with your footer) and on their order page. It never changes the order or sends a form email.')}
       </tbody></table></div>
     <p class="field-help"><strong>Never sends an email:</strong> everything in an order's More menu (change the quote, go back a step, print without a deposit, fix numbers, delete), Edit their request, notes, filament stock, the Practice tab, and approving or hiding a review.</p>
-    <p class="field-help"><strong>Not sure?</strong> Use Send message for anything that isn't one of the steps above. Try a step first in the Practice tab; nothing there is ever sent.</p>
+    <p class="field-help"><strong>Not sure?</strong> Use Send message for anything that isn't one of the steps above. Try a step first in Help > Practice order; nothing there is ever sent.</p>
   </details>`;
 }
 
@@ -2258,7 +2258,7 @@ const OWNER_WIKI = [
   { id: 'login', area: 'Getting started', title: 'Log in, stay logged in, log out', keys: 'password sign in remember 30 days logout session',
     steps: ['Tap Owner at the top of the site and type your password.', 'Tick "Keep me logged in on this device for 30 days" on your own phone or computer only.', 'To log out, tap Logout at the top. To log out on every device (lost phone), open Change Password and tap "Log out everywhere".'] },
   { id: 'password', area: 'Getting started', title: 'Change your password', keys: 'security credentials strong password',
-    steps: ['Tap Change Password in the owner menu.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
+    steps: ['Settings > Password.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
   { id: 'updated', area: 'Getting started', title: 'Is the site up to date? (Updated N min ago, Reload now)', keys: 'update new version reload refresh deploy live',
     steps: ['The small "Updated N min ago" note shows when the site last changed.', 'If the site is updated while you have it open, a bar offers "Reload now". Tap it to get the newest version.', 'Settings > Updates lists every change made to the site.'], go: ['settings', 'updates'] },
   { id: 'sections', area: 'Getting started', title: 'Jump between sections of a page', keys: 'side buttons sections scroll navigate long page jump menu',
@@ -2298,7 +2298,7 @@ const OWNER_WIKI = [
   { id: 'notes', area: 'Orders', title: 'Private notes and notes about a customer', keys: 'private notes client notes customer notes about payment issues',
     steps: ['"Notes and photos" on an order holds your private notes: customers never see them.', 'The "About" fold shows your notes about that customer and their other orders.'] },
   { id: 'practice', area: 'Orders', title: 'Practice with a pretend order', keys: 'practice test pretend try training',
-    steps: ['Open Practice in the owner menu.', 'Walk a pretend order through every step and see each email it would send. Nothing is saved or emailed.'], go: ['practice'] },
+    steps: ['Help > Practice order.', 'Walk a pretend order through every step and see each email it would send. Nothing is saved or emailed.'], go: ['practice'] },
 
   // Etsy to make
   { id: 'etsy-todo', area: 'Etsy orders to make', title: 'Keep track of Etsy orders to print', keys: 'etsy to make todo print list printed tick shipped',
@@ -2310,15 +2310,15 @@ const OWNER_WIKI = [
   { id: 'design-add', area: 'Designs', title: 'Add or change a design', keys: 'design gallery past work new design photos price set price publish',
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
-    steps: ['Designs > Edit the design (or add it), then under "Pre-order" tick "Take pre-orders for this design". Optionally type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+    steps: ['Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" on the Designs page.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > One-tap set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
-    steps: ['Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
+    steps: ['Help > Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
-    steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
+    steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > Pre-orders and people interested > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
-    steps: ['Edit the design. Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
+    steps: ['Edit the design and tap "Versions (single / double)". Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -2352,9 +2352,9 @@ const OWNER_WIKI = [
   { id: 'emails', area: 'Settings', title: 'Change the wording of any email', keys: 'emails wording templates text placeholders',
     steps: ['Settings > Emails.', 'Pick an email and change its subject or text. Words in {curly brackets} are filled in for each order.', 'Save. To change one email just once, edit it in the pop-up when you send it instead.'], go: ['settings', 'emails'] },
   { id: 'wording', area: 'Settings', title: 'Site wording, FAQ and what customers see', keys: 'wording site text faq show hide features about links how it works material note',
-    steps: ['Settings > About & links: your about text, photo, Messenger and Etsy links.', 'Settings > Wording and Site text: the words on the site. Site text can be saved as a draft until you make it live.', 'Settings > FAQ: questions and answers. Settings > Show / hide: switch parts of the site on or off.'], go: ['settings', 'text'] },
+    steps: ['Settings > About & links: your about text, photo, Messenger and Etsy links.', 'Settings > Wording & FAQ: the words on the site, the site text and the FAQ. Site text can be saved as a draft until you make it live.', 'Settings > FAQ: questions and answers. Settings > Show / hide: switch parts of the site on or off.'], go: ['settings', 'text'] },
   { id: 'vacation', area: 'Settings', title: 'Vacation mode', keys: 'vacation away closed holiday pause',
-    steps: ['Settings > Vacation: turn it on, set the date you\'re back and an optional message.', 'Customers see a notice and the emails mention it.'], go: ['settings', 'vacation'] },
+    steps: ['Settings > Show / hide & vacation: turn vacation on, set the date you\'re back and an optional message.', 'Customers see a notice and the emails mention it.'], go: ['settings', 'vacation'] },
   { id: 'reviews', area: 'Settings', title: 'Approve customer reviews', keys: 'reviews approve stars half star photos testimonials',
     steps: ['Customers get a review link about a week after shipping (or send it yourself with "Send an email now").', 'Settings > Reviews: "Approve and show" puts a review on the site.', 'On any review, tap "Add photos" to upload pictures (up to 4) that a customer sent you, or "Remove" under a photo to take it off. Tap Save to keep the changes.'], go: ['settings', 'reviews'] },
 
@@ -2376,7 +2376,7 @@ function wikiMatches(e, q) {
   return words.every(w => hay.includes(w));
 }
 function wikiGo(tab, sub) {
-  if (tab === 'password') { state.showPasswordForm = true; render(); document.getElementById('new-pw')?.focus(); return; }
+  if (tab === 'password') { state.settingsTab = 'password'; setOwnerTab('settings'); window.scrollTo(0, 0); return; }
   if (sub) state.settingsTab = sub;
   setOwnerTab(tab);
   window.scrollTo(0, 0);
@@ -5617,7 +5617,7 @@ function toggleJumpNav(force) {
 function jumpTo(i) {
   const x = jumpList[i];
   if (!x || !x.h.isConnected) return;
-  const details = x.h.tagName === 'SUMMARY' ? x.h.parentElement : null;
+  const details = x.h.tagName === 'SUMMARY' ? x.h.parentElement : x.h.closest('details.fold-card');
   if (details && !details.open) details.open = true;
   const target = x.h.closest('.card') && !x.h.matches('.wiki-area, .email-group-title') ? x.h.closest('.card') : x.h;
   target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
@@ -5691,14 +5691,66 @@ async function savePreorderEta(id, where) {
   if (!(await upsertBatch(b))) { b.preorderEta = before; return; }
   render();
 }
+// The design form: a labeled button for each option (pre-order, accessories, versions, color editions), each opening just its own part.
+function renderDesignOptions(f) {
+  const open = state.galleryOpt || '';
+  const btn = (id, label, count) => `<button type="button" class="btn-sm opt-btn ${open === id ? 'on' : ''}" id="gallery-opt-${id}" aria-expanded="${open === id}" onclick="toggleDesignOpt('${id}')">${label}${count ? ` (${count})` : ''}</button>`;
+  return `<div class="preorder-actions" role="group" aria-label="Design options">
+      ${f.preorder
+        ? `<span class="preorder-badge">${esc(t('preorderBadge'))}</span>${btn('preorder', 'Pre-order settings')}<button type="button" class="btn-sm" id="gallery-preorder-off" onclick="setFormPreorder(false)">Not a pre-order</button>`
+        : '<button type="button" class="btn-sm" id="gallery-preorder-on" onclick="setFormPreorder(true)">Make this a pre-order</button>'}
+      ${btn('accessories', 'Add accessories', (f.accessories || []).length)}
+      ${btn('versions', 'Versions (single / double)', (f.versions || []).length)}
+      ${btn('editions', 'Color editions', (f.editions || []).length)}
+    </div>
+    ${open ? `<div class="design-options">${open === 'preorder' && f.preorder ? renderPreorderFormFields(f) : open === 'accessories' ? renderAccessoriesForm(f) : open === 'versions' ? renderVersionsForm(f) : open === 'editions' ? renderEditionsForm(f) : ''}</div>` : ''}`;
+}
+// Under the design list: the pre-order lists and the one-tap set-ups are folded away until needed.
+function renderDesignFolds() {
+  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderCaddySetup() + renderDryingRackSetup();
+  const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
+  return fold('Pre-orders and people interested', lists) + fold('One-tap set-ups', setups);
+}
+function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
+function setFormPreorder(on) {
+  if (!state.galleryForm) return;
+  state.galleryForm.preorder = !!on;
+  state.galleryOpt = on ? 'preorder' : (state.galleryOpt === 'preorder' ? '' : state.galleryOpt);   // turning it on opens its settings
+  render();
+}
+// Edit a design with one of its option sections already open (the shortcut buttons on the design cards).
+function editGalleryItemOpt(id, opt) { editGalleryItem(id); state.galleryOpt = opt; render(); document.getElementById(`gallery-opt-${opt}`)?.scrollIntoView({ block: 'center' }); }
 function renderPreorderFormFields(f) {
   return `<fieldset class="owner-edit-item preorder-fields">
-    <legend>Pre-order</legend>
-    <label class="special-order-check"><input type="checkbox" id="gallery-preorder" ${f.preorder ? 'checked' : ''} onchange="updateGalleryForm('preorder', this.checked); render();" /> Take pre-orders for this design (it isn't ready yet)</label>
-    <div class="field-help">Customers see "${esc(t('preorderBadge'))}", a "${esc(t('preorderThis'))}" button and your first come, first served note (Settings > Wording > site text "preorderNote"). Orders go through the usual steps: you send the quote, they pay a deposit, and the deposits set the order you make them in. Untick this when it's launched.</div>
-    ${f.preorder ? `<div class="field" style="max-width:320px;margin-top:8px;"><label for="gallery-preorder-ready">When it should be ready (optional)</label>
-      <input type="text" id="gallery-preorder-ready" maxlength="80" value="${esc(f.preorderReady || '')}" placeholder="e.g. early January" oninput="updateGalleryForm('preorderReady', this.value)" /></div>` : ''}
+    <legend>Pre-order settings</legend>
+    <div class="field-help">Customers see "${esc(t('preorderBadge'))}", a "${esc(t('preorderThis'))}" button and your first come, first served note (Settings > Wording & FAQ > site text "preorderNote"). Orders go through the usual steps: you send the quote, they pay a deposit, and the deposits set the order you make them in. Tap "Not a pre-order" when it's launched. The launch date and days to print are in Settings > Prices & rules.</div>
+    <div class="field" style="max-width:320px;margin-top:8px;"><label for="gallery-preorder-ready">When it should be ready (optional)</label>
+      <input type="text" id="gallery-preorder-ready" maxlength="80" value="${esc(f.preorderReady || '')}" placeholder="e.g. early January" oninput="updateGalleryForm('preorderReady', this.value)" /></div>
   </fieldset>`;
+}
+// Money page: the first card (year, totals, months) stays open; every other section is a fold, one tap away.
+function foldOwnerCards(html, store, openAllKey) {
+  const doc = new DOMParser().parseFromString(`<div id="fold-root">${html}</div>`, 'text/html');
+  const root = doc.getElementById('fold-root');
+  state[store] = state[store] || {};
+  [...root.children].forEach(card => {
+    const h = card.classList.contains('card') && [...card.children].find(c => c.classList.contains('card-title'));
+    if (!h) return;
+    const title = h.textContent.trim(), key = title.toLowerCase().replace(/\d{4}/g, '').replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '') || 'section';
+    h.remove();
+    const d = doc.createElement('details');
+    d.className = card.className + ' fold-card';
+    if (card.id) d.id = card.id;
+    if (state[openAllKey] || state[store][key]) d.setAttribute('open', '');
+    d.setAttribute('ontoggle', `state.${store}['${key}'] = this.open`);
+    d.innerHTML = `<summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${card.innerHTML}`;
+    card.replaceWith(d);
+  });
+  return root.innerHTML;
+}
+function renderMoneyFolds(html) {
+  const out = foldOwnerCards(html, 'moneyFold', 'moneyOpenAll');
+  return `<div class="fold-bar"><button type="button" class="btn-sm" id="money-fold-all" onclick="state.moneyOpenAll = !state.moneyOpenAll; state.moneyFold = {}; render();">${state.moneyOpenAll ? 'Close all sections' : 'Open all sections'}</button></div>${out}`;
 }
 // Where an order stands among the pre-orders for the same design: deposits first, by when they came in.
 function preorderQueue(galleryId) {

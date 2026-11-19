@@ -1433,16 +1433,18 @@ function ownerSection() {
   const t = state.ownerTab;
   if (['clients', 'numbers', 'orders', 'etsytodo'].includes(t)) return 'dashboard';
   if (['calculator', 'library'].includes(t)) return 'gallery';
+  if (['practice', 'preview'].includes(t)) return 'help';   // Practice order and Preview sit under Help
   return t;
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
   const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['etsytodo', 'Etsy to make'], ['numbers', 'Fix numbers']]
-    : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']] : null;
+    : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']]
+    : sec === 'help' ? [['help', 'Help'], ['practice', 'Practice order'], ['preview', 'Preview']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
   const cur = tabs.some(x => x[0] === t) ? t : tabs[0][0];
-  return `<nav class="sub-nav" aria-label="${sec === 'dashboard' ? 'Orders' : 'Designs'} sections">
+  return `<nav class="sub-nav" aria-label="${sec === 'dashboard' ? 'Orders' : sec === 'help' ? 'Help' : 'Designs'} sections">
     ${tabs.map(([id, label]) => `<button type="button" class="sub-tab ${cur === id ? 'active' : ''}" aria-current="${cur === id ? 'page' : 'false'}" onclick="${id === 'numbers' ? 'state.numbersOnly = \'\'; ' : ''}setOwnerTab('${id}')">${esc(label)}${id === 'calculator' && libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>`).join('')}
   </nav>`;
 }
@@ -1453,11 +1455,8 @@ function renderOwnerNav() {
       <button class="nav-tab ${ownerSection() === 'dashboard' ? 'active' : ''}" onclick="setOwnerTab('dashboard')">Orders${ownerNeedCount() ? `<span class="nav-badge" aria-label="${ownerNeedCount()} need you">${ownerNeedCount()}</span>` : ''}</button>
       <button class="nav-tab ${ownerSection() === 'gallery' ? 'active' : ''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
-      <button class="nav-tab ${state.ownerTab==='practice'?'active':''}" onclick="setOwnerTab('practice')">Practice</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab==='help'?'active':''}" onclick="setOwnerTab('help')">Help</button>
-      <button class="nav-tab ${state.ownerTab==='preview'?'active':''}" onclick="setOwnerTab('preview')">Preview${previewActive() ? '<span class="nav-badge">on</span>' : ''}</button>
-      <button class="nav-tab ${state.showPasswordForm ? 'active' : ''}" type="button" aria-pressed="${!!state.showPasswordForm}" onclick="state.showPasswordForm = !state.showPasswordForm; render(); if (state.showPasswordForm) document.getElementById('new-pw')?.focus();">Change Password</button>
+      <button class="nav-tab ${ownerSection() === 'help' ? 'active' : ''}" onclick="setOwnerTab('help')">Help${previewActive() ? '<span class="nav-badge" aria-label="preview is on">on</span>' : ''}</button>
     </nav>
   `;
 }
@@ -2297,7 +2296,7 @@ function renderOwnerApp() {
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
       <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales', numbers: 'Numbers' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
-      ${state.showPasswordForm ? renderSetPasswordCard() : ''}
+      ${state.showPasswordForm && !(state.ownerTab === 'settings' && state.settingsTab === 'password') ? renderSetPasswordCard() : ''}
       ${renderOwnerSubNav()}
       ${state.loadFailed ? `<div class="alert error" style="display:block;" role="alert" id="load-failed">Your orders and money info didn't load, so pages may look empty. Nothing is deleted. <button type="button" class="btn-sm" onclick="loadBatches().then(render)">Try again</button> If it keeps happening, tap Logout and log back in.</div>` : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
@@ -2313,7 +2312,7 @@ function renderOwnerApp() {
         : state.ownerTab === 'numbers'
         ? renderNumbersPage()
         : state.ownerTab === 'money' || state.ownerTab === 'analytics'
-        ? renderOwnerMoneyPage() + renderOwnerOrdersList() + renderOwnerAnalyticsPage()
+        ? renderMoneyFolds(renderOwnerMoneyPage() + renderOwnerOrdersList() + renderOwnerAnalyticsPage())
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
         : state.ownerTab === 'calculator' || state.ownerTab === 'library'
@@ -3409,9 +3408,11 @@ async function saveEmailsDraft() {
 // until Save settings (Emails saves on its own).
 const SETTINGS_TABS = [
   ['about', 'About & links'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
-  ['wording', 'Wording'], ['text', 'Site text'], ['faq', 'FAQ'], ['features', 'Show / hide'],
-  ['vacation', 'Vacation'], ['reviews', 'Reviews'], ['emails', 'Emails'], ['updates', 'Updates']
+  ['wording', 'Wording & FAQ'], ['features', 'Show / hide & vacation'],
+  ['reviews', 'Reviews'], ['emails', 'Emails'], ['password', 'Password'], ['updates', 'Updates']
 ];
+// Site text and FAQ now sit under Wording, Vacation under Show / hide (old links and Help entries still work).
+const SETTINGS_TAB_ALIASES = { text: 'wording', faq: 'wording', vacation: 'features' };
 function setSettingsTab(tab) {
   state.settingsTab = tab;
   if (tab === 'updates') loadSiteUpdates();
@@ -3423,13 +3424,15 @@ function renderOwnerSettingsPage() {
   const d = state.settingsDraft;
   const designs = state.gallery;
   if (state.ownerTab === 'emails' || state.ownerTab === 'filament') state.settingsTab = state.ownerTab === 'emails' ? 'emails' : 'colors';
-  const tab = SETTINGS_TABS.some(t => t[0] === state.settingsTab) ? state.settingsTab : 'about';
+  const wanted = SETTINGS_TAB_ALIASES[state.settingsTab] || state.settingsTab;
+  const tab = SETTINGS_TABS.some(t => t[0] === wanted) ? wanted : 'about';
   const low = lowStockColors().length;
   const nav = `<nav class="sub-nav" aria-label="Settings sections">
     ${SETTINGS_TABS.map(([id, label]) => `<button type="button" class="sub-tab ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" onclick="setSettingsTab('${id}')">${esc(label)}${id === 'colors' && low ? `<span class="nav-badge">${low}</span>` : ''}</button>`).join('')}
   </nav>`;
   if (tab === 'emails') return nav + renderOwnerEmailsPage();
   if (tab === 'updates') return nav + renderUpdatesSettings();
+  if (tab === 'password') return nav + renderSetPasswordCard(true);
   const body = {
     about: `
     <div class="card">
@@ -3463,11 +3466,8 @@ function renderOwnerSettingsPage() {
 `,
     colors: renderColorSettingsCard(d),
     prices: renderRulesSettings(d) + renderPreorderTimingSettings(d),
-    wording: renderWordingSettings(d),
-    vacation: renderVacationSettings(d),
-    text: renderSiteTextSettings(d),
-    faq: renderFaqSettings(d),
-    features: renderFeatureSettings(d),
+    wording: renderWordingSettings(d) + renderSiteTextSettings(d) + renderFaqSettings(d),
+    features: renderVacationSettings(d) + renderFeatureSettings(d),
     reviews: `
     <div class="card">
       <h3 class="card-title">Customer reviews</h3>
@@ -3791,6 +3791,7 @@ function renderWorkDetail(g) {
     </div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
     ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
+    ${accessoryDesigns(g).length ? `<p><button class="btn-sm" type="button" id="to-accessories" onclick="document.getElementById('accessory-picker')?.scrollIntoView({ behavior: 'smooth', block: 'center' })">Accessories available: add them to your order &darr;</button></p>` : ''}
     ${renderColorIdeas(g)}
     ${renderVideos(g)}
     ${renderDesignParts(g)}
@@ -3915,6 +3916,7 @@ function renderGalleryTab() {
         <div class="gallery-body">
           <div class="gallery-title">${esc(g.title || 'Untitled')}${g.preorder ? ` <span class="preorder-badge">${esc(t('preorderBadge'))}</span>` : ''}</div>
           ${g.preorder && g.preorderReady ? `<div class="gallery-meta">Expected: ${esc(g.preorderReady)}</div>` : ''}
+          ${accessoryDesigns(g).length ? '<div class="gallery-meta">Accessories available</div>' : ''}
           <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -4011,11 +4013,7 @@ function renderOwnerGalleryPage() {
       <div class="owner-page-meta">${state.gallery.filter(g => g.published).length} shown · ${state.gallery.filter(g => !g.published).length} hidden</div>
     </div>
     ${renderColorIdeasInbox()}
-    ${renderPreorderLists()}
-    ${renderPreorderLeads()}
-    ${renderCaddySetup()}
     ${state.rackDone ? `<div class="alert success" style="display:block;">${esc(state.rackDone)}</div>` : ''}
-    ${renderDryingRackSetup()}
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
@@ -4052,10 +4050,7 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
-      ${renderPreorderFormFields(f)}
-      ${renderVersionsForm(f)}
-      ${renderAccessoriesForm(f)}
-      ${renderEditionsForm(f)}
+      ${renderDesignOptions(f)}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4071,23 +4066,26 @@ function renderOwnerGalleryPage() {
       return `<div class="gallery-card ${g.published ? '' : 'hidden-item'}">
         ${renderGalleryPhoto(g)}
         <div class="gallery-body">
-          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}</div>
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}${(g.accessories || []).length ? ` <span class="gallery-meta">${g.accessories.length} accessor${g.accessories.length === 1 ? 'y' : 'ies'}</span>` : ''}${isAccessory(g) ? ` <span class="gallery-meta">Accessory of ${esc((state.gallery.find(m => (m.accessories || []).includes(g.id)) || {}).title || 'another design')}</span>` : ''}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
+            ${isAccessory(g) ? '' : `<button class="btn-sm" type="button" onclick="editGalleryItemOpt('${esc(g.id)}', 'accessories')">Add accessories</button>`}
             ${g.published ? `<button class="btn-sm" type="button" onclick="copyDesignLink('${esc(g.id)}', this)">Copy link</button>` : ''}
             <button class="btn-sm" type="button" onclick="toggleGalleryItem('${esc(g.id)}')">${g.published ? 'Hide' : 'Show'}</button>
             <button class="btn-sm danger" type="button" onclick="deleteGalleryItem('${esc(g.id)}')">Delete</button>
           </div>
         </div>
       </div>`;
-    }).join('')}</div>` : (state.galleryLoaded && !state.galleryError ? `<div class="empty-state"><div class="empty-state-text">No gallery items yet</div><div class="empty-state-sub">Add your first finished project above.</div></div>` : '')}`;
+    }).join('')}</div>` : (state.galleryLoaded && !state.galleryError ? `<div class="empty-state"><div class="empty-state-text">No gallery items yet</div><div class="empty-state-sub">Add your first finished project above.</div></div>` : '')}
+    ${renderDesignFolds()}`;
 }
 
 function editGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
   state.cmJoin = [];
+  state.galleryOpt = '';
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
@@ -4581,7 +4579,7 @@ async function sendOwnerAuthEmail(kind) {
   }
 }
 
-function renderSetPasswordCard() {
+function renderSetPasswordCard(inTab) {
   return `<div class="card">
     <h3 class="card-title">Set a new password</h3>
     <div class="security-tips">
@@ -4602,7 +4600,7 @@ function renderSetPasswordCard() {
     <div class="alert success" id="new-pw-ok"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn-sm" type="button" id="new-pw-btn" onclick="saveNewPassword()">Save password</button>
-      <button class="btn-sm" type="button" onclick="state.showPasswordForm = false; render();">Not now</button>
+      ${inTab ? '' : '<button class="btn-sm" type="button" onclick="state.showPasswordForm = false; render();">Not now</button>'}
       <button class="btn-sm danger" type="button" onclick="logoutEverywhere()">Log out everywhere</button>
     </div>
   </div>`;
