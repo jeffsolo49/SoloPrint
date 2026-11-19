@@ -2064,6 +2064,7 @@ const STATES = {
     db.gallery.g1.data.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: 'pa' }, { hexes: ['#0a3c80'], part: 'pb' }], combos: [{ id: 'c1', name: 'Red and black', colors: { pa: 'red', pb: 'black' } }] };
     const page = await open(db);
     await page.evaluate(asOwner('etsytodo'));
+    await page.evaluate(() => { state.batches = []; render(); });   // only Etsy orders here
     await page.waitForSelector('#todo-add');
     await page.waitForFunction(() => state.galleryLoaded);
     await page.selectOption('#todo-design', 'g1');
