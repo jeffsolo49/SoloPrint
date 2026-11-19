@@ -1064,6 +1064,14 @@ const STATES = {
     assert(opts.body.length > 1, 'other parts keep every color');
     await page.close();
   });
+  await check('the page Save button is repeated in the owner side bar', async () => {
+    const db = fixtures();
+    const owner = await open(db);
+    await owner.evaluate(asOwner('settings'));
+    await owner.waitForSelector('#jump-save');
+    assert(/Save/.test(await owner.textContent('#jump-save')), 'a Save button sits in the side bar');
+    await owner.close();
+  });
   await check('colors start as White; the owner picks a starting color for each part', async () => {
     const db = fixtures();
     db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });
@@ -2585,6 +2593,11 @@ const STATES = {
     });
     await page.waitForSelector('.caddy-picker');
     assert(!(await page.$('text=Color edition')), 'old edition picker gone');
+    await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); g.parts.filter(p => p.group === 'Accent colour').forEach(p => { p.allowed = ['red', 'blue']; }); refreshDesignPrice('catheter-caddy', ''); render(); });
+    await page.waitForSelector('.caddy-picker');
+    assert(!(await page.$('#caddy-design-catheter-caddy-secondary-Green')) && !(await page.$('#caddy-design-catheter-caddy-secondary-Orange')) && await page.$('#caddy-design-catheter-caddy-secondary-Red'), 'limited secondary colors are not shown at all');
+    await page.evaluate(() => { state.gallery.find(x => x.id === 'catheter-caddy').parts.forEach(p => { p.allowed = []; }); designOpts('catheter-caddy').caddy = null; refreshDesignPrice('catheter-caddy', ''); render(); });
+    await page.waitForSelector('.caddy-picker');
     const sum = async () => (await page.textContent('.caddy-summary')).trim();
     assert(await sum() === '2-color: White body · Black dividers and handle · Black drawers · White drawer tabs', await sum());
     await page.click('#caddy-design-catheter-caddy-secondary-Red');

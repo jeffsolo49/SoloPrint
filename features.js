@@ -3541,7 +3541,7 @@ function renderOePartColors(it, i) {
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="oe-part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="oePartInclude(${i}, ${k}, this.checked)" /> Include add-on: ${esc(p.name)}</label>` : ''}
         ${p.optional && !p.include ? '' : `<label for="oe-part-color-${i}-${k}">${esc(p.name)}${p.grams ? ` (${p.grams} g)` : ''}</label>
         <div class="color-pick">${colorDot(p.colorId)}<select id="oe-part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="oePartColor(${i}, ${k}, this.value)">
-          ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          ${partChoicesFor(it.designParts, p, it.groupMerge, choices).map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
         </select></div>`}
       </div>
     </div>`).join('')}
@@ -5693,10 +5693,19 @@ function jumpHeadings() {
     }).filter(x => x.name);
 }
 let jumpList = [];
+// The page's main Save button, repeated in the side bar so there is no scrolling back to it.
+const PAGE_SAVE_IDS = ['settings-save', 'emails-save', 'gallery-save', 'owner-edit-save', 'todo-save', 'etsy-save', 'wiki-note-save'];
+function pageSaveButton() {
+  if (!(state.view === 'owner' && state.ownerUnlocked)) return null;
+  for (const id of PAGE_SAVE_IDS) { const el = document.getElementById(id); if (el && !el.disabled && el.offsetParent) return el; }
+  return null;
+}
+function clickPageSave() { const b = pageSaveButton(); if (b) b.click(); }
 function buildJumpNav() {
   let nav = document.getElementById('jump-nav');
   jumpList = state.view === 'owner' && state.ownerUnlocked ? jumpHeadings() : [];
-  const on = jumpList.length >= 2;
+  const saveBtn = pageSaveButton();
+  const on = jumpList.length >= 2 || !!saveBtn;
   document.documentElement.classList.toggle('jump-on', on);
   if (!on) { if (nav) nav.remove(); return; }
   if (!nav) {
@@ -5706,9 +5715,9 @@ function buildJumpNav() {
     nav.setAttribute('aria-label', 'Sections on this page');
     document.body.appendChild(nav);
   }
-  const open = nav.classList.contains('open');
-  const html = `<button type="button" class="jump-toggle" aria-expanded="${open}" onclick="toggleJumpNav()">Sections</button>
-    <ol class="jump-list">${jumpList.map((x, i) => `<li><button type="button" class="jump-btn" data-jump="${i}" onclick="jumpTo(${i})">${esc(x.name)}</button></li>`).join('')}</ol>`;
+  const open = nav.classList.contains('open') && jumpList.length >= 2;
+  const html = `${saveBtn ? `<button type="button" class="jump-save" id="jump-save" onclick="clickPageSave()">${esc(saveBtn.textContent.trim().replace(/\s+/g, ' ').slice(0, 30) || 'Save')}</button>` : ''}${jumpList.length >= 2 ? `<button type="button" class="jump-toggle" aria-expanded="${open}" onclick="toggleJumpNav()">Sections</button>
+    <ol class="jump-list">${jumpList.map((x, i) => `<li><button type="button" class="jump-btn" data-jump="${i}" onclick="jumpTo(${i})">${esc(x.name)}</button></li>`).join('')}</ol>` : ''}`;
   if (nav.dataset.html !== html) { nav.innerHTML = html; nav.dataset.html = html; }
   markJumpActive();
 }
@@ -5717,7 +5726,7 @@ function toggleJumpNav(force) {
   if (!nav) return;
   const open = typeof force === 'boolean' ? force : !nav.classList.contains('open');
   nav.classList.toggle('open', open);
-  nav.querySelector('.jump-toggle').setAttribute('aria-expanded', open);
+  nav.querySelector('.jump-toggle')?.setAttribute('aria-expanded', open);
 }
 function jumpTo(i) {
   const x = jumpList[i];
@@ -6381,16 +6390,31 @@ function caddyDrawerOk(c, name) {
 }
 // Puts any choice into a valid combination: the same color as the body is never the secondary, and a drawer color that is no
 // longer allowed becomes the secondary color. Tabs and style follow from the drawers.
-function caddyFix(c) {
+// The owner's "Limit colors" on the caddy's parts, by step: { body: [names], secondary: [names], drawer: [names] } (a step with no limit is missing).
+function caddyLimits(parts) {
+  const out = {}, names = ['White', 'Black', ...CADDY_ACCENTS];
+  Object.entries(CADDY_GROUPS).forEach(([grp, field]) => {
+    const p = (parts || []).find(x => x.group === grp), keys = p && partAllowed(parts, p, null);
+    if (!keys) return;
+    const list = names.filter(n => { const ch = caddyColorChoice(n); return ch && keys.includes(ch.key); });
+    if (list.length) out[field] = list;
+  });
+  return out;
+}
+function caddyAllowed(lim, field, name) { return !lim || !lim[field] || lim[field].includes(name); }
+function caddyFix(c, lim) {
   const out = { body: c && c.body === 'Black' ? 'Black' : 'White', secondary: '', drawer: '', tab: '', style: '' };
-  out.secondary = c && caddySecondaryOk(out, c.secondary) ? c.secondary : caddyOpposite(out.body);
-  out.drawer = c && caddyDrawerOk(out, c.drawer) ? c.drawer : out.secondary;
+  if (!caddyAllowed(lim, 'body', out.body)) out.body = lim.body[0] === 'Black' ? 'Black' : 'White';
+  const secs = [c && c.secondary, caddyOpposite(out.body), ...CADDY_ACCENTS].filter(n => n && caddySecondaryOk(out, n));
+  out.secondary = secs.find(n => caddyAllowed(lim, 'secondary', n)) || caddyOpposite(out.body);
+  const drs = [c && c.drawer, out.secondary, ...CADDY_ACCENTS].filter(n => n && caddyDrawerOk(out, n));
+  out.drawer = drs.find(n => caddyAllowed(lim, 'drawer', n)) || out.secondary;
   out.tab = out.drawer === out.secondary ? out.body : out.secondary;
   out.style = out.drawer === out.secondary ? '2-color' : '3-color';
   return out;
 }
 function cleanCaddy(c) { return c && typeof c === 'object' && ['White', 'Black'].includes(c.body) ? caddyFix(c) : null; }
-function caddySet(c, field, value) { return caddyFix({ ...caddyFix(c), [field]: value }); }
+function caddySet(c, field, value, lim) { return caddyFix({ ...caddyFix(c, lim), [field]: value }, lim); }
 function caddySummary(c) { return `${c.style}: ${c.body} body · ${c.secondary} dividers and handle · ${c.drawer} drawers · ${c.tab} drawer tabs`; }
 function caddyAlt(c) { return `${c.body} body, ${c.secondary} dividers and handle, ${c.drawer} drawers, ${c.tab} drawer tabs`; }
 function caddyImage(c, view) { return `${CADDY_IMG_DIR}caddy_${c.body}_${c.secondary}_${c.drawer}_${view === 'back' ? 'back' : 'front'}.png`; }
@@ -6409,7 +6433,7 @@ function caddyColorChoice(name) { return partColorChoices().find(x => String(x.n
 // Applies the combination to the item's parts by color group, then re-works the item's colors and grams.
 function applyCaddyColors(item) {
   if (!item.caddy || !(item.designParts || []).length) return;
-  const c = item.caddy = caddyFix(item.caddy);
+  const c = item.caddy = caddyFix(item.caddy, caddyLimits(item.designParts));
   item.groupMerge = {};
   item.designParts.forEach(p => {
     const name = CADDY_GROUPS[p.group] && c[CADDY_GROUPS[p.group]], ch = name && caddyColorChoice(name);
@@ -6448,7 +6472,9 @@ function renderCaddyPicker(c, view, scope, ref) {
   const painted = !!(g && g.colorMap && cmUsable(g.colorMap));
   const twoViews = !painted || !!g.colorMap.photoAlt;
   const call = (field, v) => `caddyPick('${scope}', '${esc(ref)}', '${field}', '${v}')`;
+  const lim = caddyLimits(parts);
   const swatch = (field, name, ok) => {
+    if (!caddyAllowed(lim, field, name)) return '';   // a color the owner has limited away isn't shown
     const ch = caddyColorChoice(name), on = c[field] === name, usable = ok && !!ch;
     return `<button type="button" class="caddy-swatch ${on ? 'on' : ''}" id="caddy-${scope}-${esc(ref)}-${field}-${name}" aria-label="${name}${ok && !ch ? ' (not in stock)' : ''}" aria-pressed="${on}" ${usable ? '' : 'disabled'} onclick="${call(field, name)}">
       <span class="caddy-dot" style="background:${esc((ch && ch.hex) || CADDY_HEX[name])}" aria-hidden="true"></span><span>${name}</span></button>`;
@@ -6470,13 +6496,14 @@ function caddyPick(scope, ref, field, value) {
   const focus = `caddy-${scope}-${ref}-${field}-${value}`;
   if (scope === 'design') {
     const o = designOpts(ref);
-    o.caddy = caddySet(o.caddy, field, value);
+    const g = state.gallery.find(x => x.id === ref);
+    o.caddy = caddySet(o.caddy, field, value, caddyLimits(g && g.parts));
     refreshDesignPrice(ref, focus);
     return;
   }
   const item = state.draftItems[Number(ref)];
   if (!item) return;
-  item.caddy = caddySet(item.caddy, field, value);
+  item.caddy = caddySet(item.caddy, field, value, caddyLimits(item.designParts));
   applyCaddyColors(item);
   render();
   queueDraftSave();
@@ -6493,14 +6520,14 @@ function caddyView(scope, ref, v) {
 function caddyMatch(i) {
   const item = state.draftItems[i], e = caddyEarlier(i);
   if (!item || !e) return;
-  item.caddy = caddyFix(e);
+  item.caddy = caddyFix(e, caddyLimits(item.designParts));
   applyCaddyColors(item);
   render();
   queueDraftSave();
 }
 // On the design page.
 function renderCaddyDesignPicker(g, opts) {
-  opts.caddy = caddyFix(opts.caddy);
+  opts.caddy = caddyFix(opts.caddy, caddyLimits(g.parts));
   return `<fieldset class="version-picker"><legend>Choose your colors</legend>${renderCaddyPicker(opts.caddy, opts.caddyView || 'front', 'design', g.id)}</fieldset>`;
 }
 // On the request form, in place of the color row for each part (only the add-ons keep their tick boxes).
