@@ -1495,3 +1495,15 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .fold-card > summary.fold-summary .card-title { font-family: inherit; font-size: 17px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text); margin: 0; }
 .start-request { display: flex; justify-content: center; margin: 0 0 1.25rem; }
 .start-request .btn-primary { width: 100%; max-width: 420px; min-height: 48px; }
+
+.lib-remove-text { display: none; }
+@media (max-width: 640px) {
+  .lib-table { min-width: 0; width: 100%; }
+  .lib-table thead { display: none; }
+  .lib-table, .lib-table tbody, .lib-table tr, .lib-table td { display: block; width: 100%; }
+  .lib-table tr { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+  .lib-table td { border: 0; padding: 4px 0; }
+  .lib-table td[data-label]::before { content: attr(data-label); display: block; font-weight: 700; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+  .lib-table .btn-icon { width: auto; padding: 8px 14px; }
+  .lib-remove-text { display: inline; }
+}
