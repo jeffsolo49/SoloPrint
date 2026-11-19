@@ -1507,3 +1507,25 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
   .lib-table .btn-icon { width: auto; padding: 8px 14px; }
   .lib-remove-text { display: inline; }
 }
+
+@media print {
+  html.printing-todo body * { visibility: hidden; }
+  html.printing-todo #todo-orders, html.printing-todo #todo-orders * { visibility: visible; }
+  html.printing-todo #todo-orders { position: absolute; left: 0; top: 0; width: 100%; border: 0; box-shadow: none; }
+  html.printing-todo .no-print, html.printing-todo .money-controls, html.printing-todo .todo-fix, html.printing-todo .todo-colorbar { display: none !important; }
+}
+
+/* Owner mode: the photos used for color ideas and for splitting a design into parts are shown large. */
+.cm-big { width: 100%; max-width: 640px; max-height: 80vh; object-fit: contain; background: var(--surface2); }
+.cm-mask { width: 160px; }
+.cm-region { align-items: flex-start; }
+.owner-main .part-form-row .part-thumb { width: 112px; height: 112px; }
+.owner-main .cm-combo-photo img { width: 160px; height: 160px; object-fit: contain; background: var(--surface2); }
+@media (min-width: 900px) { .cm-mask { width: 220px; } }
+
+.ship-modal { position: fixed; inset: 0; z-index: 200; background: rgba(20,10,40,0.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ship-modal-card { background: var(--surface); color: var(--text); border: 3px solid var(--border-hover); border-radius: 16px; padding: 20px; max-width: 420px; width: 100%; box-shadow: 0 18px 50px rgba(0,0,0,0.4); }
+.ship-modal-card h2 { margin: 0 0 8px; font-size: 20px; }
+.ship-modal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.ship-modal-actions .btn-primary { flex: 1 1 auto; min-height: 44px; }
+.ship-modal-actions .btn-sm { min-height: 44px; }
