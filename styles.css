@@ -1603,3 +1603,10 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
   .special-order-check input[type="checkbox"], .special-order-check input[type="radio"] { width: 24px; height: 24px; min-height: 24px; margin: 0; flex-shrink: 0; }
   .special-order-check { min-height: 30px; }
 }
+
+.wiz-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 0; }
+.wiz-step { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 2px solid var(--border); border-radius: 999px; background: var(--surface2); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; min-height: 32px; }
+.wiz-step.active { background: var(--accent2); border-color: var(--accent2); color: var(--on-accent); }
+.wiz-step.done .wiz-n::after { content: ' ✓'; }
+.wiz-nav { display: flex; gap: 8px; margin-top: 12px; }
+.wiz-summary { margin: 0 0 10px 18px; line-height: 1.7; }

@@ -1432,14 +1432,14 @@ function renderClientApp() {
 function ownerSection() {
   const t = state.ownerTab;
   if (['clients', 'numbers', 'orders', 'etsytodo'].includes(t)) return 'dashboard';
-  if (['calculator', 'library'].includes(t)) return 'gallery';
+  if (['calculator', 'library', 'newdesign'].includes(t)) return 'gallery';
   if (['practice', 'preview'].includes(t)) return 'help';   // Practice order and Preview sit under Help
   return t;
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
   const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['etsytodo', 'To make'], ['numbers', 'Fix numbers']]
-    : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']]
+    : sec === 'gallery' ? [['gallery', 'Designs'], ['newdesign', 'Add a design (wizard)'], ['calculator', 'Calculator & Models']]
     : sec === 'help' ? [['help', 'Help'], ['practice', 'Practice order'], ['preview', 'Preview']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
@@ -2316,6 +2316,8 @@ function renderOwnerApp() {
         ? renderMoneyFolds(renderOwnerMoneyPage() + renderOwnerOrdersList() + renderOwnerAnalyticsPage())
         : state.ownerTab === 'gallery'
         ? renderOwnerGalleryPage()
+        : state.ownerTab === 'newdesign'
+          ? renderDesignWizard()
         : state.ownerTab === 'calculator' || state.ownerTab === 'library'
           ? renderOwnerCalculatorPage() + renderLinkCompare() + renderOwnerLibraryPage()
           : renderOwnerDashboard()}
@@ -2947,6 +2949,8 @@ function fixNumbers(id) { state.numbersOnly = id; state.numbersQuery = ''; setOw
 function setOwnerTab(tab) {
   if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
   tab = MERGED_TABS[tab] || tab;
+  if (tab === 'newdesign' && state.ownerTab !== 'newdesign') startDesignWizard();
+  else if (tab !== 'newdesign' && state.wiz) { state.wiz = null; state.galleryForm = null; }
   state.ownerTab = tab;
   if ((tab === 'analytics' || tab === 'money' || tab === 'numbers') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
@@ -4025,17 +4029,7 @@ function renderOwnerGalleryPage() {
         <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
         <textarea id="gallery-desc" style="min-height:96px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
       </div>
-      <div class="field"><label>Photos</label>
-        <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one. No photo here? The color ideas photo below is used instead.</div>
-        <label class="btn-sm" style="display:inline-block;margin-bottom:8px;">Upload photos
-          <input type="file" accept="image/*" multiple onchange="uploadGalleryPhotos(this.files); this.value='';" style="display:none;" />
-        </label>
-        <button type="button" class="btn-sm" id="review-photo-open" style="margin-bottom:8px;" aria-expanded="${state.reviewPicker ? 'true' : 'false'}" onclick="toggleReviewPhotoPicker()">Choose from review photos</button>
-        <span class="field-help" id="gallery-upload-status" style="margin-left:8px;"></span>
-        ${state.reviewPicker ? renderReviewPhotoPicker() : ''}
-        <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
-        <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
-      </div>
+      ${renderGalleryPhotosField(f)}
       <div class="field"><label for="gallery-videos">YouTube videos (optional)</label>
         <div class="field-help">Paste YouTube links, one per line (up to 5; "Unlisted" videos work). They play on this design's page, under the photos. They're never used as the design's picture: tiles, cards and shared links always use your photos.</div>
         <textarea id="gallery-videos" placeholder="https://youtu.be/..." style="min-height:52px;" oninput="updateGalleryForm('videos', this.value)">${esc(f.videos || '')}</textarea>

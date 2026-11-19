@@ -260,6 +260,7 @@ const STATES = {
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
   'owner help': asOwner('help'),
+  'owner add a design wizard': asOwner('newdesign'),
   'owner preview': asOwner('preview'),
   'owner etsy spreadsheet': "(async () => { await (" + asOwner('money') + "); localStorage.setItem('soloprint_etsyView', 'sheet'); state.etsyView = 'sheet'; state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 1 }, { id: 'e2', date: new Date().getFullYear() + '-03-03', items: 'Market sale', sale: 12 }], seen: ['2026-02-03|fee|Transaction fee: Shipping|Order #3100000001|0.39'] }; render(); })()",
   'owner etsy to make': "(async () => { await (" + asOwner('etsytodo') + "); state.ownerPrivate.etsy_todo = { orders: [{ id: 't1', etsyId: '4233804505', buyer: 'Jen', due: '2026-01-01', note: 'Gift', createdAt: '2026-01-01T00:00:00Z', done: false, lines: [{ id: 'l1', what: 'Base', color: 'Black', qty: 2, printed: 1 }, { id: 'l2', what: 'Spine', color: 'Red', qty: 1, printed: 0 }] }, { id: 't2', etsyId: '1', buyer: 'Bo', done: true, doneAt: '2026-01-02T00:00:00Z', lines: [{ id: 'l3', what: 'Hook', color: 'White', qty: 1, printed: 1 }] }] }; state.todoOpen = 't1'; state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [{ id: 'd1', what: 'Base', color: 'Blue', qty: 1, printed: 0 }] }; render(); })()",
@@ -1589,7 +1590,7 @@ const STATES = {
     await owner.click('text=Show all orders');
     assert(await owner.locator('.card[id^="numbers-"]').count() > 1, 'Show all orders');
     await owner.click('nav.nav .nav-tab:has-text("Designs")');
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '')).join('|') === 'Designs|Calculator & Models', 'Designs sub-menu');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '')).join('|') === 'Designs|Add a design (wizard)|Calculator & Models', 'Designs sub-menu');
     await owner.click('.sub-tab:has-text("Calculator")');
     await owner.waitForSelector('#owner-calc-print-time');
     await owner.close();
@@ -2803,6 +2804,32 @@ const STATES = {
     assert(before !== after && JSON.parse(after).targets[0] === '#e6194b', after);
     await page.click('#cm-live button:has-text("Starting colors")');
     assert(JSON.parse(await page.getAttribute('#cm-live canvas', 'data-cm')).targets[0] !== '#e6194b', 'starting colors mode');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('add a design wizard: step by step, blocked without a name, creates a hidden design', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('newdesign'));
+    await page.waitForSelector('#wizard');
+    await page.click('#wiz-next');
+    assert(/name first/.test(await page.textContent('#wizard')), 'asks for a name');
+    await page.fill('#gallery-title', 'Wizard Hook');
+    await page.click('#wiz-next');
+    await page.waitForSelector('#gallery-photos');
+    await page.click('#wiz-next');
+    await page.fill('#gallery-hours', '1');
+    await page.fill('#gallery-mins', '30');
+    await page.fill('#gallery-grams', '40');
+    await page.click('#wiz-next');
+    await page.click('#wiz-next');
+    await page.click('#wiz-next');
+    assert(/Wizard Hook/.test(await page.textContent('.wiz-summary')) && /1h 30m|1 h 30/.test(await page.textContent('.wiz-summary')), await page.textContent('.wiz-summary'));
+    await page.click('#gallery-save');
+    await page.waitForFunction(() => state.wiz && state.wiz.step === 7);
+    const made = Object.values(db.gallery).find(g => g.data.title === 'Wizard Hook');
+    assert(made && made.published === false && made.data.grams === 40 && made.data.minutes === 90, JSON.stringify(made));
+    assert(/hidden for now/.test(await page.textContent('#main')), 'done screen');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

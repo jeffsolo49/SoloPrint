@@ -2313,6 +2313,8 @@ const OWNER_WIKI = [
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+  { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
+    steps: ['Designs > Add a design (wizard). Six short steps: name, photos, price and time, parts and colors, options, finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
     steps: ['Designs > Set-ups (below the design list). Tap "Save as set-up" on any design card, or pick it under "Save a design as a set-up", name it and tap "Save this set-up". Its accessories and joining pack come with it.', 'To start a new item: type the new design\'s name under the set-up and tap "Use this set-up". You get a hidden copy (parts, groups, versions, pre-order settings, prices) to fill in with photos and numbers, then tap Show.', 'Rename or Delete a set-up any time; designs already made from it stay. "Also keep its photos" is optional.', 'Built-in set-ups (Catheter Caddy, drying rack color ideas) are listed under them.'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
@@ -6996,4 +6998,87 @@ async function deleteSetup(id) {
   const s = savedSetups().find(x => x.id === id);
   if (!s || !confirm(`Delete the set-up "${s.name}"? Designs already made from it are not affected.`)) return;
   if (await writeSetups(savedSetups().filter(x => x.id !== id))) render();
+}
+
+function renderGalleryPhotosField(f) {
+  return `<div class="field"><label>Photos</label>
+        <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one. No photo here? The color ideas photo below is used instead.</div>
+        <label class="btn-sm" style="display:inline-block;margin-bottom:8px;">Upload photos
+          <input type="file" accept="image/*" multiple onchange="uploadGalleryPhotos(this.files); this.value='';" style="display:none;" />
+        </label>
+        <button type="button" class="btn-sm" id="review-photo-open" style="margin-bottom:8px;" aria-expanded="${state.reviewPicker ? 'true' : 'false'}" onclick="toggleReviewPhotoPicker()">Choose from review photos</button>
+        <span class="field-help" id="gallery-upload-status" style="margin-left:8px;"></span>
+        ${state.reviewPicker ? renderReviewPhotoPicker() : ''}
+        <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
+        <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
+      </div>`;
+}
+
+// ── ADD A DESIGN: a step-by-step wizard (Designs > Add a design) ──
+// It fills the same form as the Designs page (state.galleryForm), one small step at a time, then saves it with
+// saveGalleryItem. The new design starts hidden unless "Show it on the site now" is ticked.
+const WIZ_STEPS = ['Name', 'Photos', 'Price and time', 'Parts and colors', 'Options', 'Finish'];
+function startDesignWizard() {
+  state.galleryForm = blankGalleryForm();
+  state.galleryForm.published = false;
+  state.galleryOpt = '';
+  state.reviewPicker = false;
+  state.wiz = { step: 1, done: '' };
+}
+function wizGo(n) {
+  const f = state.galleryForm;
+  if (!state.wiz || !f) return;
+  if (n > 1 && !String(f.title || '').trim()) { state.wiz.step = 1; state.wiz.err = 'Give the design a name first.'; render(); document.getElementById('gallery-title')?.focus(); return; }
+  state.wiz.err = ''; state.wiz.step = Math.max(1, Math.min(WIZ_STEPS.length, n));
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+async function wizCreate() {
+  const f = state.galleryForm, title = f ? String(f.title || '').trim() : '';
+  if (!f || !title) { wizGo(1); return; }
+  state.wiz.lastTitle = title;
+  await saveGalleryItem();
+  if (!state.galleryForm) { state.wiz = { step: 7, done: title }; render(); }
+}
+function wizNew() { startDesignWizard(); render(); }
+function wizSteps() {
+  return `<ol class="wiz-steps" aria-label="Steps">${WIZ_STEPS.map((s, i) => `<li><button type="button" class="wiz-step ${state.wiz.step === i + 1 ? 'active' : ''} ${state.wiz.step > i + 1 ? 'done' : ''}" ${state.wiz.step === i + 1 ? 'aria-current="step"' : ''} onclick="wizGo(${i + 1})"><span class="wiz-n">${i + 1}</span> ${esc(s)}</button></li>`).join('')}</ol>`;
+}
+function renderDesignWizard() {
+  if (!state.wiz) startDesignWizard();
+  const w = state.wiz;
+  if (!state.galleryForm && w.step < 7) { w.done = w.lastTitle || 'The design'; w.step = 7; }   // saved: the form was cleared
+  const head = `<div class="owner-page-header"><div class="section-header"><div><h2 class="section-title">Add a design</h2><div class="section-sub">Answer a few questions and your design is made. You can skip anything and fill it in later.</div></div></div></div>`;
+  if (w.step === 7) return `${head}<div class="card"><h3 class="card-title">Done</h3>
+    <div class="alert success" style="display:block;">"${esc(w.done)}" is saved${state.gallery.find(g => g.title === w.done && g.published) ? ' and showing on the site' : ', hidden for now. Open it under Designs and tap Show when it is ready'}.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button type="button" class="btn-sm btn-primary" onclick="wizNew()">Add another design</button>
+      <button type="button" class="btn-sm" onclick="setOwnerTab('gallery')">Go to Designs</button></div></div>`;
+  const f = state.galleryForm;
+  const nav = `<div class="wiz-nav">${w.step > 1 ? `<button type="button" class="btn-sm" id="wiz-back" onclick="wizGo(${w.step - 1})">Back</button>` : ''}
+    ${w.step < WIZ_STEPS.length ? `<button type="button" class="btn-sm btn-primary" id="wiz-next" onclick="wizGo(${w.step + 1})">${[2, 3, 4].includes(w.step) ? 'Next (you can skip this)' : 'Next'}</button>` : ''}</div>`;
+  let body = '';
+  if (w.step === 1) body = `<div class="field"><label for="gallery-title">Name of the design</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value); state.wiz.err = ''" /></div>
+    <div class="field"><label for="gallery-desc">Write-up (optional)</label><textarea id="gallery-desc" style="min-height:96px;" placeholder="What it is, size, colors, the story..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea></div>
+    <label class="special-order-check"><input type="checkbox" id="wiz-preorder" ${f.preorder ? 'checked' : ''} onchange="state.galleryForm.preorder = this.checked; render();" /> This is a pre-order (a new product that isn't ready yet)</label>
+    ${w.err ? `<div class="alert error" style="display:block;" role="alert">${esc(w.err)}</div>` : ''}`;
+  else if (w.step === 2) body = renderGalleryPhotosField(f);
+  else if (w.step === 3) body = `<div class="gallery-form-grid">
+      <div class="field"><label for="gallery-fil">Color</label><select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select></div>
+      <div class="field"><label for="gallery-hours">Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
+      <div class="field"><label for="gallery-mins">Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
+      <div class="field"><label for="gallery-grams">Filament (g)</label><input type="number" id="gallery-grams" min="0" step="0.1" value="${esc(f.grams)}" placeholder="85.4" oninput="updateGalleryForm('grams', this.value)" /></div></div>
+    <div class="field" style="max-width:260px;"><label for="gallery-price">Set price, $ each (optional)</label><input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
+      <div class="field-help">Leave print time, grams and price blank to fill in later: customers see "Price confirmed in your quote".</div></div>
+    <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>`;
+  else if (w.step === 4) body = `<div class="field-help" style="margin-bottom:6px;">One color for the whole thing? Skip this step. For a design with several parts, list them: customers pick a color per part, and parts you group always share one color.</div>${renderDesignPartsForm(f)}`;
+  else if (w.step === 5) body = `<div class="field-help" style="margin-bottom:6px;">Optional extras: make it a pre-order, link accessories, add versions like single and double.</div>${renderDesignOptions(f)}`;
+  else body = `<ul class="wiz-summary">
+      <li><strong>${esc(f.title || 'Untitled')}</strong>${f.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}</li>
+      <li>${parseImageLinks(f.photos).length} photo${parseImageLinks(f.photos).length === 1 ? '' : 's'}</li>
+      <li>${esc(totalPrintMinutes(f.hours, f.minutes) ? fmtTime(totalPrintMinutes(f.hours, f.minutes)) : 'print time later')} · ${esc(f.grams ? f.grams + ' g' : 'grams later')} · ${esc(parseFloat(f.price) > 0 ? '$' + Number(f.price).toFixed(2) + ' set price' : 'price from the estimate')}</li>
+      <li>${(f.parts || []).length ? `${f.parts.length} part${f.parts.length === 1 ? '' : 's'}` : 'one color'}${(f.versions || []).length ? ` · ${f.versions.length} versions` : ''}${(f.accessories || []).length ? ` · ${f.accessories.length} accessories` : ''}</li></ul>
+    <label class="special-order-check"><input type="checkbox" id="wiz-publish" ${f.published ? 'checked' : ''} onchange="state.galleryForm.published = this.checked" /> Show it on the site now (leave unticked to keep it hidden while you finish it)</label>
+    <div class="alert error" id="gallery-err" role="alert"></div>
+    <button type="button" class="btn-sm btn-primary" id="gallery-save" onclick="wizCreate()">Create the design</button>`;
+  return `${head}<div class="card" id="wizard">${wizSteps()}<h3 class="card-title">Step ${w.step} of ${WIZ_STEPS.length}: ${esc(WIZ_STEPS[w.step - 1])}</h3>${body}${nav}</div>`;
 }
