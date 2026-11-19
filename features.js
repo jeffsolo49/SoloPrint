@@ -2318,7 +2318,7 @@ const OWNER_WIKI = [
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
     steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > Pre-orders and people interested > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
-    steps: ['Edit the design and tap "More options" (or "Pre-order settings" on a pre-order). Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
+    steps: ['Edit the design and tap "Versions (single / double)". Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -5691,15 +5691,19 @@ async function savePreorderEta(id, where) {
   if (!(await upsertBatch(b))) { b.preorderEta = before; return; }
   render();
 }
-// The design form: "Make this a pre-order" is one button; "Pre-order settings" opens everything that belongs to it.
-function renderPreorderButtons(f) {
-  const more = state.galleryAdvOpen;
-  return f.preorder
-    ? `<div class="preorder-actions"><span class="preorder-badge">${esc(t('preorderBadge'))}</span>
-        <button type="button" class="btn-sm" id="gallery-preorder-settings" aria-expanded="${!!more}" onclick="toggleDesignOptions()">${more ? 'Hide pre-order settings' : 'Pre-order settings'}</button>
-        <button type="button" class="btn-sm" id="gallery-preorder-off" onclick="setFormPreorder(false)">Not a pre-order</button></div>`
-    : `<div class="preorder-actions"><button type="button" class="btn-sm" id="gallery-preorder-on" onclick="setFormPreorder(true)">Make this a pre-order</button>
-        <button type="button" class="btn-sm" id="gallery-options" aria-expanded="${!!more}" onclick="toggleDesignOptions()">${more ? 'Hide more options' : 'More options (versions, accessories, color editions)'}</button></div>`;
+// The design form: a labeled button for each option (pre-order, accessories, versions, color editions), each opening just its own part.
+function renderDesignOptions(f) {
+  const open = state.galleryOpt || '';
+  const btn = (id, label, count) => `<button type="button" class="btn-sm opt-btn ${open === id ? 'on' : ''}" id="gallery-opt-${id}" aria-expanded="${open === id}" onclick="toggleDesignOpt('${id}')">${label}${count ? ` (${count})` : ''}</button>`;
+  return `<div class="preorder-actions" role="group" aria-label="Design options">
+      ${f.preorder
+        ? `<span class="preorder-badge">${esc(t('preorderBadge'))}</span>${btn('preorder', 'Pre-order settings')}<button type="button" class="btn-sm" id="gallery-preorder-off" onclick="setFormPreorder(false)">Not a pre-order</button>`
+        : '<button type="button" class="btn-sm" id="gallery-preorder-on" onclick="setFormPreorder(true)">Make this a pre-order</button>'}
+      ${btn('accessories', 'Add accessories', (f.accessories || []).length)}
+      ${btn('versions', 'Versions (single / double)', (f.versions || []).length)}
+      ${btn('editions', 'Color editions', (f.editions || []).length)}
+    </div>
+    ${open ? `<div class="design-options">${open === 'preorder' && f.preorder ? renderPreorderFormFields(f) : open === 'accessories' ? renderAccessoriesForm(f) : open === 'versions' ? renderVersionsForm(f) : open === 'editions' ? renderEditionsForm(f) : ''}</div>` : ''}`;
 }
 // Under the design list: the pre-order lists and the one-tap set-ups are folded away until needed.
 function renderDesignFolds() {
@@ -5707,13 +5711,15 @@ function renderDesignFolds() {
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
   return fold('Pre-orders and people interested', lists) + fold('One-tap set-ups', setups);
 }
+function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
 function setFormPreorder(on) {
   if (!state.galleryForm) return;
   state.galleryForm.preorder = !!on;
-  state.galleryAdvOpen = !!on;   // turning it on opens its settings
+  state.galleryOpt = on ? 'preorder' : (state.galleryOpt === 'preorder' ? '' : state.galleryOpt);   // turning it on opens its settings
   render();
 }
-function toggleDesignOptions() { state.galleryAdvOpen = !state.galleryAdvOpen; render(); document.getElementById(state.galleryForm && state.galleryForm.preorder ? 'gallery-preorder-settings' : 'gallery-options')?.focus(); }
+// Edit a design with one of its option sections already open (the shortcut buttons on the design cards).
+function editGalleryItemOpt(id, opt) { editGalleryItem(id); state.galleryOpt = opt; render(); document.getElementById(`gallery-opt-${opt}`)?.scrollIntoView({ block: 'center' }); }
 function renderPreorderFormFields(f) {
   return `<fieldset class="owner-edit-item preorder-fields">
     <legend>Pre-order settings</legend>

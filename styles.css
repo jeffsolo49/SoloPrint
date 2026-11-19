@@ -1484,3 +1484,4 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 
 .fold-card > summary.fold-summary .card-title { margin: 0; }
 .preorder-actions .btn-sm { white-space: normal; text-align: left; }
+.opt-btn.on { outline: 2px solid var(--border-hover); font-weight: 700; }

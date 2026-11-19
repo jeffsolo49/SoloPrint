@@ -3791,6 +3791,7 @@ function renderWorkDetail(g) {
     </div>
     ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
     ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
+    ${accessoryDesigns(g).length ? `<p><button class="btn-sm" type="button" id="to-accessories" onclick="document.getElementById('accessory-picker')?.scrollIntoView({ behavior: 'smooth', block: 'center' })">Accessories available: add them to your order &darr;</button></p>` : ''}
     ${renderColorIdeas(g)}
     ${renderVideos(g)}
     ${renderDesignParts(g)}
@@ -3915,6 +3916,7 @@ function renderGalleryTab() {
         <div class="gallery-body">
           <div class="gallery-title">${esc(g.title || 'Untitled')}${g.preorder ? ` <span class="preorder-badge">${esc(t('preorderBadge'))}</span>` : ''}</div>
           ${g.preorder && g.preorderReady ? `<div class="gallery-meta">Expected: ${esc(g.preorderReady)}</div>` : ''}
+          ${accessoryDesigns(g).length ? '<div class="gallery-meta">Accessories available</div>' : ''}
           <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -4048,13 +4050,7 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
-      ${renderPreorderButtons(f)}
-      ${state.galleryAdvOpen ? `<div class="design-options">
-        ${f.preorder ? renderPreorderFormFields(f) : ''}
-        ${renderVersionsForm(f)}
-        ${renderAccessoriesForm(f)}
-        ${renderEditionsForm(f)}
-      </div>` : ''}
+      ${renderDesignOptions(f)}
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4070,10 +4066,11 @@ function renderOwnerGalleryPage() {
       return `<div class="gallery-card ${g.published ? '' : 'hidden-item'}">
         ${renderGalleryPhoto(g)}
         <div class="gallery-body">
-          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}</div>
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}${(g.accessories || []).length ? ` <span class="gallery-meta">${g.accessories.length} accessor${g.accessories.length === 1 ? 'y' : 'ies'}</span>` : ''}${isAccessory(g) ? ` <span class="gallery-meta">Accessory of ${esc((state.gallery.find(m => (m.accessories || []).includes(g.id)) || {}).title || 'another design')}</span>` : ''}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
+            ${isAccessory(g) ? '' : `<button class="btn-sm" type="button" onclick="editGalleryItemOpt('${esc(g.id)}', 'accessories')">Add accessories</button>`}
             ${g.published ? `<button class="btn-sm" type="button" onclick="copyDesignLink('${esc(g.id)}', this)">Copy link</button>` : ''}
             <button class="btn-sm" type="button" onclick="toggleGalleryItem('${esc(g.id)}')">${g.published ? 'Hide' : 'Show'}</button>
             <button class="btn-sm danger" type="button" onclick="deleteGalleryItem('${esc(g.id)}')">Delete</button>
@@ -4088,7 +4085,7 @@ function editGalleryItem(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
   state.cmJoin = [];
-  state.galleryAdvOpen = false;
+  state.galleryOpt = '';
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
