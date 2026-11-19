@@ -3964,6 +3964,7 @@ function requestGalleryItem(id, colors) {
   render();
   showAlert('submit-ok', `Added ${skipMain ? 'your accessories' : `"${g.title}"` + (accs.length ? ' and your accessories' : '')} to your request. Add your name and email, then submit.`, 'success');
   document.getElementById('submit-ok')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (state.draftItems.length === 1 && shipNoteWanted()) showShipCombine();
 }
 
 function blankGalleryForm() {

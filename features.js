@@ -2257,6 +2257,8 @@ const OWNER_WIKI = [
   // Getting started
   { id: 'login', area: 'Getting started', title: 'Log in, stay logged in, log out', keys: 'password sign in remember 30 days logout session',
     steps: ['Tap Owner at the top of the site and type your password.', 'Tick "Keep me logged in on this device for 30 days" on your own phone or computer only.', 'To log out, tap Logout at the top. To log out on every device (lost phone), open Change Password and tap "Log out everywhere".'] },
+  { id: 'shipnote', area: 'Settings', title: 'The pop-up about combining shipping', keys: 'shipping combine pop-up popup more than one item reminder',
+    steps: ['When a customer adds their first item from the store, a pop-up tells them you can combine shipping on more than one item. It shows once per visit, and they can tick "Don\'t show this again".', 'Change the words: Settings > Wording & FAQ, the "Pop-up when someone adds their first item" rows.', 'Turn it off: Settings > Show / hide & vacation, "Pop-up reminding customers you can combine shipping".'], go: ['settings', 'wording'] },
   { id: 'password', area: 'Getting started', title: 'Change your password', keys: 'security credentials strong password',
     steps: ['Settings > Password.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
   { id: 'updated', area: 'Getting started', title: 'Is the site up to date? (Updated N min ago, Reload now)', keys: 'update new version reload refresh deploy live',
@@ -3115,6 +3117,8 @@ const SITE_TEXT = [
     ['requestThis', '"Request this" button', 'Request this'],
     ['colorDelayNote', 'Every order page and the quote email: custom colors can delay production', DEFAULT_COLOR_DELAY_NOTE],
     ['preorderThis', 'Pre-order designs: the request button', 'Pre-order this'],
+    ['shipCombineTitle', 'Pop-up when someone adds their first item: heading', 'Buying more than one item?'],
+    ['shipCombineText', 'Pop-up when someone adds their first item: message', "I can combine shipping when you buy more than one item. Put everything in this one request and I'll combine the shipping cost."],
     ['preorderPay', 'Pre-orders: how they are paid', PREORDER_TEXT.pay],
     ['preorderSecure', 'Pre-orders: no credit card checkout, and what to do without Venmo', PREORDER_TEXT.secure],
     ['preorderShip', 'Pre-orders: shipping', PREORDER_TEXT.ship],
@@ -3174,7 +3178,8 @@ const FEATURE_SWITCHES = [
   ['videos', 'Videos on design pages'],
   ['designParts', 'Parts and a color per part on designs'],
   ['colorIdeas', 'Color ideas: design photos repainted in other colors'],
-  ['logoAddOn', 'Company logo add-on (note on designs and the tick box)']
+  ['logoAddOn', 'Company logo add-on (note on designs and the tick box)'],
+  ['shipCombine', 'Pop-up reminding customers you can combine shipping on more than one item']
 ];
 // Site text with the logo add-on price filled in.
 function logoText(key) { return t(key).replace(/\{price\}/g, `$${(Number(currentRules().logoPrice) || 0).toFixed(2)}`); }
@@ -5724,6 +5729,42 @@ if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') 
 // A design marked "Pre-order" (a new product that isn't ready yet) can be requested like any design. Its items
 // keep `preorder`; the quote, confirmed and deposit emails and the customer's order say pre-orders are made
 // first come, first served (site text preorderNote, shared preorderQueueNote), and deposits set the order.
+// A one-time pop-up when someone adds their first item from the store: more than one item can share shipping.
+const SHIP_NOTE_OFF_KEY = 'soloprint_shipnote_off';
+function shipNoteWanted() {
+  if (!featureOn('shipCombine') || state.shipNoteSeen || state.view === 'owner') return false;
+  try { if (localStorage.getItem(SHIP_NOTE_OFF_KEY) === '1') return false; } catch (e) { /* ask anyway */ }
+  return true;
+}
+function showShipCombine() {
+  state.shipNoteSeen = true;
+  const prev = document.activeElement;
+  const box = document.createElement('div');
+  box.className = 'ship-modal';
+  box.innerHTML = `<div class="ship-modal-card" role="dialog" aria-modal="true" aria-labelledby="ship-modal-title">
+    <h2 id="ship-modal-title">${esc(t('shipCombineTitle'))}</h2>
+    <p>${esc(t('shipCombineText'))}</p>
+    <label class="special-order-check"><input type="checkbox" id="ship-modal-off" /> Don't show this again</label>
+    <div class="ship-modal-actions">
+      <button type="button" class="btn-sm" id="ship-modal-more">Add another item</button>
+      <button type="button" class="btn-primary" id="ship-modal-ok">Continue my request</button>
+    </div></div>`;
+  const close = goGallery => {
+    try { if (document.getElementById('ship-modal-off').checked) localStorage.setItem(SHIP_NOTE_OFF_KEY, '1'); } catch (e) { /* not kept */ }
+    box.remove();
+    document.removeEventListener('keydown', onKey);
+    if (goGallery) setTab('gallery'); else if (prev && prev.focus && prev.isConnected) prev.focus();
+  };
+  const onKey = e => {
+    if (e.key === 'Escape') close(false);
+    if (e.key === 'Tab') { const els = [...box.querySelectorAll('input,button')]; const i = els.indexOf(document.activeElement); e.preventDefault(); els[(i + (e.shiftKey ? -1 : 1) + els.length) % els.length].focus(); }
+  };
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(box);
+  box.querySelector('#ship-modal-ok').onclick = () => close(false);
+  box.querySelector('#ship-modal-more').onclick = () => close(true);
+  box.querySelector('#ship-modal-ok').focus();
+}
 function requestLabel(g) { return g && g.preorder ? t('preorderThis') : t('requestThis'); }
 // `g`: a design (its page); `b`: the customer's own order (adds their place in line and the expected time).
 function renderPreorderNote(g, b, units) {

@@ -170,6 +170,10 @@ A design with Pre-order shows `renderPreorderGate` (Step 1: name and email) in p
 
 `SEEDED_NOTES` (features.js, end) are notes the owner asked to keep: `seedWikiNotes` adds each once to owner_private `wiki` (`seeded` ids remembered, so a deleted note doesn't come back). Currently the Catheter Caddy product description.
 
+## Combine-shipping pop-up
+
+When a customer adds their first item from the store (`requestGalleryItem` -> `showShipCombine`, features.js) a pop-up says shipping can be combined on more than one item: once per visit, "Don't show this again" kept on the device (`soloprint_shipnote_off`), owner wording in Settings > Wording & FAQ (site text `shipCombineTitle`/`shipCombineText`), switch `shipCombine` in Settings > Show / hide. Never shown in owner mode. The tests' `open()` turns it off by default.
+
 ## Custom color delay note
 
 Site text `colorDelayNote` (default `DEFAULT_COLOR_DELAY_NOTE`, shared; `colorDelayText(settings)` reads the owner's live override): custom colors can mean ordering more material first, which can delay starting. Shown as `.color-delay-note` (`colorDelayNote()`) on the request form's color area, design pages (`renderWorkPrice`), unfinished customer order cards (`renderCustomerOrderExtras`), and added to the `{materialNote}` email variable (Code.gs and the site's previews).

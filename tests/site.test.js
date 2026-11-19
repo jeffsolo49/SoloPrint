@@ -215,6 +215,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
   page.on('pageerror', e => page.errors.push(e.message));
   page.on('dialog', d => (d.type() === 'prompt' ? d.accept(d.defaultValue()) : d.accept()));
   await mockBackend(page, db);
+  await page.addInitScript(() => { try { localStorage.setItem('soloprint_shipnote_off', '1'); } catch (e) { /* ignore */ } });   // the shipping pop-up has its own check
   if (init) await page.addInitScript(init);
   await page.goto(SITE + suffix);
   await page.waitForFunction(() => !state.loading);
@@ -2498,6 +2499,21 @@ const STATES = {
       return [g.photos.join(), g.ownPhotos.length, galleryRowOf(g).data.photos.length, withPhoto.photos.join()];
     });
     assert(JSON.stringify(r) === JSON.stringify(['https://img.test/colors.png', 0, 0, 'https://img.test/real.png']), JSON.stringify(r));
+    await page.close();
+  });
+  await check('a pop-up reminds customers shipping can be combined when they add their first item, once, and can be switched off', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(async () => { localStorage.removeItem('soloprint_shipnote_off'); await loadGallery(); setTab('gallery'); requestGalleryItem('g1'); });
+    await page.waitForSelector('.ship-modal [role="dialog"]');
+    assert(/combine shipping/.test(await page.textContent('.ship-modal')) && await page.evaluate(() => document.activeElement.id) === 'ship-modal-ok', 'message and focus');
+    await page.keyboard.press('Escape');
+    assert(!(await page.$('.ship-modal')), 'Escape closes it');
+    await page.evaluate(() => { state.draftItems = [blankItem()]; requestGalleryItem('g1'); });
+    assert(!(await page.$('.ship-modal')), 'only once per visit');
+    await page.evaluate(() => { state.shipNoteSeen = false; state.draftItems = [blankItem()]; state.settings.features = { shipCombine: false }; requestGalleryItem('g1'); });
+    assert(!(await page.$('.ship-modal')), 'owner can switch it off');
+    assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
   await check('color pickers in owner tools do not list the built-in "(no specific color)" duplicates when your own colors exist', async () => {
