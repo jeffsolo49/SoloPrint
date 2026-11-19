@@ -1565,3 +1565,41 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .cm-live-legend { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; line-height: 1.7; }
 .cm-live-legend .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; margin-right: 6px; vertical-align: middle; border: 1px solid var(--border); }
 @media (max-width: 900px) { .cm-edit-layout { grid-template-columns: 1fr; } .cm-live { position: static; order: -1; } }
+
+/* ── Compact desktop spacing: size things for use, keep like things together (touch devices keep the bigger sizes) ── */
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  .main { margin: 14px auto 28px; padding: 1.1rem 1.4rem; }
+  .main.owner-main { padding: 1rem 1.25rem; }
+  .card { padding: 1rem 1.15rem; margin-bottom: 0.8rem; }
+  .card-title { margin-bottom: 0.65rem; }
+  .section-header { margin-bottom: 0.9rem; }
+  .owner-page-header { margin-bottom: 0.8rem; }
+  .field { margin-bottom: 0.6rem; }
+  .field label { margin-bottom: 3px; }
+  input[type=text], input[type=email], input[type=number], input[type=password], input[type=search], input[type=date], input[type=tel], input[type=url], select, textarea { padding: 7px 11px; font-size: 14px; }
+  .job-card { padding: 1rem 1.15rem; margin-bottom: 0.75rem; }
+  .job-divider { margin: 0.6rem 0; }
+  .stats-row { margin-bottom: 0.9rem; }
+  .empty-state { padding: 2rem 1.5rem; }
+  .nav-tab { padding: 10px 16px; }
+  .btn-sm { padding: 5px 12px; }
+  .special-order-check { margin: 0 0 3px; }
+  .part-allowed > summary, .fold-card > summary.fold-summary, .owner-advanced > summary, .wiki-entry > summary, .etsy-group > summary, .todo-order > summary, .etsy-order > summary { min-height: 34px; padding-top: 4px; padding-bottom: 4px; }
+  .part-allowed-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
+  .part-allowed-list .special-order-check, .accessories-fields .special-order-check { min-height: 28px; margin: 0; }
+  .owner-main .part-form-row .part-thumb { width: 72px; height: 72px; }
+  .gallery-grid { gap: 10px; }
+  .gallery-body { padding: 10px 12px 12px; gap: 4px; }
+  .part-form-row, .part-color-row { padding: 6px 0; }
+  .rules-grid { gap: 0 12px; }
+}
+/* The limit-colors list sits across the whole part row, not in one narrow column */
+.part-form-row .row2 > .part-allowed { grid-column: 1 / -1; }
+
+.email-card > summary.email-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.email-card > .email-card-grid { margin-top: 10px; }
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) { body .main:not(.owner-main) { max-width: 880px; } }
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  .special-order-check input[type="checkbox"], .special-order-check input[type="radio"] { width: 24px; height: 24px; min-height: 24px; margin: 0; flex-shrink: 0; }
+  .special-order-check { min-height: 30px; }
+}

@@ -3311,13 +3311,13 @@ function renderOwnerEmailsPage() {
       </div>
     </div>
     ${state.settingsError ? `<div class="alert error" style="display:block;">Couldn't load your saved emails. If you haven't yet, run supabase/site-settings.sql in the Supabase SQL Editor.</div>` : ''}
-    <div class="card">
-      <h3 class="card-title">Fill-ins</h3>
+    <details class="card fold-card" id="email-fillins" ${state.emailOpen && state.emailOpen.fillins ? 'open' : ''} ontoggle="(state.emailOpen = state.emailOpen || {}).fillins = this.open">
+      <summary class="fold-summary"><h3 class="card-title">Fill-ins you can type in an email</h3></summary>
       <p class="field-help" style="margin-top:0;">Type these in curly brackets and they're filled in for each order. A line whose fill-in has nothing to show (like a Venmo link once they've paid) is left out.</p>
       <dl class="email-placeholders">
         ${Object.entries(EMAIL_PLACEHOLDERS).map(([k, d]) => `<div><dt><code>{${k}}</code></dt><dd>${esc(d)}</dd></div>`).join('')}
       </dl>
-    </div>
+    </details>
     ${renderEmailCard('footer')}
     <h3 class="email-group-title">Emails to customers</h3>
     ${emailKeysTo('Customer').map(renderEmailCard).join('')}
@@ -3347,12 +3347,12 @@ function renderEmailCard(key) {
   const own = cleanEmails({ [key]: state.emailsDraft[key] })[key];
   const usedIn = key === 'footer'
     ? Object.entries(EMAIL_TEMPLATES).filter(([k]) => emailTemplate(k, state.emailsDraft).body.includes('{footer}')).map(([, d]) => d.label) : [];
-  return `<div class="card email-card${key === 'footer' ? ' email-footer-card' : ''}" id="email-${key}">
-    <div class="email-card-head">
+  return `<details class="card fold-card email-card${key === 'footer' ? ' email-footer-card' : ''}" id="email-${key}" ${state.emailOpen && state.emailOpen[key] ? 'open' : ''} ontoggle="(state.emailOpen = state.emailOpen || {})['${key}'] = this.open">
+    <summary class="fold-summary email-card-head"><div>
       <h3 class="email-card-title">${esc(def.label)} <span class="email-to ${def.to === 'You' ? 'to-you' : ''}">${key === 'footer' ? 'Customer emails' : def.to === 'You' ? 'To you' : 'To the customer'}</span>${own ? ' <span class="swatch-note">edited</span>' : ''}</h3>
       <div class="field-help" style="margin-top:2px;">${esc(def.when)}</div>
       ${key === 'footer' ? `<div class="field-help">Shown at the end of: ${usedIn.length ? esc(usedIn.join(', ')) : 'no emails right now (add {footer} to an email to use it)'}.</div>` : ''}
-    </div>
+    </div></summary>
     <div class="email-card-grid">
       <div>
         ${def.subject ? `<div class="field">
@@ -3370,7 +3370,7 @@ function renderEmailCard(key) {
         <div class="email-preview" id="email-preview-${key}" aria-live="polite">${renderEmailPreview(key)}</div>
       </div>
     </div>
-  </div>`;
+  </details>`;
 }
 
 function updateEmailDraft(key, field, value) {
@@ -4023,7 +4023,7 @@ function renderOwnerGalleryPage() {
       <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
       <div class="field"><label>Write-up</label>
         <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
-        <textarea id="gallery-desc" style="min-height:180px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
+        <textarea id="gallery-desc" style="min-height:96px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
       </div>
       <div class="field"><label>Photos</label>
         <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one. No photo here? The color ideas photo below is used instead.</div>

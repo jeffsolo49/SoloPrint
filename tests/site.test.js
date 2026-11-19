@@ -1399,6 +1399,7 @@ const STATES = {
     const db = fixtures();
     const page = await open(db);
     await page.evaluate(asOwner('emails'));
+    await page.evaluate(() => document.querySelectorAll('details.email-card').forEach(d => { d.open = true; }));
     const cards = await page.$$eval('.email-card', els => els.length);
     assert(cards > 10, `${cards} email cards found`);
     assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
