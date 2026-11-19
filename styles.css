@@ -1548,3 +1548,9 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .review-photo-choice { display: flex; flex-direction: column; gap: 4px; align-items: center; width: 110px; padding: 6px; border: 2px solid var(--btn-border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
 .review-photo-choice[aria-pressed="true"] { border-color: var(--accent2); }
 .review-photo-choice img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; }
+
+.setups .setup-head { margin: 14px 0 6px; font-size: 15px; }
+.setup-list { list-style: none; margin: 0; padding: 0; }
+.setup-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--surface); }
+.setup-use { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.setup-use input { flex: 1 1 200px; min-width: 0; }

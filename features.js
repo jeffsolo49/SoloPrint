@@ -2313,8 +2313,10 @@ const OWNER_WIKI = [
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+  { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
+    steps: ['Designs > Set-ups (below the design list). Tap "Save as set-up" on any design card, or pick it under "Save a design as a set-up", name it and tap "Save this set-up". Its accessories and joining pack come with it.', 'To start a new item: type the new design\'s name under the set-up and tap "Use this set-up". You get a hidden copy (parts, groups, versions, pre-order settings, prices) to fill in with photos and numbers, then tap Show.', 'Rename or Delete a set-up any time; designs already made from it stay. "Also keep its photos" is optional.', 'Built-in set-ups (Catheter Caddy, drying rack color ideas) are listed under them.'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > One-tap set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > Set-ups > Built-in set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Help > Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
@@ -5857,9 +5859,9 @@ function renderDesignOptions(f) {
 }
 // Under the design list: the pre-order lists and the one-tap set-ups are folded away until needed.
 function renderDesignFolds() {
-  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderCaddySetup() + renderCaddyRemove() + renderDryingRackSetup();
+  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderSetups();
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
-  return fold('Pre-orders and people interested', lists) + fold('One-tap set-ups', setups);
+  return fold('Pre-orders and people interested', lists) + fold('Set-ups', setups);
 }
 function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
 function setFormPreorder(on) {
@@ -6863,4 +6865,114 @@ function addReviewPhotoToDesign(i) {
   const s = document.getElementById('gallery-upload-status');
   if (s) s.textContent = 'Added. Remember to save.';
   document.getElementById('review-photo-open')?.focus();
+}
+
+// ── SET-UPS: reuse any design (with its accessories and joining pack) for future items ──
+// Saved in owner_private key `setups` ({ items: [{ id, name, note, at, designs: [rows], links }] }). A set-up is a
+// copy of a design's options (parts, groups, versions, pre-order settings, prices...) without its photos unless
+// asked; "Use" makes hidden copies you then fill in. The built-in set-ups (Catheter Caddy, drying rack ideas) sit under them.
+function savedSetups() { const d = (state.ownerPrivate && state.ownerPrivate.setups) || {}; return Array.isArray(d.items) ? d.items : []; }
+async function writeSetups(items) {
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), setups: { items } };
+  try { await saveOwnerPrivate('setups'); return true; }
+  catch (e) { showAlert('setup-err', "Couldn't save. If you were logged out, log in again and retry.", 'error'); return false; }
+}
+function setupParts(g) {
+  const pieces = [];
+  if ((g.parts || []).length) pieces.push(`${g.parts.length} part${g.parts.length === 1 ? '' : 's'}`);
+  if ((g.versions || []).length) pieces.push(`${g.versions.length} version${g.versions.length === 1 ? '' : 's'}`);
+  if (g.preorder) pieces.push('pre-order');
+  if (g.price > 0) pieces.push(`$${Number(g.price).toFixed(2)}`);
+  return pieces;
+}
+function setupSummary(s) {
+  const main = s.designs[s.links.main] || {}, d = main.data || {};
+  const extra = s.designs.length - 1;
+  const bits = setupParts({ parts: d.parts, versions: d.versions, preorder: d.preorder, price: d.price });
+  return `${bits.join(', ') || 'a plain design'}${extra > 0 ? `, plus ${extra} linked design${extra === 1 ? '' : 's'} (accessories or joining pack)` : ''}`;
+}
+function openSetupSave(id) {
+  state.setupSaveId = id;
+  state.galleryFolds = { ...(state.galleryFolds || {}), 'Set-ups': true };
+  render();
+  const el = document.getElementById('setup-save-card');
+  if (el) { el.scrollIntoView({ block: 'center' }); document.getElementById('setup-name')?.focus(); }
+}
+function renderSetups() {
+  const saved = savedSetups(), designs = state.gallery.filter(g => !isAccessory(g));
+  const pick = state.setupSaveId && designs.some(g => g.id === state.setupSaveId) ? state.setupSaveId : (designs[0] || {}).id;
+  return `<div class="setups">
+    <div class="field-help">A set-up is a design's options saved so you can start the next item from it, with no retyping. Save one from any design, then press <strong>Use</strong> to make a new hidden design with the same parts, groups, versions and pre-order settings.</div>
+    <h4 class="setup-head">Start a new design from a set-up</h4>
+    ${saved.length ? `<ul class="setup-list">${saved.map(s => `<li class="setup-item" id="setup-${esc(s.id)}">
+      <div><strong>${esc(s.name)}</strong>${s.note ? ` <span class="field-help">${esc(s.note)}</span>` : ''}</div>
+      <div class="field-help">Includes: ${esc(setupSummary(s))}</div>
+      <div class="setup-use"><label for="setup-new-${esc(s.id)}" class="sr-only">Name for the new design</label>
+        <input type="text" id="setup-new-${esc(s.id)}" maxlength="120" placeholder="Name of the new design" />
+        <button type="button" class="btn-sm btn-primary" onclick="useSetup('${esc(s.id)}')">Use this set-up</button>
+        <button type="button" class="btn-sm" onclick="renameSetup('${esc(s.id)}')">Rename</button>
+        <button type="button" class="btn-sm danger" onclick="deleteSetup('${esc(s.id)}')">Delete</button></div></li>`).join('')}</ul>`
+      : '<div class="field-help">No saved set-ups yet. Save one below, or tap "Save as set-up" on any design card.</div>'}
+    <h4 class="setup-head">Save a design as a set-up</h4>
+    <div class="card setup-save" id="setup-save-card">
+      ${designs.length ? `<div class="field"><label for="setup-design">Design to save</label><select id="setup-design">${designs.map(g => `<option value="${esc(g.id)}" ${g.id === pick ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}</select></div>
+      <div class="field"><label for="setup-name">Name for the set-up</label><input type="text" id="setup-name" maxlength="80" placeholder="e.g. Rack with accessories" /></div>
+      <label class="special-order-check"><input type="checkbox" id="setup-photos" /> Also keep its photos</label>
+      <div class="field-help">Its accessories and joining pack are saved with it.</div>
+      <button type="button" class="btn-sm btn-primary" id="setup-save" onclick="saveSetup()">Save this set-up</button>`
+      : '<div class="field-help">Add a design first, then you can save it as a set-up.</div>'}
+      <div class="alert error" id="setup-err" role="alert"></div>
+      <div class="alert success" id="setup-ok" role="status"></div>
+    </div>
+    <h4 class="setup-head">Built-in set-ups</h4>
+    ${renderCaddySetup() + renderCaddyRemove() + renderDryingRackSetup() || '<div class="field-help">Nothing built-in is waiting.</div>'}
+  </div>`;
+}
+async function saveSetup() {
+  const id = (document.getElementById('setup-design') || {}).value, name = String((document.getElementById('setup-name') || {}).value || '').trim().slice(0, 80);
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) { showAlert('setup-err', 'Pick a design first.', 'error'); return; }
+  if (!name) { showAlert('setup-err', 'Give the set-up a name.', 'error'); document.getElementById('setup-name')?.focus(); return; }
+  const photos = !!(document.getElementById('setup-photos') || {}).checked;
+  const ids = [g.id].concat((g.accessories || []).filter(x => x !== g.id), g.packId && g.packId !== g.id && !(g.accessories || []).includes(g.packId) ? [g.packId] : []);
+  const rows = ids.map(x => state.gallery.find(y => y.id === x)).filter(Boolean).map(x => {
+    const row = galleryRowOf({ ...x, published: false });
+    if (!photos) { row.data.photos = []; row.data.colorMap = null; row.data.parts = (row.data.parts || []).map(p => ({ ...p, photo: '' })); }
+    return JSON.parse(JSON.stringify(row));
+  });
+  const order = rows.map(x => x.id);
+  const links = { main: 0 };
+  rows.forEach(x => { x.data.accessories = (x.data.accessories || []).map(a => order.indexOf(a)).filter(i => i >= 0); x.data.packId = order.indexOf(x.data.packId); });
+  const next = [{ id: 's' + Date.now().toString(36), name, note: '', at: new Date().toISOString(), designs: rows, links }].concat(savedSetups()).slice(0, 40);
+  if (await writeSetups(next)) { state.setupSaveId = ''; render(); showAlert('setup-ok', `Saved "${name}". It's under "Start a new design from a set-up".`, 'success'); }
+}
+async function useSetup(id) {
+  const s = savedSetups().find(x => x.id === id);
+  if (!s) return;
+  const title = String((document.getElementById(`setup-new-${id}`) || {}).value || '').trim().slice(0, 120);
+  if (!title) { alert('Type a name for the new design first.'); document.getElementById(`setup-new-${id}`)?.focus(); return; }
+  const stamp = Date.now().toString(36), newIds = s.designs.map((d, i) => `g${stamp}${i}`);
+  try {
+    for (let i = 0; i < s.designs.length; i++) {
+      const row = JSON.parse(JSON.stringify(s.designs[i])), d = row.data;
+      d.accessories = (d.accessories || []).map(k => newIds[k]).filter(Boolean);
+      d.packId = d.packId >= 0 && newIds[d.packId] ? newIds[d.packId] : '';
+      const item = cleanGalleryItem({ id: newIds[i], published: false, sort_order: 0, created_at: new Date().toISOString(), data: { ...d, title: i === s.links.main ? title : d.title } });
+      if (item) await writeGalleryItem(item);
+    }
+  } catch (e) { alert("Couldn't create the design. If you were logged out, log in again and retry."); return; }
+  await loadGallery();
+  render();
+  alert(`Created "${title}"${s.designs.length > 1 ? ` and ${s.designs.length - 1} linked design${s.designs.length === 2 ? '' : 's'}` : ''}, hidden. Open it to add photos and details, then tap Show.`);
+}
+async function renameSetup(id) {
+  const s = savedSetups().find(x => x.id === id);
+  const name = s && prompt('New name for this set-up:', s.name);
+  if (!s || !name || !name.trim()) return;
+  if (await writeSetups(savedSetups().map(x => (x.id === id ? { ...x, name: name.trim().slice(0, 80) } : x)))) render();
+}
+async function deleteSetup(id) {
+  const s = savedSetups().find(x => x.id === id);
+  if (!s || !confirm(`Delete the set-up "${s.name}"? Designs already made from it are not affected.`)) return;
+  if (await writeSetups(savedSetups().filter(x => x.id !== id))) render();
 }

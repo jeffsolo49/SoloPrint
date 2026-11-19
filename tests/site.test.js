@@ -224,7 +224,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 }
 
 // 'settings/colors' opens a Settings section.
-const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'One-tap set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
+const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'Set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const leadIn = "(() => { state.clientName = 'Test Person'; state.clientEmail = 't@example.com'; localStorage.setItem('soloprint_preorder_lead', JSON.stringify({ email: 't@example.com', designs: [] })); })()";
 const STATES = {
   'home': '0',
@@ -2761,6 +2761,29 @@ const STATES = {
     await page.click('.review-photo-choice');
     await page.waitForFunction(() => /rev1\.png/.test(state.galleryForm.photos));
     assert(/\(added\)/.test(await page.textContent('.review-photo-choice')), 'marked as added');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('set-ups: save any design (with its accessories) as a set-up and start a new hidden design from it', async () => {
+    const db = fixtures();
+    db.gallery.g2.data.accessories = ['g1'];
+    db.gallery.g2.data.preorder = true;
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#setup-design');
+    await page.selectOption('#setup-design', 'g2');
+    await page.fill('#setup-name', 'Sign with extras');
+    await page.click('#setup-save');
+    await page.waitForFunction(() => savedSetups().length === 1);
+    const saved = await page.evaluate(() => savedSetups()[0]);
+    assert(saved.designs.length === 2 && saved.designs[0].data.preorder === true && saved.designs[0].data.photos.length === 0 && saved.designs[0].data.accessories[0] === 1, JSON.stringify(saved).slice(0, 300));
+    assert(JSON.stringify(db.private.setups.items[0].name) === '"Sign with extras"', 'saved for later in owner_private');
+    await page.fill(`#setup-new-${saved.id}`, 'Brand new sign');
+    await page.click(`#setup-${saved.id} button:has-text("Use this set-up")`);
+    await page.waitForFunction(() => state.gallery.some(g => g.title === 'Brand new sign'));
+    const made = Object.values(db.gallery).filter(g => !['g1', 'g2', 'g3'].includes(g.id));
+    const main = made.find(g => g.data.title === 'Brand new sign');
+    assert(made.length === 2 && main.published === false && main.data.preorder === true && main.data.parts.length === 2 && main.data.accessories.length === 1 && made.some(g => g.id === main.data.accessories[0]), JSON.stringify(made).slice(0, 400));
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

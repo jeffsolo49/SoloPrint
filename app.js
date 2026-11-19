@@ -4076,6 +4076,7 @@ function renderOwnerGalleryPage() {
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
             ${isAccessory(g) ? '' : `<button class="btn-sm" type="button" onclick="editGalleryItemOpt('${esc(g.id)}', 'accessories')">Add accessories</button>`}
+            ${isAccessory(g) ? '' : `<button class="btn-sm" type="button" onclick="openSetupSave('${esc(g.id)}')">Save as set-up</button>`}
             ${g.published ? `<button class="btn-sm" type="button" onclick="copyDesignLink('${esc(g.id)}', this)">Copy link</button>` : ''}
             <button class="btn-sm" type="button" onclick="toggleGalleryItem('${esc(g.id)}')">${g.published ? 'Hide' : 'Show'}</button>
             <button class="btn-sm danger" type="button" onclick="deleteGalleryItem('${esc(g.id)}')">Delete</button>
