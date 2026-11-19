@@ -4030,7 +4030,9 @@ function renderOwnerGalleryPage() {
         <label class="btn-sm" style="display:inline-block;margin-bottom:8px;">Upload photos
           <input type="file" accept="image/*" multiple onchange="uploadGalleryPhotos(this.files); this.value='';" style="display:none;" />
         </label>
+        <button type="button" class="btn-sm" id="review-photo-open" style="margin-bottom:8px;" aria-expanded="${state.reviewPicker ? 'true' : 'false'}" onclick="toggleReviewPhotoPicker()">Choose from review photos</button>
         <span class="field-help" id="gallery-upload-status" style="margin-left:8px;"></span>
+        ${state.reviewPicker ? renderReviewPhotoPicker() : ''}
         <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
         <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
       </div>
