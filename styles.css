@@ -1471,3 +1471,27 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .caddy-summary { font-weight: 700; }
 .accessories-fields .special-order-check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 4px 0; }
 .accessories-fields .special-order-check input { width: 24px; height: 24px; flex: 0 0 auto; }
+
+.owner-advanced { margin: 12px 0; }
+.owner-advanced > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+
+.fold-card > summary.fold-summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; font-size: 1.05em; }
+.fold-card[open] > summary.fold-summary { margin-bottom: 10px; }
+.fold-card .card { box-shadow: none; padding-left: 0; padding-right: 0; border: 0; }
+.fold-bar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+.preorder-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.design-options { margin: 8px 0; }
+
+.fold-card > summary.fold-summary .card-title { margin: 0; }
+.preorder-actions .btn-sm { white-space: normal; text-align: left; }
+.opt-btn.on { outline: 2px solid var(--border-hover); font-weight: 700; }
+/* Easy to spot: the owner menu wraps on a phone (Settings and Help were off the edge), and folded sections look tappable. */
+.nav[aria-label="Owner sections"] { flex-wrap: wrap; overflow-x: visible; }
+@media (max-width: 640px) { .nav[aria-label="Owner sections"] { padding-left: 10px; padding-right: 10px; } .nav[aria-label="Owner sections"] .nav-tab { flex: 1 1 auto; text-align: center; } }
+.fold-card > summary.fold-summary { list-style: none; display: flex; align-items: center; gap: 10px; }
+.fold-card > summary.fold-summary::-webkit-details-marker { display: none; }
+.fold-card > summary.fold-summary::before { content: '\25B8'; font-size: 20px; line-height: 1; flex: 0 0 auto; }
+.fold-card[open] > summary.fold-summary::before { content: '\25BE'; }
+.fold-card > summary.fold-summary .card-title { font-family: inherit; font-size: 17px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text); margin: 0; }
+.start-request { display: flex; justify-content: center; margin: 0 0 1.25rem; }
+.start-request .btn-primary { width: 100%; max-width: 420px; min-height: 48px; }
