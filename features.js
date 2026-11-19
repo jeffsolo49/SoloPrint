@@ -2313,8 +2313,12 @@ const OWNER_WIKI = [
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+  { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
+    steps: ['Designs > Add a design (wizard). Six short steps: name, photos, price and time, parts and colors, options, finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
+  { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
+    steps: ['Designs > Set-ups (below the design list). Tap "Save as set-up" on any design card, or pick it under "Save a design as a set-up", name it and tap "Save this set-up". Its accessories and joining pack come with it.', 'To start a new item: type the new design\'s name under the set-up and tap "Use this set-up". You get a hidden copy (parts, groups, versions, pre-order settings, prices) to fill in with photos and numbers, then tap Show.', 'Rename or Delete a set-up any time; designs already made from it stay. "Also keep its photos" is optional.', 'Built-in set-ups (Catheter Caddy, drying rack color ideas) are listed under them.'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > One-tap set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > Set-ups > Built-in set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Help > Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
@@ -3748,7 +3752,8 @@ function cmUsable(m) { return !!(m && (m.regions.some(r => r.part) || m.combos.s
 function cmHexes(m) { return m.regions.flatMap(r => r.hexes); }
 function cmCanvas(m, parts, colors, label, cls = '', focus = -1) {
   const on = r => r.part && parts.some(p => p.id === r.part);
-  const targets = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? cmColor(colors[r.part]).hex : null)));
+  const hx = v => (/^#[0-9a-f]{6}$/i.test(String(v)) ? v : cmColor(v).hex);   // a color key, or a plain #rrggbb
+  const targets = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? hx(colors[r.part]) : null)));
   const groups = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? parts.findIndex(p => p.id === r.part) : -1)));
   return `<canvas class="cm-canvas ${cls}" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), targets, groups, ...(focus >= 0 ? { focus } : {}) }))}" role="img" aria-label="${esc(label)}"></canvas>`;
 }
@@ -4365,6 +4370,7 @@ function renderColorMapForm(f) {
       <h4 class="cm-heading">Which part is each colored area?</h4>
       ${parts.length ? '' : '<div class="alert error" style="display:block;">Add the parts above first (with names), then match each area to a part.</div>'}
       <div class="field-help">Several areas can be the same part (like a part's top and its shaded edge). Leave the background and shadows as "Not a part". Found one part split into several areas, or a stray edge? Tick "Join" on them and tap "Join areas". Copied a part as a second set? Change the picture to one with that set in its own color; parts you already matched stay matched.</div>
+      <div class="cm-edit-layout"><div class="cm-edit-main">
       <div class="cm-regions">${m.regions.map((r, k) => { const start = m.regions.slice(0, k).reduce((n, x) => n + x.hexes.length, 0); return `<div class="cm-region">
         <canvas class="cm-canvas cm-mask" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), mask: r.hexes.map((h, j) => start + j) }))}" aria-hidden="true"></canvas>
         <div class="field"><label for="cm-region-${k}">${r.hexes.map(h => `<span class="swatch" style="background:${esc(h)}" aria-hidden="true"></span>`).join('')}Area ${k + 1}${r.hexes.length > 1 ? ` (${r.hexes.length} joined)` : ''}${r.share ? ` (${r.share >= 0.01 ? Math.round(r.share * 100) + '%' : 'under 1%'} of the picture)` : ''}</label>
@@ -4376,7 +4382,8 @@ function renderColorMapForm(f) {
             <label class="special-order-check"><input type="checkbox" id="cm-join-${k}" ${(state.cmJoin || []).includes(k) ? 'checked' : ''} onchange="toggleCmJoin(${k}, this.checked)" /> Join</label>
             ${r.hexes.length > 1 ? `<button type="button" class="btn-sm" id="cm-split-${k}" onclick="splitCmRegion(${k})">Split apart</button>` : ''}
           </div></div>
-      </div>`; }).join('')}</div>
+      </div>`; }).join('')}</div></div>
+      ${renderCmLive(m, parts, choices, f)}</div>
       <div id="cm-bg-warn" role="status"></div>
       <div id="cm-join-bar">${renderCmJoinBar()}</div>
       <div class="field" style="max-width:340px;"><label for="cm-detail">Areas not split right?</label>
@@ -4459,6 +4466,24 @@ function splitCmRegion(k) {
   if (s) s.textContent = `Split Area ${k + 1} into ${r.hexes.length} areas.`;
   document.getElementById(`cm-region-${k}`)?.focus();
 }
+// The live preview beside the area list: each matched part in its own bright color (or the starting colors), so
+// the owner sees at once what changing an area's part does. It repaints on every change.
+const CM_MATCH_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#12a9a9', '#d6249f', '#9a6324', '#808000', '#000075'];
+function renderCmLive(m, parts, choices, f) {
+  const mode = state.cmLive === 'start' ? 'start' : 'parts';
+  const colors = mode === 'start' ? cmPartColors(parts, {}, choices) : Object.fromEntries(parts.map((p, i) => [p.id, CM_MATCH_COLORS[i % CM_MATCH_COLORS.length]]));
+  const count = id => m.regions.filter(r => r.part === id).length, none = m.regions.filter(r => !r.part || !parts.some(p => p.id === r.part)).length;
+  return `<aside class="cm-live" id="cm-live" aria-label="Live preview of the matched parts">
+    <div class="cm-live-head"><strong>Live preview</strong>
+      <div class="cm-live-toggle" role="group" aria-label="Preview colors">
+        <button type="button" class="btn-sm" aria-pressed="${mode === 'parts'}" onclick="setCmLive('parts')">Each part a color</button>
+        <button type="button" class="btn-sm" aria-pressed="${mode === 'start'}" onclick="setCmLive('start')">Starting colors</button></div></div>
+    ${parts.length ? cmCanvas(m, parts, colors, `${f.title || 'Design'}: live preview of the matched parts`, 'cm-live-canvas') : '<div class="field-help">Add parts to see the preview.</div>'}
+    <ul class="cm-live-legend">${parts.map((p, i) => `<li><span class="swatch" style="background:${esc(mode === 'parts' ? CM_MATCH_COLORS[i % CM_MATCH_COLORS.length] : cmColor(colors[p.id]).hex)}" aria-hidden="true"></span>${esc(p.name)} <span class="field-help">${count(p.id) ? `${count(p.id)} area${count(p.id) === 1 ? '' : 's'}` : 'no area yet'}</span></li>`).join('')}</ul>
+    ${none ? `<div class="field-help">${none} area${none === 1 ? '' : 's'} left as is (not a part).</div>` : ''}
+  </aside>`;
+}
+function setCmLive(mode) { state.cmLive = mode === 'start' ? 'start' : 'parts'; render(); document.querySelector('.cm-live-toggle button[aria-pressed="false"]')?.focus(); }
 function setCmRegion(k, partId) {
   const m = state.galleryForm && state.galleryForm.colorMap;
   if (!m || !m.regions[k]) return;
@@ -5857,9 +5882,9 @@ function renderDesignOptions(f) {
 }
 // Under the design list: the pre-order lists and the one-tap set-ups are folded away until needed.
 function renderDesignFolds() {
-  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderCaddySetup() + renderCaddyRemove() + renderDryingRackSetup();
+  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderSetups();
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
-  return fold('Pre-orders and people interested', lists) + fold('One-tap set-ups', setups);
+  return fold('Pre-orders and people interested', lists) + fold('Set-ups', setups);
 }
 function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
 function setFormPreorder(on) {
@@ -6863,4 +6888,197 @@ function addReviewPhotoToDesign(i) {
   const s = document.getElementById('gallery-upload-status');
   if (s) s.textContent = 'Added. Remember to save.';
   document.getElementById('review-photo-open')?.focus();
+}
+
+// ── SET-UPS: reuse any design (with its accessories and joining pack) for future items ──
+// Saved in owner_private key `setups` ({ items: [{ id, name, note, at, designs: [rows], links }] }). A set-up is a
+// copy of a design's options (parts, groups, versions, pre-order settings, prices...) without its photos unless
+// asked; "Use" makes hidden copies you then fill in. The built-in set-ups (Catheter Caddy, drying rack ideas) sit under them.
+function savedSetups() { const d = (state.ownerPrivate && state.ownerPrivate.setups) || {}; return Array.isArray(d.items) ? d.items : []; }
+async function writeSetups(items) {
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), setups: { items } };
+  try { await saveOwnerPrivate('setups'); return true; }
+  catch (e) { showAlert('setup-err', "Couldn't save. If you were logged out, log in again and retry.", 'error'); return false; }
+}
+function setupParts(g) {
+  const pieces = [];
+  if ((g.parts || []).length) pieces.push(`${g.parts.length} part${g.parts.length === 1 ? '' : 's'}`);
+  if ((g.versions || []).length) pieces.push(`${g.versions.length} version${g.versions.length === 1 ? '' : 's'}`);
+  if (g.preorder) pieces.push('pre-order');
+  if (g.price > 0) pieces.push(`$${Number(g.price).toFixed(2)}`);
+  return pieces;
+}
+function setupSummary(s) {
+  const main = s.designs[s.links.main] || {}, d = main.data || {};
+  const extra = s.designs.length - 1;
+  const bits = setupParts({ parts: d.parts, versions: d.versions, preorder: d.preorder, price: d.price });
+  return `${bits.join(', ') || 'a plain design'}${extra > 0 ? `, plus ${extra} linked design${extra === 1 ? '' : 's'} (accessories or joining pack)` : ''}`;
+}
+function openSetupSave(id) {
+  state.setupSaveId = id;
+  state.galleryFolds = { ...(state.galleryFolds || {}), 'Set-ups': true };
+  render();
+  const el = document.getElementById('setup-save-card');
+  if (el) { el.scrollIntoView({ block: 'center' }); document.getElementById('setup-name')?.focus(); }
+}
+function renderSetups() {
+  const saved = savedSetups(), designs = state.gallery.filter(g => !isAccessory(g));
+  const pick = state.setupSaveId && designs.some(g => g.id === state.setupSaveId) ? state.setupSaveId : (designs[0] || {}).id;
+  return `<div class="setups">
+    <div class="field-help">A set-up is a design's options saved so you can start the next item from it, with no retyping. Save one from any design, then press <strong>Use</strong> to make a new hidden design with the same parts, groups, versions and pre-order settings.</div>
+    <h4 class="setup-head">Start a new design from a set-up</h4>
+    ${saved.length ? `<ul class="setup-list">${saved.map(s => `<li class="setup-item" id="setup-${esc(s.id)}">
+      <div><strong>${esc(s.name)}</strong>${s.note ? ` <span class="field-help">${esc(s.note)}</span>` : ''}</div>
+      <div class="field-help">Includes: ${esc(setupSummary(s))}</div>
+      <div class="setup-use"><label for="setup-new-${esc(s.id)}" class="sr-only">Name for the new design</label>
+        <input type="text" id="setup-new-${esc(s.id)}" maxlength="120" placeholder="Name of the new design" />
+        <button type="button" class="btn-sm btn-primary" onclick="useSetup('${esc(s.id)}')">Use this set-up</button>
+        <button type="button" class="btn-sm" onclick="renameSetup('${esc(s.id)}')">Rename</button>
+        <button type="button" class="btn-sm danger" onclick="deleteSetup('${esc(s.id)}')">Delete</button></div></li>`).join('')}</ul>`
+      : '<div class="field-help">No saved set-ups yet. Save one below, or tap "Save as set-up" on any design card.</div>'}
+    <h4 class="setup-head">Save a design as a set-up</h4>
+    <div class="card setup-save" id="setup-save-card">
+      ${designs.length ? `<div class="field"><label for="setup-design">Design to save</label><select id="setup-design">${designs.map(g => `<option value="${esc(g.id)}" ${g.id === pick ? 'selected' : ''}>${esc(g.title || 'Untitled')}</option>`).join('')}</select></div>
+      <div class="field"><label for="setup-name">Name for the set-up</label><input type="text" id="setup-name" maxlength="80" placeholder="e.g. Rack with accessories" /></div>
+      <label class="special-order-check"><input type="checkbox" id="setup-photos" /> Also keep its photos</label>
+      <div class="field-help">Its accessories and joining pack are saved with it.</div>
+      <button type="button" class="btn-sm btn-primary" id="setup-save" onclick="saveSetup()">Save this set-up</button>`
+      : '<div class="field-help">Add a design first, then you can save it as a set-up.</div>'}
+      <div class="alert error" id="setup-err" role="alert"></div>
+      <div class="alert success" id="setup-ok" role="status"></div>
+    </div>
+    <h4 class="setup-head">Built-in set-ups</h4>
+    ${renderCaddySetup() + renderCaddyRemove() + renderDryingRackSetup() || '<div class="field-help">Nothing built-in is waiting.</div>'}
+  </div>`;
+}
+async function saveSetup() {
+  const id = (document.getElementById('setup-design') || {}).value, name = String((document.getElementById('setup-name') || {}).value || '').trim().slice(0, 80);
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) { showAlert('setup-err', 'Pick a design first.', 'error'); return; }
+  if (!name) { showAlert('setup-err', 'Give the set-up a name.', 'error'); document.getElementById('setup-name')?.focus(); return; }
+  const photos = !!(document.getElementById('setup-photos') || {}).checked;
+  const ids = [g.id].concat((g.accessories || []).filter(x => x !== g.id), g.packId && g.packId !== g.id && !(g.accessories || []).includes(g.packId) ? [g.packId] : []);
+  const rows = ids.map(x => state.gallery.find(y => y.id === x)).filter(Boolean).map(x => {
+    const row = galleryRowOf({ ...x, published: false });
+    if (!photos) { row.data.photos = []; row.data.colorMap = null; row.data.parts = (row.data.parts || []).map(p => ({ ...p, photo: '' })); }
+    return JSON.parse(JSON.stringify(row));
+  });
+  const order = rows.map(x => x.id);
+  const links = { main: 0 };
+  rows.forEach(x => { x.data.accessories = (x.data.accessories || []).map(a => order.indexOf(a)).filter(i => i >= 0); x.data.packId = order.indexOf(x.data.packId); });
+  const next = [{ id: 's' + Date.now().toString(36), name, note: '', at: new Date().toISOString(), designs: rows, links }].concat(savedSetups()).slice(0, 40);
+  if (await writeSetups(next)) { state.setupSaveId = ''; render(); showAlert('setup-ok', `Saved "${name}". It's under "Start a new design from a set-up".`, 'success'); }
+}
+async function useSetup(id) {
+  const s = savedSetups().find(x => x.id === id);
+  if (!s) return;
+  const title = String((document.getElementById(`setup-new-${id}`) || {}).value || '').trim().slice(0, 120);
+  if (!title) { alert('Type a name for the new design first.'); document.getElementById(`setup-new-${id}`)?.focus(); return; }
+  const stamp = Date.now().toString(36), newIds = s.designs.map((d, i) => `g${stamp}${i}`);
+  try {
+    for (let i = 0; i < s.designs.length; i++) {
+      const row = JSON.parse(JSON.stringify(s.designs[i])), d = row.data;
+      d.accessories = (d.accessories || []).map(k => newIds[k]).filter(Boolean);
+      d.packId = d.packId >= 0 && newIds[d.packId] ? newIds[d.packId] : '';
+      const item = cleanGalleryItem({ id: newIds[i], published: false, sort_order: 0, created_at: new Date().toISOString(), data: { ...d, title: i === s.links.main ? title : d.title } });
+      if (item) await writeGalleryItem(item);
+    }
+  } catch (e) { alert("Couldn't create the design. If you were logged out, log in again and retry."); return; }
+  await loadGallery();
+  render();
+  alert(`Created "${title}"${s.designs.length > 1 ? ` and ${s.designs.length - 1} linked design${s.designs.length === 2 ? '' : 's'}` : ''}, hidden. Open it to add photos and details, then tap Show.`);
+}
+async function renameSetup(id) {
+  const s = savedSetups().find(x => x.id === id);
+  const name = s && prompt('New name for this set-up:', s.name);
+  if (!s || !name || !name.trim()) return;
+  if (await writeSetups(savedSetups().map(x => (x.id === id ? { ...x, name: name.trim().slice(0, 80) } : x)))) render();
+}
+async function deleteSetup(id) {
+  const s = savedSetups().find(x => x.id === id);
+  if (!s || !confirm(`Delete the set-up "${s.name}"? Designs already made from it are not affected.`)) return;
+  if (await writeSetups(savedSetups().filter(x => x.id !== id))) render();
+}
+
+function renderGalleryPhotosField(f) {
+  return `<div class="field"><label>Photos</label>
+        <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one. No photo here? The color ideas photo below is used instead.</div>
+        <label class="btn-sm" style="display:inline-block;margin-bottom:8px;">Upload photos
+          <input type="file" accept="image/*" multiple onchange="uploadGalleryPhotos(this.files); this.value='';" style="display:none;" />
+        </label>
+        <button type="button" class="btn-sm" id="review-photo-open" style="margin-bottom:8px;" aria-expanded="${state.reviewPicker ? 'true' : 'false'}" onclick="toggleReviewPhotoPicker()">Choose from review photos</button>
+        <span class="field-help" id="gallery-upload-status" style="margin-left:8px;"></span>
+        ${state.reviewPicker ? renderReviewPhotoPicker() : ''}
+        <textarea id="gallery-photos" placeholder="https://..." style="min-height:52px;" oninput="updateGalleryForm('photos', this.value)">${esc(f.photos)}</textarea>
+        <div id="gallery-form-photos">${renderPhotoLinks(parseImageLinks(f.photos))}</div>
+      </div>`;
+}
+
+// ── ADD A DESIGN: a step-by-step wizard (Designs > Add a design) ──
+// It fills the same form as the Designs page (state.galleryForm), one small step at a time, then saves it with
+// saveGalleryItem. The new design starts hidden unless "Show it on the site now" is ticked.
+const WIZ_STEPS = ['Name', 'Photos', 'Price and time', 'Parts and colors', 'Options', 'Finish'];
+function startDesignWizard() {
+  state.galleryForm = blankGalleryForm();
+  state.galleryForm.published = false;
+  state.galleryOpt = '';
+  state.reviewPicker = false;
+  state.wiz = { step: 1, done: '' };
+}
+function wizGo(n) {
+  const f = state.galleryForm;
+  if (!state.wiz || !f) return;
+  if (n > 1 && !String(f.title || '').trim()) { state.wiz.step = 1; state.wiz.err = 'Give the design a name first.'; render(); document.getElementById('gallery-title')?.focus(); return; }
+  state.wiz.err = ''; state.wiz.step = Math.max(1, Math.min(WIZ_STEPS.length, n));
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+async function wizCreate() {
+  const f = state.galleryForm, title = f ? String(f.title || '').trim() : '';
+  if (!f || !title) { wizGo(1); return; }
+  state.wiz.lastTitle = title;
+  await saveGalleryItem();
+  if (!state.galleryForm) { state.wiz = { step: 7, done: title }; render(); }
+}
+function wizNew() { startDesignWizard(); render(); }
+function wizSteps() {
+  return `<ol class="wiz-steps" aria-label="Steps">${WIZ_STEPS.map((s, i) => `<li><button type="button" class="wiz-step ${state.wiz.step === i + 1 ? 'active' : ''} ${state.wiz.step > i + 1 ? 'done' : ''}" ${state.wiz.step === i + 1 ? 'aria-current="step"' : ''} onclick="wizGo(${i + 1})"><span class="wiz-n">${i + 1}</span> ${esc(s)}</button></li>`).join('')}</ol>`;
+}
+function renderDesignWizard() {
+  if (!state.wiz) startDesignWizard();
+  const w = state.wiz;
+  if (!state.galleryForm && w.step < 7) { w.done = w.lastTitle || 'The design'; w.step = 7; }   // saved: the form was cleared
+  const head = `<div class="owner-page-header"><div class="section-header"><div><h2 class="section-title">Add a design</h2><div class="section-sub">Answer a few questions and your design is made. You can skip anything and fill it in later.</div></div></div></div>`;
+  if (w.step === 7) return `${head}<div class="card"><h3 class="card-title">Done</h3>
+    <div class="alert success" style="display:block;">"${esc(w.done)}" is saved${state.gallery.find(g => g.title === w.done && g.published) ? ' and showing on the site' : ', hidden for now. Open it under Designs and tap Show when it is ready'}.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button type="button" class="btn-sm btn-primary" onclick="wizNew()">Add another design</button>
+      <button type="button" class="btn-sm" onclick="setOwnerTab('gallery')">Go to Designs</button></div></div>`;
+  const f = state.galleryForm;
+  const nav = `<div class="wiz-nav">${w.step > 1 ? `<button type="button" class="btn-sm" id="wiz-back" onclick="wizGo(${w.step - 1})">Back</button>` : ''}
+    ${w.step < WIZ_STEPS.length ? `<button type="button" class="btn-sm btn-primary" id="wiz-next" onclick="wizGo(${w.step + 1})">${[2, 3, 4].includes(w.step) ? 'Next (you can skip this)' : 'Next'}</button>` : ''}</div>`;
+  let body = '';
+  if (w.step === 1) body = `<div class="field"><label for="gallery-title">Name of the design</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value); state.wiz.err = ''" /></div>
+    <div class="field"><label for="gallery-desc">Write-up (optional)</label><textarea id="gallery-desc" style="min-height:96px;" placeholder="What it is, size, colors, the story..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea></div>
+    <label class="special-order-check"><input type="checkbox" id="wiz-preorder" ${f.preorder ? 'checked' : ''} onchange="state.galleryForm.preorder = this.checked; render();" /> This is a pre-order (a new product that isn't ready yet)</label>
+    ${w.err ? `<div class="alert error" style="display:block;" role="alert">${esc(w.err)}</div>` : ''}`;
+  else if (w.step === 2) body = renderGalleryPhotosField(f);
+  else if (w.step === 3) body = `<div class="gallery-form-grid">
+      <div class="field"><label for="gallery-fil">Color</label><select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select></div>
+      <div class="field"><label for="gallery-hours">Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
+      <div class="field"><label for="gallery-mins">Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
+      <div class="field"><label for="gallery-grams">Filament (g)</label><input type="number" id="gallery-grams" min="0" step="0.1" value="${esc(f.grams)}" placeholder="85.4" oninput="updateGalleryForm('grams', this.value)" /></div></div>
+    <div class="field" style="max-width:260px;"><label for="gallery-price">Set price, $ each (optional)</label><input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
+      <div class="field-help">Leave print time, grams and price blank to fill in later: customers see "Price confirmed in your quote".</div></div>
+    <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>`;
+  else if (w.step === 4) body = `<div class="field-help" style="margin-bottom:6px;">One color for the whole thing? Skip this step. For a design with several parts, list them: customers pick a color per part, and parts you group always share one color.</div>${renderDesignPartsForm(f)}`;
+  else if (w.step === 5) body = `<div class="field-help" style="margin-bottom:6px;">Optional extras: make it a pre-order, link accessories, add versions like single and double.</div>${renderDesignOptions(f)}`;
+  else body = `<ul class="wiz-summary">
+      <li><strong>${esc(f.title || 'Untitled')}</strong>${f.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}</li>
+      <li>${parseImageLinks(f.photos).length} photo${parseImageLinks(f.photos).length === 1 ? '' : 's'}</li>
+      <li>${esc(totalPrintMinutes(f.hours, f.minutes) ? fmtTime(totalPrintMinutes(f.hours, f.minutes)) : 'print time later')} · ${esc(f.grams ? f.grams + ' g' : 'grams later')} · ${esc(parseFloat(f.price) > 0 ? '$' + Number(f.price).toFixed(2) + ' set price' : 'price from the estimate')}</li>
+      <li>${(f.parts || []).length ? `${f.parts.length} part${f.parts.length === 1 ? '' : 's'}` : 'one color'}${(f.versions || []).length ? ` · ${f.versions.length} versions` : ''}${(f.accessories || []).length ? ` · ${f.accessories.length} accessories` : ''}</li></ul>
+    <label class="special-order-check"><input type="checkbox" id="wiz-publish" ${f.published ? 'checked' : ''} onchange="state.galleryForm.published = this.checked" /> Show it on the site now (leave unticked to keep it hidden while you finish it)</label>
+    <div class="alert error" id="gallery-err" role="alert"></div>
+    <button type="button" class="btn-sm btn-primary" id="gallery-save" onclick="wizCreate()">Create the design</button>`;
+  return `${head}<div class="card" id="wizard">${wizSteps()}<h3 class="card-title">Step ${w.step} of ${WIZ_STEPS.length}: ${esc(WIZ_STEPS[w.step - 1])}</h3>${body}${nav}</div>`;
 }

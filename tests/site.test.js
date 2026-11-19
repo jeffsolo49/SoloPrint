@@ -224,7 +224,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 }
 
 // 'settings/colors' opens a Settings section.
-const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'One-tap set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
+const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'Set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const leadIn = "(() => { state.clientName = 'Test Person'; state.clientEmail = 't@example.com'; localStorage.setItem('soloprint_preorder_lead', JSON.stringify({ email: 't@example.com', designs: [] })); })()";
 const STATES = {
   'home': '0',
@@ -260,6 +260,7 @@ const STATES = {
   'owner filament': "(async () => { await " + asOwner('filament') + "; state.ownerPrivate.inventory = { black: { grams: 120 }, red: { grams: 900 } }; render(); })()",
   'owner money': asOwner('money'),
   'owner help': asOwner('help'),
+  'owner add a design wizard': asOwner('newdesign'),
   'owner preview': asOwner('preview'),
   'owner etsy spreadsheet': "(async () => { await (" + asOwner('money') + "); localStorage.setItem('soloprint_etsyView', 'sheet'); state.etsyView = 'sheet'; state.ownerPrivate.etsy = { orders: [{ id: 'e1', etsyId: '3100000001', date: new Date().getFullYear() + '-02-03', buyer: 'Sam Lee', items: 'Dragon x2', sale: 30, shipping: 6, tax: 2, fees: 3.1, label: 5.2, grams: 100, refund: 1 }, { id: 'e2', date: new Date().getFullYear() + '-03-03', items: 'Market sale', sale: 12 }], seen: ['2026-02-03|fee|Transaction fee: Shipping|Order #3100000001|0.39'] }; render(); })()",
   'owner etsy to make': "(async () => { await (" + asOwner('etsytodo') + "); state.ownerPrivate.etsy_todo = { orders: [{ id: 't1', etsyId: '4233804505', buyer: 'Jen', due: '2026-01-01', note: 'Gift', createdAt: '2026-01-01T00:00:00Z', done: false, lines: [{ id: 'l1', what: 'Base', color: 'Black', qty: 2, printed: 1 }, { id: 'l2', what: 'Spine', color: 'Red', qty: 1, printed: 0 }] }, { id: 't2', etsyId: '1', buyer: 'Bo', done: true, doneAt: '2026-01-02T00:00:00Z', lines: [{ id: 'l3', what: 'Hook', color: 'White', qty: 1, printed: 1 }] }] }; state.todoOpen = 't1'; state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [{ id: 'd1', what: 'Base', color: 'Blue', qty: 1, printed: 0 }] }; render(); })()",
@@ -1399,6 +1400,7 @@ const STATES = {
     const db = fixtures();
     const page = await open(db);
     await page.evaluate(asOwner('emails'));
+    await page.evaluate(() => document.querySelectorAll('details.email-card').forEach(d => { d.open = true; }));
     const cards = await page.$$eval('.email-card', els => els.length);
     assert(cards > 10, `${cards} email cards found`);
     assert(/Your SoloPrint quote: \$15\.68/.test(await page.textContent('#email-preview-quote')), 'quote preview should fill in the sample total');
@@ -1588,7 +1590,7 @@ const STATES = {
     await owner.click('text=Show all orders');
     assert(await owner.locator('.card[id^="numbers-"]').count() > 1, 'Show all orders');
     await owner.click('nav.nav .nav-tab:has-text("Designs")');
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '')).join('|') === 'Designs|Calculator & Models', 'Designs sub-menu');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '')).join('|') === 'Designs|Add a design (wizard)|Calculator & Models', 'Designs sub-menu');
     await owner.click('.sub-tab:has-text("Calculator")');
     await owner.waitForSelector('#owner-calc-print-time');
     await owner.close();
@@ -2761,6 +2763,73 @@ const STATES = {
     await page.click('.review-photo-choice');
     await page.waitForFunction(() => /rev1\.png/.test(state.galleryForm.photos));
     assert(/\(added\)/.test(await page.textContent('.review-photo-choice')), 'marked as added');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('set-ups: save any design (with its accessories) as a set-up and start a new hidden design from it', async () => {
+    const db = fixtures();
+    db.gallery.g2.data.accessories = ['g1'];
+    db.gallery.g2.data.preorder = true;
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#setup-design');
+    await page.selectOption('#setup-design', 'g2');
+    await page.fill('#setup-name', 'Sign with extras');
+    await page.click('#setup-save');
+    await page.waitForFunction(() => savedSetups().length === 1);
+    const saved = await page.evaluate(() => savedSetups()[0]);
+    assert(saved.designs.length === 2 && saved.designs[0].data.preorder === true && saved.designs[0].data.photos.length === 0 && saved.designs[0].data.accessories[0] === 1, JSON.stringify(saved).slice(0, 300));
+    assert(JSON.stringify(db.private.setups.items[0].name) === '"Sign with extras"', 'saved for later in owner_private');
+    await page.fill(`#setup-new-${saved.id}`, 'Brand new sign');
+    await page.click(`#setup-${saved.id} button:has-text("Use this set-up")`);
+    await page.waitForFunction(() => state.gallery.some(g => g.title === 'Brand new sign'));
+    const made = Object.values(db.gallery).filter(g => !['g1', 'g2', 'g3'].includes(g.id));
+    const main = made.find(g => g.data.title === 'Brand new sign');
+    assert(made.length === 2 && main.published === false && main.data.preorder === true && main.data.parts.length === 2 && main.data.accessories.length === 1 && made.some(g => g.id === main.data.accessories[0]), JSON.stringify(made).slice(0, 400));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('color areas: a live preview beside the areas repaints each time a part is chosen', async () => {
+    const db = fixtures();
+    db.gallery.g2.data.parts = [{ id: 'p1', name: 'Plate', grams: 30 }, { id: 'p2', name: 'Letters', grams: 5 }];
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.evaluate(() => { editGalleryItem('g2'); state.galleryForm.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: '' }, { hexes: ['#0a3c80'], part: '' }], combos: [] }; render(); });
+    await page.waitForSelector('#cm-live');
+    assert(/Plate/.test(await page.textContent('#cm-live')) && /no area yet/.test(await page.textContent('#cm-live')), 'legend shows parts without areas');
+    const before = await page.getAttribute('#cm-live canvas', 'data-cm');
+    await page.selectOption('#cm-region-0', 'p1');
+    await page.waitForFunction(() => /1 area/.test(document.querySelector('#cm-live').textContent));
+    const after = await page.getAttribute('#cm-live canvas', 'data-cm');
+    assert(before !== after && JSON.parse(after).targets[0] === '#e6194b', after);
+    await page.click('#cm-live button:has-text("Starting colors")');
+    assert(JSON.parse(await page.getAttribute('#cm-live canvas', 'data-cm')).targets[0] !== '#e6194b', 'starting colors mode');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('add a design wizard: step by step, blocked without a name, creates a hidden design', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('newdesign'));
+    await page.waitForSelector('#wizard');
+    await page.click('#wiz-next');
+    assert(/name first/.test(await page.textContent('#wizard')), 'asks for a name');
+    await page.fill('#gallery-title', 'Wizard Hook');
+    await page.click('#wiz-next');
+    await page.waitForSelector('#gallery-photos');
+    await page.click('#wiz-next');
+    await page.fill('#gallery-hours', '1');
+    await page.fill('#gallery-mins', '30');
+    await page.fill('#gallery-grams', '40');
+    await page.click('#wiz-next');
+    await page.click('#wiz-next');
+    await page.click('#wiz-next');
+    assert(/Wizard Hook/.test(await page.textContent('.wiz-summary')) && /1h 30m|1 h 30/.test(await page.textContent('.wiz-summary')), await page.textContent('.wiz-summary'));
+    await page.click('#gallery-save');
+    await page.waitForFunction(() => state.wiz && state.wiz.step === 7);
+    const made = Object.values(db.gallery).find(g => g.data.title === 'Wizard Hook');
+    assert(made && made.published === false && made.data.grams === 40 && made.data.minutes === 90, JSON.stringify(made));
+    assert(/hidden for now/.test(await page.textContent('#main')), 'done screen');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
