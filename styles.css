@@ -1485,3 +1485,11 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .fold-card > summary.fold-summary .card-title { margin: 0; }
 .preorder-actions .btn-sm { white-space: normal; text-align: left; }
 .opt-btn.on { outline: 2px solid var(--border-hover); font-weight: 700; }
+/* Easy to spot: the owner menu wraps on a phone (Settings and Help were off the edge), and folded sections look tappable. */
+.nav[aria-label="Owner sections"] { flex-wrap: wrap; overflow-x: visible; }
+@media (max-width: 640px) { .nav[aria-label="Owner sections"] { padding-left: 10px; padding-right: 10px; } .nav[aria-label="Owner sections"] .nav-tab { flex: 1 1 auto; text-align: center; } }
+.fold-card > summary.fold-summary { list-style: none; display: flex; align-items: center; gap: 10px; }
+.fold-card > summary.fold-summary::-webkit-details-marker { display: none; }
+.fold-card > summary.fold-summary::before { content: '\25B8'; font-size: 20px; line-height: 1; flex: 0 0 auto; }
+.fold-card[open] > summary.fold-summary::before { content: '\25BE'; }
+.fold-card > summary.fold-summary .card-title { font-family: inherit; font-size: 17px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text); margin: 0; }

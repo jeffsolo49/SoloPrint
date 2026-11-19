@@ -2712,7 +2712,7 @@ function renderOrderMenu(b, st) {
     `<button type="button" onclick="fixNumbers('${id}')">Fix numbers</button>`,
     `<button type="button" class="danger" onclick="deleteBatch('${id}')">Delete order…</button>`
   ].filter(Boolean);
-  return `<details class="order-menu"><summary class="btn-sm">More</summary><div class="order-menu-list">${items.join('')}</div></details>`;
+  return `<details class="order-menu"><summary class="btn-sm">More actions</summary><div class="order-menu-list">${items.join('')}</div></details>`;
 }
 
 // The one thing to do next, with the email it sends spelled out (and a box to not send it).
