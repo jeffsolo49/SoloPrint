@@ -1493,3 +1493,5 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .fold-card > summary.fold-summary::before { content: '\25B8'; font-size: 20px; line-height: 1; flex: 0 0 auto; }
 .fold-card[open] > summary.fold-summary::before { content: '\25BE'; }
 .fold-card > summary.fold-summary .card-title { font-family: inherit; font-size: 17px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text); margin: 0; }
+.start-request { display: flex; justify-content: center; margin: 0 0 1.25rem; }
+.start-request .btn-primary { width: 100%; max-width: 420px; min-height: 48px; }

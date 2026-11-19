@@ -1603,10 +1603,11 @@ function renderSubmitTab() {
   return `
     ${renderVacationBanner()}
     ${featureOn('about') ? renderAboutCard() : ''}
+    <div class="start-request"><button type="button" class="btn-primary" id="start-request" onclick="document.getElementById('request-form')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })">Start your quote request &darr;</button></div>
     ${featureOn('recentWork') ? renderRecentWork() : ''}
     ${featureOn('howItWorks') ? renderHowItWorks() : ''}
     ${renderReviews(state.settings.reviews)}
-    <div class="section-header">
+    <div class="section-header" id="request-form">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
       </div>
@@ -2401,9 +2402,9 @@ function renderOwnerDashboard() {
       </div>
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
+    ${renderStockAlerts()}
     <details class="card overview" ${state.overviewOpen ? 'open' : ''} ontoggle="state.overviewOpen = this.open">
-      <summary><strong>Overview</strong> · stock alerts, queue, counts and the email guide</summary>
-      ${renderStockAlerts()}
+      <summary><strong>Overview</strong> · queue, counts and the email guide</summary>
       ${renderOwnerQueue()}
       <div class="stats-row">
         <div class="stat-card"><div class="stat-val orange">${estimate.length}</div><div class="stat-label">Estimate</div></div>
