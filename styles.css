@@ -1610,3 +1610,6 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .wiz-step.done .wiz-n::after { content: ' ✓'; }
 .wiz-nav { display: flex; gap: 8px; margin-top: 12px; }
 .wiz-summary { margin: 0 0 10px 18px; line-height: 1.7; }
+.wiz-ask { margin: 8px 0 10px; }
+.wiz-q { font-weight: 700; margin-bottom: 4px; }
+.wiz-yn { display: flex; gap: 8px; margin-top: 6px; }
