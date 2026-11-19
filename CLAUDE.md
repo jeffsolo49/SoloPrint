@@ -18,6 +18,7 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Prices, roll rules, reminder timing, the Venmo username, the material note, "How it works" and every
   email's wording are owner-editable on the site. Prefer adding a setting over hardcoding anything the
   owner might want to change.
+- Doesn't want repeated boilerplate in replies: don't mention Help entries, test counts, "no SQL needed" or "all tests passed" unless something needs the owner's action. Say what changed in plain words, when it's live, and anything they must do.
 - Keeps Claude usage down: don't watch PRs (no `subscribe_pr_activity`, no check-ins); open the PR, turn on
   auto-merge, and say it will be live in a few minutes (the site's "Updated N min ago" corner confirms it).
   Keep screenshots and repeat test runs to what a change needs. Whenever a request doesn't need Opus (wording,
