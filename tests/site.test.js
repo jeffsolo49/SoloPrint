@@ -1043,6 +1043,27 @@ const STATES = {
     assert(db.jobs.pe.items[0].extraColors[0].colorId === 'silk' && db.jobs.pe.items[0].minutes === 90, JSON.stringify(db.jobs.pe.items[0]));
     await owner.close();
   });
+  await check('the owner can limit the colors offered for a part or group', async () => {
+    const db = fixtures();
+    db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });
+    db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60, group: 'Shell' }, { id: 'p2', name: 'Lid', grams: 5, group: 'Shell' }, { id: 'p3', name: 'Trim', grams: 5 }];
+    const owner = await open(db);
+    await owner.evaluate(asOwner('gallery'));
+    await owner.evaluate(() => editGalleryItem('g1'));
+    await owner.click('#part-allow-2-red >> xpath=ancestor::details/summary');
+    await owner.check('#part-allow-2-red');
+    await owner.click('#gallery-save');
+    await owner.waitForTimeout(300);
+    assert(JSON.stringify(db.gallery.g1.data.parts[2].allowed) === '["red"]' && !(db.gallery.g1.data.parts[0].allowed || []).length, JSON.stringify(db.gallery.g1.data.parts));
+    await owner.close();
+    const page = await open(db);
+    await page.click('text=I have an idea');
+    await page.evaluate(async () => { await loadGallery(); requestGalleryItem('g1'); });
+    const opts = await page.evaluate(() => { const it = state.draftItems[0]; const sel = k => [...document.querySelectorAll(`#part-color-0-${k} option`)].map(o => o.value); return { trim: sel(2), body: sel(0) }; });
+    assert(opts.trim.length === 1 && opts.trim[0] === 'red', 'limited part offers only red: ' + JSON.stringify(opts));
+    assert(opts.body.length > 1, 'other parts keep every color');
+    await page.close();
+  });
   await check('colors start as White; the owner picks a starting color for each part', async () => {
     const db = fixtures();
     db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });

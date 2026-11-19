@@ -1529,3 +1529,8 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .ship-modal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .ship-modal-actions .btn-primary { flex: 1 1 auto; min-height: 44px; }
 .ship-modal-actions .btn-sm { min-height: 44px; }
+
+.part-allowed { margin: 8px 0; }
+.part-allowed > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+.part-allowed-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
+.part-allowed-list .special-order-check { min-height: 44px; }
