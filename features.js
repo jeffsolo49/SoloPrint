@@ -2323,6 +2323,8 @@ const OWNER_WIKI = [
     steps: ['Designs > Edit the design > Parts. Under "Grouped with other parts", type the same name on every part that must stay together (like "Body"), or pick a name you already used.', 'Parts with the same group name always get one color: customers choose a color for the group and can\'t separate the parts. A line under the parts lists the groups.', 'It also applies to your color ideas picture: setting one part\'s color there sets the whole group.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
     steps: ['Edit the design and tap "Versions (single / double)". Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
+  { id: 'limit-colors', area: 'Designs', title: 'Limit which colors customers can pick for a part or group', keys: 'limit restrict only allowed colors part group picker choose offer',
+    steps: ['Designs > Edit the design > Parts. Under the part, tap "Limit colors".', 'Tick the only colors customers may pick for that part. Tick none to offer every color again ("Allow every color").', 'For parts locked in a group, the group offers only the colors every limited part allows. It applies on the request form and in the color ideas "Pick your own".'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
@@ -2808,6 +2810,7 @@ function cleanDesignParts(list, withChoice) {
       group: cleanText(p && p.group, 40).trim(),   // parts with the same group share one color choice
       price: p && p.optional && Number(p.price) > 0 && Number(p.price) <= 100000 ? Math.round(Number(p.price) * 100) / 100 : null,
       defaultColor: /^[a-z0-9-]{1,40}$/.test(String(p && p.defaultColor)) ? p.defaultColor : '',   // owner's starting color (id or black/white)
+      allowed: [...new Set((Array.isArray(p && p.allowed) ? p.allowed : []).map(String).filter(k => /^[a-z0-9-]{1,40}$/.test(k)))].slice(0, 60),   // only these colors are offered (empty = every color)
       minutes: p && p.optional && Number(p.minutes) > 0 && Number(p.minutes) <= 100000 ? Math.round(Number(p.minutes)) : null   // add-on's extra print time
     };
     if (withChoice) {
@@ -2821,6 +2824,20 @@ function cleanDesignParts(list, withChoice) {
 // Choices for a part: in-stock colors (or Black and White with no colors set up), keyed by color id or type.
 function partColorChoices() { return stockedColors().map(c => ({ ...c, key: c.colorId || c.filType })); }
 
+// "Only offer these colors": a part's `allowed` list (color ids). Parts in one group share a choice, so a group offers
+// only the colors every limited member allows (if that leaves nothing, no limit applies).
+function partAllowed(parts, p, merge) {
+  const g = partGroup(p, merge);
+  const lists = (g ? parts.filter(q => partGroup(q, merge) === g) : [p]).map(q => q.allowed || []).filter(l => l.length);
+  if (!lists.length) return null;
+  const keys = lists[0].filter(k => lists.every(l => l.includes(k)));
+  return keys.length ? keys : null;
+}
+function partChoicesFor(parts, p, merge, choices) {
+  const keys = partAllowed(parts, p, merge);
+  const some = keys ? choices.filter(c => keys.includes(c.key)) : choices;
+  return some.length ? some : choices;
+}
 // `choices` defaults to the customer's in-stock colors; the owner's edit form passes all colors.
 // Parts with the same color group share one color: the first one on show leads and the others follow it.
 // An edition can merge a group into another (Two-Tone: the drawers follow the accent color), `merge` = { group: into }.
@@ -2850,8 +2867,9 @@ function applyPartColors(item, choicesIn) {
   const fallback = defaultColor(choices.map(c => ({ ...c, special: c.filType === 'special' })));
   const groups = [];
   parts.forEach(p => {
-    let c = choices.find(x => x.key === p.colorId);
-    if (!c) { c = fallback; p.colorId = c.key; }
+    const ok = partChoicesFor(item.designParts, p, item.groupMerge, choices);
+    let c = ok.find(x => x.key === p.colorId);
+    if (!c) { c = ok.find(x => x.key === p.defaultColor) || (ok.find(x => x.key === fallback.key) || ok[0]); p.colorId = c.key; }
     let g = groups.find(x => x.c.key === c.key);
     if (!g) groups.push(g = { c, names: [], grams: 0 });
     g.names.push(p.optional ? `${p.name} (add-on)` : p.name);
@@ -2945,7 +2963,7 @@ function renderPartColors(item, i) {
           Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
         ${p.optional && !p.include ? '' : p.group && lead !== k ? `<div class="field-help">Same color as ${esc(pg)}.</div>` : `<label for="part-color-${i}-${k}">${p.group ? `${esc(pg)} <span class="field-help">(${esc(item.designParts.filter((q, j) => partGroup(q, mg) === pg && (!q.optional || q.include) && partLead(item.designParts, j, mg) === lead).map(q => q.name).join(', '))})</span>` : p.optional ? `Color for ${esc(p.name)}` : esc(p.name)}${p.grams && !p.optional && !p.group ? ` <span class="field-help">(about ${p.grams} g)</span>` : ''}</label>
         <div class="color-pick">${colorDot(p.colorId)}<select id="part-color-${i}-${k}" class="color-select" style="${colorTextStyle(p.colorId)}" onchange="setPartColor(${i}, ${k}, this.value)">
-          ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          ${partChoicesFor(item.designParts, p, mg, choices).map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === p.colorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
         </select></div>`}
       </div>
     </div>`; }).join('')}
@@ -2983,6 +3001,15 @@ function renderDesignParts(g) {
 
 // Owner gallery form: list the parts.
 // "Grouped: Body (Left, Right) · Trim (Handle, Grip)": which parts are locked together.
+function togglePartAllowed(n, key, on) {
+  const p = state.galleryForm.parts[n];
+  if (!p) return;
+  const set = new Set(p.allowed || []);
+  if (on) set.add(key); else set.delete(key);
+  p.allowed = [...set];
+  render();
+  document.getElementById(`part-allow-${n}-${key}`)?.focus();
+}
 function partGroupSummary(parts) {
   const groups = {};
   (parts || []).forEach(p => { const g = String(p.group || '').trim(); if (g) (groups[g] = groups[g] || []).push(p.name || 'Unnamed'); });
@@ -3011,6 +3038,10 @@ function renderDesignPartsForm(f) {
             ${(state.settings.colors.length ? [...state.settings.colors].sort(byName).map(c => ({ key: c.id, name: c.name + (c.outOfStock ? ' (out of stock)' : '') })) : [{ key: 'black', name: 'Black' }])
               .filter(c => c.key !== 'white' && !/^white$/i.test(c.name)).map(c => `<option value="${esc(c.key)}" ${c.key === p.defaultColor ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
           </select></div>
+        <details class="part-allowed" ${(p.allowed || []).length ? 'open' : ''}><summary>Limit colors${(p.allowed || []).length ? ` (${p.allowed.length} allowed)` : ' (every color now)'}</summary>
+          <div class="field-help">Tick the only colors customers can pick for this part${p.group ? ` (and its group, ${esc(p.group)})` : ''}. Tick none to offer every color.</div>
+          <div class="part-allowed-list">${(state.settings.colors.length ? [...state.settings.colors].sort(byName).map(c => ({ key: c.id, name: c.name })) : [{ key: 'black', name: 'Black' }, { key: 'white', name: 'White' }]).map(c => `<label class="special-order-check"><input type="checkbox" id="part-allow-${n}-${esc(c.key)}" ${(p.allowed || []).includes(c.key) ? 'checked' : ''} onchange="togglePartAllowed(${n}, '${esc(c.key)}', this.checked)" /> ${esc(c.name)}</label>`).join('')}</div>
+          ${(p.allowed || []).length ? `<button type="button" class="btn-sm" onclick="state.galleryForm.parts[${n}].allowed = []; render();">Allow every color</button>` : ''}</details>
         <label class="special-order-check part-optional"><input type="checkbox" id="part-optional-${n}" ${p.optional ? 'checked' : ''} onchange="state.galleryForm.parts[${n}].optional = this.checked; render();" /> Optional add-on (customers choose whether to add it)</label>
         ${p.optional ? `<div class="field"><label for="part-price-${n}">Add-on price, $ (designs with a set price)</label>
           <input type="number" id="part-price-${n}" value="${esc(p.price || '')}" min="0" step="0.01" placeholder="e.g. 3" oninput="state.galleryForm.parts[${n}].price = this.value" /></div>
@@ -3705,8 +3736,8 @@ function cmPartColors(parts, chosen, choices) {
   const white = (choices.find(c => /^white$/i.test(String(c.name).trim())) || choices[0] || { key: '' }).key;
   const out = {};
   parts.forEach(p => {
-    const want = chosen && chosen[p.id];
-    out[p.id] = keys.includes(want) ? want : keys.includes(p.defaultColor) ? p.defaultColor : white;
+    const want = chosen && chosen[p.id], ok = partChoicesFor(parts, p, null, choices).map(c => c.key);
+    out[p.id] = keys.includes(want) && ok.includes(want) ? want : ok.includes(p.defaultColor) ? p.defaultColor : ok.includes(white) ? white : ok[0] || white;
   });
   // Parts grouped together can't be separated: the first part of a group sets the color of the whole group.
   const lead = {};
@@ -3948,7 +3979,7 @@ function renderColorIdeas(g) {
     ${(combos.find(c => c.id === v.pick) || {}).photo ? `<img class="cm-canvas cm-photo" src="${esc(combos.find(c => c.id === v.pick).photo)}" alt="${esc(`${g.title}: ${cmDescribe(g.parts, colors)}`)}" referrerpolicy="no-referrer" />` : cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
     ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => p.group && g.parts.findIndex(q => q.group === p.group) !== k ? '' : `<div class="field"><label for="cm-own-${k}">${esc(p.group || p.name)}${p.group ? ` (${esc(g.parts.filter(q => q.group === p.group).map(q => q.name).join(', '))})` : ''}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
       <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
-        ${choices.map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        ${partChoicesFor(g.parts, p, null, choices).map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
       </select></div></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
     ${renderCmSaveTools(g, v, colors)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
