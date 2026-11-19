@@ -3750,7 +3750,8 @@ function cmUsable(m) { return !!(m && (m.regions.some(r => r.part) || m.combos.s
 function cmHexes(m) { return m.regions.flatMap(r => r.hexes); }
 function cmCanvas(m, parts, colors, label, cls = '', focus = -1) {
   const on = r => r.part && parts.some(p => p.id === r.part);
-  const targets = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? cmColor(colors[r.part]).hex : null)));
+  const hx = v => (/^#[0-9a-f]{6}$/i.test(String(v)) ? v : cmColor(v).hex);   // a color key, or a plain #rrggbb
+  const targets = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? hx(colors[r.part]) : null)));
   const groups = m.regions.flatMap(r => r.hexes.map(() => (on(r) ? parts.findIndex(p => p.id === r.part) : -1)));
   return `<canvas class="cm-canvas ${cls}" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), targets, groups, ...(focus >= 0 ? { focus } : {}) }))}" role="img" aria-label="${esc(label)}"></canvas>`;
 }
@@ -4367,6 +4368,7 @@ function renderColorMapForm(f) {
       <h4 class="cm-heading">Which part is each colored area?</h4>
       ${parts.length ? '' : '<div class="alert error" style="display:block;">Add the parts above first (with names), then match each area to a part.</div>'}
       <div class="field-help">Several areas can be the same part (like a part's top and its shaded edge). Leave the background and shadows as "Not a part". Found one part split into several areas, or a stray edge? Tick "Join" on them and tap "Join areas". Copied a part as a second set? Change the picture to one with that set in its own color; parts you already matched stay matched.</div>
+      <div class="cm-edit-layout"><div class="cm-edit-main">
       <div class="cm-regions">${m.regions.map((r, k) => { const start = m.regions.slice(0, k).reduce((n, x) => n + x.hexes.length, 0); return `<div class="cm-region">
         <canvas class="cm-canvas cm-mask" data-cm="${esc(JSON.stringify({ photo: m.photo, hexes: cmHexes(m), mask: r.hexes.map((h, j) => start + j) }))}" aria-hidden="true"></canvas>
         <div class="field"><label for="cm-region-${k}">${r.hexes.map(h => `<span class="swatch" style="background:${esc(h)}" aria-hidden="true"></span>`).join('')}Area ${k + 1}${r.hexes.length > 1 ? ` (${r.hexes.length} joined)` : ''}${r.share ? ` (${r.share >= 0.01 ? Math.round(r.share * 100) + '%' : 'under 1%'} of the picture)` : ''}</label>
@@ -4378,7 +4380,8 @@ function renderColorMapForm(f) {
             <label class="special-order-check"><input type="checkbox" id="cm-join-${k}" ${(state.cmJoin || []).includes(k) ? 'checked' : ''} onchange="toggleCmJoin(${k}, this.checked)" /> Join</label>
             ${r.hexes.length > 1 ? `<button type="button" class="btn-sm" id="cm-split-${k}" onclick="splitCmRegion(${k})">Split apart</button>` : ''}
           </div></div>
-      </div>`; }).join('')}</div>
+      </div>`; }).join('')}</div></div>
+      ${renderCmLive(m, parts, choices, f)}</div>
       <div id="cm-bg-warn" role="status"></div>
       <div id="cm-join-bar">${renderCmJoinBar()}</div>
       <div class="field" style="max-width:340px;"><label for="cm-detail">Areas not split right?</label>
@@ -4461,6 +4464,24 @@ function splitCmRegion(k) {
   if (s) s.textContent = `Split Area ${k + 1} into ${r.hexes.length} areas.`;
   document.getElementById(`cm-region-${k}`)?.focus();
 }
+// The live preview beside the area list: each matched part in its own bright color (or the starting colors), so
+// the owner sees at once what changing an area's part does. It repaints on every change.
+const CM_MATCH_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#12a9a9', '#d6249f', '#9a6324', '#808000', '#000075'];
+function renderCmLive(m, parts, choices, f) {
+  const mode = state.cmLive === 'start' ? 'start' : 'parts';
+  const colors = mode === 'start' ? cmPartColors(parts, {}, choices) : Object.fromEntries(parts.map((p, i) => [p.id, CM_MATCH_COLORS[i % CM_MATCH_COLORS.length]]));
+  const count = id => m.regions.filter(r => r.part === id).length, none = m.regions.filter(r => !r.part || !parts.some(p => p.id === r.part)).length;
+  return `<aside class="cm-live" id="cm-live" aria-label="Live preview of the matched parts">
+    <div class="cm-live-head"><strong>Live preview</strong>
+      <div class="cm-live-toggle" role="group" aria-label="Preview colors">
+        <button type="button" class="btn-sm" aria-pressed="${mode === 'parts'}" onclick="setCmLive('parts')">Each part a color</button>
+        <button type="button" class="btn-sm" aria-pressed="${mode === 'start'}" onclick="setCmLive('start')">Starting colors</button></div></div>
+    ${parts.length ? cmCanvas(m, parts, colors, `${f.title || 'Design'}: live preview of the matched parts`, 'cm-live-canvas') : '<div class="field-help">Add parts to see the preview.</div>'}
+    <ul class="cm-live-legend">${parts.map((p, i) => `<li><span class="swatch" style="background:${esc(mode === 'parts' ? CM_MATCH_COLORS[i % CM_MATCH_COLORS.length] : cmColor(colors[p.id]).hex)}" aria-hidden="true"></span>${esc(p.name)} <span class="field-help">${count(p.id) ? `${count(p.id)} area${count(p.id) === 1 ? '' : 's'}` : 'no area yet'}</span></li>`).join('')}</ul>
+    ${none ? `<div class="field-help">${none} area${none === 1 ? '' : 's'} left as is (not a part).</div>` : ''}
+  </aside>`;
+}
+function setCmLive(mode) { state.cmLive = mode === 'start' ? 'start' : 'parts'; render(); document.querySelector('.cm-live-toggle button[aria-pressed="false"]')?.focus(); }
 function setCmRegion(k, partId) {
   const m = state.galleryForm && state.galleryForm.colorMap;
   if (!m || !m.regions[k]) return;

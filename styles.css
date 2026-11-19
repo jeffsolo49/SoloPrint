@@ -1554,3 +1554,14 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .setup-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--surface); }
 .setup-use { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .setup-use input { flex: 1 1 200px; min-width: 0; }
+
+/* Color areas: tiles on the left, a sticky live preview on the right */
+.cm-edit-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.cm-live { position: sticky; top: 76px; border: 2px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface); }
+.cm-live-head { display: flex; justify-content: space-between; gap: 6px 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.cm-live-toggle { display: flex; gap: 4px; }
+.cm-live-toggle .btn-sm[aria-pressed="true"] { background: var(--accent2); color: var(--on-accent); border-color: var(--accent2); }
+.cm-live-canvas { width: 100%; height: auto; border-radius: 8px; }
+.cm-live-legend { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; line-height: 1.7; }
+.cm-live-legend .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; margin-right: 6px; vertical-align: middle; border: 1px solid var(--border); }
+@media (max-width: 900px) { .cm-edit-layout { grid-template-columns: 1fr; } .cm-live { position: static; order: -1; } }

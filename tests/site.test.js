@@ -2787,6 +2787,24 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('color areas: a live preview beside the areas repaints each time a part is chosen', async () => {
+    const db = fixtures();
+    db.gallery.g2.data.parts = [{ id: 'p1', name: 'Plate', grams: 30 }, { id: 'p2', name: 'Letters', grams: 5 }];
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.evaluate(() => { editGalleryItem('g2'); state.galleryForm.colorMap = { photo: 'https://img.test/cm.png', regions: [{ hexes: ['#c89c00'], part: '' }, { hexes: ['#0a3c80'], part: '' }], combos: [] }; render(); });
+    await page.waitForSelector('#cm-live');
+    assert(/Plate/.test(await page.textContent('#cm-live')) && /no area yet/.test(await page.textContent('#cm-live')), 'legend shows parts without areas');
+    const before = await page.getAttribute('#cm-live canvas', 'data-cm');
+    await page.selectOption('#cm-region-0', 'p1');
+    await page.waitForFunction(() => /1 area/.test(document.querySelector('#cm-live').textContent));
+    const after = await page.getAttribute('#cm-live canvas', 'data-cm');
+    assert(before !== after && JSON.parse(after).targets[0] === '#e6194b', after);
+    await page.click('#cm-live button:has-text("Starting colors")');
+    assert(JSON.parse(await page.getAttribute('#cm-live canvas', 'data-cm')).targets[0] !== '#e6194b', 'starting colors mode');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };
