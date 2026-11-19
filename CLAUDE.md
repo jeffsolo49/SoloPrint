@@ -101,7 +101,11 @@ Settings > Reviews has "Import reviews from Etsy (reviews.json)" (`etsyReviewsCh
 links each to a design (guessed from the uploaded Etsy sale's item names), then Saves. Site reviews keep `rating` (half steps), `source: 'etsy'` and `date` (`cleanSettings`); `renderReviews` shows the stars and "on Etsy".
 Approved customer reviews keep their rating too (`decideReview`). Up to 40 reviews (`ETSY_REVIEW_MAX`, the `cleanSettings` limit).
 
-## Etsy to make
+## To make (print list: site orders and Etsy orders)
+
+Orders > "To make" (`etsytodo` tab) is one list for both: Etsy orders from `etsy_todo` plus every site order that is Confirmed & Printing (`siteTodoOrders`: one line per part and color, `todoOpenOrders` merges them; site lines have `site: true` and tick boxes saved in `owner_private` key `site_todo` { ticks: { lineId: printed } } by `siteTick`; they have an "Open order" button instead of Shipped/Edit/Delete). "Print this list" (`printTodoList`, print styles under `html.printing-todo`) prints just `#todo-orders`. A design with no uploaded photos uses its color-ideas photo as its photo (`cleanGalleryItem`: `photos` falls back to `colorMap.photo`, `ownPhotos` is what the owner uploaded and is what gets saved; api/design.js does the same for link previews). Owner-mode photos for color ideas and parts are large (`.cm-big`, `.cm-mask`, `.part-thumb`).
+
+## Etsy to make (the Etsy half of the list above)
 
 Orders > "Etsy to make" (`etsytodo` tab, `renderEtsyTodoPage` at the end of features.js): Etsy orders still to print, in `owner_private` key `etsy_todo` (keys must be lowercase a-z and _, the table's check)
 ({ orders: [{ id, etsyId, buyer, due (ship by), note, done, doneAt, lines: [{ id, what, color (name text), qty, printed }] }] }). One list of waiting orders (no separate print list): color buttons on top show how many are left in each color and filter the list to that color (`state.todoColor`); each part has tick boxes per piece (`todoPieces`), Change (inline what/color/qty, `todoLineForm`/`todoLineSave`) and Remove (`todoLineRemove`); each order Shipped: done (`todoFinish`, asks first), Edit order, Delete order; finished orders can be put back or deleted.

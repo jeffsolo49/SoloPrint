@@ -1438,7 +1438,7 @@ function ownerSection() {
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
-  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['etsytodo', 'Etsy to make'], ['numbers', 'Fix numbers']]
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['etsytodo', 'To make'], ['numbers', 'Fix numbers']]
     : sec === 'gallery' ? [['gallery', 'Designs'], ['calculator', 'Calculator & Models']]
     : sec === 'help' ? [['help', 'Help'], ['practice', 'Practice order'], ['preview', 'Preview']] : null;
   if (!tabs) return '';
@@ -3628,7 +3628,8 @@ function cleanGalleryItem(row) {
     createdAt: cleanIso(row.created_at),
     title: cleanText(data.title, 120),
     description: cleanText(data.description, 8000),
-    photos: cleanImageLinks(data.photos),
+    ownPhotos: cleanImageLinks(data.photos),   // the photos the owner uploaded
+    photos: cleanImageLinks(data.photos).length ? cleanImageLinks(data.photos) : (cleanColorMap(data.colorMap, cleanDesignParts(data.parts)) ? [cleanColorMap(data.colorMap, cleanDesignParts(data.parts)).photo] : []),   // none uploaded: the color picker's photo stands in
     filType: cleanFilType(data.filType),
     colorId: /^[a-z0-9-]{1,40}$/.test(String(data.colorId)) ? data.colorId : '',   // the design's color (blank = White)
     minutes: cleanNumber(data.minutes),
@@ -4024,7 +4025,7 @@ function renderOwnerGalleryPage() {
         <textarea id="gallery-desc" style="min-height:180px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
       </div>
       <div class="field"><label>Photos</label>
-        <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one.</div>
+        <div class="field-help">Upload up to 5 photos (they're resized and stored in your Supabase storage), or paste image links, one per line. The first photo is the main one. No photo here? The color ideas photo below is used instead.</div>
         <label class="btn-sm" style="display:inline-block;margin-bottom:8px;">Upload photos
           <input type="file" accept="image/*" multiple onchange="uploadGalleryPhotos(this.files); this.value='';" style="display:none;" />
         </label>
@@ -4088,7 +4089,7 @@ function editGalleryItem(id) {
   state.cmJoin = [];
   state.galleryOpt = '';
   state.galleryForm = {
-    id: g.id, title: g.title, description: g.description, photos: g.photos.join('\n'), filType: g.filType, colorId: g.colorId,
+    id: g.id, title: g.title, description: g.description, photos: g.ownPhotos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
@@ -4102,7 +4103,7 @@ function editGalleryItem(id) {
 // The saved shape of a design (a gallery_items row).
 function galleryRowOf(g) {
   return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
-    data: { title: g.title, description: g.description, photos: g.photos, filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
+    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
 }
 async function writeGalleryItem(g) {
   if (previewActive()) {

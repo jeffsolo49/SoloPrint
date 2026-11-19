@@ -2302,7 +2302,7 @@ const OWNER_WIKI = [
 
   // Etsy to make
   { id: 'etsy-todo', area: 'Etsy orders to make', title: 'Keep track of Etsy orders to print', keys: 'etsy to make todo print list printed tick shipped',
-    steps: ['Orders > Etsy to make.', 'Add orders with "Add unshipped orders from Etsy\'s Order Items file" (Etsy: Shop Manager, Settings, Options, Download Data, Order Items), or by hand.', 'Each waiting order shows its Etsy title, every part with a picture in its color, and a tick box for each piece. Tick a box when that piece is printed.', '"Print list by color" groups everything still to print by color.', 'When it ships, tap "Shipped: done".'], go: ['etsytodo'] },
+    steps: ['Orders > To make. It lists every part still to print from your confirmed site orders and your Etsy orders. Tick each piece as you print it; "Print this list" prints just the list (ticks on site orders never change the order; use Open order, then Printing done).', 'Etsy orders:', 'Add orders with "Add unshipped orders from Etsy\'s Order Items file" (Etsy: Shop Manager, Settings, Options, Download Data, Order Items), or by hand.', 'Each waiting order shows its Etsy title, every part with a picture in its color, and a tick box for each piece. Tick a box when that piece is printed.', '"Print list by color" groups everything still to print by color.', 'When it ships, tap "Shipped: done".'], go: ['etsytodo'] },
   { id: 'etsy-todo-parts', area: 'Etsy orders to make', title: 'Split an Etsy order into parts and colors', keys: 'parts colors design add its parts edit order color idea',
     steps: ['On the order, tap Edit.', 'Under "From one of your designs", pick the design, a color idea (or each part\'s usual color) and how many, then "Add its parts". Each part gets a picture.', 'Remove the plain Etsy line with ✕ if you like, then "Save changes".'], go: ['etsytodo'] },
 
@@ -4321,6 +4321,7 @@ function renderColorMapForm(f) {
       <input type="file" accept="image/*" id="cm-upload" onchange="uploadColorMapPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
     ${m ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap = null; state.cmJoin = []; render();">Remove picture</button>' : ''}
     <span class="field-help" id="cm-status" role="status"></span>
+    ${m ? `<img class="cm-photo cm-big" src="${esc(m.photo)}" alt="The color ideas photo you uploaded" referrerpolicy="no-referrer" />` : ''}
     ${f.id === CADDY_MAIN.id ? `<div class="field-help" style="margin-top:8px;"><strong>Catheter Caddy:</strong> upload the BACK view first (the one that shows the drawers), with the body, the dividers and handle, the drawers and the drawer tabs each a different solid color, then match those areas to the parts: Base, walls and Top Shelf and Joining Clips = body; Handle and grips, Dividers = secondary; Rear Drawers = drawers; Drawer pull tabs = tabs. The color picker repaints it. Want a Front button too? Add a front view in the same colors below.</div>
       ${m ? `<label class="btn-sm">${m.photoAlt ? 'Change front view' : 'Add front view'}<input type="file" accept="image/*" id="cm-upload-alt" onchange="uploadColorMapAltPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
       ${m.photoAlt ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.photoAlt = \'\'; render();">Remove front view</button>' : ''}` : ''}` : ''}
@@ -5248,6 +5249,55 @@ function todoColorHex(name) {
   const c = (state.settings.colors || []).find(x => String(x.name).trim().toLowerCase() === n);
   return c ? c.hex : n === 'black' ? '#111111' : n === 'white' ? '#ffffff' : '';
 }
+// ── To make: one print list for site orders and Etsy orders ──
+// Orders on the site that are Confirmed & Printing show up here as to-do orders (same shape as the Etsy ones: lines of
+// { id, what, color, qty, printed }), one line per part and color. Their tick boxes are kept in owner_private key
+// `site_todo` ({ ticks: { lineId: printedCount } }); the order itself is never changed by ticking.
+function siteTodoTicks() { const d = (state.ownerPrivate && state.ownerPrivate.site_todo) || {}; return d.ticks && typeof d.ticks === 'object' ? d.ticks : {}; }
+function siteTodoOrders() {
+  const ticks = siteTodoTicks();
+  return (state.batches || []).filter(b => (b.phase || 'estimate') === 'order_received').map(b => {
+    const lines = [];
+    (b.items || []).forEach((it, i) => {
+      const q = Math.max(1, parseInt(it.qty, 10) || 1) * Math.max(1, Number(it.versionCount) || 1);
+      const add = (key, what, color, extra) => lines.push({ id: `${b.id}:${i}:${key}`, what, color, qty: q, printed: Math.min(q, Number(ticks[`${b.id}:${i}:${key}`]) || 0), galleryId: it.galleryId || '', ...extra });
+      const parts = (it.designParts || []).filter(p => !p.optional || p.include);
+      if (parts.length) parts.forEach(p => add(p.id, `${p.name} (${it.name || 'Item'})`, cmColor(p.colorId).name, { partId: p.id }));
+      else {
+        const main = it.color || ({ black: 'Black', white: 'White' }[it.filType]) || (it.filType === 'special_order' ? it.specialColor : '') || '';
+        add('item', `${it.name || 'Item'}${it.versionName ? ` - ${it.versionName}` : ''}`, main);
+        (it.extraColors || []).forEach((x, k) => add(`x${k}`, `${it.name || 'Item'}: ${x.parts || 'other parts'}`, x.name || ''));
+      }
+      if (it.packIncluded) add('kit', 'Joining Kit', (it.caddy && it.caddy.body) || '', { qty: Math.max(1, parseInt(it.qty, 10) || 1) });
+    });
+    return { id: b.id, site: true, etsyId: '', buyer: b.clientName || b.clientEmail || '', title: orderTitle(b), due: '', createdAt: b.createdAt, note: '', lines };
+  }).filter(o => o.lines.length);
+}
+// Etsy orders and site orders together (site ones are marked `site`).
+function todoOpenOrders() {
+  return etsyTodo().filter(o => !o.done).concat(siteTodoOrders())
+    .sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.createdAt).localeCompare(String(b.createdAt)));
+}
+function todoFind(id, lineId) {
+  const o = todoOpenOrders().find(x => x.id === id), l = o && (o.lines || []).find(x => x.id === lineId);
+  return o && l ? { o, l } : null;
+}
+async function siteTick(lineId, value) {
+  const valid = new Set(siteTodoOrders().flatMap(o => o.lines.map(l => l.id)));
+  const ticks = { ...siteTodoTicks() };
+  if (value > 0) ticks[lineId] = value; else delete ticks[lineId];
+  Object.keys(ticks).forEach(k => { if (!valid.has(k)) delete ticks[k]; });
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), site_todo: { ticks } };
+  try { await saveOwnerPrivate('site_todo'); render(); }
+  catch (e) { showAlert('todo-err', "Couldn't save the tick. Check you're logged in.", 'error'); }
+}
+// Prints just the list (the rest of the page is hidden by the print styles).
+function printTodoList() {
+  const root = document.documentElement;
+  root.classList.add('printing-todo');
+  window.addEventListener('afterprint', () => root.classList.remove('printing-todo'), { once: true });
+  window.print();
+}
 function todoLeft(l) { return Math.max(0, (Number(l.qty) || 1) - (Number(l.printed) || 0)); }
 function todoDraft() { if (!state.todoDraft) state.todoDraft = { etsyId: '', buyer: '', due: '', note: '', lines: [] }; return state.todoDraft; }
 function todoDue(o) {
@@ -5258,7 +5308,7 @@ function todoDue(o) {
 }
 function renderEtsyTodoPage() {
   if (!state.galleryLoaded) loadGallery().then(render);
-  const open = etsyTodo().filter(o => !o.done).sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  const open = todoOpenOrders();
   const done = etsyTodo().filter(o => o.done).sort((a, b) => String(b.doneAt).localeCompare(String(a.doneAt))).slice(0, 30);
   // Print list: every part still to print, grouped by color.
   const byColor = new Map();
@@ -5273,7 +5323,7 @@ function renderEtsyTodoPage() {
   const fc = byColor.has(state.todoColor) ? state.todoColor : '';
   const shown = fc ? open.filter(o => (o.lines || []).some(l => todoLeft(l) && String(l.color || 'No color picked').trim().toLowerCase() === fc)) : open;
   const swatch = name => { const hex = todoColorHex(name); return hex ? `<span class="swatch" style="background:${esc(hex)}" aria-hidden="true"></span>` : ''; };
-  const who = o => `${o.etsyId ? '#' + esc(o.etsyId) : 'Etsy order'}${o.buyer ? ' · ' + esc(o.buyer) : ''}`;
+  const who = o => o.site ? `${esc(o.title || 'Order')}${o.buyer ? ' · ' + esc(o.buyer) : ''}` : `${o.etsyId ? '#' + esc(o.etsyId) : 'Etsy order'}${o.buyer ? ' · ' + esc(o.buyer) : ''}`;
   const colorList = (state.settings.colors || []).map(c => c.name).concat(['Black', 'White']).filter((v, i, a) => a.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i);
   const d = todoDraft();
   const designs = (state.gallery || []).filter(g => (g.parts || []).length || g.title).sort((a, b) => String(a.title).localeCompare(String(b.title)));
@@ -5283,13 +5333,14 @@ function renderEtsyTodoPage() {
     <div class="owner-page-header">
       <div class="section-header">
         <div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-        <div><h2 class="section-title">Etsy to make</h2><div class="section-sub">Etsy orders still to print: every part, in every color, in one list</div></div>
+        <div><h2 class="section-title">To make</h2><div class="section-sub">Every part still to print, from your site orders and your Etsy orders, in one list you can tick off and print</div></div>
       </div>
     </div>
     <div class="alert error" id="todo-err"></div>
     ${state.todoMsg ? `<div class="alert success" style="display:block;" role="status">${esc(state.todoMsg)}</div>` : ''}
     <div class="card" id="todo-orders">
       <h3 class="card-title">Waiting to finish (${open.length})</h3>
+      ${open.length ? '<div class="no-print" style="margin-bottom:10px;"><button type="button" class="btn-sm" id="todo-print-btn" onclick="printTodoList()">Print this list</button></div>' : ''}
       ${colors.length ? `<div class="todo-colorbar" role="group" aria-label="Show parts in one color">
         <button type="button" class="todo-chip${fc ? '' : ' on'}" aria-pressed="${!fc}" onclick="state.todoColor = ''; render();">All colors</button>
         ${colors.map(c => { const key = c.name.toLowerCase(), n = c.rows.reduce((x, r) => x + todoLeft(r.l), 0);
@@ -5297,20 +5348,20 @@ function renderEtsyTodoPage() {
       </div>` : open.length ? '<p class="field-help">Everything is printed. Mark the orders shipped.</p>' : ''}
       ${shown.length ? shown.map(o => { const lines = o.lines || [], tot = lines.reduce((n, l) => n + (Number(l.qty) || 1), 0), got = lines.reduce((n, l) => n + Math.min(Number(l.printed) || 0, Number(l.qty) || 1), 0);
         const vis = fc ? lines.filter(l => String(l.color || 'No color picked').trim().toLowerCase() === fc) : lines;
-        return `<section class="todo-order" id="todo-${esc(o.id)}" aria-label="${o.etsyId ? 'Etsy order ' + esc(o.etsyId) : 'Etsy order'}">
+        return `<section class="todo-order" id="todo-${esc(o.id)}" aria-label="${o.site ? 'Order ' + esc(o.title || '') : o.etsyId ? 'Etsy order ' + esc(o.etsyId) : 'Etsy order'}">
           <div class="todo-o-head"><span class="todo-o-who">${who(o)}</span> ${todoDue(o)} <span class="todo-progress${got >= tot && tot ? ' all' : ''}">${got} of ${tot} printed</span></div>
           ${o.title ? `<div class="todo-o-title">${esc(o.title)}</div>` : ''}
           ${o.note ? `<p class="field-help">${esc(o.note)}</p>` : ''}
-          <ul class="todo-parts">${vis.map(l => state.todoLineEdit === l.id ? todoLineForm(o, l, colorList) : `<li class="${todoLeft(l) ? '' : 'printed'}">
+          <ul class="todo-parts">${vis.map(l => !o.site && state.todoLineEdit === l.id ? todoLineForm(o, l, colorList) : `<li class="${todoLeft(l) ? '' : 'printed'}">
             ${todoPicture(o, l)}
             <span class="todo-part-text">${swatch(l.color)}${Number(l.qty) || 1} × <strong>${esc(l.what)}</strong>${l.color ? ` · ${esc(l.color)}` : ''}</span>
             ${todoPieces(o, l)}
-            <span class="todo-fix"><button type="button" class="btn-sm" onclick="state.todoLineEdit = '${esc(l.id)}'; render(); document.getElementById('tl-what-${esc(l.id)}')?.focus();" aria-label="Change ${esc(l.what)}">Change</button>
-              <button type="button" class="btn-sm danger" onclick="todoLineRemove('${esc(o.id)}', '${esc(l.id)}')" aria-label="Remove ${esc(l.what)}">Remove</button></span></li>`).join('')}</ul>
+            ${o.site ? '' : `<span class="todo-fix"><button type="button" class="btn-sm" onclick="state.todoLineEdit = '${esc(l.id)}'; render(); document.getElementById('tl-what-${esc(l.id)}')?.focus();" aria-label="Change ${esc(l.what)}">Change</button>
+              <button type="button" class="btn-sm danger" onclick="todoLineRemove('${esc(o.id)}', '${esc(l.id)}')" aria-label="Remove ${esc(l.what)}">Remove</button></span>`}</li>`).join('')}</ul>
           ${fc && vis.length < lines.length ? `<div class="field-help">${lines.length - vis.length} more part${lines.length - vis.length === 1 ? '' : 's'} in other colors.</div>` : ''}
-          <div class="money-controls"><button type="button" class="btn-sm" onclick="todoFinish('${esc(o.id)}')">Shipped: done</button>
+          ${o.site ? `<div class="money-controls"><button type="button" class="btn-sm" onclick="focusOwnerOrder('${esc(o.id)}')">Open order</button>${got >= tot && tot ? '<span class="field-help">Everything is printed: open the order and tap Printing done.</span>' : ''}</div>` : `<div class="money-controls"><button type="button" class="btn-sm" onclick="todoFinish('${esc(o.id)}')">Shipped: done</button>
             <button type="button" class="btn-sm" onclick="todoEdit('${esc(o.id)}')">Edit order</button>
-            <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')">Delete order</button></div>
+            <button type="button" class="btn-sm danger" onclick="todoDelete('${esc(o.id)}')">Delete order</button></div>`}
         </section>`; }).join('') : `<p class="field-help">${open.length ? 'No parts in that color left to print.' : 'No Etsy orders waiting. Add one below.'}</p>`}
     </div>
     <div class="card" id="todo-add">
@@ -5387,9 +5438,10 @@ function todoPieces(o, l) {
     <span>${q > 1 ? `Printed ${k + 1}` : 'Printed'}</span><span class="sr-only"> of ${q}: ${esc(l.what)}${l.color ? ', ' + esc(l.color) : ''}</span></label>`).join('')}</span>`;
 }
 function todoSetPrinted(id, lineId, k) {
-  const o = etsyTodo().find(x => x.id === id), l = o && (o.lines || []).find(x => x.id === lineId);
+  const f = todoFind(id, lineId), l = f && f.l;
   if (!l) return;
   const now = Number(l.printed) || 0;
+  if (f.o.site) { siteTick(lineId, now >= k ? k - 1 : k).then(() => document.getElementById(`todo-pc-${lineId}-${k}`)?.focus()); return; }
   todoChange(id, x => { (x.lines || []).forEach(y => { if (y.id === lineId) y.printed = now >= k ? k - 1 : k; }); return x; }, '')
     .then(() => document.getElementById(`todo-pc-${lineId}-${k}`)?.focus());
 }
@@ -5471,6 +5523,8 @@ function todoEdit(id) {
 }
 function todoChange(id, fn, msg) { state.todoOpen = id; return saveEtsyTodo(etsyTodo().map(o => (o.id === id ? fn(JSON.parse(JSON.stringify(o))) : o)), msg); }
 function todoPrinted(id, lineId, step) {
+  const f = todoFind(id, lineId);
+  if (f && f.o.site) { siteTick(lineId, Math.max(0, Math.min(Number(f.l.qty) || 1, (Number(f.l.printed) || 0) + step))); return; }
   todoChange(id, o => { (o.lines || []).forEach(l => { if (l.id === lineId) l.printed = Math.max(0, Math.min(Number(l.qty) || 1, (Number(l.printed) || 0) + step)); }); return o; }, '');
 }
 function todoFinish(id) {

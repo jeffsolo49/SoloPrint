@@ -1549,7 +1549,7 @@ const STATES = {
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
     assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Settings|Help', tabs.join('|'));
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|Etsy to make|Fix numbers', 'Orders sub-menu');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|To make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
     await owner.click('.order-menu-list button:has-text("Fix numbers")');
@@ -1995,6 +1995,7 @@ const STATES = {
     const db = fixtures();
     const page = await open(db);
     await page.evaluate(asOwner('etsytodo'));
+    await page.evaluate(() => { state.batches = []; render(); });   // only Etsy orders here: the site-order part has its own check
     await page.waitForSelector('#todo-add');
     await page.fill('#todo-id', '4233804505');
     await page.fill('#todo-buyer', 'Jen');
@@ -2469,6 +2470,34 @@ const STATES = {
     await page.click('#gallery-preorder-off');
     assert(await page.evaluate(() => state.galleryForm.preorder === false), 'back to a normal design');
     assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('to make: confirmed site orders join the Etsy ones in one print list, tick boxes are kept, and the list can be printed', async () => {
+    const db = fixtures();
+    db.jobs.mk1 = { id: 'mk1', clientName: 'Kim', clientEmail: 'kim@example.com', createdAt: ago(60), phase: 'order_received', paymentStatus: 'deposit_received',
+      items: [{ name: 'Wall Rack', qty: 2, galleryId: 'g1', filType: 'color', color: 'Red', designParts: [{ id: 'p1', name: 'Base', colorId: 'red', include: true }, { id: 'p2', name: 'Arm', colorId: 'black', include: true }] }, { name: 'Coin Tray', qty: 1, filType: 'black' }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('etsytodo'));
+    await page.waitForSelector('#todo-orders');
+    const rows = await page.$$eval('#todo-orders .todo-parts li', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+    assert(rows.some(r => /2 × Base \(Wall Rack\)/.test(r)) && rows.some(r => /2 × Arm \(Wall Rack\)/.test(r)) && rows.some(r => /1 × Coin Tray/.test(r)), JSON.stringify(rows));
+    assert(await page.isVisible('#todo-print-btn') && await page.isVisible('button:has-text("Open order")'), 'print and open-order buttons');
+    await page.check('#todo-pc-mk1\\:0\\:p1-1');
+    await page.waitForFunction(() => [...document.querySelectorAll('.todo-progress')].some(e => /^1 of /.test(e.textContent.trim())));
+    assert(db.private.site_todo && db.private.site_todo.ticks['mk1:0:p1'] === 1, JSON.stringify(db.private.site_todo));
+    assert(db.jobs.mk1.phase === 'order_received', 'ticking never changes the order');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('a design with no photos uses its color picker photo, without saving it as an uploaded photo', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    const r = await page.evaluate(() => {
+      const row = { id: 'z1', published: true, data: { title: 'Rack', parts: [{ id: 'a', name: 'A' }], colorMap: { photo: 'https://img.test/colors.png', regions: [{ hexes: ['#808080'], part: 'a' }], combos: [] } } };
+      const g = cleanGalleryItem(row), withPhoto = cleanGalleryItem({ ...row, data: { ...row.data, photos: ['https://img.test/real.png'] } });
+      return [g.photos.join(), g.ownPhotos.length, galleryRowOf(g).data.photos.length, withPhoto.photos.join()];
+    });
+    assert(JSON.stringify(r) === JSON.stringify(['https://img.test/colors.png', 0, 0, 'https://img.test/real.png']), JSON.stringify(r));
     await page.close();
   });
   await check('color pickers in owner tools do not list the built-in "(no specific color)" duplicates when your own colors exist', async () => {

@@ -1507,3 +1507,18 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
   .lib-table .btn-icon { width: auto; padding: 8px 14px; }
   .lib-remove-text { display: inline; }
 }
+
+@media print {
+  html.printing-todo body * { visibility: hidden; }
+  html.printing-todo #todo-orders, html.printing-todo #todo-orders * { visibility: visible; }
+  html.printing-todo #todo-orders { position: absolute; left: 0; top: 0; width: 100%; border: 0; box-shadow: none; }
+  html.printing-todo .no-print, html.printing-todo .money-controls, html.printing-todo .todo-fix, html.printing-todo .todo-colorbar { display: none !important; }
+}
+
+/* Owner mode: the photos used for color ideas and for splitting a design into parts are shown large. */
+.cm-big { width: 100%; max-width: 640px; max-height: 80vh; object-fit: contain; background: var(--surface2); }
+.cm-mask { width: 160px; }
+.cm-region { align-items: flex-start; }
+.owner-main .part-form-row .part-thumb { width: 112px; height: 112px; }
+.owner-main .cm-combo-photo img { width: 160px; height: 160px; object-fit: contain; background: var(--surface2); }
+@media (min-width: 900px) { .cm-mask { width: 220px; } }
