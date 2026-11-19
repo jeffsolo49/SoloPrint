@@ -2317,6 +2317,8 @@ const OWNER_WIKI = [
     steps: ['Help > Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
     steps: ['On a pre-order design, customers must type their name and email as Step 1 before they can see the options or request it.', 'It is saved the moment they tap Continue, even if they never finish a request.', 'Designs > Pre-orders and people interested > "People interested" lists everyone who hasn\'t ordered yet, with their email and the design. "Copy all emails" copies them for you.'], go: ['gallery', ''] },
+  { id: 'groups', area: 'Designs', title: 'Lock parts together so they share one color (color groups)', keys: 'group grouped parts together separate color picker same color lock',
+    steps: ['Designs > Edit the design > Parts. Under "Grouped with other parts", type the same name on every part that must stay together (like "Body"), or pick a name you already used.', 'Parts with the same group name always get one color: customers choose a color for the group and can\'t separate the parts. A line under the parts lists the groups.', 'It also applies to your color ideas picture: setting one part\'s color there sets the whole group.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
     steps: ['Edit the design and tap "Versions (single / double)". Under "Versions", tap "+ Add a version" for each one (name it, set how many main items it holds, and tick "Needs the joining pack" on the double). Choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double, and you can fill the numbers in later.', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
@@ -2424,7 +2426,7 @@ function renderWikiPage() {
     </div>`;
 }
 async function writeWikiNotes(entries) {
-  state.ownerPrivate = { ...(state.ownerPrivate || {}), wiki: { entries } };
+  state.ownerPrivate = { ...(state.ownerPrivate || {}), wiki: { ...((state.ownerPrivate && state.ownerPrivate.wiki) || {}), entries } };
   try { await saveOwnerPrivate('wiki'); return true; }
   catch (e) { showAlert('wiki-err', "Couldn't save. Check you're logged in, and that supabase/owner-tools.sql has been run.", 'error'); return false; }
 }
@@ -2978,11 +2980,19 @@ function renderDesignParts(g) {
 }
 
 // Owner gallery form: list the parts.
+// "Grouped: Body (Left, Right) · Trim (Handle, Grip)": which parts are locked together.
+function partGroupSummary(parts) {
+  const groups = {};
+  (parts || []).forEach(p => { const g = String(p.group || '').trim(); if (g) (groups[g] = groups[g] || []).push(p.name || 'Unnamed'); });
+  const keys = Object.keys(groups);
+  return keys.length ? `<div class="field-help part-groups-summary" id="part-groups-summary"><strong>Grouped (can't be separated):</strong> ${keys.map(g => `${esc(g)} (${esc(groups[g].join(', '))})`).join(' · ')}</div>` : '';
+}
 function renderDesignPartsForm(f) {
   f.parts = f.parts || [];
   return `<fieldset class="owner-edit-item">
     <legend>Parts (optional)</legend>
     <div class="field-help" style="margin-bottom:8px;">Break the design into parts so customers can pick a color for each one. Give each part its grams per print and a photo; the estimate prices each color by its parts' grams. Parts are required unless you tick "Optional add-on".</div>
+    <datalist id="part-group-list">${[...new Set(f.parts.map(p => String(p.group || '').trim()).filter(Boolean))].map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>
     ${f.parts.map((p, n) => `<div class="part-form-row">
       ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="row2" style="flex:1;min-width:0;">
@@ -2990,9 +3000,9 @@ function renderDesignPartsForm(f) {
           <input type="text" id="part-name-${n}" value="${esc(p.name || '')}" maxlength="80" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].name = this.value" /></div>
         <div class="field"><label for="part-grams-${n}">Grams</label>
           <input type="number" id="part-grams-${n}" value="${esc(p.grams || '')}" min="0" step="0.1" placeholder="e.g. 40" oninput="state.galleryForm.parts[${n}].grams = this.value" /></div>
-        <div class="field"><label for="part-group-${n}">Color group (optional)</label>
-          <input type="text" id="part-group-${n}" value="${esc(p.group || '')}" maxlength="40" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].group = this.value" />
-          <div class="field-help">Parts with the same group name always share one color. Customers pick a color per group, never per part.</div></div>
+        <div class="field"><label for="part-group-${n}">Grouped with other parts (optional)</label>
+          <input type="text" id="part-group-${n}" list="part-group-list" value="${esc(p.group || '')}" maxlength="40" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].group = this.value" onchange="render()" />
+          <div class="field-help">Give parts the same group name to lock them together: customers pick one color for the whole group and can't separate the parts. Pick a name you already used, or type a new one. Leave blank for a part on its own.</div></div>
         <div class="field"><label for="part-default-${n}">Starting color</label>
           <select id="part-default-${n}" onchange="state.galleryForm.parts[${n}].defaultColor = this.value">
             <option value="">White (default)</option>
@@ -3014,6 +3024,7 @@ function renderDesignPartsForm(f) {
     </div>`).join('')}
     <span class="field-help" id="part-upload-status" role="status"></span>
     ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="add-design-part" onclick="state.galleryForm.parts.push({ id: 'p' + Date.now().toString(36), name: '', grams: '', photo: '' }); render();">+ Add a part</button>` : ''}
+    ${partGroupSummary(f.parts)}
     ${f.parts.length ? `<div class="field-help" style="margin-top:6px;">Required parts add up to ${f.parts.filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0).toFixed(1)} g${f.parts.some(p => p.optional) ? `; add-ons ${f.parts.filter(p => p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0).toFixed(1)} g more` : ''}.</div>` : ''}
   </fieldset>`;
 }
@@ -3692,6 +3703,9 @@ function cmPartColors(parts, chosen, choices) {
     const want = chosen && chosen[p.id];
     out[p.id] = keys.includes(want) ? want : keys.includes(p.defaultColor) ? p.defaultColor : white;
   });
+  // Parts grouped together can't be separated: the first part of a group sets the color of the whole group.
+  const lead = {};
+  parts.forEach(p => { if (p.group) { if (lead[p.group] === undefined) lead[p.group] = out[p.id]; else out[p.id] = lead[p.group]; } });
   return out;
 }
 function cmUsable(m) { return !!(m && (m.regions.some(r => r.part) || m.combos.some(c => c.photo))); }
@@ -4418,7 +4432,8 @@ function setCmRegion(k, partId) {
 function setCmComboColor(n, partId, key, focusId) {
   const m = state.galleryForm && state.galleryForm.colorMap;
   if (!m || !m.combos[n]) return;
-  m.combos[n].colors[partId] = key;
+  const mine = (state.galleryForm.parts || []).find(p => p.id === partId);
+  (state.galleryForm.parts || []).forEach(p => { if (p.id === partId || (mine && mine.group && p.group === mine.group)) m.combos[n].colors[p.id] = key; });
   render();
   document.getElementById(focusId)?.focus();
 }
@@ -5707,7 +5722,7 @@ function renderDesignOptions(f) {
 }
 // Under the design list: the pre-order lists and the one-tap set-ups are folded away until needed.
 function renderDesignFolds() {
-  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderCaddySetup() + renderDryingRackSetup();
+  const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderCaddySetup() + renderCaddyRemove() + renderDryingRackSetup();
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
   return fold('Pre-orders and people interested', lists) + fold('One-tap set-ups', setups);
 }
@@ -6190,6 +6205,38 @@ const CADDY_MAIN = {
 };
 
 function caddyExists() { return state.gallery.some(g => g.id === CADDY_MAIN.id); }
+function caddyIds() { return [CADDY_MAIN.id, CADDY_JOINING_KIT[0]].concat(CADDY_ACCESSORIES.map(a => a[0])); }
+function caddyHidden() { try { return localStorage.getItem('soloprint_caddy_hidden') === '1'; } catch (e) { return false; } }
+// Designs page: one tap removes the caddy, the Joining Kit and every accessory the set-up made. Uploaded picture files stay in storage.
+function renderCaddyRemove() {
+  const here = state.gallery.filter(g => caddyIds().includes(g.id));
+  if (!here.length) return '';
+  return `<div class="card" id="caddy-remove">
+    <h3 class="card-title">Remove the Catheter Caddy pre-order</h3>
+    <div class="field-help">Starting over? This deletes the ${here.length} design${here.length === 1 ? '' : 's'} the set-up made (the caddy, the Joining Kit and the accessories). Orders and people interested are not touched, and picture files you uploaded stay in storage.</div>
+    <button type="button" class="btn-sm danger" id="caddy-remove-go" onclick="removeCatheterCaddy()">Remove the caddy and all its accessories</button>
+    <div class="alert error" id="caddy-remove-err"></div>
+  </div>`;
+}
+async function removeCatheterCaddy() {
+  const here = state.gallery.filter(g => caddyIds().includes(g.id));
+  if (!here.length) return;
+  if (!confirm(`Delete the Catheter Caddy and ${here.length - 1} other design${here.length === 2 ? '' : 's'} (accessories and the Joining Kit)? This cannot be undone.`)) return;
+  const btn = document.getElementById('caddy-remove-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing...'; }
+  try {
+    if (previewActive()) { const pv = previewData(); pv.gallery = pv.gallery.filter(x => !caddyIds().includes(x.id)); await savePreview(); }
+    else for (const g of here) await supaFetch(`/gallery_items?id=eq.${encodeURIComponent(g.id)}`, { method: 'DELETE' });
+    try { localStorage.setItem('soloprint_caddy_hidden', '1'); } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.error('Caddy removal error:', e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Remove the caddy and all its accessories'; }
+    showAlert('caddy-remove-err', "Couldn't remove them. If you were logged out, log in again and retry.", 'error');
+    return;
+  }
+  await loadGallery();
+  render();
+}
 // ── CATHETER CADDY COLOR PICKER ──
 // Three steps replace the old color editions: 1 body (walls, floors, Top Shelf, Joining Clips), 2 secondary
 // (dividers and handle), 3 drawers. The drawer tabs always contrast with the drawers and are not a choice.
@@ -6371,6 +6418,7 @@ async function linkCaddyAccessories() {
 }
 function renderCaddySetup() {
   if (caddyExists()) return renderCaddyLinkAccessories();
+  if (caddyHidden()) return '';
   return `<div class="card" id="caddy-setup">
     <h3 class="card-title">Catheter Caddy pre-order</h3>
     <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two-, Three- and Four-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
@@ -6615,3 +6663,14 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
   const l = leadSaved();
   if (l && l.pending && EMAIL_OK.test(l.email)) saveLead(l).then(() => { try { localStorage.setItem(LEAD_KEY, JSON.stringify({ ...l, pending: false })); } catch (e) { /* ignore */ } }).catch(() => {});
 });
+
+// Notes the owner asked to keep: added once to Help > My notes (never added again, even if deleted).
+const SEEDED_NOTES = [{ id: 'saved-caddy-description', title: 'Catheter Caddy: product description (saved for later)', text: CADDY_MAIN.description }];
+async function seedWikiNotes() {
+  if (!state.ownerPrivate || state.ownerPrivateError) return;
+  const d = state.ownerPrivate.wiki || {}, done = Array.isArray(d.seeded) ? d.seeded : [];
+  const todo = SEEDED_NOTES.filter(n => !done.includes(n.id));
+  if (!todo.length) return;
+  state.ownerPrivate = { ...state.ownerPrivate, wiki: { entries: todo.map(n => ({ id: n.id, title: n.title, text: n.text })).concat(ownerWikiNotes()), seeded: done.concat(todo.map(n => n.id)) } };
+  try { await saveOwnerPrivate('wiki'); } catch (e) { /* tried again next time */ }
+}

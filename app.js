@@ -144,7 +144,7 @@ async function loadBatches(asCustomer = false) {
       ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); applyPreview(); syncTopWork(); }
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); applyPreview(); seedWikiNotes(); syncTopWork(); }
     else {
       // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
       const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));

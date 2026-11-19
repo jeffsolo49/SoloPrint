@@ -2627,6 +2627,49 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('the Catheter Caddy set-up can be removed in one tap: the caddy, kit and accessories go; other designs stay', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForSelector('#caddy-go');
+    await page.click('#caddy-go');
+    await page.waitForSelector('#caddy-remove-go');
+    assert(Object.keys(db.gallery).length === 18, Object.keys(db.gallery).length);
+    await page.click('#caddy-remove-go');
+    await page.waitForFunction(() => !document.getElementById('caddy-remove'));
+    assert(Object.keys(db.gallery).sort().join() === 'g1,g2,g3', Object.keys(db.gallery).join());
+    assert(!(await page.$('#caddy-go')), 'set-up card stays hidden after removing');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('the caddy description is saved once in Help > My notes, and not added again after it is deleted', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    for (let t = 0; t < 30 && !(db.private.wiki && db.private.wiki.entries); t++) await page.waitForTimeout(100);
+    assert(db.private.wiki.entries.length === 1 && /Stop digging through drawers/.test(db.private.wiki.entries[0].text) && /In the box: 1 caddy/.test(db.private.wiki.entries[0].text), JSON.stringify(db.private.wiki));
+    await page.evaluate(async () => { await writeWikiNotes([]); await loadBatches(); });
+    await page.waitForTimeout(400);
+    assert(db.private.wiki.entries.length === 0 && db.private.wiki.seeded.includes('saved-caddy-description'), 'not added again after deleting');
+    await page.close();
+  });
+  await check('grouped parts: the design form lists the groups, and a color idea sets the whole group', async () => {
+    const db = fixtures();
+    db.gallery.g2.data.parts = [{ id: 'p1', name: 'Left', grams: 10, group: 'Body' }, { id: 'p2', name: 'Right', grams: 10, group: 'Body' }, { id: 'p3', name: 'Trim', grams: 5 }];
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.evaluate(() => editGalleryItem('g2'));
+    await page.waitForSelector('#part-groups-summary');
+    assert(/Body \(Left, Right\)/.test(await page.textContent('#part-groups-summary')) && (await page.$('#part-group-list option[value="Body"]')), 'groups listed');
+    const r = await page.evaluate(() => {
+      const f = state.galleryForm; f.colorMap = { photo: 'https://img.test/x.png', regions: [], combos: [{ id: 'c1', name: 'Idea', colors: {} }] };
+      setCmComboColor(0, 'p1', 'red', 'x');
+      const out = cmPartColors(f.parts.map(p => ({ id: p.id, group: p.group })), { p1: 'red', p2: 'black', p3: 'black' }, [{ key: 'red', name: 'Red' }, { key: 'black', name: 'Black' }, { key: 'white', name: 'White' }]);
+      return [f.colorMap.combos[0].colors, out];
+    });
+    assert(r[0].p1 === 'red' && r[0].p2 === 'red' && !r[0].p3 && r[1].p2 === 'red' && r[1].p3 === 'black', JSON.stringify(r));
+    await page.close();
+  });
   await check('prices and wording are edited in Site Settings; sent quotes keep their prices', async () => {
     const db = fixtures();
     db.jobs['s1'] = { id: 's1', clientName: 'Pat', clientEmail: 'pat@example.com', createdAt: ago(60), phase: 'estimate', items: [{ name: 'Stand', qty: 1, filType: 'color', color: 'Red', colorId: 'red', grams: 10 }] };
