@@ -1534,3 +1534,11 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .part-allowed > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
 .part-allowed-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
 .part-allowed-list .special-order-check { min-height: 44px; }
+
+/* Color-map areas as tiles: several per row, picture on top, controls underneath */
+.cm-regions { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.cm-region { flex-direction: column; align-items: stretch; gap: 8px; border: 1px solid var(--border, #d0d5dd); border-radius: 10px; padding: 10px; min-width: 0; }
+.cm-region .cm-mask, .cm-region .cm-canvas { width: 100%; max-width: 100%; height: auto; }
+
+.jump-save { width: 100%; min-height: 44px; padding: 8px 12px; border: 2px solid var(--accent2); border-radius: 8px; background: var(--accent2); color: var(--on-accent); font-weight: 700; cursor: pointer; margin-bottom: 8px; }
+@media (max-width: 999px) { .jump-save { order: 3; width: auto; margin: 0; border-radius: 22px; padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,0.25); } }
