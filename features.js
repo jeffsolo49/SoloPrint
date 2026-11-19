@@ -2314,7 +2314,7 @@ const OWNER_WIKI = [
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
-    steps: ['Designs > Add a design (wizard). Six short steps: name, photos, price and time, parts and colors, options, finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
+    steps: ['Designs > Add a design (wizard). Short steps that adapt to your answers: name (and whether it is a pre-order), photos, price and time, parts, color ideas, accessories, versions, color editions, pre-order settings (only for pre-orders), finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
     steps: ['Designs > Set-ups (below the design list). Tap "Save as set-up" on any design card, or pick it under "Save a design as a set-up", name it and tap "Save this set-up". Its accessories and joining pack come with it.', 'To start a new item: type the new design\'s name under the set-up and tap "Use this set-up". You get a hidden copy (parts, groups, versions, pre-order settings, prices) to fill in with photos and numbers, then tap Show.', 'Rename or Delete a set-up any time; designs already made from it stay. "Also keep its photos" is optional.', 'Built-in set-ups (Catheter Caddy, drying rack color ideas) are listed under them.'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
@@ -7017,52 +7017,103 @@ function renderGalleryPhotosField(f) {
 // ── ADD A DESIGN: a step-by-step wizard (Designs > Add a design) ──
 // It fills the same form as the Designs page (state.galleryForm), one small step at a time, then saves it with
 // saveGalleryItem. The new design starts hidden unless "Show it on the site now" is ticked.
-const WIZ_STEPS = ['Name', 'Photos', 'Price and time', 'Parts and colors', 'Options', 'Finish'];
+// Steps depend on the answers: a pre-order adds its settings step, parts add the color-ideas step, and each
+// optional extra is a yes/no question that opens its own form.
+const WIZ_LABELS = { name: 'Name', photos: 'Photos', price: 'Price and time', parts: 'Parts and colors', colors: 'Color ideas', accessories: 'Accessories', versions: 'Versions', editions: 'Color editions', preorder: 'Pre-order settings', finish: 'Finish' };
+function wizList(f) {
+  const l = ['name', 'photos', 'price', 'parts'];
+  if (f && wizHas('parts', f)) l.push('colors');
+  l.push('accessories', 'versions', 'editions');
+  if (f && f.preorder) l.push('preorder');
+  l.push('finish');
+  return l;
+}
+function wizHas(key, f) {
+  const on = state.wiz && state.wiz.on && state.wiz.on[key];
+  if (on !== undefined) return on;
+  if (key === 'parts') return (f.parts || []).length > 0;
+  if (key === 'accessories') return (f.accessories || []).length > 0;
+  if (key === 'versions') return (f.versions || []).length > 0;
+  if (key === 'editions') return (f.editions || []).length > 0;
+  return false;
+}
+function wizAsk(key, yes) {
+  const f = state.galleryForm; if (!f || !state.wiz) return;
+  state.wiz.on = state.wiz.on || {};
+  state.wiz.on[key] = !!yes;
+  if (!yes) {
+    if (key === 'parts') { f.parts = []; f.colorMap = null; }
+    if (key === 'accessories') f.accessories = [];
+    if (key === 'versions') { f.versions = []; f.packId = ''; }
+    if (key === 'editions') { f.editions = []; f.contrast = []; }
+  }
+  render();
+}
+function wizPreorder(yes) { if (!state.galleryForm) return; state.galleryForm.preorder = !!yes; render(); }
+function wizYesNo(key, question, help) {
+  const f = state.galleryForm, yes = wizHas(key, f);
+  return `<div class="wiz-ask" role="group" aria-label="${esc(question)}"><div class="wiz-q">${esc(question)}</div>${help ? `<div class="field-help">${esc(help)}</div>` : ''}
+    <div class="wiz-yn"><button type="button" class="btn-sm ${yes ? 'btn-primary' : ''}" id="wiz-${key}-yes" aria-pressed="${yes}" onclick="wizAsk('${key}', true)">Yes</button>
+    <button type="button" class="btn-sm ${!yes ? 'btn-primary' : ''}" id="wiz-${key}-no" aria-pressed="${!yes}" onclick="wizAsk('${key}', false)">No</button></div></div>`;
+}
 function startDesignWizard() {
   state.galleryForm = blankGalleryForm();
   state.galleryForm.published = false;
   state.galleryOpt = '';
   state.reviewPicker = false;
-  state.wiz = { step: 1, done: '' };
+  state.wiz = { step: 'name', done: '', on: {} };
 }
-function wizGo(n) {
+function wizGo(id) {
   const f = state.galleryForm;
   if (!state.wiz || !f) return;
-  if (n > 1 && !String(f.title || '').trim()) { state.wiz.step = 1; state.wiz.err = 'Give the design a name first.'; render(); document.getElementById('gallery-title')?.focus(); return; }
-  state.wiz.err = ''; state.wiz.step = Math.max(1, Math.min(WIZ_STEPS.length, n));
+  const list = wizList(f);
+  if (typeof id === 'number') id = list[Math.max(0, Math.min(list.length - 1, id - 1))];
+  if (id !== 'name' && !String(f.title || '').trim()) { state.wiz.step = 'name'; state.wiz.err = 'Give the design a name first.'; render(); document.getElementById('gallery-title')?.focus(); return; }
+  state.wiz.err = ''; state.wiz.step = list.includes(id) ? id : 'name';
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+function wizMove(d) {
+  const list = wizList(state.galleryForm), i = list.indexOf(state.wiz.step);
+  wizGo(list[Math.max(0, Math.min(list.length - 1, i + d))]);
+}
 async function wizCreate() {
   const f = state.galleryForm, title = f ? String(f.title || '').trim() : '';
-  if (!f || !title) { wizGo(1); return; }
+  if (!f || !title) { wizGo('name'); return; }
   state.wiz.lastTitle = title;
   await saveGalleryItem();
-  if (!state.galleryForm) { state.wiz = { step: 7, done: title }; render(); }
+  if (!state.galleryForm) { state.wiz = { step: 'done', done: title, on: {} }; render(); }
 }
 function wizNew() { startDesignWizard(); render(); }
-function wizSteps() {
-  return `<ol class="wiz-steps" aria-label="Steps">${WIZ_STEPS.map((s, i) => `<li><button type="button" class="wiz-step ${state.wiz.step === i + 1 ? 'active' : ''} ${state.wiz.step > i + 1 ? 'done' : ''}" ${state.wiz.step === i + 1 ? 'aria-current="step"' : ''} onclick="wizGo(${i + 1})"><span class="wiz-n">${i + 1}</span> ${esc(s)}</button></li>`).join('')}</ol>`;
+function wizSteps(list) {
+  const cur = list.indexOf(state.wiz.step);
+  return `<ol class="wiz-steps" aria-label="Steps">${list.map((s, i) => `<li><button type="button" class="wiz-step ${cur === i ? 'active' : ''} ${cur > i ? 'done' : ''}" ${cur === i ? 'aria-current="step"' : ''} onclick="wizGo('${s}')"><span class="wiz-n">${i + 1}</span> ${esc(WIZ_LABELS[s])}</button></li>`).join('')}</ol>`;
 }
 function renderDesignWizard() {
   if (!state.wiz) startDesignWizard();
   const w = state.wiz;
-  if (!state.galleryForm && w.step < 7) { w.done = w.lastTitle || 'The design'; w.step = 7; }   // saved: the form was cleared
+  if (!state.galleryForm && w.step !== 'done') { w.done = w.lastTitle || 'The design'; w.step = 'done'; }   // saved: the form was cleared
   const head = `<div class="owner-page-header"><div class="section-header"><div><h2 class="section-title">Add a design</h2><div class="section-sub">Answer a few questions and your design is made. You can skip anything and fill it in later.</div></div></div></div>`;
-  if (w.step === 7) return `${head}<div class="card"><h3 class="card-title">Done</h3>
+  if (w.step === 'done') return `${head}<div class="card"><h3 class="card-title">Done</h3>
     <div class="alert success" style="display:block;">"${esc(w.done)}" is saved${state.gallery.find(g => g.title === w.done && g.published) ? ' and showing on the site' : ', hidden for now. Open it under Designs and tap Show when it is ready'}.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button type="button" class="btn-sm btn-primary" onclick="wizNew()">Add another design</button>
       <button type="button" class="btn-sm" onclick="setOwnerTab('gallery')">Go to Designs</button></div></div>`;
-  const f = state.galleryForm;
-  const nav = `<div class="wiz-nav">${w.step > 1 ? `<button type="button" class="btn-sm" id="wiz-back" onclick="wizGo(${w.step - 1})">Back</button>` : ''}
-    ${w.step < WIZ_STEPS.length ? `<button type="button" class="btn-sm btn-primary" id="wiz-next" onclick="wizGo(${w.step + 1})">${[2, 3, 4].includes(w.step) ? 'Next (you can skip this)' : 'Next'}</button>` : ''}</div>`;
+  const f = state.galleryForm, list = wizList(f);
+  if (!list.includes(w.step)) w.step = 'name';
+  const i = list.indexOf(w.step), last = i === list.length - 1;
+  const nav = `<div class="wiz-nav">${i > 0 ? `<button type="button" class="btn-sm" id="wiz-back" onclick="wizMove(-1)">Back</button>` : ''}
+    ${!last ? `<button type="button" class="btn-sm btn-primary" id="wiz-next" onclick="wizMove(1)">${i > 0 && w.step !== 'preorder' ? 'Next (you can skip this)' : 'Next'}</button>` : ''}</div>`;
+  const s = w.step;
   let body = '';
-  if (w.step === 1) body = `<div class="field"><label for="gallery-title">Name of the design</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value); state.wiz.err = ''" /></div>
+  if (s === 'name') body = `<div class="field"><label for="gallery-title">Name of the design</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value); state.wiz.err = ''" /></div>
     <div class="field"><label for="gallery-desc">Write-up (optional)</label><textarea id="gallery-desc" style="min-height:96px;" placeholder="What it is, size, colors, the story..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea></div>
-    <label class="special-order-check"><input type="checkbox" id="wiz-preorder" ${f.preorder ? 'checked' : ''} onchange="state.galleryForm.preorder = this.checked; render();" /> This is a pre-order (a new product that isn't ready yet)</label>
+    <div class="wiz-ask" role="group" aria-label="Is this a pre-order?"><div class="wiz-q">Is this a pre-order?</div><div class="field-help">A new product that isn't ready yet. Choosing Yes adds a Pre-order settings step near the end.</div>
+      <div class="wiz-yn"><button type="button" class="btn-sm ${f.preorder ? 'btn-primary' : ''}" id="wiz-preorder-yes" aria-pressed="${!!f.preorder}" onclick="wizPreorder(true)">Yes</button>
+      <button type="button" class="btn-sm ${!f.preorder ? 'btn-primary' : ''}" id="wiz-preorder-no" aria-pressed="${!f.preorder}" onclick="wizPreorder(false)">No</button></div></div>
     ${w.err ? `<div class="alert error" style="display:block;" role="alert">${esc(w.err)}</div>` : ''}`;
-  else if (w.step === 2) body = renderGalleryPhotosField(f);
-  else if (w.step === 3) body = `<div class="gallery-form-grid">
+  else if (s === 'photos') body = `${renderGalleryPhotosField(f)}
+    <div class="field"><label for="gallery-videos">YouTube videos (optional)</label><textarea id="gallery-videos" placeholder="https://youtu.be/..." style="min-height:52px;" oninput="updateGalleryForm('videos', this.value)">${esc(f.videos || '')}</textarea><div class="field-help">One link per line. Videos play only on the design's own page.</div></div>`;
+  else if (s === 'price') body = `<div class="gallery-form-grid">
       <div class="field"><label for="gallery-fil">Color</label><select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select></div>
       <div class="field"><label for="gallery-hours">Hours</label><input type="number" id="gallery-hours" min="0" step="1" value="${esc(f.hours)}" placeholder="2" oninput="updateGalleryForm('hours', this.value)" /></div>
       <div class="field"><label for="gallery-mins">Minutes</label><input type="number" id="gallery-mins" min="0" max="59" step="1" value="${esc(f.minutes)}" placeholder="30" oninput="updateGalleryForm('minutes', this.value)" /></div>
@@ -7070,15 +7121,19 @@ function renderDesignWizard() {
     <div class="field" style="max-width:260px;"><label for="gallery-price">Set price, $ each (optional)</label><input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
       <div class="field-help">Leave print time, grams and price blank to fill in later: customers see "Price confirmed in your quote".</div></div>
     <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>`;
-  else if (w.step === 4) body = `<div class="field-help" style="margin-bottom:6px;">One color for the whole thing? Skip this step. For a design with several parts, list them: customers pick a color per part, and parts you group always share one color.</div>${renderDesignPartsForm(f)}`;
-  else if (w.step === 5) body = `<div class="field-help" style="margin-bottom:6px;">Optional extras: make it a pre-order, link accessories, add versions like single and double.</div>${renderDesignOptions(f)}`;
+  else if (s === 'parts') body = `${wizYesNo('parts', 'Does it have several parts that customers color separately?', 'Say No for one color for the whole thing. Parts you group always share one color.')}${wizHas('parts', f) ? renderDesignPartsForm(f) : ''}`;
+  else if (s === 'colors') body = `<div class="field-help" style="margin-bottom:6px;">Optional: upload a picture and match each colored area to a part. Customers then see ready-made color ideas and can pick their own colors on the picture.</div>${renderColorMapForm(f)}`;
+  else if (s === 'accessories') body = `${wizYesNo('accessories', 'Does it have accessories?', 'Other designs customers can add when ordering this one.')}${wizHas('accessories', f) ? renderAccessoriesForm(f) : ''}`;
+  else if (s === 'versions') body = `${wizYesNo('versions', 'Does it come in versions (for example single and double)?', 'Each version has its own count of the main item.')}${wizHas('versions', f) ? renderVersionsForm(f) : ''}`;
+  else if (s === 'editions') body = `${wizYesNo('editions', 'Does it have color editions?', 'Editions merge color groups, for example a two-tone version.')}${wizHas('editions', f) ? renderEditionsForm(f) : ''}`;
+  else if (s === 'preorder') body = `<div class="field-help" style="margin-bottom:6px;">Customers see the pre-order note and your terms, enter their name and email first, and pay in full by Venmo. Print dates and the shared pre-order wording are set in Settings > Prices &amp; rules and Settings > Wording &amp; FAQ.</div>${renderPreorderFormFields(f)}`;
   else body = `<ul class="wiz-summary">
       <li><strong>${esc(f.title || 'Untitled')}</strong>${f.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}</li>
       <li>${parseImageLinks(f.photos).length} photo${parseImageLinks(f.photos).length === 1 ? '' : 's'}</li>
       <li>${esc(totalPrintMinutes(f.hours, f.minutes) ? fmtTime(totalPrintMinutes(f.hours, f.minutes)) : 'print time later')} · ${esc(f.grams ? f.grams + ' g' : 'grams later')} · ${esc(parseFloat(f.price) > 0 ? '$' + Number(f.price).toFixed(2) + ' set price' : 'price from the estimate')}</li>
-      <li>${(f.parts || []).length ? `${f.parts.length} part${f.parts.length === 1 ? '' : 's'}` : 'one color'}${(f.versions || []).length ? ` · ${f.versions.length} versions` : ''}${(f.accessories || []).length ? ` · ${f.accessories.length} accessories` : ''}</li></ul>
+      <li>${(f.parts || []).length ? `${f.parts.length} part${f.parts.length === 1 ? '' : 's'}` : 'one color'}${f.colorMap ? ' · color ideas' : ''}${(f.versions || []).length ? ` · ${f.versions.length} versions` : ''}${(f.accessories || []).length ? ` · ${f.accessories.length} accessories` : ''}${(f.editions || []).length ? ` · ${f.editions.length} editions` : ''}</li></ul>
     <label class="special-order-check"><input type="checkbox" id="wiz-publish" ${f.published ? 'checked' : ''} onchange="state.galleryForm.published = this.checked" /> Show it on the site now (leave unticked to keep it hidden while you finish it)</label>
     <div class="alert error" id="gallery-err" role="alert"></div>
     <button type="button" class="btn-sm btn-primary" id="gallery-save" onclick="wizCreate()">Create the design</button>`;
-  return `${head}<div class="card" id="wizard">${wizSteps()}<h3 class="card-title">Step ${w.step} of ${WIZ_STEPS.length}: ${esc(WIZ_STEPS[w.step - 1])}</h3>${body}${nav}</div>`;
+  return `${head}<div class="card" id="wizard">${wizSteps(list)}<h3 class="card-title">Step ${i + 1} of ${list.length}: ${esc(WIZ_LABELS[s])}</h3>${body}${nav}</div>`;
 }

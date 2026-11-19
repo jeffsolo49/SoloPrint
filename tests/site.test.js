@@ -2815,20 +2815,36 @@ const STATES = {
     await page.click('#wiz-next');
     assert(/name first/.test(await page.textContent('#wizard')), 'asks for a name');
     await page.fill('#gallery-title', 'Wizard Hook');
+    const stepNames = async () => (await page.locator('.wiz-step').allTextContents()).join('|');
+    assert(!(await stepNames()).includes('Pre-order settings'), 'no pre-order step yet');
+    await page.click('#wiz-preorder-yes');
+    assert((await stepNames()).includes('Pre-order settings'), 'pre-order step appears');
     await page.click('#wiz-next');
     await page.waitForSelector('#gallery-photos');
+    await page.fill('#gallery-videos', 'https://youtu.be/dQw4w9WgXcQ');
     await page.click('#wiz-next');
     await page.fill('#gallery-hours', '1');
     await page.fill('#gallery-mins', '30');
     await page.fill('#gallery-grams', '40');
-    await page.click('#wiz-next');
-    await page.click('#wiz-next');
-    await page.click('#wiz-next');
+    await page.click('#wiz-next');   // parts
+    assert(!(await stepNames()).includes('Color ideas'), 'no color ideas step without parts');
+    await page.click('#wiz-parts-yes');
+    assert((await stepNames()).includes('Color ideas'), 'color ideas step appears with parts');
+    await page.click('#wiz-next');   // color ideas
+    await page.click('#wiz-next');   // accessories
+    await page.click('#wiz-accessories-yes');
+    await page.click('#wiz-next');   // versions
+    await page.click('#wiz-versions-yes');
+    assert(await page.locator('.versions-fields').count() === 1, 'versions form opens');
+    await page.click('#wiz-next');   // editions
+    await page.click('#wiz-next');   // pre-order settings
+    assert(await page.locator('.preorder-fields, #wizard fieldset').count() >= 1, 'pre-order settings form shows');
+    await page.click('#wiz-next');   // finish
     assert(/Wizard Hook/.test(await page.textContent('.wiz-summary')) && /1h 30m|1 h 30/.test(await page.textContent('.wiz-summary')), await page.textContent('.wiz-summary'));
     await page.click('#gallery-save');
-    await page.waitForFunction(() => state.wiz && state.wiz.step === 7);
+    await page.waitForFunction(() => state.wiz && state.wiz.step === 'done');
     const made = Object.values(db.gallery).find(g => g.data.title === 'Wizard Hook');
-    assert(made && made.published === false && made.data.grams === 40 && made.data.minutes === 90, JSON.stringify(made));
+    assert(made && made.published === false && made.data.grams === 40 && made.data.minutes === 90 && made.data.preorder === true, JSON.stringify(made));
     assert(/hidden for now/.test(await page.textContent('#main')), 'done screen');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
