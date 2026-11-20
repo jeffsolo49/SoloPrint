@@ -2853,6 +2853,10 @@ const STATES = {
     const msg = await page.textContent('#part-status-0');
     assert(/Photo added/.test(msg), msg);
     assert(await page.evaluate(() => /part-/.test(state.galleryForm.parts[0].photo)), 'photo is on the form');
+    assert(await page.evaluate(() => document.querySelector('.part-form-row img.part-thumb')?.getAttribute('src').includes('part-')), 'the part photo shows in the form');
+    const order = await page.evaluate(() => { movePart(0, 1); const a = state.galleryForm.parts.map(p => p.name).join(); partsOptionalLast(); return [a, state.galleryForm.parts.map(p => p.name).join()]; });
+    assert(order[0] === 'Letters,Plate' && order[1] === 'Plate,Letters', JSON.stringify(order));
+    await page.evaluate(() => { movePart(0, 1); movePart(0, 1); });
     await page.click('#gallery-save');
     await page.waitForTimeout(600);
     assert(/part-/.test(db.gallery.g2.data.parts[0].photo || ''), 'saved: ' + JSON.stringify(db.gallery.g2.data.parts[0]));

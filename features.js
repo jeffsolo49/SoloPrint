@@ -3028,8 +3028,10 @@ function renderDesignPartsForm(f) {
     <legend>Parts (optional)</legend>
     <div class="field-help" style="margin-bottom:8px;">Break the design into parts so customers can pick a color for each one. Give each part its grams per print and a photo; the estimate prices each color by its parts' grams. Parts are required unless you tick "Optional add-on".</div>
     <datalist id="part-group-list">${[...new Set(f.parts.map(p => String(p.group || '').trim()).filter(Boolean))].map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>
+    ${f.parts.length > 1 ? '<div class="part-order-tools"><button type="button" class="btn-sm" id="parts-optional-last" onclick="partsOptionalLast()">Put optional parts last</button><span class="field-help">Use the arrows on a part to move it.</span></div>' : ''}
+    <div class="part-form-grid">
     ${f.parts.map((p, n) => `<div class="part-form-row">
-      ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
+      ${p.photo ? `<img class="part-thumb" src="${esc(p.photo)}" alt="Photo of ${esc(p.name || 'this part')}" referrerpolicy="no-referrer" />` : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="row2" style="flex:1;min-width:0;">
         <div class="field"><label for="part-name-${n}">Part ${n + 1} name</label>
           <input type="text" id="part-name-${n}" value="${esc(p.name || '')}" maxlength="80" placeholder="e.g. Body" oninput="state.galleryForm.parts[${n}].name = this.value" /></div>
@@ -3058,10 +3060,12 @@ function renderDesignPartsForm(f) {
         <label class="btn-sm">${p.photo ? 'Change photo' : 'Add photo'}
           <input type="file" accept="image/*" id="part-file-${n}" onchange="uploadPartPhoto(${n}, this.files[0])" style="display:none;" /></label>
         <span class="field-help part-status" id="part-status-${n}" role="status"></span>
+        ${f.parts.length > 1 ? `<button type="button" class="btn-sm" id="part-up-${n}" ${n === 0 ? 'disabled' : ''} onclick="movePart(${n}, -1)" aria-label="Move part ${n + 1} up">&uarr;</button><button type="button" class="btn-sm" id="part-down-${n}" ${n === f.parts.length - 1 ? 'disabled' : ''} onclick="movePart(${n}, 1)" aria-label="Move part ${n + 1} down">&darr;</button>` : ''}
         ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="part-copy-${n}" onclick="copyDesignPart(${n})" aria-label="Copy part ${n + 1} as another set">Copy</button>` : ''}
         <button type="button" class="btn-sm danger" onclick="state.galleryForm.parts.splice(${n}, 1); render();" aria-label="Remove part ${n + 1}">Remove</button>
       </div>
     </div>`).join('')}
+    </div>
     <span class="field-help" id="part-upload-status" role="status"></span>
     ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="add-design-part" onclick="state.galleryForm.parts.push({ id: 'p' + Date.now().toString(36), name: '', grams: '', photo: '' }); render();">+ Add a part</button>` : ''}
     ${partGroupSummary(f.parts)}
@@ -3087,6 +3091,20 @@ function copyDesignPart(n) {
   document.getElementById(`part-name-${n + 1}`)?.focus();
 }
 
+// Re-order parts (the order customers see them in); optional add-ons can all be sent to the end.
+function movePart(n, d) {
+  const f = state.galleryForm, parts = f && f.parts;
+  if (!parts || n + d < 0 || n + d >= parts.length) return;
+  [parts[n], parts[n + d]] = [parts[n + d], parts[n]];
+  render();
+  document.getElementById(`part-${d < 0 ? 'up' : 'down'}-${n + d}`)?.focus();
+}
+function partsOptionalLast() {
+  const f = state.galleryForm; if (!f || !f.parts) return;
+  f.parts = f.parts.filter(p => !p.optional).concat(f.parts.filter(p => p.optional));
+  render();
+  softNote('Optional parts moved to the end. Remember to save.');
+}
 async function uploadPartPhoto(n, file) {
   const f = state.galleryForm;
   const say = (t, bad) => { const el = document.getElementById(`part-status-${n}`) || document.getElementById('part-upload-status'); if (el) { el.textContent = t; el.classList.toggle('bad', !!bad); } };

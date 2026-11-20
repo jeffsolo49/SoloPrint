@@ -1654,3 +1654,8 @@ input[type=search], .faq-search { padding-left: 38px; }
 }
 html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 @media (max-width: 999px) { html:not(.owner-mode) .jump-nav { bottom: 72px; } }
+
+/* Parts in the design form: cards flow in a row and wrap when the row gets tight. */
+.part-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 10px; align-items: start; }
+.part-form-grid .part-form-row { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface); }
+.part-order-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
