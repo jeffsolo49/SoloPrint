@@ -2832,6 +2832,42 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('re-use color ideas from another design: matched by part name, groups kept together', async () => {
+    const db = fixtures();
+    db.settings.colors = ['Red', 'Green', 'Blue', 'Black'].map(n => ({ id: n.toLowerCase(), name: n, hex: '#808080' }));
+    db.gallery.g1.data.parts = [{ id: 'x', name: 'Body' }, { id: 'y', name: 'Lid' }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/c.png', regions: [{ hexes: ['#ffffff'], part: 'x' }], combos: [{ id: 'k1', name: 'Holiday', colors: { x: 'red', y: 'green' } }, { id: 'k2', name: 'Night', colors: { x: 'black', y: 'blue' } }] };
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      state.galleryForm = { ...blankGalleryForm(), id: 'zz', title: 'T', parts: [{ id: 'a', name: 'Lid' }, { id: 'b', name: 'Shell', group: 'G' }, { id: 'c', name: 'Shell 2', group: 'G' }],
+        colorMap: { photo: 'https://img.test/c2.png', regions: [{ hexes: ['#ffffff'], part: 'a' }, { hexes: ['#111111'], part: 'b' }, { hexes: ['#222222'], part: 'c' }], combos: [] } };
+      render();
+      document.getElementById('cm-reuse-from').value = 'g1'; reuseCmIdeas();
+      return state.galleryForm.colorMap.combos.map(c => ({ n: c.name, a: c.colors.a, b: c.colors.b, c: c.colors.c }));
+    });
+    assert(r.length === 2 && r[0].n === 'Holiday' && r[0].a === 'green' && r[0].b === r[0].c && r[0].b !== r[0].a, JSON.stringify(r));
+    await page.close();
+  });
+  await check('part photos: uploading in the edit form adds the photo and saving keeps it', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => editGalleryItem('g2'));
+    await page.waitForSelector('.part-form-actions input[type=file]', { state: 'attached' });
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await page.setInputFiles('.part-form-actions input[type=file]', { name: 'p.png', mimeType: 'image/png', buffer: png });
+    await page.waitForFunction(() => /Photo added|Couldn/.test(document.getElementById('part-status-0')?.textContent || ''));
+    const msg = await page.textContent('#part-status-0');
+    assert(/Photo added/.test(msg), msg);
+    assert(await page.evaluate(() => /part-/.test(state.galleryForm.parts[0].photo)), 'photo is on the form');
+    await page.click('#gallery-save');
+    await page.waitForTimeout(600);
+    assert(/part-/.test(db.gallery.g2.data.parts[0].photo || ''), 'saved: ' + JSON.stringify(db.gallery.g2.data.parts[0]));
+    await page.close();
+  });
   await check('add a design wizard: step by step, blocked without a name, creates a hidden design', async () => {
     const db = fixtures();
     const page = await open(db);
