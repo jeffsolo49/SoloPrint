@@ -3840,14 +3840,17 @@ function renderWorkDetail(g) {
 }
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.
+function designPicker(g, opts) {
+  return (isCaddyDesign(g) ? renderCaddyDesignPicker(g, opts) : renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
+}
 function renderWorkPrice(g) {
-  if (g.preorder && !preorderLeadOk()) return renderPreorderGate(g);
+  if (g.preorder && !preorderLeadOk()) return `${designPicker(g, designOpts(g.id))}<div class="job-divider" style="margin:6px 0 14px;"></div>${renderPreorderGate(g)}`;   // colors and options show first; name and email save them
   const colors = cmViewColors(g.id), opts = designOpts(g.id);
   const price = designEstimate(g, colors, opts);
   if (opts.skipMain && accessoryDesigns(g).length) return `${renderAccessoryPicker(g, opts)}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">${esc(materialNote())}</div>
     <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button></div>`;
-  const picker = (isCaddyDesign(g) ? renderCaddyDesignPicker(g, opts) : renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
+  const picker = designPicker(g, opts);
   if (price === null && (g.preorder || (g.versions || []).length || accessoryDesigns(g).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">Price confirmed in your quote.</div>
     <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
@@ -4172,9 +4175,15 @@ async function saveGalleryItem() {
     showAlert('gallery-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
     return;
   }
-  state.galleryForm = null;
+  const y = window.scrollY, opt = state.galleryOpt;
   await loadGallery();
+  if (state.wiz) { state.galleryForm = null; render(); return; }
+  // Saved: stay on the page with the form still open so work can continue (a new design becomes an edit of itself).
+  editGalleryItem(item.id);
+  if (state.galleryForm) state.galleryOpt = opt;
   render();
+  window.scrollTo(0, y);
+  softNote(existing ? 'Saved. You can keep working.' : 'Added to the gallery. You can keep working on it.');
 }
 
 async function toggleGalleryItem(id) {

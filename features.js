@@ -2332,7 +2332,7 @@ const OWNER_WIKI = [
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
-    steps: ['In a design, under "Color ideas photo", tap "Upload picture" (a picture where each part is a different solid color works best).', 'For each found area, pick which part it is. Leave the background and shadows as "Not a part". A red warning means an area looks like the background.', 'Use Join to put areas of one part together, or "Areas not split right?" to find fewer or more areas.', 'Add color ideas with "+ Add a color idea" or "Paste several color ideas at once" (Name, color, color per line).'], go: ['gallery'] },
+    steps: ['In a design, under "Color ideas photo", tap "Upload picture" (a picture where each part is a different solid color works best).', 'For each found area, pick which part it is. Leave the background and shadows as "Not a part". A red warning means an area looks like the background.', 'Use Join to put areas of one part together, or "Areas not split right?" to find fewer or more areas.', 'Add color ideas with "+ Add a color idea", "Re-use color ideas from another design" (copies its ideas, matching part names), "Make 10 color ideas for me" (named schemes from your colors, one color per group, respecting Limit colors) or "Paste several color ideas at once" (Name, color, color per line).'], go: ['gallery'] },
   { id: 'color-inbox', area: 'Designs', title: 'Color ideas customers send in', keys: 'color idea submitted inbox publish dismiss rename suggestion',
     steps: ['New ideas show on the bell. Tap one, or open Designs.', 'In "Color ideas people sent in", change the name if you like, then "Publish for everyone" or "Dismiss".'], go: ['gallery'] },
   { id: 'calculator', area: 'Designs', title: 'Price calculator, saved models and comparing links', keys: 'calculator models saved library compare several links makerworld price check',
@@ -2704,7 +2704,7 @@ function renderOwnerEditForm(b) {
     <div class="alert error" id="owner-edit-err"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
       <button class="btn-primary" id="owner-edit-save" onclick="saveOwnerEdit()">Save changes</button>
-      <button class="btn-secondary" onclick="cancelOwnerEdit()">Cancel</button>
+      <button class="btn-secondary" onclick="cancelOwnerEdit()">Close</button>
     </div>
   </div>`;
 }
@@ -2748,8 +2748,10 @@ async function saveOwnerEdit() {
   const clean = normalizeBatch(d);
   if (!(await upsertBatch(clean))) { if (btn) { btn.disabled = false; btn.textContent = 'Save changes'; } return; }
   state.batches = state.batches.map(x => x.id === clean.id ? clean : x);
-  state.ownerEdit = null;
+  const y = window.scrollY;
   render();
+  window.scrollTo(0, y);
+  softNote('Saved. You can keep working.');
 }
 
 // ── OWNER CALCULATOR: MORE THAN ONE COLOR ─────────────────────────────────
@@ -2961,7 +2963,7 @@ function renderPartColors(item, i) {
     ${cmRequestPreview(item)}
     ${reverseColors(Object.fromEntries(item.designParts.filter(p => !p.optional || p.include).map(p => [p.id, p.colorId]))) ? `<button type="button" class="btn-sm" id="part-reverse-${i}" onclick="reversePartColors(${i})">Reverse colors</button>` : ''}
     ${item.designParts.map((p, k) => { const mg = item.groupMerge, pg = partGroup(p, mg), lead = partLead(item.designParts, k, mg); return p.group && !p.optional && lead !== k ? '' : `<div class="part-color-row ${p.optional && !p.include ? 'part-off' : ''}">
-      ${p.photo ? thumbImg(p.photo, '', 'thumb', 'class="part-thumb"') : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
+      ${p.photo ? `<img class="part-thumb" src="${esc(p.photo)}" alt="Photo of ${esc(p.name || 'this part')}" referrerpolicy="no-referrer" />` : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
       <div class="field">
         ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="part-add-${i}-${k}" ${p.include ? 'checked' : ''} onchange="setPartIncluded(${i}, ${k}, this.checked)" />
           Add ${esc(p.name)} <span class="field-help">(optional${p.price && item.basePrice > 0 ? `, +$${p.price.toFixed(2)}` : ''}${p.grams ? `, about ${p.grams} g` : ''}${p.minutes ? `, +${fmtTime(p.minutes)}` : ''})</span></label>` : ''}
@@ -3054,7 +3056,8 @@ function renderDesignPartsForm(f) {
       </div>
       <div class="part-form-actions">
         <label class="btn-sm">${p.photo ? 'Change photo' : 'Add photo'}
-          <input type="file" accept="image/*" onchange="uploadPartPhoto(${n}, this.files[0]); this.value='';" style="display:none;" /></label>
+          <input type="file" accept="image/*" id="part-file-${n}" onchange="uploadPartPhoto(${n}, this.files[0])" style="display:none;" /></label>
+        <span class="field-help part-status" id="part-status-${n}" role="status"></span>
         ${f.parts.length < 20 ? `<button type="button" class="btn-sm" id="part-copy-${n}" onclick="copyDesignPart(${n})" aria-label="Copy part ${n + 1} as another set">Copy</button>` : ''}
         <button type="button" class="btn-sm danger" onclick="state.galleryForm.parts.splice(${n}, 1); render();" aria-label="Remove part ${n + 1}">Remove</button>
       </div>
@@ -3086,25 +3089,27 @@ function copyDesignPart(n) {
 
 async function uploadPartPhoto(n, file) {
   const f = state.galleryForm;
-  const status = document.getElementById('part-upload-status');
+  const say = (t, bad) => { const el = document.getElementById(`part-status-${n}`) || document.getElementById('part-upload-status'); if (el) { el.textContent = t; el.classList.toggle('bad', !!bad); } };
   const token = getOwnerToken();
   if (!f || !f.parts[n] || !file) return;
-  if (!token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
-  if (status) status.textContent = 'Uploading...';
+  if (!token) { say('Please log in again to upload.', true); return; }
+  say('Uploading...');
+  const part = f.parts[n];
   try {
     const blob = await resizePhoto(file);
-    const thumb = await resizePhoto(file, THUMB_SIDE);
-    if (!blob || !thumb) throw new Error('resize failed');
-    const path = `${f.id}/part-${Date.now()}.jpg`;
+    if (!blob) throw new Error('resize failed');
+    const path = `${f.id || 'new'}/part-${Date.now()}.jpg`;
     await uploadStoredPhoto(path, blob, token);
-    await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token);
-    f.parts[n].photo = GALLERY_PUBLIC_PREFIX + path;
+    try { const thumb = await resizePhoto(file, THUMB_SIDE); if (thumb) await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token); } catch (e) { /* the small copy is optional */ }
+    part.photo = GALLERY_PUBLIC_PREFIX + path;
+    const input = document.getElementById(`part-file-${n}`); if (input) input.value = '';
     render();
-    const done = document.getElementById('part-upload-status');
-    if (done) done.textContent = 'Photo added. Remember to save.';
+    const el = document.getElementById(`part-status-${n}`);
+    if (el) el.textContent = 'Photo added. Remember to save.';
+    softNote('Part photo added. Remember to save.');
   } catch (e) {
     console.error('Part photo upload error:', e);
-    if (status) status.textContent = /unsupported/.test(e.message) ? "That photo isn't a format this browser can read. Try a JPG or PNG." : "Couldn't upload. Check that you're logged in.";
+    say(/unsupported/.test(e.message) ? "That photo isn't a format this browser can read. Try a JPG or PNG." : "Couldn't upload this photo. Check that you're logged in and try again.", true);
   }
 }
 
@@ -4428,7 +4433,9 @@ function renderColorMapForm(f) {
             <button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos.splice(${n}, 1); render();" aria-label="Remove color idea ${n + 1}">Remove idea</button>
           </div>
         </div>`; }).join('')}
-        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}
+        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button> <button type="button" class="btn-sm" id="cm-make-ideas" onclick="makeCmIdeas()">Make 10 color ideas for me</button>' : ''}
+        ${m.combos.length < 16 ? renderCmReuse(f) : ''}
+        <div class="alert error" id="cm-make-err"></div>
         <details class="cm-paste"><summary>Paste several color ideas at once</summary>
           <div class="field-help">One idea per line: its name, then a color for each part in this order: <strong>${esc(parts.map(p => p.name).join(', '))}</strong>. Use your color names, separated by commas. Example: <em>Santa Dragon, Red, Green</em></div>
           <textarea id="cm-paste" rows="6" spellcheck="false" placeholder="Santa Dragon, Red, Green"></textarea>
@@ -4542,6 +4549,126 @@ function importCmCombos() {
   m.combos.push(...added);
   render();
   document.getElementById('cm-add-combo')?.scrollIntoView({ block: 'center' });
+}
+// "Make 10 color ideas for me": named color schemes picked from the owner's own colors. Every idea gives each color
+// group ONE color (parts that can't be separated stay together), respects each part's "Limit colors" list, never
+// repeats an idea the design already has, and uses at least two different colors when the design has two or more groups.
+const IDEA_THEMES = [
+  ['Sunset', ['Orange', 'Red', 'Gold']], ['Ocean', ['Blue', 'White', 'Teal']], ['Forest', ['Green', 'Brown', 'Beige']], ['Halloween', ['Black', 'Orange', 'Purple']],
+  ['Candy Cane', ['Red', 'White', 'Green']], ['Bumblebee', ['Gold', 'Black', 'Yellow']], ['Midnight', ['Black', 'Blue', 'Silver']], ['Sandcastle', ['Beige', 'Blue', 'White']],
+  ['Strawberry', ['Red', 'Green', 'White']], ['Lavender', ['Purple', 'White', 'Pink']], ['Mint Chip', ['Mint', 'Brown', 'White']], ['Fire and Ice', ['Red', 'Blue', 'White']],
+  ['Pumpkin Spice', ['Orange', 'Brown', 'Beige']], ['Royal', ['Purple', 'Gold', 'White']], ['Shamrock', ['Green', 'White', 'Gold']], ['Cotton Candy', ['Pink', 'Blue', 'White']],
+  ['Stealth', ['Black', 'Gray', 'Silver']], ['Autumn', ['Brown', 'Orange', 'Gold']], ['Lemon Lime', ['Yellow', 'Green', 'White']], ['Berry', ['Purple', 'Pink', 'Black']],
+  ['Classic', ['Black', 'White', 'Red']], ['Arctic', ['White', 'Blue', 'Silver']], ['Copper Kettle', ['Copper', 'Black', 'Brown']], ['Tropical', ['Teal', 'Orange', 'Yellow']],
+  ['Patriot', ['Red', 'White', 'Blue']], ['Chocolate Mint', ['Brown', 'Mint', 'White']], ['Rose Gold', ['Pink', 'Gold', 'White']], ['Jungle', ['Green', 'Black', 'Yellow']],
+  ['Dusk', ['Purple', 'Orange', 'Blue']], ['Charcoal', ['Gray', 'Black', 'Orange']], ['Spring', ['Pink', 'Green', 'Yellow']], ['Cobalt', ['Blue', 'Black', 'Gold']]
+];
+function makeCmIdeas() {
+  const f = state.galleryForm, m = f && f.colorMap;
+  const fail = msg => showAlert('cm-make-err', msg, 'error');
+  if (!m) return;
+  const parts = cleanDesignParts(f.parts);
+  if (!parts.length) { fail('Add the design\'s parts first, then I can make ideas for them.'); return; }
+  const room = 16 - m.combos.length;
+  if (room <= 0) { fail('This design already holds 16 color ideas. Remove some first.'); return; }
+  const choices = ownerPartChoices();
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const find = n => choices.find(c => norm(c.name) === norm(n)) || choices.find(c => new RegExp('\\b' + norm(n) + '\\b').test(norm(c.name)));
+  // One unit per color group (a part with no group is its own unit).
+  const units = [], seen = {};
+  parts.forEach(p => {
+    const g = String(p.group || '').trim();
+    if (g && seen[g] !== undefined) { units[seen[g]].parts.push(p); return; }
+    if (g) seen[g] = units.length;
+    units.push({ parts: [p] });
+  });
+  units.forEach(u => { u.ok = partChoicesFor(parts, u.parts[0], null, choices).map(c => c.key); });
+  const sig = colors => parts.map(p => colors[p.id]).join('|');
+  const have = new Set(m.combos.map(c => sig(c.colors || {})));
+  const names = new Set(m.combos.map(c => norm(c.name)));
+  const out = [];
+  const add = (name, picks) => {
+    if (out.length >= Math.min(10, room)) return;
+    if (units.length > 1 && new Set(picks).size < 2) return;
+    const colors = {};
+    units.forEach((u, i) => u.parts.forEach(p => { colors[p.id] = picks[i]; }));
+    if (have.has(sig(colors)) || names.has(norm(name))) return;
+    have.add(sig(colors)); names.add(norm(name));
+    out.push({ id: 'c' + (Date.now() + out.length).toString(36), name, colors });
+  };
+  // Themed schemes first: the theme's colors, in order, around the units; a unit that can't use one takes its next allowed color.
+  for (const [name, list] of IDEA_THEMES) {
+    const keys = list.map(find).filter(Boolean).map(c => c.key);
+    if (keys.length < 2) continue;
+    const picks = units.map((u, i) => { for (let j = 0; j < keys.length; j++) { const k = keys[(i + j) % keys.length]; if (u.ok.includes(k)) return k; } return ''; });
+    if (picks.every(Boolean)) add(name, picks);
+  }
+  // Still short (few matching colors): pairs of the owner's own colors, named after them.
+  for (let a = 0; a < choices.length && out.length < Math.min(10, room); a++) for (let b = a + 1; b < choices.length && out.length < Math.min(10, room); b++) {
+    const picks = units.map((u, i) => { const want = (i + a) % 2 ? choices[b].key : choices[a].key; return u.ok.includes(want) ? want : u.ok[0]; });
+    add(`${choices[a].name} and ${choices[b].name}`, picks);
+  }
+  if (!out.length) { fail('I could not make new ideas from your colors. Add more colors in Settings > Colors, or remove some ideas, and try again.'); return; }
+  m.combos.push(...out);
+  render();
+  document.getElementById('cm-make-ideas')?.scrollIntoView({ block: 'center' });
+  softNote(`Made ${out.length} color idea${out.length === 1 ? '' : 's'}. Rename, change or remove any, then save.`);
+}
+// Re-use the color ideas of another design on the site: each color goes to the part with the same name (else the
+// same group name, else the same position); groups stay together and "Limit colors" lists are respected.
+function renderCmReuse(f) {
+  const others = state.gallery.filter(g => g.id !== f.id && g.colorMap && (g.colorMap.combos || []).length);
+  if (!others.length) return '';
+  return `<div class="cm-reuse field"><label for="cm-reuse-from">Re-use color ideas from another design</label>
+    <div class="cm-save-row"><select id="cm-reuse-from">${others.map(g => `<option value="${esc(g.id)}">${esc(g.title)} (${g.colorMap.combos.length})</option>`).join('')}</select>
+    <button type="button" class="btn-sm" id="cm-reuse-go" onclick="reuseCmIdeas()">Copy its color ideas</button></div></div>`;
+}
+function reuseCmIdeas() {
+  const f = state.galleryForm, m = f && f.colorMap;
+  const fail = msg => showAlert('cm-make-err', msg, 'error');
+  const src = state.gallery.find(g => g.id === document.getElementById('cm-reuse-from')?.value);
+  if (!m || !src) return;
+  const parts = cleanDesignParts(f.parts), sparts = src.parts || [];
+  if (!parts.length) { fail("Add this design's parts first."); return; }
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const choices = ownerPartChoices();
+  const sUnits = [], sSeen = {};
+  sparts.forEach(p => { const g = norm(p.group); if (g && sSeen[g] !== undefined) return; if (g) sSeen[g] = sUnits.length; sUnits.push(p); });
+  const units = [], seen = {};
+  parts.forEach(p => { const g = String(p.group || '').trim(); if (g && seen[g] !== undefined) { units[seen[g]].push(p); return; } if (g) seen[g] = units.length; units.push([p]); });
+  // For each unit here, the source part it follows.
+  const follow = units.map(u => sparts.find(q => u.some(p => norm(p.name) && norm(p.name) === norm(q.name)))
+    || sparts.find(q => norm(u[0].group) && norm(u[0].group) === norm(q.group)) || null);
+  // Units with no match take the source's other parts in order (never the same one twice while any are left).
+  const used = new Set(follow.filter(Boolean).map(q => norm(q.group) || q.id));
+  follow.forEach((q, i) => {
+    if (q) return;
+    const free = sUnits.find(x => !used.has(norm(x.group) || x.id)) || sUnits[i % Math.max(1, sUnits.length)];
+    if (free) { follow[i] = free; used.add(norm(free.group) || free.id); }
+  });
+  const sig = colors => parts.map(p => colors[p.id]).join('|');
+  const have = new Set(m.combos.map(c => sig(c.colors || {}))), names = new Set(m.combos.map(c => norm(c.name)));
+  const out = [];
+  for (const c of src.colorMap.combos) {
+    if (m.combos.length + out.length >= 16) break;
+    const colors = {};
+    units.forEach((u, i) => {
+      const ok = partChoicesFor(parts, u[0], null, choices).map(x => x.key);
+      let k = follow[i] && (c.colors || {})[follow[i].id];
+      if (!k || !choices.some(x => x.key === k)) k = ok[0];
+      if (!ok.includes(k)) k = ok[0];
+      u.forEach(p => { colors[p.id] = k; });
+    });
+    if (units.length > 1 && new Set(Object.values(colors)).size < 2 && new Set(Object.values(c.colors || {})).size > 1) continue;
+    if (have.has(sig(colors)) || names.has(norm(c.name))) continue;
+    have.add(sig(colors)); names.add(norm(c.name));
+    out.push({ id: 'c' + (Date.now() + out.length).toString(36), name: c.name, colors });
+  }
+  if (!out.length) { fail(`Nothing new to copy from "${src.title}": its ideas are already here, or this design is full (16).`); return; }
+  m.combos.push(...out);
+  render();
+  document.getElementById('cm-reuse-from')?.scrollIntoView({ block: 'center' });
+  softNote(`Copied ${out.length} color idea${out.length === 1 ? '' : 's'} from "${src.title}". Check them, then save.`);
 }
 function addCmCombo() {
   const m = state.galleryForm && state.galleryForm.colorMap;
@@ -6788,8 +6915,8 @@ function preorderLeadOk() {
 }
 function renderPreorderGate(g) {
   return `<div class="preorder-gate" id="preorder-gate">
-    <h3 class="gate-title">Step 1: your name and email</h3>
-    <div class="field-help">Pre-orders are first come, first served. Tell me who you are so I can hold your place and follow up with you. I only use this to contact you about your pre-order.</div>
+    <h3 class="gate-title">Step 2: your name and email</h3>
+    <div class="field-help">Pre-orders are first come, first served. The colors and options you picked above are saved with your place in line. Tell me who you are so I can hold it and follow up with you. I only use this to contact you about your pre-order.</div>
     <div class="field"><label for="preorder-name">Your name</label><input type="text" id="preorder-name" value="${esc(state.clientName || '')}" autocomplete="name" maxlength="120" /></div>
     <div class="field"><label for="preorder-email">Your email</label><input type="email" id="preorder-email" value="${esc(state.clientEmail || '')}" autocomplete="email" maxlength="200" /></div>
     <div class="alert error" id="preorder-gate-err" role="alert"></div>
@@ -6809,7 +6936,7 @@ async function preorderContinue(gid) {
   if (!EMAIL_OK.test(email)) { showAlert('preorder-gate-err', 'Please type a valid email, so I can reach you.', 'error'); document.getElementById('preorder-email')?.focus(); return; }
   const g = state.gallery.find(x => x.id === gid);
   const old = leadSaved(), same = old && old.email === email.toLowerCase();
-  const designs = (same ? old.designs || [] : []).filter(d => d.id !== gid).concat(g ? [{ id: g.id, title: g.title }] : []);
+  const designs = (same ? old.designs || [] : []).filter(d => d.id !== gid).concat(g ? [{ id: g.id, title: g.title, pick: preorderPickText(g) }] : []);
   const lead = { email: email.toLowerCase(), name, designs, at: same && old.at ? old.at : new Date().toISOString() };
   state.clientName = name; state.clientEmail = email;
   try { localStorage.setItem(LEAD_KEY, JSON.stringify(lead)); } catch (e) { /* kept for this visit only */ }
@@ -6819,6 +6946,14 @@ async function preorderContinue(gid) {
   try { await saveLead(lead); } catch (e) { try { localStorage.setItem(LEAD_KEY, JSON.stringify({ ...lead, pending: true })); } catch (e2) { /* ignore */ } }
   render();
   document.getElementById('work-price')?.scrollIntoView({ block: 'center' });
+}
+// The colors and options a customer picked on the pre-order page, in words (saved with their lead and shown to the owner).
+function preorderPickText(g) {
+  const o = designOpts(g.id), bits = [];
+  if (isCaddyDesign(g) && o.caddy) bits.push(caddySummary(o.caddy));
+  else { const colors = cmViewColors(g.id); if (colors && (g.parts || []).length) bits.push(cmDescribe(g.parts, colors)); }
+  const v = (g.versions || []).find(x => x.id === o.version); if (v) bits.push(v.name);
+  return cleanText(bits.join(' · '), 240);
 }
 // Owner: people who gave their name and email on a pre-order and haven't ordered.
 async function fetchLeads() {
@@ -6838,7 +6973,7 @@ function renderPreorderLeads() {
     <h3 class="card-title">People interested (${list.length})</h3>
     <div class="field-help">They gave their name and email on a pre-order and haven't sent a request. Follow up with them.</div>
     <ul class="lead-list">${list.map(l => { const d = (l.data.lead && l.data.lead.designs) || [], started = (l.data.items || []).some(it => it && (it.name || it.notes));
-      return `<li><strong>${esc(l.name || 'No name')}</strong> · <a href="mailto:${esc(l.email)}">${esc(l.email)}</a> · ${esc(d.map(x => x.title).join(', ') || 'a pre-order')}${started ? ' · started a request' : ''} · ${esc(new Date(l.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</li>`; }).join('')}</ul>
+      return `<li><strong>${esc(l.name || 'No name')}</strong> · <a href="mailto:${esc(l.email)}">${esc(l.email)}</a> · ${esc(d.map(x => x.title + (x.pick ? ' (' + x.pick + ')' : '')).join(', ') || 'a pre-order')}${started ? ' · started a request' : ''} · ${esc(new Date(l.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</li>`; }).join('')}</ul>
     <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn-sm" id="leads-copy" onclick="copyLeadEmails()">Copy all emails</button>
       <button type="button" class="btn-sm" onclick="state.leadsLoaded = false; render();">Refresh</button></div>
   </div>`;
