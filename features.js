@@ -3827,7 +3827,7 @@ async function paintColorPreviews() {
     if (!cv.isConnected) continue;
     if (!img) {
       const el = document.createElement('img');
-      el.src = s.photo; el.alt = cv.getAttribute('aria-label') || ''; el.className = cv.className;
+      el.src = cv.dataset.fallback || s.photo; el.alt = cv.getAttribute('aria-label') || ''; el.className = cv.className;   // a photo that can't be read: the caddy's ready-made picture, else the photo as it is
       cv.replaceWith(el);
       continue;
     }
@@ -6624,10 +6624,13 @@ function caddyEarlier(i) {
 // to the parts), or, without one, the ready-made picture for that combination.
 function caddyPreviewHtml(g, c, view, parts) {
   const m = g && g.colorMap;
-  if (!(m && cmUsable(m))) return `<img src="${esc(caddyImage(c, view))}" alt="${esc(caddyAlt(c))}" width="640" height="640" onerror="photoFailed(this, 'text')" />`;
+  // The owner's own color-ideas photo is only used when it can show all three color choices (body, dividers/handle, drawers),
+  // each matched to a part. A photo of a single-color (all white) model can't, so the ready-made pictures show instead.
+  const covers = m && cmUsable(m) && Object.keys(CADDY_GROUPS).every(gn => m.regions.some(r => r.part && (parts || []).some(p => p.id === r.part && p.group === gn)));
+  if (!covers) return `<img src="${esc(caddyImage(c, view))}" alt="${esc(caddyAlt(c))}" width="640" height="640" onerror="photoFailed(this, 'text')" />`;
   const colors = {};
   (parts || []).forEach(p => { const name = CADDY_GROUPS[p.group] && c[CADDY_GROUPS[p.group]], ch = name && caddyColorChoice(name); if (ch) colors[p.id] = ch.key; });
-  return cmCanvas(view === 'front' && m.photoAlt ? { ...m, photo: m.photoAlt } : m, parts || [], colors, caddyAlt(c));
+  return cmCanvas(view === 'front' && m.photoAlt ? { ...m, photo: m.photoAlt } : m, parts || [], colors, caddyAlt(c)).replace('<canvas ', `<canvas data-fallback="${esc(caddyImage(c, view))}" `);
 }
 function renderCaddyPicker(c, view, scope, ref) {
   caddyPreload();

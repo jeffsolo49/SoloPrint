@@ -2631,7 +2631,7 @@ const STATES = {
     // with a color-ideas photo on the caddy, the preview is that photo repainted (one photo = no Front/Back buttons; two = both)
     const painted = await page.evaluate(() => {
       const g = state.gallery.find(x => x.id === 'catheter-caddy'), c = caddyFix({ body: 'Black', secondary: 'White', drawer: 'Red' });
-      g.colorMap = { photo: 'https://img.test/caddy-back.png', photoAlt: '', regions: [{ hexes: ['#808080'], part: 'shell' }, { hexes: ['#ff0000'], part: 'drawers' }], combos: [] };
+      g.colorMap = { photo: 'https://img.test/caddy-back.png', photoAlt: '', regions: [{ hexes: ['#808080'], part: 'shell' }, { hexes: ['#00ff00'], part: 'handle' }, { hexes: ['#ff0000'], part: 'drawers' }], combos: [] };
       const one = renderCaddyPicker(c, 'front', 'design', g.id), cm = cmShown(g);
       g.colorMap.photoAlt = 'https://img.test/caddy-front.png';
       const two = renderCaddyPicker(c, 'front', 'design', g.id), back = caddyPreviewHtml(g, c, 'back', g.parts);
@@ -2639,6 +2639,23 @@ const STATES = {
       return [/data-cm/.test(one), /caddy-view/.test(one), /caddy-view/.test(two), /caddy-front/.test(two) && /caddy-back/.test(back), cm];
     });
     assert(JSON.stringify(painted) === '[true,false,true,true,false]', JSON.stringify(painted));
+    // really repainted: pixels of the shell turn black and the drawers red when those are picked
+    const png = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 80; c.height = 40; const x = c.getContext('2d');
+      [['#8a2be2', 0], ['#f2f2f2', 20], ['#e0e0e0', 40], ['#d0d0d0', 60]].forEach(([col, at]) => { x.fillStyle = col; x.fillRect(at, 0, 20, 40); }); return c.toDataURL().split(',')[1]; });
+    (db.files = db.files || {})['gallery/caddy-test.png'] = { body: Buffer.from(png, 'base64'), type: 'image/png' };
+    await page.evaluate(() => {
+      state.settings.colors.find(c => c.id === 'black').hex = '#1e1e24'; state.settings.colors.find(c => c.id === 'red').hex = '#d22b2b';
+      const g = state.gallery.find(x => x.id === 'catheter-caddy');
+      g.colorMap = { photo: GALLERY_PUBLIC_PREFIX + 'caddy-test.png', photoAlt: '', combos: [], regions: [{ hexes: ['#8a2be2'], part: '' }, { hexes: ['#f2f2f2'], part: 'shell' }, { hexes: ['#e0e0e0'], part: 'handle' }, { hexes: ['#d0d0d0'], part: 'drawers' }] };
+      designOpts('catheter-caddy').caddy = caddyFix({ body: 'Black', secondary: 'Red', drawer: 'Red' }); designOpts('catheter-caddy').version = 'pair';
+      refreshDesignPrice('catheter-caddy', ''); render();
+    });
+    await page.waitForSelector('.caddy-preview canvas.cm-ready', { timeout: 5000 });
+    const px = await page.evaluate(() => [5, 25, 45, 65].map(x => [...document.querySelector('.caddy-preview canvas').getContext('2d').getImageData(x, 20, 1, 1).data].slice(0, 3)));
+    assert(px[0][2] > 150 && px[1][0] < 90 && px[1][1] < 90 && px[3][0] > 150 && px[3][1] < 90, 'caddy photo is repainted: ' + JSON.stringify(px));
+    await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); g.colorMap.regions = [{ hexes: ['#8a2be2'], part: '' }, { hexes: ['#f2f2f2', '#e0e0e0', '#d0d0d0'], part: 'shell' }]; refreshDesignPrice('catheter-caddy', ''); render(); });
+    assert(await page.evaluate(() => /presets\/caddy\/caddy_Black_/.test(document.querySelector('.caddy-preview img')?.src || '')), 'a one-color photo shows the ready-made picture');
+    await page.evaluate(() => { state.gallery.find(x => x.id === 'catheter-caddy').colorMap = null; refreshDesignPrice('catheter-caddy', ''); render(); });
     // on the request form the same picker is there, and "Match my first caddy" copies it to a second one
     await page.waitForSelector('#caddy-picker-item-0');
     await page.evaluate(() => { state.designOpts = {}; requestGalleryItem('catheter-caddy'); });
