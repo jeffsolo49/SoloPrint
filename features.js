@@ -1112,7 +1112,7 @@ function renderOwnerMoneyPage() {
       <div class="table-scroll">
         <table class="money-table">
           <thead><tr><th scope="col">Month</th><th scope="col">Orders</th><th scope="col">Sales</th><th scope="col">Material (est.)</th><th scope="col">Profit after material</th><th scope="col">Expenses</th><th scope="col">Ads</th></tr></thead>
-          <tbody>${r.months.map(m => `<tr><th scope="row">${m.name}</th><td>${m.orders || ''}</td><td>${m.sales ? money2(m.sales) : ''}</td><td>${m.material ? money2(m.material) : ''}</td><td>${m.sales ? money2(m.sales - m.material) : ''}</td><td>${m.expenses ? money2(m.expenses) : ''}</td><td>${m.ads ? money2(m.ads) : ''}</td></tr>`).join('')}</tbody>
+          <tbody>${r.months.filter((m, i) => !(Number(year) === new Date().getFullYear() && i > new Date().getMonth() && !m.orders && !m.sales && !m.expenses && !m.ads)).map(m => `<tr><th scope="row">${m.name}</th><td>${m.orders || ''}</td><td>${m.sales ? money2(m.sales) : ''}</td><td>${m.material ? money2(m.material) : ''}</td><td>${m.sales ? money2(m.sales - m.material) : ''}</td><td>${m.expenses ? money2(m.expenses) : ''}</td><td>${m.ads ? money2(m.ads) : ''}</td></tr>`).join('')}</tbody>
           <tfoot><tr><th scope="row">Total</th><td>${r.total.orders}</td><td>${money2(r.total.sales)}</td><td>${money2(r.total.material)}</td><td>${money2(r.total.sales - r.total.material)}</td><td>${money2(r.total.expenses)}</td><td>${money2(r.total.ads)}</td></tr></tfoot>
         </table>
       </div>

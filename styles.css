@@ -1613,3 +1613,8 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .wiz-ask { margin: 8px 0 10px; }
 .wiz-q { font-weight: 700; margin-bottom: 4px; }
 .wiz-yn { display: flex; gap: 8px; margin-top: 6px; }
+/* Owner quote form: hours, minutes, print time and grams in one row (two across on a phone). */
+.row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 560px) { .row4 { grid-template-columns: 1fr 1fr; } }
+/* Home "My Work" strip: on a phone the 4 boxes (3 designs + See more) fit in one row. */
+@media (max-width: 560px) { .work-strip { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; } }

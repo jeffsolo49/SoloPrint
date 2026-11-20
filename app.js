@@ -2797,11 +2797,11 @@ function renderQuoteForm(b) {
         <input type="number" id="special-cost-${b.id}" min="0" step="0.01" value="${(rollProblem && !Number.isFinite(b.specialOrderCost) ? currentRules().rollCost : specialOrderCost(b)).toFixed(2)}" />
         <div class="field-help">The full ${fmtRoll(currentRules().rollGrams)} roll, charged instead of material. Usually about $${currentRules().rollCost}. Use 0 when they're printing from their own leftover roll (within ${currentRules().rollMonths} months).</div>
       </div>` : ''}
-    <label class="special-order-check" style="font-size:14px;margin-top:10px;"><input type="checkbox" id="terms-${b.id}" ${hasCustomDesign(b) ? 'checked' : ''} />
+    <label class="special-order-check" style="font-size:14px;margin-top:4px;"><input type="checkbox" id="terms-${b.id}" ${hasCustomDesign(b) ? 'checked' : ''} />
       Custom design: the customer must agree to my design terms before approving</label>
     <div class="alert error" id="batch-err-${b.id}"></div>
     <div class="alert success" id="batch-ok-${b.id}"></div>
-    <div class="field-help" style="margin-top:1rem;">Emails ${firstNameOf(b)} the quote with a link to approve it.</div>
+    <div class="field-help" style="margin-top:6px;">Emails ${firstNameOf(b)} the quote with a link to approve it.</div>
     <button class="btn-primary step-go" id="approve-btn-${b.id}" onclick="approveBatch('${b.id}')">Send quote</button>`;
 }
 
@@ -2881,7 +2881,7 @@ function renderOwnerItem(batchId, it, i) {
         ${it.qty>1?`<div style="font-size:11px;color:var(--muted);">$${pp.toFixed(2)} ea</div>`:''}
       </div>`:''}
     </div>
-    <div class="row3">
+    <div class="row4">
       <div class="field" style="margin-bottom:0;">
         <label>Hours</label>
         <input type="number" id="hours-${batchId}-${i}" value="${hoursFromMinutes(it.minutes)}"
@@ -2897,18 +2897,18 @@ function renderOwnerItem(batchId, it, i) {
         <input class="print-time-output" type="number" id="mins-${batchId}-${i}" value="${it.minutes||''}"
           placeholder="Auto" readonly />
       </div>
-    </div>
-    <div class="row2" style="margin-top:12px;">
       <div class="field" style="margin-bottom:0;">
         <label>${(it.extraColors || []).length ? `Filament (grams): ${esc(itemParts(it)[0].name || 'main color')}` : 'Filament (grams)'}</label>
         <input type="number" id="ograms-${batchId}-${i}" value="${it.grams||''}"
           placeholder="From Bambu Studio" min="0" step="0.1" oninput="previewOwnerItem('${batchId}',${i})" />
       </div>
+    </div>
+    ${(it.extraColors || []).length ? `<div class="row2" style="margin-top:12px;">
       ${(it.extraColors || []).map((p, j) => `<div class="field" style="margin-bottom:0;">
         <label>Filament (grams): ${esc(p.name)}</label>
         <input type="number" id="ograms-${batchId}-${i}-x${j}" value="${p.grams || ''}" placeholder="Blank = split evenly" min="0" step="0.1" oninput="previewOwnerItem('${batchId}',${i})" />
       </div>`).join('')}
-    </div>
+    </div>` : ''}
     ${(it.extraColors || []).length ? `<div class="field-help">Enter each color's grams, or leave the extra colors blank and put the total in the first box to split it evenly.</div>` : ''}
     <div id="opreview-${batchId}-${i}" style="display:none;" class="price-preview-box">
       <div class="price-big" id="opval-${batchId}-${i}"></div>
