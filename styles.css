@@ -1457,18 +1457,6 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 .accessory-info { flex: 1; min-width: 0; }
 .accessory-info details summary { cursor: pointer; padding: 6px 0; }
 
-.caddy-picker { display: grid; gap: 12px; }
-.caddy-preview { max-width: 420px; margin: 0 auto; width: 100%; text-align: center; }
-.caddy-preview img { width: 100%; height: auto; display: block; }
-.caddy-views { display: flex; gap: 8px; justify-content: center; }
-.caddy-view.on { outline: 2px solid var(--border-hover); }
-.caddy-step-title { font-weight: 700; margin-bottom: 6px; }
-.caddy-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.caddy-swatch { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 12px; border: 2px solid var(--border); border-radius: 999px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
-.caddy-swatch.on { border-color: var(--border-hover); box-shadow: 0 0 0 2px var(--border-hover); font-weight: 700; }
-.caddy-swatch:disabled { opacity: .4; cursor: not-allowed; }
-.caddy-dot { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(128,128,128,.7); display: inline-block; }
-.caddy-summary { font-weight: 700; }
 .accessories-fields .special-order-check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 4px 0; }
 .accessories-fields .special-order-check input { width: 24px; height: 24px; flex: 0 0 auto; }
 
@@ -1656,6 +1644,17 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 @media (max-width: 999px) { html:not(.owner-mode) .jump-nav { bottom: 72px; } }
 
 /* Parts in the design form: cards flow in a row and wrap when the row gets tight. */
-.part-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 10px; align-items: start; }
+.part-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 640px), 1fr)); gap: 12px; align-items: start; }
 .part-form-grid .part-form-row { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface); }
 .part-order-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+
+.part-form-grid .part-form-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px 14px; align-items: start; }
+.part-form-grid .part-form-row .part-thumb { width: 96px; height: 96px; object-fit: contain; }
+.part-form-grid .part-form-row .row2 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 12px; min-width: 0; }
+.part-form-grid .part-form-row .part-form-actions { grid-column: 1 / -1; justify-content: flex-end; }
+.part-form-grid .part-form-row .field-help { font-size: 12px; }
+.ver-photos { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 8px; }
+.ver-photo { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.ver-photo img { width: 140px; height: 105px; object-fit: contain; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
+.cm-sides { margin-bottom: 6px; display: flex; gap: 6px; }
+.cm-sides .btn-sm.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }

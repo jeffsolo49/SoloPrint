@@ -2534,112 +2534,6 @@ const STATES = {
     assert(/Special Request \(no specific color\)/.test(kept), kept);
     await page.close();
   });
-  await check('Catheter Caddy pre-order: one-tap set-up, the three-step color picker, $50 single / $100 joined, pre-order terms and timing', async () => {
-    const db = fixtures();
-    const page = await open(db);
-    await page.evaluate(leadIn);
-    await page.evaluate(asOwner('gallery'));
-    await page.waitForTimeout(300);
-    await page.evaluate(() => setupCatheterCaddy());
-    await page.waitForFunction(() => state.gallery.some(g => g.id === 'catheter-caddy'));
-    assert(Object.keys(db.gallery).filter(k => /^(catheter|syringe|blood|scissors|clipper|label|sharps|gauze|glove|cage|drawer|pole)/.test(k)).length === 15, Object.keys(db.gallery).join(','));
-    assert(db.gallery['catheter-caddy'].published === false && db.gallery['glove-box-holder'].data.sideWall === true, 'hidden, side wall flag');
-    // timing: launch Nov 25, 5 days, +1 per extra unit, the Dec 3-7 break is skipped
-    const dates = await page.evaluate(() => [1, 2, 4].map(n => ymdOf(preorderReadyDate(n, state.settings, new Date('2026-11-17T12:00:00')))));
-    assert(JSON.stringify(dates) === '["2026-11-30","2026-12-01","2026-12-08"]', JSON.stringify(dates));
-    // customer side
-    db.gallery['catheter-caddy'].published = true;
-    // a caddy saved before the pull pieces were dropped loses them when it loads
-    db.gallery['catheter-caddy'].data.parts.push({ id: 'tabs', name: 'Drawer pull tabs', group: 'Tab colour' });
-    db.gallery['catheter-caddy'].data.contrast = [['Tab colour', 'Drawer colour']];
-    db.gallery['catheter-caddy'].data.description += ' 3 rear drawers with pull tabs.';
-    db.gallery['catheter-caddy'].data.parts.push({ id: 'clips', name: 'Joining Clips (6)', group: 'Shell colour' });
-    db.gallery['catheter-caddy'].data.description += ' carry handle, 4 joining clips.';
-    db.gallery['catheter-caddy-joining-kit'].data.description += ' 6 spare Joining Clips.';
-    await page.evaluate(async () => { state.view = 'client'; await loadGallery(); setTab('gallery'); openWork('catheter-caddy'); });
-    await page.waitForSelector('.version-picker');
-    const note = await page.textContent('.preorder-note');
-    assert(/credit card checkout/.test(note) && /Venmo/.test(note) && /cancel as long as I have not already begun printing/.test(note) && /Some assembly is required/.test(note) && /Site policies still apply to unclaimed items/.test(note) && /Shipping is based on your location/.test(note) && /Estimated ready to ship/.test(note), note);
-    const prices = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const o = v => ({ include: {}, logo: false, version: v });
-      return [designEstimate(g, null, o('single')), designEstimate(g, null, o('pair'))]; });
-    assert(prices[0] === 50 && prices[1] === 100, JSON.stringify(prices));
-    const noTabs = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const k = state.gallery.find(x => x.id === 'catheter-caddy-joining-kit'); return [g.parts.some(p => p.group === 'Tab colour'), g.contrast.length, /pull tabs/.test(g.description), g.parts.some(p => p.id === 'clips'), /joining clips/i.test(g.description), /spare/.test(k.description)]; });
-    assert(JSON.stringify(noTabs) === '[false,0,false,false,false,false]', JSON.stringify(noTabs));
-    // the three-step color picker replaces the editions: 18 combinations, the style follows the drawers
-    const combos = await page.evaluate(() => {
-      const seen = new Set(), names = ['White', 'Black', 'Red', 'Green', 'Blue', 'Orange'];
-      names.forEach(b => names.forEach(sec => names.forEach(d => { const c = caddyFix({ body: b, secondary: sec, drawer: d }); seen.add([c.body, c.secondary, c.drawer, c.style].join('/')); })));
-      return [seen.size, [...seen].filter(x => /2-color/.test(x)).length, [...seen].filter(x => /3-color/.test(x)).length, 'tab' in caddyFix({})];
-    });
-    assert(combos[0] === 18 && combos[1] === 10 && combos[2] === 8 && combos[3] === false, JSON.stringify(combos));
-    await page.evaluate(() => {
-      state.settings.colors = [['white', 'White'], ['black', 'Black'], ['red', 'Red'], ['green', 'Green'], ['blue', 'Blue'], ['orange', 'Orange']].map(([id, name]) => ({ id, name, hex: '#888888' }));
-      designOpts('catheter-caddy').version = 'pair'; refreshDesignPrice('catheter-caddy', ''); render();
-    });
-    await page.waitForSelector('.caddy-picker');
-    assert(!(await page.$('text=Color edition')), 'old edition picker gone');
-    await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); g.parts.filter(p => p.group === 'Accent colour').forEach(p => { p.allowed = ['red', 'blue']; }); refreshDesignPrice('catheter-caddy', ''); render(); });
-    await page.waitForSelector('.caddy-picker');
-    assert(!(await page.$('#caddy-design-catheter-caddy-secondary-Green')) && !(await page.$('#caddy-design-catheter-caddy-secondary-Orange')) && await page.$('#caddy-design-catheter-caddy-secondary-Red'), 'limited secondary colors are not shown at all');
-    await page.evaluate(() => { state.gallery.find(x => x.id === 'catheter-caddy').parts.forEach(p => { p.allowed = []; }); designOpts('catheter-caddy').caddy = null; refreshDesignPrice('catheter-caddy', ''); render(); });
-    await page.waitForSelector('.caddy-picker');
-    const sum = async () => (await page.textContent('.caddy-summary')).trim();
-    assert(await sum() === '2-color: White body · Black dividers and handle · Black drawers', await sum());
-    await page.click('#caddy-design-catheter-caddy-secondary-Red');
-    assert(await sum() === '2-color: White body · Red dividers and handle · Red drawers', await sum());
-    assert(await page.isDisabled('#caddy-design-catheter-caddy-drawer-Black') && !(await page.isDisabled('#caddy-design-catheter-caddy-drawer-Red')), 'only the accent for the drawers');
-    await page.click('#caddy-design-catheter-caddy-body-Black');
-    assert(await page.isDisabled('#caddy-design-catheter-caddy-secondary-Black') && await page.getAttribute('#caddy-design-catheter-caddy-body-Black', 'aria-pressed') === 'true', 'body color cannot be the secondary');
-    await page.click('#caddy-design-catheter-caddy-secondary-White');
-    assert(await sum() === '3-color: Black body · White dividers and handle · Red drawers', await sum());
-    const img = await page.evaluate(() => caddyImage(designOpts('catheter-caddy').caddy, 'front'));
-    assert(/caddy_Black_White_Red_front\.png$/.test(img), img);
-    await page.click('.caddy-view:not(.on)');
-    assert(await page.evaluate(() => designOpts('catheter-caddy').caddyView) === 'back' && /caddy_Black_White_Red_back\.png$/.test(await page.evaluate(() => caddyImage(designOpts('catheter-caddy').caddy, 'back'))), 'back view');
-    await page.evaluate(() => requestGalleryItem('catheter-caddy'));
-    const it = await page.evaluate(() => { const i = state.draftItems[0]; const c = id => i.designParts.find(p => p.id === id).colorId;
-      return [i.versionName, i.packIncluded, i.preorder, state.draftItems.length, JSON.stringify(i.caddy), c('shell'), c('handle'), c('dividers'), c('drawers'), i.designParts.some(p => p.id === 'tabs')]; });
-    assert(JSON.stringify(it) === JSON.stringify(['Joined pair', true, true, 1, '{"body":"Black","secondary":"White","drawer":"Red","style":"3-color"}', 'black', 'white', 'white', 'red', false]), JSON.stringify(it));
-    // with a color-ideas photo on the caddy, the preview is that photo repainted (one photo = no Front/Back buttons; two = both)
-    const painted = await page.evaluate(() => {
-      const g = state.gallery.find(x => x.id === 'catheter-caddy'), c = caddyFix({ body: 'Black', secondary: 'White', drawer: 'Red' });
-      g.colorMap = { photo: 'https://img.test/caddy-back.png', photoAlt: '', regions: [{ hexes: ['#808080'], part: 'shell' }, { hexes: ['#00ff00'], part: 'handle' }, { hexes: ['#ff0000'], part: 'drawers' }], combos: [] };
-      const one = renderCaddyPicker(c, 'front', 'design', g.id), cm = cmShown(g);
-      g.colorMap.photoAlt = 'https://img.test/caddy-front.png';
-      const two = renderCaddyPicker(c, 'front', 'design', g.id), back = caddyPreviewHtml(g, c, 'back', g.parts);
-      g.colorMap = null;
-      return [/data-cm/.test(one), /caddy-view/.test(one), /caddy-view/.test(two), /caddy-front/.test(two) && /caddy-back/.test(back), cm];
-    });
-    assert(JSON.stringify(painted) === '[true,false,true,true,false]', JSON.stringify(painted));
-    // really repainted: pixels of the shell turn black and the drawers red when those are picked
-    const png = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 80; c.height = 40; const x = c.getContext('2d');
-      [['#8a2be2', 0], ['#f2f2f2', 20], ['#e0e0e0', 40], ['#d0d0d0', 60]].forEach(([col, at]) => { x.fillStyle = col; x.fillRect(at, 0, 20, 40); }); return c.toDataURL().split(',')[1]; });
-    (db.files = db.files || {})['gallery/caddy-test.png'] = { body: Buffer.from(png, 'base64'), type: 'image/png' };
-    await page.evaluate(() => {
-      state.settings.colors.find(c => c.id === 'black').hex = '#1e1e24'; state.settings.colors.find(c => c.id === 'red').hex = '#d22b2b';
-      const g = state.gallery.find(x => x.id === 'catheter-caddy');
-      g.colorMap = { photo: GALLERY_PUBLIC_PREFIX + 'caddy-test.png', photoAlt: '', combos: [], regions: [{ hexes: ['#8a2be2'], part: '' }, { hexes: ['#f2f2f2'], part: 'shell' }, { hexes: ['#e0e0e0'], part: 'handle' }, { hexes: ['#d0d0d0'], part: 'drawers' }] };
-      designOpts('catheter-caddy').caddy = caddyFix({ body: 'Black', secondary: 'Red', drawer: 'Red' }); designOpts('catheter-caddy').version = 'pair';
-      refreshDesignPrice('catheter-caddy', ''); render();
-    });
-    await page.waitForSelector('.caddy-preview canvas.cm-ready', { timeout: 5000 });
-    const px = await page.evaluate(() => [5, 25, 45, 65].map(x => [...document.querySelector('.caddy-preview canvas').getContext('2d').getImageData(x, 20, 1, 1).data].slice(0, 3)));
-    assert(px[0][2] > 150 && px[1][0] < 90 && px[1][1] < 90 && px[3][0] > 150 && px[3][1] < 90, 'caddy photo is repainted: ' + JSON.stringify(px));
-    await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); g.colorMap.regions = [{ hexes: ['#8a2be2'], part: '' }, { hexes: ['#f2f2f2', '#e0e0e0', '#d0d0d0'], part: 'shell' }]; refreshDesignPrice('catheter-caddy', ''); render(); });
-    assert(await page.evaluate(() => /presets\/caddy\/caddy_Black_/.test(document.querySelector('.caddy-preview img')?.src || '')), 'a one-color photo shows the ready-made picture');
-    await page.evaluate(() => { state.gallery.find(x => x.id === 'catheter-caddy').colorMap = null; refreshDesignPrice('catheter-caddy', ''); render(); });
-    // on the request form the same picker is there, and "Match my first caddy" copies it to a second one
-    await page.waitForSelector('#caddy-picker-item-0');
-    await page.evaluate(() => { state.designOpts = {}; requestGalleryItem('catheter-caddy'); });
-    await page.waitForSelector('#caddy-match-1');
-    await page.click('#caddy-match-1');
-    assert(await page.evaluate(() => JSON.stringify(state.draftItems[1].caddy) === JSON.stringify(state.draftItems[0].caddy)), 'second caddy matches the first');
-    assert(!page.errors.length, page.errors.join('; '));
-    // no deposit option for pre-orders, and the emails say so
-    const pay = await page.evaluate(() => { const o = { items: [{ preorder: true }], phase: 'quote_sent' }; return [orderRules(o, state.settings).depositPercent, payWording(o, orderRules(o, state.settings)).howPaying]; });
-    assert(pay[0] === 0 && /pay in full/.test(pay[1]), JSON.stringify(pay));
-    await page.close();
-  });
   await check('preview mode: changes save to the preview only, customers keep the live site, and Push preview live copies just what changed', async () => {
     const db = fixtures();
     const liveNote = (db.settings || {}).materialNote || '';
@@ -2665,6 +2559,14 @@ const STATES = {
     assert(db.settings.materialNote === 'Preview material note' && db.gallery.g1.data.title === 'Dragon (preview)' && db.gallery.gnew && db.gallery.gnew.data.title === 'Brand new thing', JSON.stringify([db.settings.materialNote, db.gallery.g1.data.title]));
     assert(!db.private.preview.settings, 'preview cleared after pushing');
     assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('pre-orders: paid in full (no deposit), wording says so, and the ready date follows the timing settings', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    const r = await page.evaluate(() => { const o = { items: [{ preorder: true }], phase: 'quote_sent' }; const rules = orderRules(o, state.settings);
+      return [rules.depositPercent, payWording(o, rules).howPaying, fmtShortDate(preorderReadyDate(1, { preorderTiming: { launch: '2030-01-10', days: 5, extraDays: 1, breaks: [] } }, new Date('2029-12-01')).toISOString())]; });
+    assert(r[0] === 0 && /pay in full/.test(r[1]) && /Jan 1[5-7]/.test(r[2]), JSON.stringify(r));
     await page.close();
   });
   await check('pre-orders step 1: name and email first, saved at once, then the options; the owner sees who is interested', async () => {
@@ -2707,30 +2609,6 @@ const STATES = {
     const mail = await page.evaluate(() => colorDelayText({}) + '|' + colorDelayText({ siteText: { colorDelayNote: { text: 'My own words', live: true } } }));
     assert(/order more material first/.test(mail) && /\|My own words$/.test(mail), mail);
     assert(!page.errors.length, page.errors.join('; '));
-    await page.close();
-  });
-  await check('the Catheter Caddy set-up can be removed in one tap: the caddy, kit and accessories go; other designs stay', async () => {
-    const db = fixtures();
-    const page = await open(db);
-    await page.evaluate(asOwner('gallery'));
-    await page.waitForTimeout(300);
-    await page.evaluate(() => setupCatheterCaddy());
-    assert(Object.keys(db.gallery).length === 18, Object.keys(db.gallery).length);
-    await page.evaluate(() => removeCatheterCaddy());
-    await page.waitForFunction(() => !state.gallery.some(g => g.id === 'catheter-caddy'));
-    assert(Object.keys(db.gallery).sort().join() === 'g1,g2,g3', Object.keys(db.gallery).join());
-    assert(!page.errors.length, page.errors.join('; '));
-    await page.close();
-  });
-  await check('the caddy description is saved once in Help > My notes, and not added again after it is deleted', async () => {
-    const db = fixtures();
-    const page = await open(db);
-    await page.evaluate(asOwner('dashboard'));
-    for (let t = 0; t < 30 && !(db.private.wiki && db.private.wiki.entries); t++) await page.waitForTimeout(100);
-    assert(db.private.wiki.entries.length === 1 && /Stop digging through drawers/.test(db.private.wiki.entries[0].text) && /In the box: 1 caddy/.test(db.private.wiki.entries[0].text), JSON.stringify(db.private.wiki));
-    await page.evaluate(async () => { await writeWikiNotes([]); await loadBatches(); });
-    await page.waitForTimeout(400);
-    assert(db.private.wiki.entries.length === 0 && db.private.wiki.seeded.includes('saved-caddy-description'), 'not added again after deleting');
     await page.close();
   });
   await check('grouped parts: the design form lists the groups, and a color idea sets the whole group', async () => {
@@ -2838,6 +2716,27 @@ const STATES = {
       return state.galleryForm.colorMap.combos.map(c => ({ n: c.name, a: c.colors.a, b: c.colors.b, c: c.colors.c }));
     });
     assert(r.length === 2 && r[0].n === 'Holiday' && r[0].a === 'green' && r[0].b === r[0].c && r[0].b !== r[0].a, JSON.stringify(r));
+    await page.close();
+  });
+  await check('color pictures: front and back views, and a different picture for each version, with Front / Back buttons for customers', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.parts = [{ id: 'x', name: 'Body' }, { id: 'y', name: 'Lid' }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/single.png', photoAlt: 'https://img.test/single-back.png', regions: [{ hexes: ['#ffffff'], part: 'x' }, { hexes: ['#111111'], part: 'y' }], combos: [{ id: 'k1', name: 'Holiday', colors: { x: 'red', y: 'green' } }] };
+    db.gallery.g1.data.versions = [{ id: 's', name: 'Single', count: 1 }, { id: 'd', name: 'Joined pair', count: 2, photo: 'https://img.test/pair.png', photoAlt: 'https://img.test/pair-back.png' }];
+    const page = await open(db, { suffix: '?design=dragon-organizer' });
+    await page.waitForSelector('#color-ideas');
+    const r = await page.evaluate(() => {
+      const g = state.gallery.find(x => x.id === 'g1');
+      const urls = [cmMapFor(g, 's', '').photo, cmMapFor(g, 's', 'back').photo, cmMapFor(g, 'd', '').photo, cmMapFor(g, 'd', 'back').photo];
+      return { urls, caddyGone: typeof setupCatheterCaddy === 'undefined' && typeof caddyFix === 'undefined' };
+    });
+    assert(JSON.stringify(r.urls) === JSON.stringify(['https://img.test/single.png', 'https://img.test/single-back.png', 'https://img.test/pair.png', 'https://img.test/pair-back.png']) && r.caddyGone, JSON.stringify(r));
+    assert(await page.isVisible('#cm-side-back'), 'Front / Back buttons show');
+    await page.click('#cm-side-back');
+    assert(/single-back\.png/.test(await page.getAttribute('#color-ideas canvas', 'data-cm')), 'back picture is painted');
+    await page.evaluate(() => { setDesignVersion('g1', 'd'); });
+    await page.waitForFunction(() => /pair-back/.test(document.querySelector('#color-ideas canvas')?.dataset.cm || ''));
+    assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
   await check('part photos: uploading in the edit form adds the photo and saving keeps it', async () => {
