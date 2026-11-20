@@ -4170,9 +4170,15 @@ async function saveGalleryItem() {
     showAlert('gallery-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
     return;
   }
-  state.galleryForm = null;
+  const y = window.scrollY, opt = state.galleryOpt;
   await loadGallery();
+  if (state.wiz) { state.galleryForm = null; render(); return; }
+  // Saved: stay on the page with the form still open so work can continue (a new design becomes an edit of itself).
+  editGalleryItem(item.id);
+  if (state.galleryForm) state.galleryOpt = opt;
   render();
+  window.scrollTo(0, y);
+  softNote(existing ? 'Saved. You can keep working.' : 'Added to the gallery. You can keep working on it.');
 }
 
 async function toggleGalleryItem(id) {

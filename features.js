@@ -2332,7 +2332,7 @@ const OWNER_WIKI = [
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
     steps: ['In a design, add each part with its grams and starting color.', 'Tick "Optional add-on" for extras customers can choose (like a stand). Give it a price (for set-price designs) and extra print time.', 'Customers tick add-ons on the design page and pick a color per part.'], go: ['gallery'] },
   { id: 'color-map', area: 'Designs', title: 'Color ideas photo: show the design in any colors', keys: 'color ideas photo picture areas recolor background not a part join',
-    steps: ['In a design, under "Color ideas photo", tap "Upload picture" (a picture where each part is a different solid color works best).', 'For each found area, pick which part it is. Leave the background and shadows as "Not a part". A red warning means an area looks like the background.', 'Use Join to put areas of one part together, or "Areas not split right?" to find fewer or more areas.', 'Add color ideas with "+ Add a color idea" or "Paste several color ideas at once" (Name, color, color per line).'], go: ['gallery'] },
+    steps: ['In a design, under "Color ideas photo", tap "Upload picture" (a picture where each part is a different solid color works best).', 'For each found area, pick which part it is. Leave the background and shadows as "Not a part". A red warning means an area looks like the background.', 'Use Join to put areas of one part together, or "Areas not split right?" to find fewer or more areas.', 'Add color ideas with "+ Add a color idea", "Make 10 color ideas for me" (named schemes from your colors, one color per group, respecting Limit colors) or "Paste several color ideas at once" (Name, color, color per line).'], go: ['gallery'] },
   { id: 'color-inbox', area: 'Designs', title: 'Color ideas customers send in', keys: 'color idea submitted inbox publish dismiss rename suggestion',
     steps: ['New ideas show on the bell. Tap one, or open Designs.', 'In "Color ideas people sent in", change the name if you like, then "Publish for everyone" or "Dismiss".'], go: ['gallery'] },
   { id: 'calculator', area: 'Designs', title: 'Price calculator, saved models and comparing links', keys: 'calculator models saved library compare several links makerworld price check',
@@ -2704,7 +2704,7 @@ function renderOwnerEditForm(b) {
     <div class="alert error" id="owner-edit-err"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
       <button class="btn-primary" id="owner-edit-save" onclick="saveOwnerEdit()">Save changes</button>
-      <button class="btn-secondary" onclick="cancelOwnerEdit()">Cancel</button>
+      <button class="btn-secondary" onclick="cancelOwnerEdit()">Close</button>
     </div>
   </div>`;
 }
@@ -2748,8 +2748,10 @@ async function saveOwnerEdit() {
   const clean = normalizeBatch(d);
   if (!(await upsertBatch(clean))) { if (btn) { btn.disabled = false; btn.textContent = 'Save changes'; } return; }
   state.batches = state.batches.map(x => x.id === clean.id ? clean : x);
-  state.ownerEdit = null;
+  const y = window.scrollY;
   render();
+  window.scrollTo(0, y);
+  softNote('Saved. You can keep working.');
 }
 
 // ── OWNER CALCULATOR: MORE THAN ONE COLOR ─────────────────────────────────
@@ -4428,7 +4430,7 @@ function renderColorMapForm(f) {
             <button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.combos.splice(${n}, 1); render();" aria-label="Remove color idea ${n + 1}">Remove idea</button>
           </div>
         </div>`; }).join('')}
-        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button>' : ''}
+        ${m.combos.length < 16 ? '<button type="button" class="btn-sm" id="cm-add-combo" onclick="addCmCombo()">+ Add a color idea</button> <button type="button" class="btn-sm" id="cm-make-ideas" onclick="makeCmIdeas()">Make 10 color ideas for me</button><div class="alert error" id="cm-make-err"></div>' : ''}
         <details class="cm-paste"><summary>Paste several color ideas at once</summary>
           <div class="field-help">One idea per line: its name, then a color for each part in this order: <strong>${esc(parts.map(p => p.name).join(', '))}</strong>. Use your color names, separated by commas. Example: <em>Santa Dragon, Red, Green</em></div>
           <textarea id="cm-paste" rows="6" spellcheck="false" placeholder="Santa Dragon, Red, Green"></textarea>
@@ -4542,6 +4544,70 @@ function importCmCombos() {
   m.combos.push(...added);
   render();
   document.getElementById('cm-add-combo')?.scrollIntoView({ block: 'center' });
+}
+// "Make 10 color ideas for me": named color schemes picked from the owner's own colors. Every idea gives each color
+// group ONE color (parts that can't be separated stay together), respects each part's "Limit colors" list, never
+// repeats an idea the design already has, and uses at least two different colors when the design has two or more groups.
+const IDEA_THEMES = [
+  ['Sunset', ['Orange', 'Red', 'Gold']], ['Ocean', ['Blue', 'White', 'Teal']], ['Forest', ['Green', 'Brown', 'Beige']], ['Halloween', ['Black', 'Orange', 'Purple']],
+  ['Candy Cane', ['Red', 'White', 'Green']], ['Bumblebee', ['Gold', 'Black', 'Yellow']], ['Midnight', ['Black', 'Blue', 'Silver']], ['Sandcastle', ['Beige', 'Blue', 'White']],
+  ['Strawberry', ['Red', 'Green', 'White']], ['Lavender', ['Purple', 'White', 'Pink']], ['Mint Chip', ['Mint', 'Brown', 'White']], ['Fire and Ice', ['Red', 'Blue', 'White']],
+  ['Pumpkin Spice', ['Orange', 'Brown', 'Beige']], ['Royal', ['Purple', 'Gold', 'White']], ['Shamrock', ['Green', 'White', 'Gold']], ['Cotton Candy', ['Pink', 'Blue', 'White']],
+  ['Stealth', ['Black', 'Gray', 'Silver']], ['Autumn', ['Brown', 'Orange', 'Gold']], ['Lemon Lime', ['Yellow', 'Green', 'White']], ['Berry', ['Purple', 'Pink', 'Black']],
+  ['Classic', ['Black', 'White', 'Red']], ['Arctic', ['White', 'Blue', 'Silver']], ['Copper Kettle', ['Copper', 'Black', 'Brown']], ['Tropical', ['Teal', 'Orange', 'Yellow']],
+  ['Patriot', ['Red', 'White', 'Blue']], ['Chocolate Mint', ['Brown', 'Mint', 'White']], ['Rose Gold', ['Pink', 'Gold', 'White']], ['Jungle', ['Green', 'Black', 'Yellow']],
+  ['Dusk', ['Purple', 'Orange', 'Blue']], ['Charcoal', ['Gray', 'Black', 'Orange']], ['Spring', ['Pink', 'Green', 'Yellow']], ['Cobalt', ['Blue', 'Black', 'Gold']]
+];
+function makeCmIdeas() {
+  const f = state.galleryForm, m = f && f.colorMap;
+  const fail = msg => showAlert('cm-make-err', msg, 'error');
+  if (!m) return;
+  const parts = cleanDesignParts(f.parts);
+  if (!parts.length) { fail('Add the design\'s parts first, then I can make ideas for them.'); return; }
+  const room = 16 - m.combos.length;
+  if (room <= 0) { fail('This design already holds 16 color ideas. Remove some first.'); return; }
+  const choices = ownerPartChoices();
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const find = n => choices.find(c => norm(c.name) === norm(n)) || choices.find(c => new RegExp('\\b' + norm(n) + '\\b').test(norm(c.name)));
+  // One unit per color group (a part with no group is its own unit).
+  const units = [], seen = {};
+  parts.forEach(p => {
+    const g = String(p.group || '').trim();
+    if (g && seen[g] !== undefined) { units[seen[g]].parts.push(p); return; }
+    if (g) seen[g] = units.length;
+    units.push({ parts: [p] });
+  });
+  units.forEach(u => { u.ok = partChoicesFor(parts, u.parts[0], null, choices).map(c => c.key); });
+  const sig = colors => parts.map(p => colors[p.id]).join('|');
+  const have = new Set(m.combos.map(c => sig(c.colors || {})));
+  const names = new Set(m.combos.map(c => norm(c.name)));
+  const out = [];
+  const add = (name, picks) => {
+    if (out.length >= Math.min(10, room)) return;
+    if (units.length > 1 && new Set(picks).size < 2) return;
+    const colors = {};
+    units.forEach((u, i) => u.parts.forEach(p => { colors[p.id] = picks[i]; }));
+    if (have.has(sig(colors)) || names.has(norm(name))) return;
+    have.add(sig(colors)); names.add(norm(name));
+    out.push({ id: 'c' + (Date.now() + out.length).toString(36), name, colors });
+  };
+  // Themed schemes first: the theme's colors, in order, around the units; a unit that can't use one takes its next allowed color.
+  for (const [name, list] of IDEA_THEMES) {
+    const keys = list.map(find).filter(Boolean).map(c => c.key);
+    if (keys.length < 2) continue;
+    const picks = units.map((u, i) => { for (let j = 0; j < keys.length; j++) { const k = keys[(i + j) % keys.length]; if (u.ok.includes(k)) return k; } return ''; });
+    if (picks.every(Boolean)) add(name, picks);
+  }
+  // Still short (few matching colors): pairs of the owner's own colors, named after them.
+  for (let a = 0; a < choices.length && out.length < Math.min(10, room); a++) for (let b = a + 1; b < choices.length && out.length < Math.min(10, room); b++) {
+    const picks = units.map((u, i) => { const want = (i + a) % 2 ? choices[b].key : choices[a].key; return u.ok.includes(want) ? want : u.ok[0]; });
+    add(`${choices[a].name} and ${choices[b].name}`, picks);
+  }
+  if (!out.length) { fail('I could not make new ideas from your colors. Add more colors in Settings > Colors, or remove some ideas, and try again.'); return; }
+  m.combos.push(...out);
+  render();
+  document.getElementById('cm-make-ideas')?.scrollIntoView({ block: 'center' });
+  softNote(`Made ${out.length} color idea${out.length === 1 ? '' : 's'}. Rename, change or remove any, then save.`);
 }
 function addCmCombo() {
   const m = state.galleryForm && state.galleryForm.colorMap;

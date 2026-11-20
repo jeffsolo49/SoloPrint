@@ -1040,6 +1040,8 @@ const STATES = {
     assert(/\$5\.05/.test(await owner.textContent('#oe-est-0')), 'print time should update the estimate');
     assert(/1h 30m/.test(await owner.textContent('#oe-est-0')) && /flat × /.test(await owner.textContent('#oe-est-0')) && /90 min \(1h 30m\) × /.test(await owner.textContent('#oe-est-0')), 'the edit form should show the price breakdown: ' + await owner.textContent('#oe-est-0'));
     await owner.click('#owner-edit-save');
+    await owner.waitForTimeout(300);
+    await owner.click('button[onclick="cancelOwnerEdit()"]');
     await owner.waitForSelector('#edit-request-pe');
     assert(db.jobs.pe.items[0].extraColors[0].colorId === 'silk' && db.jobs.pe.items[0].minutes === 90, JSON.stringify(db.jobs.pe.items[0]));
     await owner.close();
@@ -2813,6 +2815,23 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('make 10 color ideas: works on any design, one color per group, never repeats', async () => {
+    const db = fixtures();
+    db.settings.colors = ['Red', 'Green', 'Blue', 'Black', 'White', 'Orange', 'Gold', 'Purple', 'Brown', 'Beige', 'Teal', 'Silver'].map(n => ({ id: n.toLowerCase(), name: n, hex: '#808080' }));
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      state.galleryForm = { ...blankGalleryForm(), title: 'T', parts: [{ id: 'a', name: 'Left', group: 'Body' }, { id: 'b', name: 'Right', group: 'Body' }, { id: 'c', name: 'Trim', allowed: ['gold', 'black'] }],
+        colorMap: { photo: 'data:image/png;base64,AAAA', regions: [{ hexes: ['#ffffff'], part: 'a' }], combos: [] } };
+      render(); makeCmIdeas(); makeCmIdeas();
+      const cs = state.galleryForm.colorMap.combos;
+      return { n: cs.length, grouped: cs.every(c => c.colors.a === c.colors.b), allowed: cs.every(c => ['gold', 'black'].includes(c.colors.c)), names: new Set(cs.map(c => c.name)).size };
+    });
+    assert(r.n === 16 && r.grouped && r.allowed && r.names === 16, JSON.stringify(r));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('add a design wizard: step by step, blocked without a name, creates a hidden design', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -3106,6 +3125,8 @@ const STATES = {
     await owner.click('text=+ Add a charge');
     await owner.fill('#oe-charge-amount-0', '15');
     await owner.click('#owner-edit-save');
+    await owner.waitForTimeout(300);
+    await owner.click('button[onclick="cancelOwnerEdit()"]');
     await owner.waitForSelector('#edit-request-e1');
     const saved = db.jobs.e1;
     const it = saved.items[0];
@@ -3116,12 +3137,14 @@ const STATES = {
     // Cancel throws changes away.
     await owner.click('#edit-request-e1');
     await owner.fill('#oe-client-name', 'Nobody');
-    await owner.click('#order-e1 >> text=Cancel');
+    await owner.click('#order-e1 >> text=Close');
     assert(db.jobs.e1.clientName === 'Pat' && /Pat/.test(await owner.textContent('#order-e1')), 'cancel kept the changes');
     // Remove the spare item, then quote it: your price x 3 + roll + your charge.
     await owner.click('#edit-request-e1');
     await owner.click('text=Remove item 2');
     await owner.click('#owner-edit-save');
+    await owner.waitForTimeout(300);
+    await owner.click('button[onclick="cancelOwnerEdit()"]');
     await owner.waitForSelector('#edit-request-e1');
     await owner.fill('#special-cost-e1', '20');
     await owner.click('#approve-btn-e1');
@@ -3672,7 +3695,10 @@ const STATES = {
       assert(await owner.$eval(`#conv-${editable}`, el => el.open), 'the conversation stays open beside the edit form');
       await owner.click('#owner-edit-save');
       await owner.waitForTimeout(300);
-      assert(!(await owner.$('.chat-edit')), 'saving closes the edit form');
+      assert(await owner.$('.chat-edit'), 'saving keeps the edit form open so work can continue');
+      await owner.click('button[onclick="cancelOwnerEdit()"]');
+      await owner.waitForTimeout(300);
+      assert(!(await owner.$('.chat-edit')), 'closing the edit form');
     } else throw new Error('no order with an "Edit their request" button');
     await owner.evaluate(asOwner('clients'));   // the old tab name still opens Customers
     await owner.evaluate(showOrder('1'));
