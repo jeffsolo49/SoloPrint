@@ -2318,7 +2318,7 @@ const OWNER_WIKI = [
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
     steps: ['Designs > Set-ups (below the design list). Tap "Save as set-up" on any design card, or pick it under "Save a design as a set-up", name it and tap "Save this set-up". Its accessories and joining pack come with it.', 'To start a new item: type the new design\'s name under the set-up and tap "Use this set-up". You get a hidden copy (parts, groups, versions, pre-order settings, prices) to fill in with photos and numbers, then tap Show.', 'Rename or Delete a set-up any time; designs already made from it stay. "Also keep its photos" is optional.', 'Built-in set-ups (Catheter Caddy, drying rack color ideas) are listed under them.'], go: ['gallery', ''] },
   { id: 'caddy', area: 'Designs', title: 'Set up the Catheter Caddy pre-order', keys: 'catheter caddy pre-order launch edition two-tone three-tone four-tone joined pair joining kit accessories timing christmas vacation break',
-    steps: ['Designs > Set-ups > Built-in set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers; drawer tabs follow). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
+    steps: ['Designs > Set-ups > Built-in set-ups > "Set up the Catheter Caddy pre-order" makes the caddy, Joining Kit and 13 accessories as hidden pre-order designs. The accessories are part of ordering the caddy (not listed on their own). Already set up before this? Tap "Make accessories part of the caddy order" under Designs > One-tap set-ups.', 'Customers choose the caddy colors with a 3-step picker (body, dividers and handle, drawers). The picture repaints your color-ideas photo: edit the Catheter Caddy design, upload the BACK view (each part a different solid color) under "Color ideas photo", match the areas to the parts, optionally add a front view, then Save.', 'Edit each one to add pictures, grams, print time and any price. The caddy is $50 single, $100 joined pair; everything else says "Price confirmed in your quote" until you type a price.', 'Tap Show on each design when you launch.', 'Settings > Prices & rules > Pre-order timing: launch date, days to print the first item, extra days for each extra item or unit, and your breaks (type the Christmas break dates there).', 'Pre-orders are paid in full by Venmo (no deposit option). The note customers see covers payment, no credit card checkout, shipping, cancellation and assembly; edit any of it in Settings > Wording (site text, "Pre-orders: ...").', 'Open an order and use "Fulfilment summary (what to print)" to see the edition, colors per group, add-ons and print files.'], go: ['gallery', ''] },
   { id: 'preview', area: 'Getting started', title: 'Preview changes before customers see them', keys: 'preview staging try changes push live test settings designs private copy',
     steps: ['Help > Preview > "Start a preview" makes a private copy of your Settings and Designs.', 'While the PREVIEW bar is at the top, everything you change in Settings or Designs is saved to the preview only. Tap "Client view" to see the site as customers will.', 'Tap "Push preview live" (in the bar or on the Preview page) when you like it. It lists what will change first, then copies only what you changed.', '"Turn preview off" keeps your changes for later; "Throw away the preview" deletes them. Orders and emails are never part of the preview.'], go: ['preview', ''] },
   { id: 'leads', area: 'Designs', title: 'People who showed interest in a pre-order', keys: 'leads interested name email follow up abandoned pre-order step 1',
@@ -3160,7 +3160,7 @@ const SITE_TEXT = [
     ['preorderCancel', 'Pre-orders: cancellation', PREORDER_TEXT.cancel],
     ['preorderPolicy', 'Pre-orders: site policies for unclaimed items', PREORDER_TEXT.policy],
     ['preorderAssembly', 'Pre-orders: assembly', PREORDER_TEXT.assembly],
-    ['contrastNote', 'Request form: when the drawer tabs match the drawers', 'The drawer tabs need to contrast with the drawers - please pick a different colour.'],
+    ['contrastNote', 'Request form: when two parts that must differ have the same color', 'These two parts need different colors - please pick a different color.'],
     ['sideWallNote', 'Request form: more than two side-wall accessories', 'A caddy takes one side-wall accessory on each side wall (a joined pair, one on each outside side). If you are using the Hinge it takes the clip slots on one side, so only one side-wall accessory fits. Please remove one or tell me how you plan to use them.'],
     ['preorderBadge', 'Pre-order designs: the label on the design', 'Pre-order'],
     ['preorderNote', 'Pre-orders: the first come, first served note (design page, request form, their order and the quote, confirmed and deposit emails)', DEFAULT_PREORDER_NOTE],
@@ -4363,7 +4363,7 @@ function renderColorMapForm(f) {
     ${m ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap = null; state.cmJoin = []; render();">Remove picture</button>' : ''}
     <span class="field-help" id="cm-status" role="status"></span>
     ${m ? `<img class="cm-photo cm-big" src="${esc(m.photo)}" alt="The color ideas photo you uploaded" referrerpolicy="no-referrer" />` : ''}
-    ${f.id === CADDY_MAIN.id ? `<div class="field-help" style="margin-top:8px;"><strong>Catheter Caddy:</strong> upload the BACK view first (the one that shows the drawers), with the body, the dividers and handle, the drawers and the drawer tabs each a different solid color, then match those areas to the parts: Base, walls and Top Shelf and Joining Clips = body; Handle and grips, Dividers = secondary; Rear Drawers = drawers; Drawer pull tabs = tabs. The color picker repaints it. Want a Front button too? Add a front view in the same colors below.</div>
+    ${f.id === CADDY_MAIN.id ? `<div class="field-help" style="margin-top:8px;"><strong>Catheter Caddy:</strong> upload the BACK view first (the one that shows the drawers), with the body, the dividers and handle, and the drawers each a different solid color, then match those areas to the parts: Base, walls and Top Shelf and Joining Clips = body; Handle and grips, Dividers = secondary; Rear Drawers = drawers. The color picker repaints it. Want a Front button too? Add a front view in the same colors below.</div>
       ${m ? `<label class="btn-sm">${m.photoAlt ? 'Change front view' : 'Add front view'}<input type="file" accept="image/*" id="cm-upload-alt" onchange="uploadColorMapAltPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
       ${m.photoAlt ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.photoAlt = \'\'; render();">Remove front view</button>' : ''}` : ''}` : ''}
     ${!m ? '' : `
@@ -6241,7 +6241,7 @@ function setItemEdition(i, eid) {
   render();
   queueDraftSave();
 }
-// The pairs that must not share a color (the drawer tabs and the drawers), judged after the edition merged groups.
+// The pairs of color groups that must not share a color, judged after the edition merged groups.
 function colorsClash(item) {
   const g = item && item.galleryId && state.gallery.find(x => x.id === item.galleryId);
   if (!g || isCaddyDesign(g) || !(g.contrast || []).length || !(item.designParts || []).length) return false;
@@ -6309,7 +6309,7 @@ function renderEditionsForm(f) {
       <div class="part-form-actions"><button type="button" class="btn-sm danger" onclick="state.galleryForm.editions.splice(${n}, 1); render();" aria-label="Remove edition ${n + 1}">Remove</button></div></div>`).join('')}
     ${f.editions.length < 5 ? `<button type="button" class="btn-sm" id="add-edition" onclick="state.galleryForm.editions.push({ id: 'e' + Date.now().toString(36), name: '', desc: '', mergeText: '', files: '' }); render();">+ Add an edition</button>` : ''}
     <div class="field" style="max-width:420px;margin-top:8px;"><label for="gallery-contrast">Groups that must not share a color (optional)</label>
-      <input type="text" id="gallery-contrast" maxlength="120" value="${esc(f.contrastText ?? (f.contrast || []).map(p => p.join(' / ')).join('; '))}" placeholder="Tab colour / Drawer colour" oninput="state.galleryForm.contrastText = this.value" /></div>
+      <input type="text" id="gallery-contrast" maxlength="120" value="${esc(f.contrastText ?? (f.contrast || []).map(p => p.join(' / ')).join('; '))}" placeholder="Accent colour / Drawer colour" oninput="state.galleryForm.contrastText = this.value" /></div>
     <label class="special-order-check"><input type="checkbox" ${f.colorFeeIncluded ? 'checked' : ''} onchange="state.galleryForm.colorFeeIncluded = this.checked" /> The price already includes extra colors (no more-than-2-colors charge)</label>
     <label class="special-order-check"><input type="checkbox" ${f.sideWall ? 'checked' : ''} onchange="state.galleryForm.sideWall = this.checked" /> A side-wall accessory (a note appears when someone adds more than two)</label>
   </fieldset>`;
@@ -6343,19 +6343,18 @@ const CADDY_MAIN = {
   id: 'catheter-caddy', title: 'Catheter Caddy',
   description: CADDY_TEXT('Every catheter size, tape roll and supply in one carry-anywhere caddy.',
     "Stop digging through drawers mid-procedure. The Catheter Caddy keeps catheters standing upright and sorted by size in the front row, with a raised top row behind for tape, wraps and everyday supplies. Three pull-out rear drawers hold the small things that usually get lost: caps, ports, T-sets. A sturdy carry handle takes it from the prep table to the treatment room in one trip.\n\nIt ships flat and snaps together by hand with no glue and no tools. The dividers slide into any groove position, so you set the bin widths to suit your supplies and change them whenever you like. Want more room? Two caddies join back to back into one double-sided station. Side-wall accessories fit one per side wall; a joined pair takes one on each outside side, and the Hinge uses one side.",
-    'In the box: 1 caddy (flat-pack), 7 dividers, 3 rear drawers with pull tabs, carry handle, 4 joining clips.'),
+    'In the box: 1 caddy (flat-pack), 7 dividers, 3 rear drawers, carry handle, 4 joining clips.'),
   parts: [
     { id: 'shell', name: 'Base, walls and Top Shelf', group: 'Shell colour' }, { id: 'clips', name: 'Joining Clips (6)', group: 'Shell colour' },
     { id: 'handle', name: 'Handle and grips', group: 'Accent colour' }, { id: 'dividers', name: 'Dividers', group: 'Accent colour' },
-    { id: 'drawers', name: 'Rear Drawers', group: 'Drawer colour' }, { id: 'tabs', name: 'Drawer pull tabs', group: 'Tab colour' },
+    { id: 'drawers', name: 'Rear Drawers', group: 'Drawer colour' },
     { id: 'addsplit', name: 'Split Divider set (9 sizes)', group: 'Accent colour', optional: true },
     { id: 'addtape', name: 'Tape Post', group: 'Accent colour', optional: true },
     { id: 'addgrip', name: 'Single Handle Grip', group: 'Accent colour', optional: true }
   ],
   editions: [
-    { id: 'two', name: 'Two-Tone', desc: 'Shell in one colour; handle, dividers and drawers in a second colour.', merge: { 'Drawer colour': 'Accent colour', 'Tab colour': 'Shell colour' }, files: '1_Two-Tone/Colour-1_Shell + 1_Two-Tone/Colour-2_Contents' },
-    { id: 'three', name: 'Three-Tone', desc: 'Adds a third colour for the three rear drawers.', merge: { 'Tab colour': 'Accent colour' }, files: '2_Multi-Colour/Colour-1_Shell + 2_Multi-Colour/3-Tone_Contents' },
-    { id: 'four', name: 'Four-Tone', desc: 'Adds a fourth colour for the drawer pull tabs.', merge: {}, files: '2_Multi-Colour/Colour-1_Shell + 2_Multi-Colour/4-Tone_Contents (Colour 4 = Tab colour)' }
+    { id: 'two', name: 'Two-Tone', desc: 'Shell in one colour; handle, dividers and drawers in a second colour.', merge: { 'Drawer colour': 'Accent colour' }, files: '1_Two-Tone/Colour-1_Shell + 1_Two-Tone/Colour-2_Contents' },
+    { id: 'three', name: 'Three-Tone', desc: 'Adds a third colour for the three rear drawers.', merge: {}, files: '2_Multi-Colour/Colour-1_Shell + 2_Multi-Colour/3-Tone_Contents' }
   ],
   versions: [
     { id: 'single', name: 'Single caddy', count: 1 },
@@ -6399,14 +6398,14 @@ async function removeCatheterCaddy() {
 }
 // ── CATHETER CADDY COLOR PICKER ──
 // Three steps replace the old color editions: 1 body (walls, floors, Top Shelf, Joining Clips), 2 secondary
-// (dividers and handle), 3 drawers. The drawer tabs always contrast with the drawers and are not a choice.
+// (dividers and handle), 3 drawers.
 // Only 18 combinations exist; the preview picture for each is presets/caddy/caddy_<Body>_<Secondary>_<Drawer>_<front|back>.png.
-// The choice is kept on the item as `caddy` { body, secondary, drawer, tab, style } and applied to the design's
-// color groups (Shell = body, Accent = secondary, Drawer = drawers, Tab = tabs), so prices, grams and emails follow.
+// The choice is kept on the item as `caddy` { body, secondary, drawer, style } and applied to the design's
+// color groups (Shell = body, Accent = secondary, Drawer = drawers), so prices, grams and emails follow.
 const CADDY_ACCENTS = ['Red', 'Green', 'Blue', 'Orange'];
 const CADDY_IMG_DIR = 'presets/caddy/';
 const CADDY_HEX = { White: '#f4f4f4', Black: '#1e1e24', Red: '#c0141c', Green: '#1fa043', Blue: '#1038d8', Orange: '#f26a10' };
-const CADDY_GROUPS = { 'Shell colour': 'body', 'Accent colour': 'secondary', 'Drawer colour': 'drawer', 'Tab colour': 'tab' };
+const CADDY_GROUPS = { 'Shell colour': 'body', 'Accent colour': 'secondary', 'Drawer colour': 'drawer' };
 function isCaddyDesign(g) { return !!g && g.id === CADDY_MAIN.id; }
 function caddyOpposite(b) { return b === 'Black' ? 'White' : 'Black'; }
 function caddySecondaryOk(c, name) { return name !== c.body && (name === caddyOpposite(c.body) || CADDY_ACCENTS.includes(name)); }
@@ -6414,7 +6413,7 @@ function caddyDrawerOk(c, name) {
   return c.secondary === caddyOpposite(c.body) ? (name === c.secondary || CADDY_ACCENTS.includes(name)) : name === c.secondary;
 }
 // Puts any choice into a valid combination: the same color as the body is never the secondary, and a drawer color that is no
-// longer allowed becomes the secondary color. Tabs and style follow from the drawers.
+// longer allowed becomes the secondary color. The style follows from the drawers.
 // The owner's "Limit colors" on the caddy's parts, by step: { body: [names], secondary: [names], drawer: [names] } (a step with no limit is missing).
 function caddyLimits(parts) {
   const out = {}, names = ['White', 'Black', ...CADDY_ACCENTS];
@@ -6428,20 +6427,19 @@ function caddyLimits(parts) {
 }
 function caddyAllowed(lim, field, name) { return !lim || !lim[field] || lim[field].includes(name); }
 function caddyFix(c, lim) {
-  const out = { body: c && c.body === 'Black' ? 'Black' : 'White', secondary: '', drawer: '', tab: '', style: '' };
+  const out = { body: c && c.body === 'Black' ? 'Black' : 'White', secondary: '', drawer: '', style: '' };
   if (!caddyAllowed(lim, 'body', out.body)) out.body = lim.body[0] === 'Black' ? 'Black' : 'White';
   const secs = [c && c.secondary, caddyOpposite(out.body), ...CADDY_ACCENTS].filter(n => n && caddySecondaryOk(out, n));
   out.secondary = secs.find(n => caddyAllowed(lim, 'secondary', n)) || caddyOpposite(out.body);
   const drs = [c && c.drawer, out.secondary, ...CADDY_ACCENTS].filter(n => n && caddyDrawerOk(out, n));
   out.drawer = drs.find(n => caddyAllowed(lim, 'drawer', n)) || out.secondary;
-  out.tab = out.drawer === out.secondary ? out.body : out.secondary;
   out.style = out.drawer === out.secondary ? '2-color' : '3-color';
   return out;
 }
 function cleanCaddy(c) { return c && typeof c === 'object' && ['White', 'Black'].includes(c.body) ? caddyFix(c) : null; }
 function caddySet(c, field, value, lim) { return caddyFix({ ...caddyFix(c, lim), [field]: value }, lim); }
-function caddySummary(c) { return `${c.style}: ${c.body} body · ${c.secondary} dividers and handle · ${c.drawer} drawers · ${c.tab} drawer tabs`; }
-function caddyAlt(c) { return `${c.body} body, ${c.secondary} dividers and handle, ${c.drawer} drawers, ${c.tab} drawer tabs`; }
+function caddySummary(c) { return `${c.style}: ${c.body} body · ${c.secondary} dividers and handle · ${c.drawer} drawers`; }
+function caddyAlt(c) { return `${c.body} body, ${c.secondary} dividers and handle, ${c.drawer} drawers`; }
 function caddyImage(c, view) { return `${CADDY_IMG_DIR}caddy_${c.body}_${c.secondary}_${c.drawer}_${view === 'back' ? 'back' : 'front'}.png`; }
 let caddyPreloaded = false;
 function caddyPreload() {
@@ -6599,7 +6597,7 @@ function renderCaddySetup() {
   if (caddyHidden()) return '';
   return `<div class="card" id="caddy-setup">
     <h3 class="card-title">Catheter Caddy pre-order</h3>
-    <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two-, Three- and Four-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
+    <div class="field-help">One tap makes the Catheter Caddy (single, joined pair and second caddy; Two- and Three-Tone; color groups), the Joining Kit and all 13 accessories as pre-order designs, with your product wording. They start hidden, with no pictures, grams or print times. Prices: single $50, joined pair $100; everything else says "Price confirmed in your quote" until you type one. Add pictures and numbers to each design, then tap Show when you launch.</div>
     <button type="button" class="btn-sm" id="caddy-go" onclick="setupCatheterCaddy()">Set up the Catheter Caddy pre-order</button>
     <div class="alert error" id="caddy-err"></div>
   </div>`;
@@ -6614,7 +6612,7 @@ async function setupCatheterCaddy() {
   list.push({ ...base, id: kid, title: ktitle, description: CADDY_TEXT(kshort, klong, kbox) });
   list.push({ ...base, id: CADDY_MAIN.id, title: CADDY_MAIN.title, description: CADDY_MAIN.description, price: 50, colorFeeIncluded: true, packId: kid, accessories: CADDY_ACCESSORIES.map(a => a[0]),
     parts: CADDY_MAIN.parts.map(p => ({ ...p, grams: null, photo: '', price: null, defaultColor: '', minutes: null })), editions: [], versions: CADDY_MAIN.versions,
-    contrast: [['Tab colour', 'Drawer colour']] });
+    contrast: [] });
   try {
     for (const g of list) {
       const item = cleanGalleryItem({ id: g.id, published: false, sort_order: 0, data: { ...g } });

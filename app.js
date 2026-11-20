@@ -3621,9 +3621,19 @@ async function uploadAboutPhoto(file) {
 // ── GALLERY ───────────────────────────────────────────────────────────────
 // Finished work with prices. Stored in the gallery_items table (supabase/gallery.sql):
 // visitors see published items, the signed-in owner sees and edits everything.
+// The caddy's drawers no longer have pull pieces: a caddy set up before that loses its "Tab colour" part, the
+// contrast rule that went with it and the words in its "In the box" line (the next save stores it that way).
+function dropCaddyTabs(data) {
+  const tabGroup = g => String(g || '').trim().toLowerCase() === 'tab colour';
+  return { ...data,
+    parts: (Array.isArray(data.parts) ? data.parts : []).filter(p => !(p && tabGroup(p.group))),
+    contrast: (Array.isArray(data.contrast) ? data.contrast : []).filter(pr => !(Array.isArray(pr) && pr.some(tabGroup))),
+    description: String(data.description || '').replace(/ with pull tabs/g, '') };
+}
 function cleanGalleryItem(row) {
-  const data = row && row.data && typeof row.data === 'object' ? row.data : {};
   const id = String(row && row.id || '');
+  const raw = row && row.data && typeof row.data === 'object' ? row.data : {};
+  const data = id === 'catheter-caddy' ? dropCaddyTabs(raw) : raw;
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
   return {
     id,
