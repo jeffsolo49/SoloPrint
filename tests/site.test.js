@@ -2579,6 +2579,9 @@ const STATES = {
     db.gallery['catheter-caddy'].data.parts.push({ id: 'tabs', name: 'Drawer pull tabs', group: 'Tab colour' });
     db.gallery['catheter-caddy'].data.contrast = [['Tab colour', 'Drawer colour']];
     db.gallery['catheter-caddy'].data.description += ' 3 rear drawers with pull tabs.';
+    db.gallery['catheter-caddy'].data.parts.push({ id: 'clips', name: 'Joining Clips (6)', group: 'Shell colour' });
+    db.gallery['catheter-caddy'].data.description += ' carry handle, 4 joining clips.';
+    db.gallery['catheter-caddy-joining-kit'].data.description += ' 6 spare Joining Clips.';
     await page.evaluate(async () => { state.view = 'client'; await loadGallery(); setTab('gallery'); openWork('catheter-caddy'); });
     await page.waitForSelector('.version-picker');
     const note = await page.textContent('.preorder-note');
@@ -2586,8 +2589,8 @@ const STATES = {
     const prices = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const o = v => ({ include: {}, logo: false, version: v });
       return [designEstimate(g, null, o('single')), designEstimate(g, null, o('pair'))]; });
     assert(prices[0] === 50 && prices[1] === 100, JSON.stringify(prices));
-    const noTabs = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); return [g.parts.some(p => p.group === 'Tab colour'), g.contrast.length, /pull tabs/.test(g.description)]; });
-    assert(JSON.stringify(noTabs) === '[false,0,false]', JSON.stringify(noTabs));
+    const noTabs = await page.evaluate(() => { const g = state.gallery.find(x => x.id === 'catheter-caddy'); const k = state.gallery.find(x => x.id === 'catheter-caddy-joining-kit'); return [g.parts.some(p => p.group === 'Tab colour'), g.contrast.length, /pull tabs/.test(g.description), g.parts.some(p => p.id === 'clips'), /joining clips/i.test(g.description), /spare/.test(k.description)]; });
+    assert(JSON.stringify(noTabs) === '[false,0,false,false,false,false]', JSON.stringify(noTabs));
     // the three-step color picker replaces the editions: 18 combinations, the style follows the drawers
     const combos = await page.evaluate(() => {
       const seen = new Set(), names = ['White', 'Black', 'Red', 'Green', 'Blue', 'Orange'];
@@ -2621,8 +2624,8 @@ const STATES = {
     assert(await page.evaluate(() => designOpts('catheter-caddy').caddyView) === 'back' && /caddy_Black_White_Red_back\.png$/.test(await page.evaluate(() => caddyImage(designOpts('catheter-caddy').caddy, 'back'))), 'back view');
     await page.evaluate(() => requestGalleryItem('catheter-caddy'));
     const it = await page.evaluate(() => { const i = state.draftItems[0]; const c = id => i.designParts.find(p => p.id === id).colorId;
-      return [i.versionName, i.packIncluded, i.preorder, state.draftItems.length, JSON.stringify(i.caddy), c('shell'), c('clips'), c('handle'), c('dividers'), c('drawers'), i.designParts.some(p => p.id === 'tabs')]; });
-    assert(JSON.stringify(it) === JSON.stringify(['Joined pair', true, true, 1, '{"body":"Black","secondary":"White","drawer":"Red","style":"3-color"}', 'black', 'black', 'white', 'white', 'red', false]), JSON.stringify(it));
+      return [i.versionName, i.packIncluded, i.preorder, state.draftItems.length, JSON.stringify(i.caddy), c('shell'), c('handle'), c('dividers'), c('drawers'), i.designParts.some(p => p.id === 'tabs')]; });
+    assert(JSON.stringify(it) === JSON.stringify(['Joined pair', true, true, 1, '{"body":"Black","secondary":"White","drawer":"Red","style":"3-color"}', 'black', 'white', 'white', 'red', false]), JSON.stringify(it));
     // with a color-ideas photo on the caddy, the preview is that photo repainted (one photo = no Front/Back buttons; two = both)
     const painted = await page.evaluate(() => {
       const g = state.gallery.find(x => x.id === 'catheter-caddy'), c = caddyFix({ body: 'Black', secondary: 'White', drawer: 'Red' });

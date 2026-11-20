@@ -6352,14 +6352,14 @@ const CADDY_ACCESSORIES = [
 ];
 const CADDY_JOINING_KIT = ['catheter-caddy-joining-kit', 'Joining Kit (for two caddies you already own)', 'Turn two caddies into one double-sided supply station.',
   "Double your storage without doubling your footprint. The Joining Kit joins two caddies back to back, so one person can carry everything with a single handle. Choose how you want them joined: lock them solid with the Joining Clips, or use the Hinge instead of the clips so the pair swings open side by side like a book, giving two fully stocked caddies on the table at once. Two low Side Bridges hook across the joint near the bottom, so the pair stays tight top to bottom, and the Combined Grip ties the handles together for carrying. Use one method or the other: the clips would stop the hinge turning.\n\nEverything snaps on by hand. Nothing to glue, nothing to screw. Every part you need is in one kit, so there's nothing to forget when you add a second caddy later.\n\nGood to know: a locked pair takes a Side Bridge on each side; a hinged pair takes one, on the side away from the Hinge. The Hinge uses the clip slots on one side of the pair, so a hinged pair has room for one side-wall accessory (Sharps Container Bracket, Gauze & Prep Pad Dispenser or Glove Box Holder), on the other side.",
-  "In the box: Combined Grip, Hinge, 4 Hinge Clips, 2 Side Bridges, 6 spare Joining Clips.\nColours: the grip matches your handle; the hinge and clips match your shell."];
+  "In the box: Combined Grip, Hinge, 4 Hinge Clips, 2 Side Bridges, 6 Joining Clips.\nColours: the grip matches your handle; the hinge and clips match your shell."];
 const CADDY_MAIN = {
   id: 'catheter-caddy', title: 'Catheter Caddy',
   description: CADDY_TEXT('Every catheter size, tape roll and supply in one carry-anywhere caddy.',
     "Stop digging through drawers mid-procedure. The Catheter Caddy keeps catheters standing upright and sorted by size in the front row, with a raised top row behind for tape, wraps and everyday supplies. Three pull-out rear drawers hold the small things that usually get lost: caps, ports, T-sets. A sturdy carry handle takes it from the prep table to the treatment room in one trip.\n\nIt ships flat and snaps together by hand with no glue and no tools. The dividers slide into any groove position, so you set the bin widths to suit your supplies and change them whenever you like. Want more room? Two caddies join back to back into one double-sided station. Side-wall accessories fit one per side wall; a joined pair takes one on each outside side, and the Hinge uses one side.",
-    'In the box: 1 caddy (flat-pack), 7 dividers, 3 rear drawers, carry handle, 4 joining clips.'),
+    'In the box: 1 caddy (flat-pack), 7 dividers, 3 rear drawers, carry handle.'),
   parts: [
-    { id: 'shell', name: 'Base, walls and Top Shelf', group: 'Shell colour' }, { id: 'clips', name: 'Joining Clips (6)', group: 'Shell colour' },
+    { id: 'shell', name: 'Base, walls and Top Shelf', group: 'Shell colour' },
     { id: 'handle', name: 'Handle and grips', group: 'Accent colour' }, { id: 'dividers', name: 'Dividers', group: 'Accent colour' },
     { id: 'drawers', name: 'Rear Drawers', group: 'Drawer colour' },
     { id: 'addsplit', name: 'Split Divider set (9 sizes)', group: 'Accent colour', optional: true },
