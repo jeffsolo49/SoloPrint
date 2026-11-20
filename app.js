@@ -3796,6 +3796,22 @@ function renderRecentWork() {
   </div>`;
 }
 
+// Photos: a small rotating strip like the reviews (drag, arrows, slow drift when there are more than two).
+function renderWorkPhotos(g) {
+  if (!g.photos.length) return '';
+  const many = g.photos.length > 2;
+  const imgs = g.photos.map((u, n) => `<a class="work-reel-photo" href="${esc(u)}" target="_blank" rel="noopener noreferrer" aria-label="Open photo ${n + 1} of ${g.photos.length} full size"><img src="${esc(u)}" alt="${esc(g.title)}, photo ${n + 1}" referrerpolicy="no-referrer" loading="lazy" /></a>`).join('');
+  return `<div class="work-reel reviews-wrap${many ? ' many' : ''}" id="work-main-photo">
+    ${many ? '<button class="btn-sm review-nav" type="button" aria-label="Earlier photos" onclick="scrollReviews(this, -1)">‹</button>' : ''}
+    <div class="reviews work-reel-strip"${g.photos.length > 1 ? ' tabindex="0" role="region" aria-label="Photos. Drag or scroll sideways to see more."' : ''}>${imgs}</div>
+    ${many ? '<button class="btn-sm review-nav" type="button" aria-label="More photos" onclick="scrollReviews(this, 1)">›</button>' : ''}
+  </div>`;
+}
+function renderWorkDescription(g) {
+  if (!g.description) return '';
+  return `<div class="card work-desc"><h3 class="card-title">Description: ${esc(g.title || 'Untitled')}</h3><div class="work-writeup">${renderWriteup(g.description)}</div></div>`;
+}
+
 function renderWorkDetail(g) {
   return `
     <div id="work-detail" class="work-detail-head">
@@ -3805,15 +3821,14 @@ function renderWorkDetail(g) {
         <button class="btn-sm" type="button" onclick="closeWork()">Close</button>
       </div>
     </div>
-    ${g.photos.length ? `<div class="work-detail-photo" id="work-main-photo"><img src="${esc(g.photos[0])}" alt="${esc(g.title)}" referrerpolicy="no-referrer" /></div>` : ''}
-    ${g.photos.length > 1 ? `<div class="work-detail-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showWorkPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}
+    ${renderWorkPhotos(g)}
+    ${renderWorkDescription(g)}
     ${accessoryDesigns(g).length ? `<p><button class="btn-sm" type="button" id="to-accessories" onclick="document.getElementById('accessory-picker')?.scrollIntoView({ behavior: 'smooth', block: 'center' })">Accessories available: add them to your order &darr;</button></p>` : ''}
     ${renderColorIdeas(g)}
     ${renderVideos(g)}
     ${renderDesignParts(g)}
     <div class="card">
       ${renderPreorderNote(g)}
-      ${g.description ? `<div class="work-writeup">${renderWriteup(g.description)}</div>` : '<div class="field-help">No write-up yet.</div>'}
       ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}
         <label class="special-order-check" style="margin-top:8px;"><input type="checkbox" id="design-logo" ${designOpts(g.id).logo ? 'checked' : ''} onchange="setDesignLogo('${esc(g.id)}', this.checked)" /> ${esc(logoText('logoCheckbox'))}</label></div>` : ''}
       <div id="work-price">${renderWorkPrice(g)}</div>
