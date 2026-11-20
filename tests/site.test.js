@@ -2313,7 +2313,7 @@ const STATES = {
   await check('owner pages with several sections get side buttons that jump to each section (a Sections button on a phone)', async () => {
     const page = await open(fixtures(), { width: 1280, height: 700 });
     await page.evaluate(asOwner('money'));
-    await page.waitForSelector('#jump-nav .jump-btn');
+    await page.waitForFunction(() => [...document.querySelectorAll('#jump-nav .jump-btn')].some(b => b.textContent === 'Etsy sales'));
     const names = await page.$$eval('#jump-nav .jump-btn', els => els.map(e => e.textContent));
     assert(names.includes('Etsy sales') && names.includes('Expenses in 2026'), JSON.stringify(names));
     assert(await page.isVisible('#jump-nav .jump-btn') && !(await page.isVisible('.jump-toggle')), 'buttons show on the side');
@@ -3492,7 +3492,7 @@ const STATES = {
     const page = await open(db, { suffix: '?design=dragon-organizer' });
     await page.waitForSelector('#color-ideas canvas.cm-ready');
     const picks = await page.$$eval('.cm-picks button', b => b.map(x => x.textContent.trim()));
-    assert(picks.join() === 'Red and black,Pick your own', `out-of-stock ideas are hidden: ${picks}`);
+    assert(picks.join() === 'Red and black', `out-of-stock ideas are hidden: ${picks}`);
     const pixel = (x, y) => page.evaluate(([x, y]) => [...document.querySelector('#color-ideas canvas').getContext('2d').getImageData(x, y, 1, 1).data].slice(0, 3), [x, y]);
     const lit = await pixel(60, 40), shade = await pixel(60, 95), bg = await pixel(5, 5);
     assert(lit[0] > 150 && lit[1] < 90 && lit[2] < 90, `the body should be red: ${lit}`);
@@ -3500,13 +3500,11 @@ const STATES = {
     assert(bg.join() === '86,86,90', `the background is left as it is: ${bg}`);
     const set2 = await pixel(95, 40);
     assert(set2[0] < 60 && set2[1] < 60, `the second set is painted in its own color (black): ${set2}`);
-    assert(/Body: Red/.test(await page.textContent('.cm-legend')), await page.textContent('.cm-legend'));
-    assert(/color:#[0-9a-f]{6};background-color:#1c1c21/.test(await page.getAttribute('.cm-legend .color-name', 'style')), 'color names are written in their color');
+    assert(await page.inputValue('#cm-own-0') === 'red' && /Body/.test(await page.textContent('.cm-own')), 'the color buttons show each part in its color');
     // The estimate follows the colors picked: Red costs more per gram here.
     const prices = async () => [await page.textContent('#cm-price .gallery-price'), await page.textContent('#work-price .gallery-price')].map(x => x.match(/\$[\d.]+/)[0]);
     const before = await prices();
     assert(before[0] === before[1] && /Red/.test(await page.textContent('#cm-price')), `card and page price match: ${before}`);
-    await page.click('#cm-pick-own');
     await page.selectOption('#cm-own-2', 'red');
     assert(await page.evaluate(() => document.activeElement.id) === 'cm-own-2', 'focus stays on the color picked');
     const after = await prices();

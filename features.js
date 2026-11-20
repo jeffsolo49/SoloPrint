@@ -2994,7 +2994,7 @@ function renderDesignParts(g) {
     <h3 class="card-title">Parts</h3>
     <div class="field-help" style="margin-bottom:10px;">${g.parts.some(p => p.optional) ? 'Tick any add-ons you want; the price updates. ' : ''}You can pick a color for each part when you request this.</div>
     <div class="design-parts-grid">${g.parts.map((p, k) => `<div class="design-part">
-      ${p.photo ? thumbImg(p.photo, p.name, 'thumb') : '<span class="part-thumb-blank" aria-hidden="true"></span>'}
+      ${p.photo ? `<a class="design-part-photo" href="${esc(p.photo)}" target="_blank" rel="noopener noreferrer" aria-label="Open the ${esc(p.name)} photo full size"><img src="${esc(p.photo)}" alt="${esc(p.name)}" referrerpolicy="no-referrer" loading="lazy" /></a>` : '<span class="part-thumb-blank" aria-hidden="true"></span>'}
       <div class="design-part-name">${esc(p.name)}</div>
       ${p.optional ? `<div class="gallery-meta"><strong>Optional add-on</strong>${p.price && g.price > 0 ? ` · +$${p.price.toFixed(2)}` : ''}${p.minutes ? ` · +${fmtTime(p.minutes)} print time` : ''}</div>` : ''}
       ${p.grams ? `<div class="gallery-meta">${p.grams} g</div>` : ''}
@@ -3976,16 +3976,18 @@ function renderColorIdeas(g) {
   return `<div class="card color-ideas" id="color-ideas">
     <h3 class="card-title">${esc(t('colorIdeasTitle'))}</h3>
     <div class="field-help" style="margin-bottom:10px;">${esc(t('colorIdeasNote'))}</div>
+    <div class="cm-layout"><div class="cm-photo-col">${(combos.find(c => c.id === v.pick) || {}).photo ? `<img class="cm-canvas cm-photo" src="${esc(combos.find(c => c.id === v.pick).photo)}" alt="${esc(`${g.title}: ${cmDescribe(g.parts, colors)}`)}" referrerpolicy="no-referrer" />` : cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}</div>
+    <div class="cm-controls">
     <div class="cm-picks" role="group" aria-label="${esc(t('colorIdeasTitle'))}">
+      ${v.pick === 'own' ? '<span class="cm-own-tag">Your own colors</span>' : ''}
       ${combos.map(c => `<button type="button" class="btn-sm" id="cm-pick-${esc(c.id)}" aria-pressed="${v.pick === c.id}" onclick="setCmPick('${esc(g.id)}', '${esc(c.id)}')">${esc(c.name)}</button>`).join('')}
       ${cmSavedFor(g.id).map(s => `<button type="button" class="btn-sm" id="cm-pick-s-${esc(s.id)}" aria-pressed="${v.pick === `s-${s.id}`}" onclick="setCmPick('${esc(g.id)}', 's-${esc(s.id)}')">${esc(s.name)} (mine)</button>`).join('')}
-      ${g.colorMap.regions.some(r => r.part) ? `<button type="button" class="btn-sm" id="cm-pick-own" aria-pressed="${v.pick === 'own'}" onclick="setCmPick('${esc(g.id)}', 'own')">${esc(t('colorIdeasOwn'))}</button>` : ''}
     </div>
-    ${(combos.find(c => c.id === v.pick) || {}).photo ? `<img class="cm-canvas cm-photo" src="${esc(combos.find(c => c.id === v.pick).photo)}" alt="${esc(`${g.title}: ${cmDescribe(g.parts, colors)}`)}" referrerpolicy="no-referrer" />` : cmCanvas(g.colorMap, g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}
-    ${v.pick === 'own' ? `<div class="cm-own">${g.parts.map((p, k) => p.group && g.parts.findIndex(q => q.group === p.group) !== k ? '' : `<div class="field"><label for="cm-own-${k}">${esc(p.group || p.name)}${p.group ? ` (${esc(g.parts.filter(q => q.group === p.group).map(q => q.name).join(', '))})` : ''}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
+    ${g.colorMap.regions.some(r => r.part) ? `<div class="cm-own">${g.parts.map((p, k) => p.group && g.parts.findIndex(q => q.group === p.group) !== k ? '' : `<div class="field"><label for="cm-own-${k}">${esc(p.group || p.name)}${p.group ? ` (${esc(g.parts.filter(q => q.group === p.group).map(q => q.name).join(', '))})` : ''}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
       <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${partChoicesFor(g.parts, p, null, choices).map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
       </select></div></div>`).join('')}</div>` : cmLegend(g.parts, colors, g.colorMap)}
+    </div></div>
     ${renderCmSaveTools(g, v, colors)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
       ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
@@ -4029,9 +4031,21 @@ function setCmPick(id, pick) {
 function setCmOwn(id, partId, key, k) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
+  const v = cmView(g, cmCombosFor(g, partColorChoices()));
+  if (v.pick !== 'own') { v.own = cmViewColors(id); v.pick = 'own'; }   // changing a color starts your own mix
   const mine = g.parts.find(p => p.id === partId);
-  g.parts.forEach(p => { if (p.id === partId || (mine && mine.group && p.group === mine.group)) cmView(g, []).own[p.id] = key; });
+  g.parts.forEach(p => { if (p.id === partId || (mine && mine.group && p.group === mine.group)) v.own[p.id] = key; });
   refreshColorIdeas(id, `cm-own-${k}`);
+  softNote('Changing colors can change the price. The price shown updates as you go.');
+}
+// A small message that fades by itself and never takes focus or blocks a tap.
+function softNote(text) {
+  let el = document.getElementById('soft-note');
+  if (!el) { el = document.createElement('div'); el.id = 'soft-note'; el.className = 'soft-note'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(softNote.t);
+  softNote.t = setTimeout(() => el.classList.remove('show'), 6000);
 }
 
 // ── Owner: color ideas customers sent in (Designs page). Publishing adds one to the design's color ideas. ──
@@ -5699,7 +5713,7 @@ function addEtsyReviews() {
 // scrolling (on a phone: a "Sections" button that opens the list). Built from the page itself after each
 // redraw: each top-level card's heading, plus Help's area headings, so new cards get a button by themselves.
 function jumpHeadings() {
-  const main = document.querySelector('#main.owner-main');
+  const main = document.querySelector(state.view === 'owner' ? '#main.owner-main' : '#main');
   if (!main) return [];
   const found = new Set();
   main.querySelectorAll('.card').forEach(c => {
@@ -5728,7 +5742,7 @@ function pageSaveButton() {
 function clickPageSave() { const b = pageSaveButton(); if (b) b.click(); }
 function buildJumpNav() {
   let nav = document.getElementById('jump-nav');
-  jumpList = state.view === 'owner' && state.ownerUnlocked ? jumpHeadings() : [];
+  jumpList = (state.view === 'owner' ? state.ownerUnlocked : !state.loading) ? jumpHeadings() : [];
   const saveBtn = pageSaveButton();
   const on = jumpList.length >= 2 || !!saveBtn;
   document.documentElement.classList.toggle('jump-on', on);
