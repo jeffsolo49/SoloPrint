@@ -2153,7 +2153,7 @@ function renderItemBlock(item, i) {
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
         ${mode === 'gallery' && item.preorder ? renderPreorderNote(null, null, draftPreorderUnits()) : ''}
-        ${mode === 'gallery' && item.galleryId ? renderEditionPicker(state.gallery.find(x => x.id === item.galleryId), item.editionId, eid => `setItemEdition(${i}, '${eid}')`) + renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) + (item.askOrder ? `<div class="field"><label for="match-order-${i}">Order number of your first caddy (optional)</label><input type="text" id="match-order-${i}" maxlength="40" value="${esc(item.matchOrder || '')}" oninput="state.draftItems[${i}].matchOrder = this.value; queueDraftSave();" /><div class="field-help">${item.matchOrder ? 'I will match your colors to that order.' : 'Pick the same edition and colors as your first one so the pair matches.'}</div></div>` : '') : ''}
+        ${mode === 'gallery' && item.galleryId ? renderEditionPicker(state.gallery.find(x => x.id === item.galleryId), item.editionId, eid => `setItemEdition(${i}, '${eid}')`) + renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) + (item.askOrder ? `<div class="field"><label for="match-order-${i}">Order number of the one you already own (optional)</label><input type="text" id="match-order-${i}" maxlength="40" value="${esc(item.matchOrder || '')}" oninput="state.draftItems[${i}].matchOrder = this.value; queueDraftSave();" /><div class="field-help">${item.matchOrder ? 'I will match your colors to that order.' : 'Pick the same edition and colors as your first one so the pair matches.'}</div></div>` : '') : ''}
         ${mode === 'gallery' && featureOn('logoAddOn') ? `<label class="special-order-check" style="margin-bottom:10px;"><input type="checkbox" id="logo-${i}" ${item.logo ? 'checked' : ''} onchange="updateDraft(${i},'logo',this.checked); updateCustomerPricePreview(${i})" />
           ${esc(logoText('logoCheckbox'))}</label>` : ''}
         <div class="field" style="margin-bottom:10px;max-width:160px;">
@@ -4039,11 +4039,14 @@ function renderOwnerGalleryPage() {
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
+      ${renderVersionQuick(f)}
+      <h4 class="sub-title jump-title">Name and write-up</h4>
       <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
       <div class="field"><label>Write-up</label>
         <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
         <textarea id="gallery-desc" style="min-height:96px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
       </div>
+      <h4 class="sub-title jump-title">Photos and videos</h4>
       ${renderGalleryPhotosField(f)}
       <div class="field"><label for="gallery-videos">YouTube videos (optional)</label>
         <div class="field-help">Paste YouTube links, one per line (up to 5; "Unlisted" videos work). They play on this design's page, under the photos. They're never used as the design's picture: tiles, cards and shared links always use your photos.</div>
@@ -4051,6 +4054,7 @@ function renderOwnerGalleryPage() {
       </div>
       ${renderDesignPartsForm(f)}
       ${renderColorMapForm(f)}
+      <h4 class="sub-title jump-title">Print time, weight and price</h4>
       <div class="gallery-form-grid">
         <div class="field"><label>Color</label>
           <select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select>
@@ -4064,7 +4068,10 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
+      <h4 class="sub-title jump-title">Pre-order, accessories, versions and editions</h4>
       ${renderDesignOptions(f)}
+      ${renderVersionSections(f)}
+      <h4 class="sub-title jump-title">Show and save</h4>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4107,7 +4114,7 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, colorFeeIncluded: g.colorFeeIncluded
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v, parts: v.parts ? v.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '', allowed: (p.allowed || []).slice() })) : null, accessories: Array.isArray(v.accessories) ? v.accessories.slice() : null })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, colorFeeIncluded: g.colorFeeIncluded
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });

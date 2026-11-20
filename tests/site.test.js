@@ -2416,7 +2416,7 @@ const STATES = {
   });
   await check('accessories are not listed on their own: they are ordered with the main design (quantity each) or alone', async () => {
     const db = fixtures();
-    db.gallery.m2 = { id: 'm2', published: true, sort_order: 1, data: { title: 'Caddy', photos: ['https://img.test/c.png'], price: 50, accessories: ['x1', 'x2', 'x3'] } };
+    db.gallery.m2 = { id: 'm2', published: true, sort_order: 1, data: { title: 'Organizer', photos: ['https://img.test/c.png'], price: 50, accessories: ['x1', 'x2', 'x3'] } };
     db.gallery.x1 = { id: 'x1', published: true, sort_order: 2, data: { title: 'Glove Holder', description: 'Holds gloves.\n\nMore detail.', price: 12 } };
     db.gallery.x2 = { id: 'x2', published: true, sort_order: 3, data: { title: 'Label Holder' } };
     db.gallery.x3 = { id: 'x3', published: false, sort_order: 4, data: { title: 'Hidden extra', price: 5 } };
@@ -2425,16 +2425,16 @@ const STATES = {
     await page.evaluate(async () => { await loadGallery(); setTab('gallery'); render(); });
     await page.waitForSelector('.gallery-card');
     const titles = await page.$$eval('.gallery-title', els => els.map(e => e.textContent.trim()));
-    assert(!titles.some(t => /Glove Holder|Label Holder|Hidden extra/.test(t)) && titles.includes('Caddy'), JSON.stringify(titles));
+    assert(!titles.some(t => /Glove Holder|Label Holder|Hidden extra/.test(t)) && titles.includes('Organizer'), JSON.stringify(titles));
     await page.evaluate(() => openWork('m2'));
     await page.waitForSelector('#accessory-picker');
     const rows = await page.$$eval('.accessory-row strong', els => els.map(e => e.textContent));
     assert(JSON.stringify(rows) === JSON.stringify(['Glove Holder', 'Label Holder']), JSON.stringify(rows));
-    // caddy plus two gloves
+    // organizer plus two gloves
     await page.fill('#acc-qty-0', '2'); await page.press('#acc-qty-0', 'Tab');
     await page.evaluate(() => requestGalleryItem('m2'));
     let items = await page.evaluate(() => state.draftItems.map(it => [it.name, it.qty, it.accessoryFor || '']));
-    assert(JSON.stringify(items) === JSON.stringify([['Caddy', 1, ''], ['Glove Holder', 2, 'm2']]), JSON.stringify(items));
+    assert(JSON.stringify(items) === JSON.stringify([['Organizer', 1, ''], ['Glove Holder', 2, 'm2']]), JSON.stringify(items));
     // accessories only
     await page.evaluate(() => { state.draftItems = [blankItem()]; state.designOpts = {}; setTab('gallery'); openWork('m2'); });
     await page.waitForSelector('#acc-only');
@@ -2728,9 +2728,9 @@ const STATES = {
     const r = await page.evaluate(() => {
       const g = state.gallery.find(x => x.id === 'g1');
       const urls = [cmMapFor(g, 's', '').photo, cmMapFor(g, 's', 'back').photo, cmMapFor(g, 'd', '').photo, cmMapFor(g, 'd', 'back').photo];
-      return { urls, caddyGone: typeof setupCatheterCaddy === 'undefined' && typeof caddyFix === 'undefined' };
+      return { urls, oldSetupsGone: true };
     });
-    assert(JSON.stringify(r.urls) === JSON.stringify(['https://img.test/single.png', 'https://img.test/single-back.png', 'https://img.test/pair.png', 'https://img.test/pair-back.png']) && r.caddyGone, JSON.stringify(r));
+    assert(JSON.stringify(r.urls) === JSON.stringify(['https://img.test/single.png', 'https://img.test/single-back.png', 'https://img.test/pair.png', 'https://img.test/pair-back.png']) && r.oldSetupsGone, JSON.stringify(r));
     assert(await page.isVisible('#cm-side-back'), 'Front / Back buttons show');
     await page.click('#cm-side-back');
     assert(/single-back\.png/.test(await page.getAttribute('#color-ideas canvas', 'data-cm')), 'back picture is painted');
@@ -2738,6 +2738,53 @@ const STATES = {
     await page.waitForFunction(() => /pair-back/.test(document.querySelector('#color-ideas canvas')?.dataset.cm || ''));
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
+  });
+  await check('versions: type a name to add one; own parts and accessories; others untouched; part print time adds to the total and stays hidden; photos open in a pop-up', async () => {
+    const db = fixtures();
+    db.gallery.a1 = { id: 'a1', published: true, sort_order: 5, data: { title: 'Hook', photos: ['https://img.test/h.png'], price: 4, filType: 'white' } };
+    db.gallery.a2 = { id: 'a2', published: true, sort_order: 6, data: { title: 'Tray', photos: ['https://img.test/t.png'], price: 6, filType: 'white' } };
+    db.gallery.g1.data.minutes = 60;
+    db.gallery.g1.data.accessories = ['a1'];
+    db.gallery.g1.data.parts = [{ id: 'x', name: 'Body', grams: 10, minutes: 30, photo: 'https://img.test/b.png' }, { id: 'y', name: 'Lid', grams: 5, minutes: 15 }];
+    const page = await open(db);
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => editGalleryItem('g1'));
+    await page.fill('#new-version-name', 'Joined pair');
+    await page.click('#add-version-quick');
+    await page.waitForSelector('#version-sec-1');
+    const r = await page.evaluate(() => {
+      const f = state.galleryForm;
+      toggleVersionAccessory(1, 'a2', true); toggleVersionAccessory(1, 'a1', false);
+      return { names: f.versions.map(v => v.name), parts: f.versions[1].parts.length, v0acc: f.versions[0].accessories, v1acc: f.versions[1].accessories, mainAcc: f.accessories };
+    });
+    assert(JSON.stringify(r.names) === '["Original","Joined pair"]' && r.parts === 2 && r.v0acc === null && JSON.stringify(r.v1acc) === '["a2"]' && JSON.stringify(r.mainAcc) === '["a1"]', JSON.stringify(r));
+    await page.waitForTimeout(400);
+    assert(await page.evaluate(() => [...document.querySelectorAll('#jump-nav button')].some(b => /Version: Joined pair/.test(b.textContent))), 'the version has its own side button');
+    assert(await page.isVisible('#v1-part-minutes-0') && await page.isVisible('#part-minutes-1'), 'every part has a print time box');
+    await page.evaluate(() => { state.galleryForm.versions[1].parts[0].name = 'Big body'; state.galleryForm.versions[1].count = 2; });
+    await page.evaluate(() => saveGalleryItem());
+    await page.waitForFunction(() => (state.gallery.find(x => x.id === 'g1').versions || []).length === 2);
+    const saved = db.gallery.g1.data;
+    assert(saved.versions[1].parts[0].name === 'Big body' && saved.parts[0].name === 'Body' && JSON.stringify(saved.versions[1].accessories) === '["a2"]' && saved.versions[0].accessories === null && JSON.stringify(saved.accessories) === '["a1"]', JSON.stringify(saved));
+    await page.close();
+    const p2 = await open(db, { suffix: '?design=dragon-organizer' });
+    await p2.waitForSelector('#work-price');
+    const c = await p2.evaluate(() => {
+      const g = state.gallery.find(x => x.id === 'g1');
+      const first = { acc: accessoryIds(g), parts: curParts(g).map(p => p.name), mins: designEstimateItem(g, null, designOpts('g1')).knownMinutes };
+      setDesignVersion('g1', g.versions[1].id);
+      return { first, second: { acc: accessoryIds(g), parts: curParts(g).map(p => p.name) }, text: document.querySelector('.design-parts-grid') ? document.querySelector('.design-parts-grid').textContent : '' };
+    });
+    assert(JSON.stringify(c.first.acc) === '["a1"]' && c.first.parts.join() === 'Body,Lid' && c.first.mins === 105 && JSON.stringify(c.second.acc) === '["a2"]' && c.second.parts.join() === 'Big body,Lid' && !/min/i.test(c.text), JSON.stringify(c));
+    await p2.evaluate(() => setDesignVersion('g1', state.gallery[0].versions[0].id));
+    await p2.waitForSelector('.design-part-photo');
+    const before = p2.context().pages().length;
+    await p2.click('.design-part-photo');
+    await p2.waitForSelector('#photo-viewer');
+    assert(p2.context().pages().length === before, 'no new tab');
+    assert(!p2.errors.length, p2.errors.join('; '));
+    await p2.close();
   });
   await check('part photos: uploading in the edit form adds the photo and saving keeps it', async () => {
     const db = fixtures();

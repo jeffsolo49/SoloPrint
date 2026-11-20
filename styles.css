@@ -1658,3 +1658,11 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .ver-photo img { width: 140px; height: 105px; object-fit: contain; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
 .cm-sides { margin-bottom: 6px; display: flex; gap: 6px; }
 .cm-sides .btn-sm.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* Design form: section titles, the quick "add a version" box and the version sections */
+.sub-title { font-size: 15px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+.version-quick { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+.version-quick-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.version-quick-row input { flex: 1 1 220px; min-width: 0; max-width: 420px; }
+.version-section { margin-top: 14px; border-left: 4px solid var(--accent); }
+.ver-acc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 12px; }

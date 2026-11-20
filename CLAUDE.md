@@ -18,7 +18,6 @@ Supabase for data, a Google Apps Script for emails. Read this before exploring; 
 - Prices, roll rules, reminder timing, the Venmo username, the material note, "How it works" and every
   email's wording are owner-editable on the site. Prefer adding a setting over hardcoding anything the
   owner might want to change.
-- Don't remind the owner about the Catheter Caddy brief or what they said before about it (they asked to stop); only bring it up if they ask.
 - Doesn't want repeated boilerplate in replies: don't mention Help entries, test counts, "no SQL needed" or "all tests passed" unless something needs the owner's action. Say what changed in plain words, when it's live, and anything they must do.
 - Keeps Claude usage down: don't watch PRs (no `subscribe_pr_activity`, no check-ins); open the PR, turn on
   auto-merge, and say it will be live in a few minutes (the site's "Updated N min ago" corner confirms it).
@@ -308,5 +307,5 @@ for new tables. `STATES` lists the pages checked for accessibility and sideways 
 
 ## Generic pre-order set-up (nothing product-specific)
 
-All product-specific rules (the Catheter Caddy and drying rack set-ups, the caddy's three-step picker and its 18 color combinations, ready-made caddy pictures, side-wall notes) were removed at the owner's request: a pre-order is just a design with the Pre-order box and generic, owner-controlled options. The owner controls: parts, color groups ("Grouped with other parts"), "Limit colors" per part, color-ideas pictures, versions, editions, accessories, pre-order wording and timing.
+No product-specific rules live on the site (the owner removed them all): a pre-order is just a design with the Pre-order box and generic, owner-controlled options. The owner controls: parts, color groups ("Grouped with other parts"), "Limit colors" per part, color-ideas pictures, versions, editions, accessories, pre-order wording and timing.
 Color pictures: the design's color picture has an optional back view (`colorMap.photoAlt`, Front / Back buttons for customers: `cmSides`, `setCmSide`, `designOpts(id).side`) and each version can have its own front and back picture (`versions[].photo`/`photoAlt`, `uploadVersionPhoto`, shown by `cmMapFor` when that version is chosen; they must use the same solid color for each part as the main picture so the same area matching applies). The price follows the colors and the version's item count as for any design.
