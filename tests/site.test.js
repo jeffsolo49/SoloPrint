@@ -446,34 +446,6 @@ const STATES = {
     await owner.close();
   });
 
-  await check('drying rack: one tap adds the 10 named color ideas, with its picture and Base and Spine parts', async () => {
-    const db = fixtures();
-    db.gallery.g1.data.title = 'Drying Rack';
-    const names = ['Red', 'Green', 'Silver', 'Gold', 'Black', 'White', 'Blue', 'Orange', 'Brown', 'Beige'];
-    const owner = await open(db);
-    await owner.evaluate(asOwner('gallery'));
-    await owner.waitForSelector('#rack-go');
-    await owner.click('#rack-go');
-    assert(/aren't in Settings/.test(await owner.textContent('#rack-err')) && !db.gallery.g1.data.colorMap, 'missing colors: nothing is saved and it says which');
-    await owner.close();
-    db.settings.colors = names.map(n => ({ id: n.toLowerCase(), name: n, hex: '#808080' }));
-    const owner2 = await open(db);
-    await owner2.evaluate(asOwner('gallery'));
-    await owner2.waitForSelector('#rack-go');
-    await owner2.click('#rack-go');
-    await owner2.waitForFunction(() => !document.getElementById('rack-setup'));
-    const d = db.gallery.g1.data;
-    assert(d.parts.map(p => p.id).join() === 'base,spine' && d.parts[0].grams == null && d.parts[1].grams == null && d.grams === 85.4, 'new parts carry no invented weights; the design keeps its own total: ' + JSON.stringify(d.parts));
-    assert(d.colorMap.combos.length === 10 && d.colorMap.combos[0].name === 'Santa Dragon' && d.colorMap.combos[0].colors.base === 'red' && d.colorMap.combos[0].colors.spine === 'green'
-      && d.colorMap.combos[9].name === 'Sandcastle' && d.colorMap.combos[9].colors.base === 'beige' && d.colorMap.combos[9].colors.spine === 'blue', JSON.stringify(d.colorMap.combos));
-    assert(/presets\/drying-rack\.png$/.test(d.colorMap.photo) && d.colorMap.regions.some(r => r.part === 'base') && d.colorMap.regions.some(r => r.part === 'spine'), JSON.stringify(d.colorMap.regions));
-    await owner2.close();
-    const cust = await open(db, { suffix: '?design=drying-rack' });
-    await cust.waitForSelector('#color-ideas');
-    assert(/Santa Dragon/.test(await cust.textContent('.cm-picks')) && /Sandcastle/.test(await cust.textContent('.cm-picks')), 'customers see the ideas');
-    await cust.close();
-  });
-
   await check('request form: switching between a past design and "I have an idea" keeps each one\'s own colors', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -2567,8 +2539,8 @@ const STATES = {
     const page = await open(db);
     await page.evaluate(leadIn);
     await page.evaluate(asOwner('gallery'));
-    await page.waitForSelector('#caddy-go');
-    await page.click('#caddy-go');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => setupCatheterCaddy());
     await page.waitForFunction(() => state.gallery.some(g => g.id === 'catheter-caddy'));
     assert(Object.keys(db.gallery).filter(k => /^(catheter|syringe|blood|scissors|clipper|label|sharps|gauze|glove|cage|drawer|pole)/.test(k)).length === 15, Object.keys(db.gallery).join(','));
     assert(db.gallery['catheter-caddy'].published === false && db.gallery['glove-box-holder'].data.sideWall === true, 'hidden, side wall flag');
@@ -2741,14 +2713,12 @@ const STATES = {
     const db = fixtures();
     const page = await open(db);
     await page.evaluate(asOwner('gallery'));
-    await page.waitForSelector('#caddy-go');
-    await page.click('#caddy-go');
-    await page.waitForSelector('#caddy-remove-go');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => setupCatheterCaddy());
     assert(Object.keys(db.gallery).length === 18, Object.keys(db.gallery).length);
-    await page.click('#caddy-remove-go');
-    await page.waitForFunction(() => !document.getElementById('caddy-remove'));
+    await page.evaluate(() => removeCatheterCaddy());
+    await page.waitForFunction(() => !state.gallery.some(g => g.id === 'catheter-caddy'));
     assert(Object.keys(db.gallery).sort().join() === 'g1,g2,g3', Object.keys(db.gallery).join());
-    assert(!(await page.$('#caddy-go')), 'set-up card stays hidden after removing');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

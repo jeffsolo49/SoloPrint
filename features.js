@@ -4383,6 +4383,9 @@ function renderColorMapForm(f) {
     <span class="field-help" id="cm-status" role="status"></span>
     ${m ? `<img class="cm-photo cm-big" src="${esc(m.photo)}" alt="The color ideas photo you uploaded" referrerpolicy="no-referrer" />` : ''}
     ${f.id === CADDY_MAIN.id ? `<div class="field-help" style="margin-top:8px;"><strong>Catheter Caddy:</strong> upload the BACK view first (the one that shows the drawers), with the body, the dividers and handle, and the drawers each a different solid color, then match those areas to the parts: Base, walls and Top Shelf and Joining Clips = body; Handle and grips, Dividers = secondary; Rear Drawers = drawers. The color picker repaints it. Want a Front button too? Add a front view in the same colors below.</div>
+    ${f.id === CADDY_MAIN.id && m ? (() => { const names = { 'Shell colour': 'the body', 'Accent colour': 'the dividers and handle', 'Drawer colour': 'the drawers' }, ps = cleanDesignParts(f.parts);
+      const miss = Object.keys(names).filter(gn => !m.regions.some(r => r.part && ps.some(p => p.id === r.part && p.group === gn)));
+      return miss.length ? `<div class="alert error" id="caddy-photo-warn" style="display:block;" role="status">Customers see your ready-made caddy pictures, not this photo, because no area of it is matched to ${miss.map(g => names[g]).join(' or ')}. For the photo to change with their choices, every one of those needs its own area (its own solid color in the picture) matched to a part below.</div>` : ''; })() : ''}
       ${m ? `<label class="btn-sm">${m.photoAlt ? 'Change front view' : 'Add front view'}<input type="file" accept="image/*" id="cm-upload-alt" onchange="uploadColorMapAltPhoto(this.files[0]); this.value='';" style="display:none;" /></label>
       ${m.photoAlt ? '<button type="button" class="btn-sm danger" onclick="state.galleryForm.colorMap.photoAlt = \'\'; render();">Remove front view</button>' : ''}` : ''}` : ''}
     ${!m ? '' : `
@@ -7097,8 +7100,6 @@ function renderSetups() {
       <div class="alert error" id="setup-err" role="alert"></div>
       <div class="alert success" id="setup-ok" role="status"></div>
     </div>
-    <h4 class="setup-head">Built-in set-ups</h4>
-    ${renderCaddySetup() + renderCaddyRemove() + renderDryingRackSetup() || '<div class="field-help">Nothing built-in is waiting.</div>'}
   </div>`;
 }
 async function saveSetup() {
