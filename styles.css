@@ -1598,7 +1598,7 @@ html.owner-mode input[type=date], html.owner-mode input[type=search] { color-sch
 
 .email-card > summary.email-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .email-card > .email-card-grid { margin-top: 10px; }
-@media (min-width: 900px) and (hover: hover) and (pointer: fine) { body .main:not(.owner-main) { max-width: 880px; } }
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) { body .main:not(.owner-main) { max-width: 1000px; } }
 @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
   .special-order-check input[type="checkbox"], .special-order-check input[type="radio"] { width: 24px; height: 24px; min-height: 24px; margin: 0; flex-shrink: 0; }
   .special-order-check { min-height: 30px; }
