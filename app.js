@@ -534,7 +534,6 @@ function cleanItem(it) {
     versionCount: Math.max(1, Math.min(4, parseInt(it.versionCount, 10) || 1)),
     needsPack: it.needsPack === true,
     packFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.packFor)) ? it.packFor : '',   // a joining pack added with this design
-    caddy: cleanCaddy(it.caddy),   // the Catheter Caddy color picker's choice (features.js)
     accessoryFor: /^[A-Za-z0-9_-]{1,64}$/.test(String(it.accessoryFor)) ? it.accessoryFor : '',   // an accessory picked on this design's page
     designParts: cleanDesignParts(it.designParts, true),
     basePrice: cleanNumber(it.basePrice),
@@ -2154,7 +2153,7 @@ function renderItemBlock(item, i) {
           <div id="pills-${i}">${renderFilamentPills(i, item.filType)}</div>`}
         </div>
         ${mode === 'gallery' && item.preorder ? renderPreorderNote(null, null, draftPreorderUnits()) : ''}
-        ${mode === 'gallery' && item.galleryId ? renderEditionPicker(state.gallery.find(x => x.id === item.galleryId), item.editionId, eid => `setItemEdition(${i}, '${eid}')`) + renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) + (item.askOrder ? `<div class="field"><label for="match-order-${i}">Order number of your first caddy (optional)</label><input type="text" id="match-order-${i}" maxlength="40" value="${esc(item.matchOrder || '')}" oninput="state.draftItems[${i}].matchOrder = this.value; queueDraftSave();" /><div class="field-help">${item.matchOrder ? 'I will match your colors to that order.' : 'Pick the same edition and colors as your first one so the pair matches.'}</div></div>` : '') + sideWallNote(state.draftItems) : ''}
+        ${mode === 'gallery' && item.galleryId ? renderEditionPicker(state.gallery.find(x => x.id === item.galleryId), item.editionId, eid => `setItemEdition(${i}, '${eid}')`) + renderVersionPicker(state.gallery.find(x => x.id === item.galleryId), item.versionId, vid => `setItemVersion(${i}, '${vid}')`) + joinHint(item, i) + (item.askOrder ? `<div class="field"><label for="match-order-${i}">Order number of the one you already own (optional)</label><input type="text" id="match-order-${i}" maxlength="40" value="${esc(item.matchOrder || '')}" oninput="state.draftItems[${i}].matchOrder = this.value; queueDraftSave();" /><div class="field-help">${item.matchOrder ? 'I will match your colors to that order.' : 'Pick the same edition and colors as your first one so the pair matches.'}</div></div>` : '') : ''}
         ${mode === 'gallery' && featureOn('logoAddOn') ? `<label class="special-order-check" style="margin-bottom:10px;"><input type="checkbox" id="logo-${i}" ${item.logo ? 'checked' : ''} onchange="updateDraft(${i},'logo',this.checked); updateCustomerPricePreview(${i})" />
           ${esc(logoText('logoCheckbox'))}</label>` : ''}
         <div class="field" style="margin-bottom:10px;max-width:160px;">
@@ -3621,21 +3620,10 @@ async function uploadAboutPhoto(file) {
 // ── GALLERY ───────────────────────────────────────────────────────────────
 // Finished work with prices. Stored in the gallery_items table (supabase/gallery.sql):
 // visitors see published items, the signed-in owner sees and edits everything.
-// The caddy's drawers no longer have pull pieces, and its Joining Clips now come only in the Joining Kit: a caddy set up
-// before that loses its "Tab colour" part, the contrast rule that went with it, its Joining Clips part and those words in
-// its "In the box" line; the kit's clips are no longer "spare" (the next save stores it that way).
-function dropCaddyTabs(data) {
-  const tabGroup = g => String(g || '').trim().toLowerCase() === 'tab colour';
-  return { ...data,
-    parts: (Array.isArray(data.parts) ? data.parts : []).filter(p => !(p && (tabGroup(p.group) || p.id === 'clips'))),
-    contrast: (Array.isArray(data.contrast) ? data.contrast : []).filter(pr => !(Array.isArray(pr) && pr.some(tabGroup))),
-    description: String(data.description || '').replace(/ with pull tabs/g, '').replace(/, 4 joining clips\./gi, '.') };
-}
-function kitClipsNotSpare(data) { return { ...data, description: String(data.description || '').replace(/6 spare Joining Clips/g, '6 Joining Clips') }; }
 function cleanGalleryItem(row) {
   const id = String(row && row.id || '');
   const raw = row && row.data && typeof row.data === 'object' ? row.data : {};
-  const data = id === 'catheter-caddy' ? dropCaddyTabs(raw) : id === 'catheter-caddy-joining-kit' ? kitClipsNotSpare(raw) : raw;
+  const data = raw;
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
   return {
     id,
@@ -3658,7 +3646,6 @@ function cleanGalleryItem(row) {
     versions: cleanVersions(data.versions),   // single / double ...
     editions: cleanEditions(data.editions),
     contrast: cleanContrast(data.contrast),
-    sideWall: data.sideWall === true,
     colorFeeIncluded: data.colorFeeIncluded === true,
     packId: /^[A-Za-z0-9_-]{1,64}$/.test(String(data.packId)) ? data.packId : '',   // the joining pack's design
     accessories: [...new Set((Array.isArray(data.accessories) ? data.accessories : []).map(String).filter(x => /^[A-Za-z0-9_-]{1,64}$/.test(x)))].slice(0, 30),   // designs ordered as part of this one, not listed on their own
@@ -3841,7 +3828,7 @@ function renderWorkDetail(g) {
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.
 function designPicker(g, opts) {
-  return (isCaddyDesign(g) ? renderCaddyDesignPicker(g, opts) : renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
+  return (renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
 }
 function renderWorkPrice(g) {
   if (g.preorder && !preorderLeadOk()) return `${designPicker(g, designOpts(g.id))}<div class="job-divider" style="margin:6px 0 14px;"></div>${renderPreorderGate(g)}`;   // colors and options show first; name and email save them
@@ -3981,7 +3968,6 @@ function requestGalleryItem(id, colors) {
   if ((g.versions || []).length && !(state.designOpts || {})[id]) applyVersion(item, g, '');
   if ((g.editions || []).length && !(state.designOpts || {})[id]) applyEdition(item, g, '');
   applyPartColors(item);
-  if (isCaddyDesign(g)) { item.caddy = caddyFix(opts0 && opts0.caddy); applyCaddyColors(item); }
   state.galleryOpen = '';
   setDesignUrl('');
   const first = state.draftItems[0];
@@ -3993,7 +3979,6 @@ function requestGalleryItem(id, colors) {
   accs.forEach(a => adds.push(accessoryItemFor(g, a.design, a.qty)));
   if (firstIsEmpty) state.draftItems.splice(0, 1, ...adds);
   else state.draftItems.push(...adds);
-  if (item.caddy) caddyPackSync(item);
   state.clientTab = 'submit';
   render();
   showAlert('submit-ok', `Added ${skipMain ? 'your accessories' : `"${g.title}"` + (accs.length ? ' and your accessories' : '')} to your request. Add your name and email, then submit.`, 'success');
@@ -4054,11 +4039,14 @@ function renderOwnerGalleryPage() {
     ${state.galleryError ? `<div class="alert error" style="display:block;">Couldn't load the gallery. If you haven't yet, run supabase/gallery.sql in the Supabase SQL Editor.</div>` : ''}
     <div class="card">
       <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
+      ${renderVersionQuick(f)}
+      <h4 class="sub-title jump-title">Name and write-up</h4>
       <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
       <div class="field"><label>Write-up</label>
         <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
         <textarea id="gallery-desc" style="min-height:96px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
       </div>
+      <h4 class="sub-title jump-title">Photos and videos</h4>
       ${renderGalleryPhotosField(f)}
       <div class="field"><label for="gallery-videos">YouTube videos (optional)</label>
         <div class="field-help">Paste YouTube links, one per line (up to 5; "Unlisted" videos work). They play on this design's page, under the photos. They're never used as the design's picture: tiles, cards and shared links always use your photos.</div>
@@ -4066,6 +4054,7 @@ function renderOwnerGalleryPage() {
       </div>
       ${renderDesignPartsForm(f)}
       ${renderColorMapForm(f)}
+      <h4 class="sub-title jump-title">Print time, weight and price</h4>
       <div class="gallery-form-grid">
         <div class="field"><label>Color</label>
           <select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select>
@@ -4079,7 +4068,10 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
+      <h4 class="sub-title jump-title">Pre-order, accessories, versions and editions</h4>
       ${renderDesignOptions(f)}
+      ${renderVersionSections(f)}
+      <h4 class="sub-title jump-title">Show and save</h4>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
@@ -4122,7 +4114,7 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, sideWall: g.sideWall, colorFeeIncluded: g.colorFeeIncluded
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v, parts: v.parts ? v.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '', allowed: (p.allowed || []).slice() })) : null, accessories: Array.isArray(v.accessories) ? v.accessories.slice() : null })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, colorFeeIncluded: g.colorFeeIncluded
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4131,7 +4123,7 @@ function editGalleryItem(id) {
 // The saved shape of a design (a gallery_items row).
 function galleryRowOf(g) {
   return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
-    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], sideWall: !!g.sideWall, colorFeeIncluded: !!g.colorFeeIncluded } };
+    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], colorFeeIncluded: !!g.colorFeeIncluded } };
 }
 async function writeGalleryItem(g) {
   if (previewActive()) {
@@ -4161,7 +4153,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], sideWall: !!f.sideWall, colorFeeIncluded: !!f.colorFeeIncluded,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], colorFeeIncluded: !!f.colorFeeIncluded,
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
