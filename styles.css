@@ -1726,3 +1726,12 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .design-tab:hover { background: var(--surface2); }
 .design-tab.on { border-bottom-color: var(--accent); color: var(--accent); background: var(--surface2); }
 .design-tab-add { color: var(--muted); font-weight: 600; }
+
+/* Pre-order check, gift card, dashboard */
+.summary-list { list-style: none; display: grid; gap: 10px; margin: 8px 0; }
+.summary-list li { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.summary-pic { max-width: 120px; }
+.summary-pic .cm-request { margin: 0; }
+.summary-total { margin: 8px 0; }
+.dash-design { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 10px; }
+.dash-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; }

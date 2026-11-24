@@ -2881,6 +2881,41 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('pre-order extras: check-your-pre-order box with the shipping tip, gift option saved with the order, owner dashboard and deposit reminders', async () => {
+    const db = fixtures();
+    Object.assign(db.gallery.g1.data, { preorder: true, minutes: 150, grams: 85, price: 40 });
+    db.jobs.p1 = { id: 'p1', clientName: 'Second', clientEmail: 's@example.com', createdAt: ago(900), phase: 'order_received', paymentStatus: 'deposit_received', depositAt: ago(100), items: [{ name: 'Dragon Organizer', qty: 1, galleryId: 'g1', preorder: true, filType: 'black', minutes: 150, grams: 85 }] };
+    db.jobs.p3 = { id: 'p3', clientName: 'Late Payer', clientEmail: 'late@example.com', createdAt: ago(40), phase: 'order_received', paymentStatus: 'payment_requested', items: [{ name: 'Dragon Organizer', qty: 2, galleryId: 'g1', preorder: true, filType: 'black', minutes: 150, grams: 85 }] };
+    const page = await open(db);
+    await page.evaluate(leadIn);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await page.waitForSelector('.preorder-ship-tip');
+    await page.evaluate(() => requestGalleryItem('g1'));
+    await page.waitForSelector('#preorder-summary');
+    const box = await page.textContent('#preorder-summary');
+    assert(/Check your pre-order/.test(box) && /Dragon Organizer/.test(box) && /\$40\.00/.test(box) && /deposit about/.test(box) && /shipping can be combined/.test(box), box);
+    assert(await page.isVisible('#gift-card'), 'gift card');
+    await page.check('#gift-on');
+    await page.fill('#gift-name', 'Grandma');
+    await page.fill('#gift-note', 'Happy birthday!');
+    await page.click('#submit-btn');
+    await requestSent(page);
+    const job = Object.values(db.jobs).find(j => j.clientName === 'Test Person');
+    assert(job && job.gift && job.gift.on && job.gift.name === 'Grandma' && /birthday/.test(job.gift.note), JSON.stringify(job && job.gift));
+    // owner
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { state.galleryFolds = { 'Pre-order dashboard': true }; render(); });
+    await page.waitForSelector('#preorder-dashboard');
+    const dash = await page.textContent('#preorder-dashboard');
+    assert(/Dragon Organizer/.test(dash) && /deposits paid/.test(dash) && /waiting on a deposit/.test(dash) && /Late Payer/.test(dash) && /nothing here limits/i.test(dash), dash);
+    assert(await page.isVisible('#remind-p3'), 'deposit reminder button');
+    await page.click('#remind-p3');
+    await page.waitForSelector('.mail-modal-backdrop');
+    const mailText = await page.textContent('.mail-modal-backdrop'); assert(/Late Payer|Venmo|deposit/i.test(mailText) && /Send/i.test(mailText), 'the reminder shows the email first: ' + mailText.slice(0, 300));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('part photos: uploading in the edit form adds the photo and saving keeps it', async () => {
     const db = fixtures();
     const page = await open(db);
