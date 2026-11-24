@@ -1385,7 +1385,7 @@ const STATES = {
     assert(/Shown at the end of: Request received, Quote ready, Quote reminder/.test(await page.textContent('#email-footer')), 'footer card should list where it is used');
     assert(await page.evaluate(() => document.querySelector('.email-card').id) === 'email-footer', 'footer should be first');
     const groups = await page.evaluate(() => [...document.querySelectorAll('.email-group-title, .email-card')].map(e => e.id || e.textContent.trim()));
-    assert(groups.join(',') === 'email-footer,Emails to customers,email-draft_reminder,email-customer_received,email-details_check,email-quote,email-reminder,email-confirmed,email-deposit,email-final_payment_needed,email-payment,email-delivered,email-delivery_update,email-review_request,email-roll_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
+    assert(groups.join(',') === 'email-footer,Emails to customers,email-draft_reminder,email-preorder_nudge,email-customer_received,email-details_check,email-quote,email-reminder,email-confirmed,email-deposit,email-final_payment_needed,email-payment,email-delivered,email-delivery_update,email-review_request,email-roll_reminder,Emails to you,email-owner_new,email-owner_approved,email-weekly_summary', groups.join(','));
     assert(/To you/.test(await page.textContent('#email-owner_new .email-to')), 'owner email should say To you');
     await page.click('#emails-save');
     await page.waitForTimeout(300);
@@ -1554,7 +1554,7 @@ const STATES = {
     const owner = await open(fixtures());
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
-    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Settings|Help', tabs.join('|'));
+    assert(tabs.join('|') === 'Orders|Inbox|Designs|Money & Sales|Settings|Help', tabs.join('|'));
     assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|To make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
@@ -2254,8 +2254,11 @@ const STATES = {
     const item = page.locator('.notif-item:has-text("New color idea")');
     assert(/"Sunset"/.test(await item.textContent()) && /Red and Black/.test(await item.textContent()), await item.textContent());
     await item.click();
+    await page.waitForSelector('#inbox-todo');
+    assert(await page.evaluate(() => state.ownerTab) === 'inbox' && /Sunset/.test(await page.textContent('#inbox-todo')), 'opens the Inbox page with the idea');
+    await page.click('#inbox-todo button:has-text("Publish or dismiss")');
     await page.waitForSelector('#color-inbox');
-    assert(await page.evaluate(() => state.ownerTab) === 'gallery' && await page.$$eval('#color-inbox input', els => els.some(e => e.value === 'Sunset')), 'opens the inbox with the idea');
+    assert(await page.$$eval('#color-inbox input', els => els.some(e => e.value === 'Sunset')), 'and the idea opens from there');
     await page.close();
   });
   await check('owner help: search finds entries by any word; Take me there opens the place; own notes are saved and searchable', async () => {
@@ -2588,6 +2591,7 @@ const STATES = {
     await page.click('#preorder-continue');
     for (let t = 0; t < 10 && !db.drafts['pat@example.com']; t++) await page.waitForTimeout(100);   // well under the 3 second draft delay
     assert(db.drafts['pat@example.com'] && db.drafts['pat@example.com'].name === 'Pat Lee' && db.drafts['pat@example.com'].data.lead.designs[0].id === 'g1', JSON.stringify(db.drafts));
+    assert(/^\?design=/.test(db.drafts['pat@example.com'].data.lead.designs[0].link), 'the lead keeps a link back to their choices (for the nudge email): ' + JSON.stringify(db.drafts['pat@example.com'].data.lead.designs[0]));
     await page.waitForFunction(() => !document.getElementById('preorder-gate'));
     assert(await page.isVisible('#work-price button:has-text("Pre-order this")'), 'options show after step 1');
     // owner
@@ -2916,6 +2920,80 @@ const STATES = {
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
+  await check('real photos come first, the design page puts photos then colors and price then the description, customer photos show', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.photos = ['https://img.test/a.png']; db.gallery.g1.data.realPhotos = ['https://img.test/real.png'];
+    db.gallery.g1.data.description = 'The story of this print.';
+    db.settings.customerPhotos = [{ id: 'cp1', name: 'Ann', designId: 'g1', photos: ['https://img.test/c.png'], date: '2026-01-01' }];
+    const page = await open(db);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await page.waitForSelector('#work-main-photo');
+    assert(await page.evaluate(() => state.gallery.find(x => x.id === 'g1').photos[0]) === 'https://img.test/real.png', 'the real photo is the main one');
+    assert(/real/.test(await page.getAttribute('#work-main-photo img', 'src')), 'and it is the first one shown');
+    const tops = await page.evaluate(() => ['#work-main-photo', '#work-price', '.work-desc'].map(s => document.querySelector(s).getBoundingClientRect().top));
+    assert(tops[0] < tops[1] && tops[1] < tops[2], 'photos, then the price and request, then the description: ' + tops);
+    assert(await page.isVisible('#customer-photos'), 'customer photos');
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => editGalleryItem('g1'));
+    assert(await page.isVisible('#real-photos-field') && /real\.png/.test(await page.inputValue('#gallery-realPhotos')), 'a separate upload spot for real photos');
+    await page.evaluate(() => saveGalleryItem());
+    await page.waitForFunction(() => (state.gallery.find(x => x.id === 'g1').realPhotos || []).length === 1);
+    assert(JSON.stringify(db.gallery.g1.data.realPhotos) === '["https://img.test/real.png"]' && JSON.stringify(db.gallery.g1.data.photos) === '["https://img.test/a.png"]', 'both kinds saved separately');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('inbox: one checklist for what waits on you, notifications open it, photos wait for approval', async () => {
+    const db = fixtures();
+    db.colorIdeas.push({ id: 'ci7', design_id: 'g1', name: 'Dusk', colors: {}, created_at: new Date().toISOString() });
+    db.reviews['1'] = { job_id: '1', status: 'new', name: 'Jane D.', text: 'Photo shared by a customer.', rating: null, photos: ['https://img.test/p.png'], created_at: new Date().toISOString() };
+    db.jobs['1'].items[0].galleryId = 'g1';
+    db.drafts['zed@example.com'] = { id: '11111111-2222-3333-4444-555555555555', email: 'zed@example.com', name: 'Zed', data: { items: [], lead: { designs: [{ id: 'n-g1-gold', title: 'Dragon Organizer', pick: 'Tell me when Gold is back' }], at: new Date().toISOString() } } };
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.waitForSelector('#nav-inbox .nav-badge');
+    await page.click('#nav-inbox');
+    await page.waitForSelector('#inbox-todo');
+    await page.waitForFunction(() => /Zed/.test(document.getElementById('inbox-todo').textContent) && /Photo from Jane D\./.test(document.getElementById('inbox-todo').textContent));
+    const text = await page.textContent('#inbox-todo');
+    assert(/Dusk/.test(text) && /Gold is back/.test(text), text);
+    await page.click('#inbox-tick-idea-ci7');
+    await page.waitForSelector('#inbox-done');
+    assert(db.private.inbox && db.private.inbox.done['idea-ci7'], 'the tick is saved');
+    assert(!/Dusk/.test(await page.textContent('#inbox-todo')), 'a ticked item leaves the to-do list');
+    await page.click('#inbox-approve-1');
+    await page.waitForFunction(() => !/Photo from Jane/.test(document.getElementById('inbox-todo').textContent));
+    assert(db.reviews['1'].status === 'approved' && db.settings.customerPhotos[0].designId === 'g1' && db.settings.customerPhotos[0].photos[0] === 'https://img.test/p.png', JSON.stringify(db.settings.customerPhotos));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('start here: three ways in; ideas coming soon: customers say "I would buy this", the owner sees who and adds ideas', async () => {
+    const db = fixtures();
+    db.settings.soonIdeas = [{ id: 's1', title: 'Cable Hook', text: 'For the desk', photo: '', live: true }];
+    const page = await open(db);
+    assert(await page.isVisible('#start-here') && await page.isVisible('#start-designs') && await page.isVisible('#start-idea') && await page.isVisible('#start-part'), 'start here');
+    await page.click('#start-part');
+    await page.waitForSelector('#notes-0');
+    assert(/The part you need/.test(await page.getAttribute('#notes-0', 'placeholder')) && !(await page.$('#start-here')), 'the custom part path asks for the part, and the buttons go away');
+    await page.evaluate(() => { state.soonFor = ''; render(); });
+    assert(await page.isVisible('#soon-ideas'), 'ideas coming soon');
+    await page.click('#soon-want-s1');
+    await page.fill('#soon-name', 'Pat Lee'); await page.fill('#soon-email', 'pat@example.com');
+    await page.click('#soon-send');
+    for (let k = 0; k < 20 && !db.drafts['pat@example.com']; k++) await page.waitForTimeout(100);
+    assert(db.drafts['pat@example.com'] && /soon-s1/.test(JSON.stringify(db.drafts['pat@example.com'].data.lead.designs)), JSON.stringify(db.drafts));
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    await page.evaluate(async () => { await fetchLeads(); state.galleryFolds = { 'Ideas coming soon': true }; render(); });
+    await page.waitForSelector('#soon-owner');
+    assert(/Cable Hook/.test(await page.textContent('#soon-owner')) && /1\s*want/.test(await page.textContent('#soon-owner')), await page.textContent('#soon-owner'));
+    await page.fill('#soon-title', 'Desk Tray');
+    await page.click('#soon-add');
+    await page.waitForFunction(() => (state.settings.soonIdeas || []).length === 2);
+    assert(db.settings.soonIdeas.length === 2 && db.settings.soonIdeas[1].title === 'Desk Tray', JSON.stringify(db.settings.soonIdeas));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('part photos: uploading in the edit form adds the photo and saving keeps it', async () => {
     const db = fixtures();
     const page = await open(db);
@@ -3016,7 +3094,7 @@ const STATES = {
   });
   await check('request form: choices stay on top, the chosen form appears below, switching keeps what was typed', async () => {
     const page = await open(fixtures());
-    const order = await page.$$eval('.mode-title', ts => ts.map(t => t.textContent));
+    const order = await page.$$eval('.request-card .mode-title', ts => ts.map(t => t.textContent));
     assert(order.join() === 'Something from my past work,I have a link,I have an idea', `choice order ${order}`);
     assert(await page.$('.mode-option.selected:has-text("Something from my past work")') && await page.$('.gallery-pick-tile'), 'past work should be picked to start with, showing the designs');
     await page.click('text=I have an idea');
@@ -3025,7 +3103,7 @@ const STATES = {
     assert(await page.$eval('.time-toggle', el => el.tagName) === 'BUTTON', 'print time is not a button');
     await page.fill('#notes-0', 'A hook for my bike helmet');
     await page.click('text=I have a link');
-    assert(await page.inputValue('#link-0') === '' && (await page.$$('.mode-option')).length === 3, 'link form should start empty with the choices still shown');
+    assert(await page.inputValue('#link-0') === '' && (await page.$$('.request-card .mode-option')).length === 3, 'link form should start empty with the choices still shown');
     await page.click('text=I have an idea');
     assert(await page.inputValue('#notes-0') === 'A hook for my bike helmet', 'the idea typed earlier was lost');
     assert(/what you started earlier/.test(await page.textContent('.draft-restored')), 'no note that the draft came back');
@@ -3775,7 +3853,7 @@ const STATES = {
     await owner.waitForSelector('.desk-row.tone-need:has-text("Customer wrote")');
     const janeRow = await owner.textContent('.desk-row.tone-need:has-text("Customer wrote")');
     assert(/jane@example\.com/.test(janeRow), 'the order whose customer wrote is in Needs me with a Customer wrote chip: ' + janeRow);
-    assert(/needs? you/.test(await owner.textContent('.owner-page-header')) && await owner.locator('nav.nav .nav-badge').count() === 1, 'the Orders tab and header should say what needs you');
+    assert(/needs? you/.test(await owner.textContent('.owner-page-header')) && await owner.locator('nav.nav button:has-text("Orders") .nav-badge').count() === 1, 'the Orders tab and header should say what needs you');
     await owner.evaluate(showOrder('1'));
     assert(/Waiting on you/.test(await owner.textContent('#order-1 .job-title')), 'order card says waiting on you');
     const thread = await owner.textContent('#conv-1');

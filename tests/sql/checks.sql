@@ -195,6 +195,20 @@ do $$ declare got text; begin
   if (select count(*) from public.due_draft_reminders('0123456789abcdef0123456789abcdef', 7)) <> 0 then raise exception 'a draft was reminded twice'; end if;
   if (public.get_request_draft((select id from draft_ids)))->>'name' <> 'Kim' then raise exception 'resume link does not open the draft'; end if;
 end $$;
+reset role;
+update public.request_drafts set updated_at = now() - interval '2 days' where false;
+set role anon;
+select public.save_request_draft('pat@example.com', 'Pat', '{"items":[],"lead":{"designs":[{"id":"g1","title":"Shown","link":"?design=shown"}],"at":"2026-01-01"}}');
+select public.save_request_draft('sam@example.com', 'Sam', '{"items":[{"notes":"hook"}],"lead":{"designs":[{"id":"g1","title":"Shown","link":"?design=shown"}],"at":"2026-01-01"}}');
+reset role;
+update public.request_drafts set updated_at = now() - interval '30 hours' where lower(email) in ('pat@example.com', 'sam@example.com');
+set role anon;
+select pg_temp.expect_denied($q$select public.due_lead_nudges('wrong-secret')$q$, 'lead nudges with a wrong secret');
+do $$ declare got text; begin
+  select string_agg(d->>'clientEmail', ',') into got from public.due_lead_nudges('0123456789abcdef0123456789abcdef', 20) d;
+  if got is distinct from 'pat@example.com' then raise exception 'only the pure lead (Pat) should be nudged, got %', got; end if;
+  if (select count(*) from public.due_lead_nudges('0123456789abcdef0123456789abcdef', 20)) <> 0 then raise exception 'a lead was nudged twice'; end if;
+end $$;
 select public.clear_request_draft('Kim@Example.com');
 do $$ begin if public.get_request_draft((select id from draft_ids)) is not null then raise exception 'draft not cleared after sending'; end if; end $$;
 reset role;

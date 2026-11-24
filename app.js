@@ -144,7 +144,7 @@ async function loadBatches(asCustomer = false) {
       ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas()]); applyPreview(); seedWikiNotes(); syncTopWork(); }
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas(), fetchLeads(), loadCustomerReviews()]); applyPreview(); seedWikiNotes(); syncTopWork(); }
     else {
       // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
       const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));
@@ -1453,6 +1453,7 @@ function renderOwnerNav() {
   return `
     <nav class="nav" aria-label="Owner sections">
       <button class="nav-tab ${ownerSection() === 'dashboard' ? 'active' : ''}" onclick="setOwnerTab('dashboard')">Orders${ownerNeedCount() ? `<span class="nav-badge" aria-label="${ownerNeedCount()} need you">${ownerNeedCount()}</span>` : ''}</button>
+      <button class="nav-tab ${state.ownerTab === 'inbox' ? 'active' : ''}" id="nav-inbox" onclick="setOwnerTab('inbox')">Inbox${inboxOpenCount() ? `<span class="nav-badge" aria-label="${inboxOpenCount()} waiting">${inboxOpenCount()}</span>` : ''}</button>
       <button class="nav-tab ${ownerSection() === 'gallery' ? 'active' : ''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
@@ -1603,8 +1604,10 @@ function renderSubmitTab() {
   return `
     ${renderVacationBanner()}
     ${featureOn('about') ? renderAboutCard() : ''}
+    ${renderStartHere()}
     <div class="start-request"><button type="button" class="btn-primary" id="start-request" onclick="document.getElementById('request-form')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })">Start your quote request &darr;</button></div>
     ${featureOn('recentWork') ? renderRecentWork() : ''}
+    ${renderSoonIdeas()}
     ${featureOn('howItWorks') ? renderHowItWorks() : ''}
     ${renderReviews(state.settings.reviews)}
     <div class="section-header" id="request-form">
@@ -2125,7 +2128,7 @@ function renderItemBlock(item, i) {
         <div class="field" style="margin-bottom:8px;">
           <label for="notes-${i}">${esc(t('ideaLabel'))}</label>
           <div class="field-help">What it's for, rough size or measurements, where it will be used, colors, and anything it has to fit, hold or attach to. Custom designs come with my design terms, which you'll see with your quote.</div>
-          <textarea id="notes-${i}" placeholder="e.g. A wall holder for three paint brushes, about 6 inches wide, in white" spellcheck="true"
+          <textarea id="notes-${i}" placeholder="${state.startHint === 'part' ? 'The part you need: what it is, its size, what it attaches to or has to hold' : 'e.g. A wall holder for three paint brushes, about 6 inches wide, in white'}" spellcheck="true"
             oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
         </div>
         ${renderPhotoField(item, i)}
@@ -2310,6 +2313,8 @@ function renderOwnerApp() {
         ? renderWikiPage()
         : state.ownerTab === 'preview'
         ? renderPreviewPage()
+        : state.ownerTab === 'inbox'
+        ? renderInboxPage()
         : state.ownerTab === 'etsytodo'
         ? renderEtsyTodoPage()
         : state.ownerTab === 'numbers'
@@ -2959,6 +2964,7 @@ function setOwnerTab(tab) {
   if ((tab === 'analytics' || tab === 'money' || tab === 'numbers') && !state.ownerHistoryAll) { loadAllOrders(); return; }
   render();
   if (tab === 'gallery') loadGallery().then(() => { render(); backfillThumbnails(); });
+  if (tab === 'inbox') { state.inboxLoaded = false; state.inboxLoading = false; }
   if (tab === 'settings') { state.settingsDraft = null; state.emailsDraft = null; Promise.all([loadSettings(), loadGallery(), loadCustomerReviews()]).then(render); }
 }
 function updateAnalyticsQuery(value) { state.analyticsQuery = value; render(); }
@@ -3113,6 +3119,20 @@ function cleanSettings(raw) {
       source: r && r.source === 'etsy' ? 'etsy' : '',   // imported from Etsy's reviews.json
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(r && r.date)) ? r.date : ''
     })).filter(r => r.id && r.text),
+    customerPhotos: (Array.isArray(d.customerPhotos) ? d.customerPhotos : []).slice(0, 60).map(p => ({
+      id: /^[a-z0-9-]{1,40}$/.test(String(p && p.id)) ? p.id : '',
+      name: cleanText(p && p.name, 60).trim(),
+      designId: /^[A-Za-z0-9_-]{1,64}$/.test(String(p && p.designId)) ? p.designId : '',
+      photos: (Array.isArray(p && p.photos) ? p.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 2),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(p && p.date)) ? p.date : ''
+    })).filter(p => p.id && p.photos.length),
+    soonIdeas: (Array.isArray(d.soonIdeas) ? d.soonIdeas : []).slice(0, 12).map(x => ({
+      id: /^[a-z0-9-]{1,40}$/.test(String(x && x.id)) ? x.id : '',
+      title: cleanText(x && x.title, 80).trim(),
+      text: cleanText(x && x.text, 300).trim(),
+      photo: safeImageUrl(x && x.photo),
+      live: !(x && x.live === false)
+    })).filter(x => x.id && x.title),
     emails: cleanEmails(d.emails),
     rules: cleanRules(d.rules),
     materialNote: cleanText(d.materialNote, 200).trim(),
@@ -3281,6 +3301,7 @@ function settingsId() {
 const EMAIL_SAMPLE = {
   name: 'Jane', customerName: 'Jane', customerEmail: 'jane@example.com', title: 'Benchy, Phone stand',
   submitted: 'Oct 21, 2026, 2:15 PM',
+  designTitle: 'Dragon Organizer', choices: ' (Candy Cane, Joined Pair)', designLink: 'https://soloprint.vercel.app/?design=dragon-organizer&c=x%3Ared',
   items: '1) Benchy x 2\n   Color: Red\n\n2) Phone stand\n   Color: Black\n   Notes: Make it sturdy',
   itemsWithPrices: '1) Benchy x 2\n   Color: Red\n   Price: $9.28 ($4.64 each)\n\n2) Phone stand\n   Color: Black\n   Price: $6.40\n   Notes: Make it sturdy',
   estimate: '15.68', total: '15.68', specialRoll: '', amountDue: '15.68',
@@ -3341,7 +3362,7 @@ function renderOwnerEmailsPage() {
 }
 
 // Settings > Emails lists emails in the order a customer gets them. New emails not listed go last.
-const EMAIL_FLOW = ['draft_reminder', 'customer_received', 'details_check', 'quote', 'reminder', 'confirmed', 'deposit',
+const EMAIL_FLOW = ['draft_reminder', 'preorder_nudge', 'customer_received', 'details_check', 'quote', 'reminder', 'confirmed', 'deposit',
   'final_payment_needed', 'payment', 'delivered', 'delivery_update', 'review_request', 'roll_reminder',
   'owner_new', 'owner_approved', 'weekly_summary'];
 function emailKeysTo(to) {
@@ -3638,7 +3659,8 @@ function cleanGalleryItem(row) {
     title: cleanText(data.title, 120),
     description: cleanText(data.description, 8000),
     ownPhotos: cleanImageLinks(data.photos),   // the photos the owner uploaded
-    photos: cleanImageLinks(data.photos).length ? cleanImageLinks(data.photos) : (cleanColorMap(data.colorMap, cleanDesignParts(data.parts)) ? [cleanColorMap(data.colorMap, cleanDesignParts(data.parts)).photo] : []),   // none uploaded: the color picker's photo stands in
+    realPhotos: cleanImageLinks(data.realPhotos).slice(0, 5),   // finished prints in real life: shown first when there are any
+    photos: cleanImageLinks(data.realPhotos).slice(0, 5).concat(cleanImageLinks(data.photos)).length ? cleanImageLinks(data.realPhotos).slice(0, 5).concat(cleanImageLinks(data.photos)) : (cleanColorMap(data.colorMap, cleanDesignParts(data.parts)) ? [cleanColorMap(data.colorMap, cleanDesignParts(data.parts)).photo] : []),   // none uploaded: the color picker's photo stands in
     filType: cleanFilType(data.filType),
     colorId: /^[a-z0-9-]{1,40}$/.test(String(data.colorId)) ? data.colorId : '',   // the design's color (blank = White)
     minutes: cleanNumber(data.minutes),
@@ -3818,11 +3840,8 @@ function renderWorkDetail(g) {
       </div>
     </div>
     ${renderWorkPhotos(g)}
-    ${renderWorkDescription(g)}
     ${accessoryDesigns(g).length ? `<p><button class="btn-sm" type="button" id="to-accessories" onclick="document.getElementById('accessory-picker')?.scrollIntoView({ behavior: 'smooth', block: 'center' })">Accessories available: add them to your order &darr;</button></p>` : ''}
     ${renderColorIdeas(g)}
-    ${renderVideos(g)}
-    ${renderDesignParts(g)}
     <div class="card">
       ${renderPreorderNote(g)}
       ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}
@@ -3830,6 +3849,10 @@ function renderWorkDetail(g) {
       <div id="work-price">${renderWorkPrice(g)}</div>
 
     </div>
+    ${renderWorkDescription(g)}
+    ${renderVideos(g)}
+    ${renderDesignParts(g)}
+    ${renderCustomerPhotos(g)}
     ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
 }
 
@@ -3847,11 +3870,11 @@ function renderWorkPrice(g) {
   const price = designEstimate(g, colors, opts);
   if (opts.skipMain && accessoryDesigns(g).length) return `${renderAccessoryPicker(g, opts)}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">${esc(materialNote())}</div>
-    <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button></div>`;
+    <button class="btn-sm btn-buy" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button></div>`;
   const picker = designPicker(g, opts);
   if (price === null && (g.preorder || (g.versions || []).length || accessoryDesigns(g).length)) return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div class="gallery-meta">Price confirmed in your quote.</div>
-    <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
+    <button class="btn-sm btn-buy" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button></div>`;
   if (price === null) return `<div class="field-help" style="margin-top:6px;">Want something like this? <button class="btn-link" type="button" onclick="setTab('submit')">Request a custom design →</button></div>`;
   return `${picker}<div class="job-divider" style="margin:6px 0 14px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
@@ -3859,7 +3882,7 @@ function renderWorkPrice(g) {
             <div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>
             ${g.price > 0 ? '' : `<div class="gallery-meta">${colors ? 'In the colors picked above' : (g.parts || []).length ? 'In the starting colors below; your color choices can change it' : `${esc(filamentLabel(designEstimateItem(g, null, opts)))}`}${g.minutes ? ` · about ${fmtTime(g.minutes)} to print` : ''}</div>`}
           </div>
-          <button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button>
+          <button class="btn-sm btn-buy" type="button" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(requestLabel(g))}</button>
         </div>
         <div class="field-help" style="margin-top:10px;">${esc(galleryNote())} ${g.price > 0 ? 'The price is per item.' : "The price is an automated estimate per item; I'll confirm your quote after reviewing your request."} ${esc(materialNote())}</div>
         <div class="field-help color-delay-note">${esc(colorDelayNote())}</div>`;
@@ -3955,7 +3978,7 @@ function renderGalleryTab() {
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)} <span class="gallery-meta">${galleryPriceLabel(g)}</span></div>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="openWork('${esc(g.id)}')">Read more</button>
-            ${price !== null || g.preorder || (g.versions || []).length ? `<button class="btn-sm" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button>` : ''}
+            ${price !== null || g.preorder || (g.versions || []).length ? `<button class="btn-sm btn-buy" type="button" onclick="requestGalleryItem('${esc(g.id)}')">${esc(requestLabel(g))}</button>` : ''}
           </div>
         </div>
       </div>`;
@@ -4025,8 +4048,8 @@ function updateGalleryForm(field, value) {
   state.galleryForm[field] = value;
   const priceEl = document.getElementById('gallery-form-price');
   if (priceEl) priceEl.innerHTML = renderGalleryFormPrice();
-  if (field === 'photos') {
-    const el = document.getElementById('gallery-form-photos');
+  if (field === 'photos' || field === 'realPhotos') {
+    const el = document.getElementById(field === 'photos' ? 'gallery-form-photos' : 'gallery-form-realPhotos');
     if (el) el.innerHTML = renderPhotoLinks(parseImageLinks(value));
   }
 }
@@ -4130,7 +4153,7 @@ function editGalleryItem(id) {
   state.galleryOpt = '';
   phoneFoldStart(g.parts, g.colorMap);
   state.galleryForm = {
-    id: g.id, title: g.title, description: g.description, photos: g.ownPhotos.join('\n'), filType: g.filType, colorId: g.colorId,
+    id: g.id, title: g.title, description: g.description, photos: g.ownPhotos.join('\n'), realPhotos: (g.realPhotos || []).join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
@@ -4144,7 +4167,7 @@ function editGalleryItem(id) {
 // The saved shape of a design (a gallery_items row).
 function galleryRowOf(g) {
   return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
-    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], colorFeeIncluded: !!g.colorFeeIncluded } };
+    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], realPhotos: g.realPhotos || [], filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], colorFeeIncluded: !!g.colorFeeIncluded } };
 }
 async function writeGalleryItem(g) {
   if (previewActive()) {
@@ -4176,7 +4199,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], colorFeeIncluded: !!f.colorFeeIncluded,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), realPhotos: parseImageLinks(f.realPhotos || '').slice(0, 5), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], colorFeeIncluded: !!f.colorFeeIncluded,
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
@@ -4248,12 +4271,12 @@ async function resizePhoto(file, maxSide = 1600) {
   }
 }
 
-async function uploadGalleryPhotos(files) {
+async function uploadGalleryPhotos(files, field = 'photos') {
   const f = state.galleryForm;
-  const status = document.getElementById('gallery-upload-status');
+  const status = document.getElementById(field === 'photos' ? 'gallery-upload-status' : `gallery-upload-status-${field}`);
   const token = getOwnerToken();
   if (!f || !token) { if (status) status.textContent = 'Please log in again to upload.'; return; }
-  const current = parseImageLinks(f.photos);
+  const current = parseImageLinks(f[field]);
   const list = [...files].slice(0, Math.max(0, 5 - current.length));
   if (!list.length) { if (status) status.textContent = 'This item already has 5 photos.'; return; }
   const added = [];
@@ -4263,7 +4286,7 @@ async function uploadGalleryPhotos(files) {
       const blob = await resizePhoto(list[n]);
       const thumb = await resizePhoto(list[n], THUMB_SIDE);
       if (!blob || !thumb) throw new Error('resize failed');
-      const path = `${f.id}/${Date.now()}-${n}.jpg`;
+      const path = `${f.id}/${field === 'photos' ? '' : 'real-'}${Date.now()}-${n}.jpg`;
       await uploadStoredPhoto(path, blob, token);
       await uploadStoredPhoto(path.replace(/\.jpg$/, '-thumb.jpg'), thumb, token);
       added.push(GALLERY_PUBLIC_PREFIX + path);
@@ -4276,10 +4299,10 @@ async function uploadGalleryPhotos(files) {
     }
   }
   if (added.length) {
-    f.photos = current.concat(added).join('\n');
-    const area = document.getElementById('gallery-photos');
-    if (area) area.value = f.photos;
-    updateGalleryForm('photos', f.photos);
+    f[field] = current.concat(added).join('\n');
+    const area = document.getElementById(field === 'photos' ? 'gallery-photos' : `gallery-${field}`);
+    if (area) area.value = f[field];
+    updateGalleryForm(field, f[field]);
     if (status) status.textContent = `Uploaded ${added.length} photo${added.length === 1 ? '' : 's'}. Remember to save.`;
   }
 }
@@ -4376,7 +4399,7 @@ function buildNotifications() {
         title: `${b.clientName || 'A customer'} approved their quote`,
         body: `Ready for you to confirm: ${orderTitle(b)}` });
     });
-    list.push(...colorIdeaNotifications(), ...lowStockNotifications());
+    list.push(...colorIdeaNotifications(), ...lowStockNotifications(), ...inboxNotifications());
   } else {
     if (!state.tokens.length) return [];
     state.batches.forEach(b => {
@@ -4471,8 +4494,7 @@ function markAllNotifsRead() {
 function openNotif(id, batchId) {
   markNotifsRead([id]);
   state.notifOpen = false;
-  if (notifScope() === 'owner' && /^idea-/.test(id)) { openColorIdeaInbox(); return; }
-  if (notifScope() === 'owner' && /^low-/.test(id)) { setOwnerTab('filament'); return; }
+  if (notifScope() === 'owner' && /^(idea|low|review|lead)-/.test(id)) { setOwnerTab('inbox'); return; }
   if (notifScope() === 'owner') { focusOwnerOrder(batchId); return; }
   state.clientTab = 'jobs';
   render();

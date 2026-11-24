@@ -69,7 +69,7 @@ async function loadDesign(ref) {
   const all = (await res.json() || []).map(r => ({ id: r.id, createdAt: r.created_at, ...(r.data || {}) }));
   const d = findDesign(ref, all);
   if (!d) return null;
-  const photo = (Array.isArray(d.photos) ? d.photos : []).concat(d.colorMap && d.colorMap.photo ? [d.colorMap.photo] : []).find(u => /^https:\/\//.test(String(u)));   // no photo uploaded: the color picker's photo
+  const photo = (Array.isArray(d.realPhotos) ? d.realPhotos : []).concat(Array.isArray(d.photos) ? d.photos : []).concat(d.colorMap && d.colorMap.photo ? [d.colorMap.photo] : []).find(u => /^https:\/\//.test(String(u)));   // no photo uploaded: the color picker's photo
   return { title: d.title, description: d.description, photo };
 }
 
