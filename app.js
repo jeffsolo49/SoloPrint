@@ -3830,8 +3830,12 @@ function renderWorkDetail(g) {
 }
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.
+// Version and edition: just above the color picker when the design has one (inside the Color ideas card), else here.
+function versionEditionPickers(g, opts) {
+  return renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`);
+}
 function designPicker(g, opts) {
-  return (renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderVersionCompare(g) + renderAccessoryPicker(g, opts) + renderSoldOutNotes(g);
+  return (cmShown(g) ? '' : versionEditionPickers(g, opts)) + renderVersionCompare(g) + renderAccessoryPicker(g, opts) + renderSoldOutNotes(g);
 }
 function renderWorkPrice(g) {
   if (g.preorder && !preorderLeadOk()) return `${designPicker(g, designOpts(g.id))}<div class="job-divider" style="margin:6px 0 14px;"></div>${renderPreorderGate(g)}`;   // colors and options show first; name and email save them

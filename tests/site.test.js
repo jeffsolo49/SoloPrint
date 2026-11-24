@@ -2852,6 +2852,8 @@ const STATES = {
     await page.evaluate(leadIn);
     await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
     await page.waitForSelector('#color-ideas');
+    assert(await page.isVisible('#color-ideas .version-picker'), 'the version choice sits just above the color picker, inside the color card');
+    assert(!(await page.$('#work-price .version-picker')), 'and is not repeated lower down');
     assert(await page.isVisible('#version-compare summary'), 'compare versions');
     await page.click('#version-compare summary');
     assert((await page.$$('#version-compare tbody tr')).length === 2, 'a row per version');

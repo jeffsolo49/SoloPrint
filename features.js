@@ -4020,6 +4020,7 @@ function renderColorIdeas(g) {
   return `<div class="card color-ideas" id="color-ideas">
     <h3 class="card-title">${esc(t('colorIdeasTitle'))}</h3>
     <div class="field-help" style="margin-bottom:10px;">${esc(t('colorIdeasNote'))}</div>
+    ${versionEditionPickers(g, designOpts(g.id))}
     <div class="cm-layout"><div class="cm-photo-col">${cmSides(g, designOpts(g.id).version) ? `<div class="cm-sides" role="group" aria-label="Which side">${[['', 'Front'], ['back', 'Back']].map(([sd, lb]) => `<button type="button" class="btn-sm ${(designOpts(g.id).side || '') === sd ? 'on' : ''}" id="cm-side-${sd || 'front'}" aria-pressed="${(designOpts(g.id).side || '') === sd}" onclick="setCmSide('${esc(g.id)}', '${sd}')">${lb}</button>`).join('')}</div>` : ''}${(combos.find(c => c.id === v.pick) || {}).photo ? `<img class="cm-canvas cm-photo" src="${esc(combos.find(c => c.id === v.pick).photo)}" alt="${esc(`${g.title}: ${cmDescribe(g.parts, colors)}`)}" referrerpolicy="no-referrer" />` : cmCanvas(cmMapFor(g, designOpts(g.id).version, designOpts(g.id).side), g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}</div>
     <div class="cm-controls">
     ${price !== null ? `<div class="cm-price live-price" id="cm-price" aria-live="polite"><div class="live-price-row"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span></div>
@@ -6263,6 +6264,7 @@ function setDesignVersion(id, vid) {
   const g = state.gallery.find(x => x.id === id);
   if (g && (g.versions || []).some(v => (v.parts && v.parts.length) || Array.isArray(v.accessories))) { render(); document.querySelector(`input[name="version-${id}"]:checked`)?.focus(); return; }   // its own parts or accessories: redraw the page
   refreshDesignPrice(id, '');
+  document.querySelector(`input[name="version-${id}"]:checked`)?.focus();
 }
 // On the request form: switch an item's version (adds or removes the pack that goes with it).
 function setItemVersion(i, vid) {
@@ -6391,15 +6393,18 @@ function renderVersionsForm(f) {
 function plainOriginal(v, i) { return i === 0 && v && !(v.parts && v.parts.length) && !v.colorMap && !Array.isArray(v.accessories) && !v.photo; }
 function renderVersionQuick(f) {
   const vs = f.versions || [], tab = f.tab >= 0 ? f.tab : -1;
-  const tabs = vs.map((v, n) => plainOriginal(v, n) ? '' : `<button type="button" class="btn-sm ver-tab ${tab === n ? 'on' : ''}" id="ver-tab-${n}" aria-pressed="${tab === n}" onclick="openVersionTab(${n})">${esc(v.name || `Version ${n + 1}`)}</button>`).join('');
-  return `<div class="version-quick" id="version-quick">
-    ${vs.length ? `<div class="ver-tabs" role="group" aria-label="Versions"><button type="button" class="btn-sm ver-tab ${tab < 0 ? 'on' : ''}" id="ver-tab-main" aria-pressed="${tab < 0}" onclick="openVersionTab(-1)">${esc(plainOriginal(vs[0], 0) ? vs[0].name || 'Original' : 'Main design')}</button>${tabs}</div>` : ''}
+  const tabs = vs.map((v, n) => plainOriginal(v, n) ? '' : `<button type="button" class="design-tab ver-tab ${tab === n ? 'on' : ''}" id="ver-tab-${n}" aria-pressed="${tab === n}" onclick="openVersionTab(${n})">${esc(v.name || `Version ${n + 1}`)}</button>`).join('');
+  return `<div class="design-tabs" role="group" aria-label="Original and versions of this design">
+      <button type="button" class="design-tab ver-tab ${tab < 0 ? 'on' : ''}" id="ver-tab-main" aria-pressed="${tab < 0}" onclick="openVersionTab(-1)">${esc(vs.length && plainOriginal(vs[0], 0) ? vs[0].name || 'Original' : 'Original')}</button>${tabs}
+      <button type="button" class="design-tab design-tab-add" id="ver-tab-new" onclick="focusNewVersion()">+ New version</button></div>
+    <div class="version-quick" id="version-quick">
     <div class="field"><label for="new-version-name">Add a version</label>
       <div class="version-quick-row"><input type="text" id="new-version-name" maxlength="40" placeholder="e.g. Joined pair" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addVersionQuick(); }" />
       <button type="button" class="btn-sm" id="add-version-quick" onclick="addVersionQuick()">Add version</button></div>
-      <div class="field-help">Just type a name. The new version opens in its own tab with your parts filled in, and its own color picker set-up.</div></div>
+      <div class="field-help">${tab >= 0 ? `You are editing the <strong>${esc((vs[tab] || {}).name || 'version')}</strong> tab. ` : ''}Type a name to add a version. It opens in its own tab, next to Original, with your parts filled in and its own color picker set-up.</div></div>
   </div>`;
 }
+function focusNewVersion() { document.getElementById('version-quick')?.scrollIntoView({ block: 'center' }); document.getElementById('new-version-name')?.focus(); }
 const cloneJson = x => (x == null ? x : JSON.parse(JSON.stringify(x)));
 // Puts the open tab's parts and color picture back where they belong (the version, or the main design).
 function storeVersionTab() {

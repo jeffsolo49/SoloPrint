@@ -1710,3 +1710,19 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 @keyframes price-flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .price-flash { animation: price-flash 0.9s ease-out; }
 @media (prefers-reduced-motion: reduce) { .price-flash { animation: none; } }
+
+/* Dark mode, customers: buttons are light so they stand out from the dark page. Inside them the colors are the light-theme ones. */
+@media (prefers-color-scheme: dark) {
+  html:not(.owner-mode) :is(.btn-sm, .btn-secondary, .bubble, .mode-option):not([aria-pressed="true"]):not(.on):not(.btn-gold):not(.btn-primary) {
+    --text: #1d2152; --muted: #343c80; --accent: #7c1d82; --red: #98203a; --btn-border: #f2f3ff;
+    background: #e8e6fb; color: #1d2152; border-color: #f2f3ff;
+  }
+  html:not(.owner-mode) :is(.btn-sm, .btn-secondary, .bubble, .mode-option):not([aria-pressed="true"]):not(.on):not(.btn-gold):not(.btn-primary):hover { background: #ffffff; border-color: #ffffff; }
+}
+
+/* Tabs at the top of the design form: the original and each version */
+.design-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--border); margin: 0 0 12px; }
+.design-tab { background: none; border: 0; border-bottom: 4px solid transparent; margin-bottom: -2px; padding: 10px 16px; font: inherit; font-size: 15px; font-weight: 700; color: var(--text); cursor: pointer; border-radius: 8px 8px 0 0; }
+.design-tab:hover { background: var(--surface2); }
+.design-tab.on { border-bottom-color: var(--accent); color: var(--accent); background: var(--surface2); }
+.design-tab-add { color: var(--muted); font-weight: 600; }
