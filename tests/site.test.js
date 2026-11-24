@@ -570,10 +570,11 @@ const STATES = {
     await page.fill('#client-name', 'Dana');
     await page.click('text=I have an idea');
     await page.fill('#notes-0', 'A name sign');
-    await page.waitForTimeout(600);
+    await page.waitForFunction(() => /A name sign/.test(localStorage.getItem('soloprint_request_draft_v1') || ''));
     await page.reload();
     await page.waitForFunction(() => !state.loading);
-    assert(await page.inputValue('#client-name') === 'Dana' && await page.inputValue('#notes-0') === 'A name sign', 'draft was not restored');
+    const got = await page.evaluate(() => [document.querySelector('#client-name')?.value, document.querySelector('#notes-0')?.value, localStorage.getItem('soloprint_request_draft_v1')]);
+    assert(got[0] === 'Dana' && got[1] === 'A name sign', 'draft was not restored ' + JSON.stringify(got));
     await page.fill('#client-email', 'dana@example.com');
     await page.click('#submit-btn');
     await requestSent(page);
@@ -3033,6 +3034,27 @@ const STATES = {
     await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); requestGalleryItem('g1'); });
     await page.waitForSelector('#before-send');
     assert(await page.evaluate(() => !!document.querySelector('#before-send #preorder-summary') && !!document.querySelector('#before-send #gift-card') && document.querySelectorAll('#preorder-summary, #gift-card').length === 2), 'the summary and the gift option sit in one card');
+    await page.close();
+  });
+  await check('timed out: the owner archives a quiet order, it leaves the active tabs, and restoring brings it back', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.waitForSelector('.desk-row');
+    await page.evaluate(() => { state.deskTab = 'wait'; render(); openDeskOrder('1'); });
+    assert(await page.evaluate(() => canTimeOut(state.batches.find(b => b.id === '1'))), 'a sent quote can be timed out');
+    await page.evaluate(() => deskTimeOut('1'));
+    await page.waitForFunction(() => state.batches.find(b => b.id === '1').timedOut);
+    assert(db.jobs['1'].timedOut && db.jobs['1'].timedOut.at, 'saved on the order');
+    assert(await page.evaluate(() => deskTone(state.batches.find(b => b.id === '1'))) === 'timed', 'it moved to Timed out');
+    assert(/Timed out \(1\)/.test(await page.textContent('.desk-tabs')), await page.textContent('.desk-tabs'));
+    assert(!(await page.evaluate(() => buildNotifications().some(n => n.batchId === '1'))), 'no bell notes for it');
+    await page.evaluate(() => { openDeskOrder('1'); });
+    await page.waitForSelector('#restore-order');
+    await page.click('#restore-order');
+    await page.waitForFunction(() => !state.batches.find(b => b.id === '1').timedOut);
+    assert(!db.jobs['1'].timedOut && await page.evaluate(() => deskTone(state.batches.find(b => b.id === '1'))) !== 'timed', 'restored');
+    assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
   await check('inbox: under Orders, filters, mark all done; Settings tabs merged (reviews with about, password with updates)', async () => {

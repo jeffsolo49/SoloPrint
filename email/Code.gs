@@ -531,7 +531,7 @@ function weeklySummaryEmail(report, custom, site, now) {
   const vars = {
     weekSales: money(sales),
     waitingQuote: String(jobs.filter(j => phase(j) === 'estimate').length),
-    waitingApproval: String(jobs.filter(j => phase(j) === 'quote_sent').length),
+    waitingApproval: String(jobs.filter(j => phase(j) === 'quote_sent' && !(j.timedOut && j.timedOut.at)).length),
     unpaid: String(jobs.filter(j => ['order_received', 'production', 'final_payment_needed', 'ready_to_ship', 'delivered'].includes(phase(j)) && !isPaidInFull(j)).length),
     printing: String(jobs.filter(j => phase(j) === 'production').length),
     newReviews: reviews ? String(reviews) : '',
@@ -542,7 +542,7 @@ function weeklySummaryEmail(report, custom, site, now) {
 }
 
 function reminderEmails(records, custom, site) {
-  return (records || []).filter(rec => validEmail(rec.clientEmail)).map(rec => renderEmail('reminder', String(rec.clientEmail), emailVars(rec, custom, site), custom));
+  return (records || []).filter(rec => validEmail(rec.clientEmail) && !(rec.timedOut && rec.timedOut.at)).map(rec => renderEmail('reminder', String(rec.clientEmail), emailVars(rec, custom, site), custom));
 }
 
 // The customer's private link to this order. The long random key in it (made by the database, supabase/order-links.sql)

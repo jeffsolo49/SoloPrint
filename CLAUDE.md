@@ -346,3 +346,7 @@ Walk-through script idea: the customer flows were tested as a phone user (390px)
 ## Default colors: black and white
 
 `defaultColor` prefers Black, then White, then the first regular color (single-color designs and new items start Black). On designs with parts `applyPartColors` starts the main body (first required part and its color group) White and every other part Black; a part's own starting color (`defaultColor`) still wins. `customerColors` lists Black then White first in every picker and keeps them even when marked out of stock. Picking a past-work design on the request form shows its options only: the design name is plain text and the notes box is folded under "Add a note about this item (optional)". Past work is the default selection on a fresh form (`inferMode`).
+
+## Timed out (archive)
+
+Orders before printing (new request, confirming details, quote sent, confirmed but no deposit) can be archived with More actions > "Mark as timed out (archive)" (`deskTimeOut`, `canTimeOut`): the order gets `timedOut: { at }`, lands in the desk's fourth tab "Timed out" (`deskTone` = 'timed', `isTimedOut`), leaves needs/bell notes, and Code.gs skips it for quote reminders and the weekly "waiting for approval" count. "Restore to active orders" (`deskRestore`) clears it; it also lifts by itself when the customer approves after `timedOut.at` or writes (`conversationStatus` 'you'). Nothing is emailed either way; no SQL.
