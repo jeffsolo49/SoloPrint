@@ -1698,3 +1698,7 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .ver-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .ver-tab.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .ver-checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+
+.today-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 24px; }
+.low-badge { color: var(--red); border: 1px solid currentColor; border-radius: 999px; padding: 0 8px; font-size: 12px; background: var(--surface); }
+.design-history { margin-top: 10px; }

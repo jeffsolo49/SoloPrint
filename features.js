@@ -150,6 +150,16 @@ function orderAgain(id) {
     };
     if (item.colorId && !stocked.has(item.colorId)) { item.colorId = ''; item.color = ''; item.filType = 'black'; }
     if (it.minutes) { item.printHours = hoursFromMinutes(it.minutes); item.printMinutes = minuteRemainder(it.minutes); }
+    // A design from the gallery comes back the way it was: same version, edition and a color for each part (colors now out of stock start over).
+    const g = it.galleryId && state.galleryLoaded && state.gallery.find(x => x.id === it.galleryId && x.published);
+    if (g && featureOn('designParts')) {
+      const again = { ...blankGalleryItemFor(g), qty: it.qty, notes: it.notes };
+      if (it.versionId && (g.versions || []).some(v => v.id === it.versionId)) applyVersion(again, g, it.versionId);
+      if (it.editionId && (g.editions || []).some(e => e.id === it.editionId)) applyEdition(again, g, it.editionId);
+      again.designParts.forEach(p => { const was = (it.designParts || []).find(o => o.id === p.id); if (was) { if (was.colorId && stocked.has(was.colorId)) p.colorId = was.colorId; if (p.optional) p.include = !!was.include; } });
+      applyPartColors(again);
+      return again;
+    }
     return item;
   });
   state.clientTab = 'submit';
@@ -162,7 +172,7 @@ function orderAgain(id) {
 function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
   return `${orderIsPreorder(b) && !delivered ? renderPreorderNote(null, b) : ''}${delivered ? '' : `<div class="field-help color-delay-note">${esc(colorDelayNote())}</div>`}<div class="order-extras">
-    ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">Order again</button>` : ''}
+    ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">${delivered ? 'Make this again' : 'Order again'}</button>` : ''}
     ${delivered ? `<button type="button" class="btn-sm btn-gold" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button>` : ''}
   </div>`;
 }
@@ -2313,6 +2323,8 @@ const OWNER_WIKI = [
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
     steps: ['To keep a record of interest: Designs > open "Pre-orders and people interested" and tap "Download pre-order interest (spreadsheet)". It lists everyone who left their name and email and every pre-order request (design, their choices, status, deposit date, place in line).', 'Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+  { id: 'owner-extras', area: 'Designs', title: 'Today list, price check, low filament, undo and emailing people interested', keys: 'today list price check version low filament stock undo put back earlier save email everyone interested bcc',
+    steps: ['Orders opens with a "Today" card listing what to do, in order: answer, confirm, print, ship, new requests. Tap a name to open the order.', 'On a version tab, "Price check" shows what customers pay for that version in the starting colors and with a different color on every part.', 'A color running low shows on the bell, on Settings, and as a "Low on ..." tag on the designs that use it.', 'Editing a design: under the price, "Put back an earlier save" lists the last 5 saves on this device. Pick one and tap Put back (what you have now is kept too).', 'Designs > Pre-orders and people interested > "Email everyone interested" opens your email app with everyone in the hidden Bcc line, after you edit the text. Tap "Download pre-order interest (spreadsheet)" for the list as a file.', 'On a phone the parts list and color ideas start folded; tap "Show and edit" to open them.'], go: ['gallery', ''] },
   { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
     steps: ['Designs > Add a design (wizard). Short steps that adapt to your answers: name (and whether it is a pre-order), photos, price and time, parts, color ideas, accessories, versions, color editions, pre-order settings (only for pre-orders), finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
@@ -3022,9 +3034,14 @@ function partGroupSummary(parts) {
   const keys = Object.keys(groups);
   return keys.length ? `<div class="field-help part-groups-summary" id="part-groups-summary"><strong>Grouped (can't be separated):</strong> ${keys.map(g => `${esc(g)} (${esc(groups[g].join(', '))})`).join(' · ')}</div>` : '';
 }
+// On a phone the long parts list and color areas start folded when the design already has them.
+function formFolded(key) { return !!state.formOpen && state.formOpen[key] === false; }
+function openFormFold(key) { (state.formOpen = state.formOpen || {})[key] = true; render(); document.getElementById(`form-${key}`)?.scrollIntoView({ block: 'start' }); }
+function phoneFoldStart(parts, hasColorMap) { state.formOpen = matchMedia('(max-width: 700px)').matches ? { parts: (parts || []).length ? false : true, color: hasColorMap ? false : true } : {}; }
 function renderDesignPartsForm(f, vi = -1) {
   const own = vi >= 0 ? f.versions[vi] : f;
   own.parts = own.parts || [];
+  if (formFolded('parts') && own.parts.length) return `<fieldset class="owner-edit-item" id="form-parts"><legend>Parts (optional)</legend><div class="field-help">${own.parts.length} part${own.parts.length === 1 ? '' : 's'}: ${esc(own.parts.map(p => p.name || 'Unnamed').join(', '))}.</div><button type="button" class="btn-sm" id="open-parts" onclick="openFormFold('parts')">Show and edit the parts</button></fieldset>`;
   const P = vi >= 0 ? `v${vi}-` : '', L = vi >= 0 ? `state.galleryForm.versions[${vi}].parts` : 'state.galleryForm.parts', V = vi >= 0 ? `, ${vi}` : '';
   return `<fieldset class="owner-edit-item">
     <legend>Parts (optional)</legend>
@@ -3500,6 +3517,7 @@ function applyDesignOpts(item, opts) {
 function refreshDesignPrice(id, focusId) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
+  savePreorderPicks(id);
   if (document.getElementById('color-ideas')) { refreshColorIdeas(id, focusId); return; }
   const el = document.getElementById('work-price');
   if (el) { el.innerHTML = renderWorkPrice(g); paintColorPreviews(); }
@@ -4024,6 +4042,7 @@ function renderCmSaveTools(g, v, colors) {
   const gid = esc(g.id);
   return `<div class="cm-tools">
     ${reverseColors(cmOnShow(g, colors)) ? `<button type="button" class="btn-sm" id="cm-reverse" onclick="reverseCmColors('${gid}')">Reverse colors</button>` : ''}
+    <button type="button" class="btn-sm" id="cm-share" onclick="copyShareColors('${gid}')">Copy a link to these colors</button>
     ${mine ? `<div class="cm-saved-note">${mine.sent ? `<span id="cm-send-msg" tabindex="-1">Sent. Thank you! If I like it, I may add "${esc(mine.name)}" for everyone (I might change the name).</span>`
         : `<button type="button" class="btn-sm" id="cm-send" onclick="sendCmColors('${gid}', '${esc(mine.id)}')">Send to SoloPrint to share with everyone</button>
            <div class="alert error" id="cm-send-msg" tabindex="-1"></div>`}
@@ -4036,6 +4055,7 @@ function renderCmSaveTools(g, v, colors) {
 }
 function refreshColorIdeas(id, focusId) {
   const g = state.gallery.find(x => x.id === id);
+  savePreorderPicks(id);
   const el = document.getElementById('color-ideas');
   if (!g || !el) { render(); return; }
   el.outerHTML = renderColorIdeas(g);
@@ -4336,6 +4356,7 @@ function cmRequestPreview(item) {
 
 // ── Owner: set up the photo, match areas to parts, and make color ideas ──
 function renderColorMapForm(f) {
+  if (formFolded('color') && f.colorMap) return `<fieldset class="owner-edit-item" id="form-color"><legend>Color ideas photo (optional)</legend><div class="field-help">A color ideas picture is set up with ${(f.colorMap.combos || []).length} color idea${(f.colorMap.combos || []).length === 1 ? '' : 's'}.</div><button type="button" class="btn-sm" id="open-color" onclick="openFormFold('color')">Show and edit the color ideas</button></fieldset>`;
   const parts = cleanDesignParts(f.parts);
   const m = f.colorMap;
   const choices = ownerPartChoices();
@@ -6387,6 +6408,7 @@ function openVersionTab(n, quiet) {
   const f = state.galleryForm; if (!f) return;
   storeVersionTab();
   const v = n >= 0 ? (f.versions || [])[n] : null;
+  if (!quiet) phoneFoldStart(v ? (v.parts && v.parts.length ? v.parts : f.parts) : f.parts, v ? (v.colorMap || (v.photo && f.colorMap)) : f.colorMap);
   if (v) {
     f._main = { parts: f.parts, colorMap: f.colorMap };
     f.parts = v.parts && v.parts.length ? v.parts : (f.parts || []).map(p => ({ ...p, allowed: (p.allowed || []).slice() }));
@@ -6472,6 +6494,7 @@ function renderVersionPage(f) {
   return `${renderVersionDetails(f, n)}
     ${renderDesignPartsForm(f)}
     <button type="button" class="btn-sm" id="ver-useparts" onclick="useMainParts()">Copy the original's parts again</button>
+    ${versionPriceCheck(f)}
     ${!f.colorMap && f._main && f._main.colorMap ? `<div class="field-help" style="margin-top:12px;">This version has no color picture of its own yet, so customers see the original's. Upload this version's picture below, or <button type="button" class="btn-link" id="ver-copy-cm" onclick="copyMainColorMap()">start from the original's picture and color ideas</button>.</div>` : ''}
     ${renderColorMapForm(f)}
     <fieldset class="owner-edit-item ver-acc-box"><legend>${nm}: accessories</legend>
@@ -6805,6 +6828,7 @@ function renderPreorderLeads() {
     <ul class="lead-list">${list.map(l => { const d = (l.data.lead && l.data.lead.designs) || [], started = (l.data.items || []).some(it => it && (it.name || it.notes));
       return `<li><strong>${esc(l.name || 'No name')}</strong> · <a href="mailto:${esc(l.email)}">${esc(l.email)}</a> · ${esc(d.map(x => x.title + (x.pick ? ' (' + x.pick + ')' : '')).join(', ') || 'a pre-order')}${started ? ' · started a request' : ''} · ${esc(new Date(l.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</li>`; }).join('')}</ul>
     <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn-sm" id="leads-copy" onclick="copyLeadEmails()">Copy all emails</button>
+      <button type="button" class="btn-sm" id="leads-email" onclick="openInterestEmail()">Email everyone interested</button>
       <button type="button" class="btn-sm" onclick="state.leadsLoaded = false; render();">Refresh</button></div>
   </div>`;
 }
@@ -7123,3 +7147,236 @@ document.addEventListener('click', e => {
   e.preventDefault();
   openPhotoViewer(a.href, img.alt || 'Photo', img.alt || '');
 });
+
+
+// ══ OWNER EXTRAS: today list, version price check, low-stock notes, undo for saves, interest e-mail ══
+
+// Orders page: one card with what to do today, in the order to do it.
+function renderTodayCard() {
+  const groups = [['Answer', 'Customer wrote'], ['Confirm', 'Confirm order'], ['Print', 'Print it'], ['Ship', 'Ship it'], ['New requests', 'New request']];
+  const rows = {};
+  state.batches.forEach(b => orderNeeds(b).filter(n => n[1] === 'red').forEach(n => { const g = groups.find(x => x[1] === n[0]); if (g) (rows[g[0]] = rows[g[0]] || []).push(b); }));
+  const total = Object.values(rows).reduce((a, l) => a + l.length, 0);
+  if (!total) return '';
+  return `<div class="card today-card" id="today-list">
+    <h3 class="card-title">Today: ${total} thing${total === 1 ? '' : 's'} to do</h3>
+    <div class="today-groups">${groups.filter(g => rows[g[0]]).map(g => `<div class="today-group"><h4 class="sub-title" style="margin-top:0;padding-top:0;border:0;">${esc(g[0])} (${rows[g[0]].length})</h4>
+      <ul class="lead-list">${rows[g[0]].slice(0, 8).map(b => `<li><button type="button" class="btn-link" onclick="focusOwnerOrder('${esc(b.id)}')">${esc(b.clientName || 'A customer')}</button> · ${esc(orderTitle(b))}</li>`).join('')}${rows[g[0]].length > 8 ? `<li class="field-help">and ${rows[g[0]].length - 8} more</li>` : ''}</ul></div>`).join('')}</div>
+  </div>`;
+}
+
+// Version tab: what a customer would pay for this version in the starting colors, and with a different color on every part.
+function versionPriceCheck(f) {
+  const v = f.versions && f.versions[f.tab];
+  if (!v) return '';
+  const parts = cleanDesignParts(f.parts), vers = cleanVersions(f.versions, parts);
+  const vi = vers.find(x => x.id === v.id);
+  if (!vi) return '';
+  if (parts.length) vi.parts = parts;
+  const g = { id: f.id || 'x', title: f.title, price: parseFloat(f.price) || 0, minutes: totalPrintMinutes(f.hours, f.minutes), filType: f.filType, colorId: f.colorId || '', parts,
+    grams: parseFloat(f.grams) || (f._main ? f._main.parts : f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null, photos: [], versions: vers };
+  const opts = { include: {}, logo: false, version: v.id, edition: '', acc: {}, skipMain: false };
+  let a = null, b = null;
+  try {
+    a = designEstimate(g, null, opts);
+    const choices = partColorChoices(), colors = {};
+    parts.filter(p => !p.optional).forEach((p, i) => { if (choices.length) colors[p.id] = choices[i % choices.length].key; });
+    b = designEstimate(g, colors, opts);
+  } catch (e) { /* shown as no price */ }
+  if (a === null) return `<div class="price-preview-box" id="ver-price-check"><div class="field-help">Price check: ${v.tbd ? 'this version says "Price confirmed in the quote".' : 'enter print time and grams (on the Original tab) or a set price to see what customers pay for this version.'}</div></div>`;
+  return `<div class="price-preview-box" id="ver-price-check"><strong>Price check for ${esc(v.name || 'this version')}</strong>
+    <div>Starting colors: <span class="price-big" style="font-size:1.2em;">$${a.toFixed(2)}</span>${b !== null && Math.abs(b - a) > 0.004 ? ` · a different color on every part: <strong>$${b.toFixed(2)}</strong>` : ''}</div>
+    <div class="field-help">Per ${(Number(v.count) || 1) > 1 ? `set of ${Number(v.count)} main items` : 'item'}, before add-ons, accessories and shipping.</div></div>`;
+}
+
+// Low filament: a bell note for each color running low, and which designs use it.
+function lowStockNotifications() {
+  const at = state.lowStockAt || (state.lowStockAt = new Date().toISOString());
+  return lowStockColors().map(c => ({ id: `low-${c.id}-${stockFor(c.id).grams <= 0 ? 'out' : 'low'}`, batchId: '', at,
+    title: `Running low: ${c.name}`, body: `${Math.max(0, stockFor(c.id).grams).toFixed(0)} g left${stockFor(c.id).grams <= 0 ? ', hidden from customers' : ''}. Tap to update stock.` }));
+}
+function designColorIds(g) {
+  const ids = new Set();
+  if (g.colorId) ids.add(g.colorId);
+  (g.parts || []).forEach(p => { if (p.defaultColor) ids.add(p.defaultColor); });
+  return ids;
+}
+function lowStockDesignNote(g) {
+  const low = lowStockColors().filter(c => designColorIds(g).has(c.id));
+  return low.length ? ` <span class="badge low-badge" title="Running low on this color">Low on ${esc(low.map(c => c.name).join(', '))}</span>` : '';
+}
+
+// Undo for design saves: the last few saved versions of each design, kept on this device.
+const DESIGN_HISTORY_KEY = 'soloprint_design_history_v1';
+function designHistory() { try { return JSON.parse(localStorage.getItem(DESIGN_HISTORY_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function pushDesignHistory(g) {
+  if (!g) return;
+  try {
+    const all = designHistory(), list = all[g.id] || [];
+    const row = galleryRowOf(g);
+    if (list[0] && JSON.stringify(list[0].row) === JSON.stringify(row)) return;
+    all[g.id] = [{ at: new Date().toISOString(), row }].concat(list).slice(0, 5);
+    localStorage.setItem(DESIGN_HISTORY_KEY, JSON.stringify(all));
+  } catch (e) { /* kept only when there is room */ }
+}
+function renderDesignHistory(f) {
+  const list = designHistory()[f.id] || [];
+  if (!list.length) return '';
+  return `<details class="design-history" id="design-history"><summary>Put back an earlier save (${list.length})</summary>
+    <div class="field-help">Each time you save, the design as it was before is kept on this device. Pick one to put back; what you have now is kept too, so you can undo the undo.</div>
+    <ul class="lead-list">${list.map((h, k) => `<li>${esc(fmtShort(h.at))} · ${esc((h.row.data && h.row.data.title) || 'Untitled')} <button type="button" class="btn-sm" id="history-put-${k}" onclick="restoreDesignSave(${k})">Put back</button></li>`).join('')}</ul></details>`;
+}
+async function restoreDesignSave(k) {
+  const f = state.galleryForm, cur = f && state.gallery.find(x => x.id === f.id);
+  const h = (designHistory()[f && f.id] || [])[k];
+  if (!h || !cur) return;
+  if (!confirm('Put back this earlier save? Your current version is kept so you can undo this.')) return;
+  pushDesignHistory(cur);
+  try { await writeGalleryItem(cleanGalleryItem({ ...h.row, id: cur.id })); }
+  catch (e) { softNote("Couldn't put it back. Check you're logged in."); return; }
+  await loadGallery();
+  editGalleryItem(cur.id);
+  softNote('Put back. Your earlier version is kept in the list too.');
+}
+
+// People interested: write to all of them at once from your own email app (nothing is sent by the site).
+function openInterestEmail() {
+  const list = leadList().filter(l => EMAIL_OK.test(String(l.email || '')));
+  if (!list.length) { softNote('Nobody to write to yet.'); return; }
+  const names = [...new Set(list.flatMap(l => ((l.data.lead && l.data.lead.designs) || []).map(d => d.title)).filter(Boolean))];
+  const subject = names.length === 1 ? `An update on the ${names[0]}` : 'An update on your pre-order';
+  const body = `Hi,\\n\\nThanks for your interest${names.length === 1 ? ` in the ${names[0]}` : ''}. Here is where things stand: \\n\\n\\n\\nIf you still want one, you can request it here: ${location.origin}\\n\\nThanks,\\n`.replace(/\\n/g, '\n');
+  closeInterestEmail();
+  const box = document.createElement('div');
+  box.id = 'interest-email'; box.className = 'modal-backdrop mail-modal'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Email everyone interested');
+  box.innerHTML = `<div class="modal-card"><h3 class="card-title">Email ${list.length} interested ${list.length === 1 ? 'person' : 'people'}</h3>
+    <div class="field-help">This opens your email app with everyone in the hidden (Bcc) line, so they don't see each other. Change the text first if you like. Nobody who already requested is included.</div>
+    <div class="field"><label for="ie-subject">Subject</label><input type="text" id="ie-subject" value="${esc(subject)}" maxlength="150" /></div>
+    <div class="field"><label for="ie-body">Message</label><textarea id="ie-body" class="autogrow" style="min-height:140px;">${esc(body)}</textarea></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn-sm" id="ie-open">Open in my email app</button><button type="button" class="btn-sm" onclick="closeInterestEmail()">Cancel</button></div></div>`;
+  document.body.appendChild(box);
+  document.getElementById('ie-open').onclick = () => {
+    const bcc = list.map(l => l.email).join(','), sub = document.getElementById('ie-subject').value, msg = document.getElementById('ie-body').value;
+    location.href = `mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(msg)}`;
+    closeInterestEmail();
+  };
+  document.getElementById('ie-subject').focus();
+}
+function closeInterestEmail() { document.getElementById('interest-email')?.remove(); }
+
+
+// ══ CUSTOMER EXTRAS: share colors, compare versions, remembered pre-order choices, "tell me when it's back" ══
+
+// A link to the colors on show: ?design=<name>&v=<version>&c=part:color,part:color
+function shareColorsLink(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g) return '';
+  const colors = cmViewColors(id) || {}, o = designOpts(id);
+  const c = Object.entries(colors).map(([p, k]) => `${p}:${k}`).join(',');
+  return `${designLink(id)}${o.version ? `&v=${encodeURIComponent(o.version)}` : ''}${c ? `&c=${encodeURIComponent(c)}` : ''}`;
+}
+async function copyShareColors(id) {
+  const url = shareColorsLink(id);
+  try { await navigator.clipboard.writeText(url); softNote('Link copied. Anyone who opens it sees these colors.'); }
+  catch (e) { prompt('Copy this link to share these colors:', url); }
+}
+// On a design page opened from such a link, the colors and version are picked once.
+function applyShareParams(g) {
+  state.sharedApplied = state.sharedApplied || {};
+  if (state.sharedApplied[g.id]) return;
+  state.sharedApplied[g.id] = true;
+  const q = new URLSearchParams(location.search), c = q.get('c'), v = q.get('v');
+  if (!c && !v) return;
+  if (v && (g.versions || []).some(x => x.id === v)) designOpts(g.id).version = v;
+  if (c) {
+    const parts = curParts(g), keys = partColorChoices().map(x => x.key), own = {};
+    c.split(',').slice(0, 30).forEach(pair => { const [p, k] = pair.split(':'); if (parts.some(x => x.id === p) && keys.includes(k)) own[p] = k; });
+    if (Object.keys(own).length) { state.cmView = state.cmView || {}; state.cmView[g.id] = { pick: 'own', own: { ...cmPartColors(parts, {}, partColorChoices()), ...own } }; }
+  }
+  try { const u = new URL(location.href); u.searchParams.delete('c'); u.searchParams.delete('v'); history.replaceState(history.state, '', u); } catch (e) { /* ignore */ }
+}
+
+// Pre-order choices stay on this device, so coming back later shows what they picked.
+const PREORDER_PICKS_KEY = 'soloprint_preorder_picks_v1';
+function preorderPicksAll() { try { return JSON.parse(localStorage.getItem(PREORDER_PICKS_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function savePreorderPicks(id) {
+  const g = state.gallery.find(x => x.id === id);
+  if (!g || !g.preorder) return;
+  const o = designOpts(id), v = (state.cmView || {})[id];
+  try {
+    const all = preorderPicksAll();
+    all[id] = { version: o.version, edition: o.edition, side: o.side || '', include: o.include, logo: !!o.logo, acc: o.acc, pick: v ? v.pick : '', own: v ? v.own : {}, at: Date.now() };
+    const keep = Object.entries(all).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 12);
+    localStorage.setItem(PREORDER_PICKS_KEY, JSON.stringify(Object.fromEntries(keep)));
+  } catch (e) { /* kept only when there is room */ }
+}
+function restorePreorderPicks(g) {
+  state.picksRestored = state.picksRestored || {};
+  if (!g.preorder || state.picksRestored[g.id] || (state.designOpts || {})[g.id]) return;
+  state.picksRestored[g.id] = true;
+  const p = preorderPicksAll()[g.id];
+  if (!p) return;
+  const o = designOpts(g.id);
+  if ((g.versions || []).some(x => x.id === p.version)) o.version = p.version;
+  if ((g.editions || []).some(x => x.id === p.edition)) o.edition = p.edition;
+  o.side = p.side || ''; o.include = p.include || {}; o.logo = !!p.logo; o.acc = p.acc || {};
+  const keys = partColorChoices().map(x => x.key);
+  if (p.pick === 'own' && p.own && Object.values(p.own).every(k => keys.includes(k))) { state.cmView = state.cmView || {}; state.cmView[g.id] = { pick: 'own', own: p.own }; }
+  else if (p.pick) { state.cmView = state.cmView || {}; state.cmView[g.id] = { pick: p.pick, own: p.own || {} }; }
+}
+
+// Versions side by side (only when a design has two or more).
+function renderVersionCompare(g) {
+  const vs = g.versions || [];
+  if (vs.length < 2) return '';
+  const base = designOpts(g.id);
+  const rows = vs.map(v => {
+    const price = designEstimate(g, null, { ...base, include: {}, version: v.id, acc: {}, skipMain: false });
+    const parts = curParts(g, v.id), acc = (Array.isArray(v.accessories) ? v.accessories : (g.accessories || [])).map(id => state.gallery.find(x => x.id === id && x.published)).filter(Boolean);
+    return `<tr><th scope="row">${esc(v.name)}</th><td>${esc(v.count || 1)}</td><td>${price !== null ? '$' + price.toFixed(2) : 'In your quote'}</td><td>${parts.filter(p => !p.optional).length || 'one color'}</td><td>${acc.length ? esc(acc.map(a => a.title).join(', ')) : 'none'}</td></tr>`;
+  }).join('');
+  return `<details class="version-compare" id="version-compare"><summary>Compare versions</summary>
+    <div class="table-scroll"><table class="compare-table"><thead><tr><th scope="col">Version</th><th scope="col">Main items</th><th scope="col">Price from</th><th scope="col">Color areas</th><th scope="col">Accessories</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+}
+
+// Colors that are out of stock: "tell me when it's back" (saved as a note for the owner, like a pre-order lead).
+function soldOutColorsFor(g) {
+  const rel = new Set(designColorIds(g));
+  curParts(g).forEach(p => (p.allowed || []).forEach(k => rel.add(k)));
+  const all = state.settings.colors.filter(c => c.outOfStock);
+  return (rel.size ? all.filter(c => rel.has(c.id)) : all).slice(0, 4);
+}
+function renderSoldOutNotes(g) {
+  if (state.ownerUnlocked && state.view === 'owner') return '';
+  const list = soldOutColorsFor(g);
+  if (!list.length) return '';
+  const asking = state.notifyFor && state.notifyFor.gid === g.id ? state.notifyFor : null;
+  const l = leadSaved();
+  return `<div class="soldout-note" id="soldout-note"><div class="field-help">Out of stock for now: ${list.map(c => esc(c.name)).join(', ')}.</div>
+    ${asking ? `<div class="field-help">We'll email you when <strong>${esc(cmColor(asking.colorId).name)}</strong> is back.</div>
+      <div class="row2"><div class="field"><label for="notify-name">Your name</label><input type="text" id="notify-name" maxlength="120" value="${esc(state.clientName || (l && l.name) || '')}" autocomplete="name" /></div>
+      <div class="field"><label for="notify-email">Your email</label><input type="email" id="notify-email" maxlength="200" value="${esc(state.clientEmail || (l && l.email) || '')}" autocomplete="email" /></div></div>
+      <div class="alert error" id="notify-err" role="alert"></div>
+      <button type="button" class="btn-sm" id="notify-send" onclick="sendNotifyColor()">Tell me when it's back</button> <button type="button" class="btn-sm" onclick="state.notifyFor = null; refreshDesignPrice('${esc(g.id)}', '')">Cancel</button>`
+    : list.map(c => `<button type="button" class="btn-sm" id="notify-${esc(c.id)}" onclick="askNotifyColor('${esc(g.id)}', '${esc(c.id)}')">Tell me when ${esc(c.name)} is back</button>`).join(' ')}</div>`;
+}
+function askNotifyColor(gid, colorId) { state.notifyFor = { gid, colorId }; refreshDesignPrice(gid, ''); document.getElementById('notify-email')?.focus(); }
+async function sendNotifyColor() {
+  const a = state.notifyFor; if (!a) return;
+  const name = String((document.getElementById('notify-name') || {}).value || '').trim(), email = String((document.getElementById('notify-email') || {}).value || '').trim();
+  if (name.length < 2) { showAlert('notify-err', 'Please type your name.', 'error'); return; }
+  if (!EMAIL_OK.test(email)) { showAlert('notify-err', 'Please type a valid email.', 'error'); return; }
+  const g = state.gallery.find(x => x.id === a.gid);
+  const old = leadSaved(), same = old && old.email === email.toLowerCase();
+  const entry = { id: `n-${a.gid}-${a.colorId}`.slice(0, 80), title: g ? g.title : 'A design', pick: `Tell me when ${cmColor(a.colorId).name} is back` };
+  const designs = (same ? old.designs || [] : []).filter(d => d.id !== entry.id).concat([entry]);
+  const lead = { email: email.toLowerCase(), name, designs, at: same && old.at ? old.at : new Date().toISOString() };
+  state.clientName = name; state.clientEmail = email;
+  try { localStorage.setItem(LEAD_KEY, JSON.stringify(lead)); } catch (e) { /* ignore */ }
+  try { await saveLead(lead); } catch (e) { try { localStorage.setItem(LEAD_KEY, JSON.stringify({ ...lead, pending: true })); } catch (e2) { /* ignore */ } }
+  state.notifyFor = null;
+  refreshDesignPrice(a.gid, '');
+  softNote("Got it. I'll email you when it's back.");
+}
+
+function blankGalleryItemFor(g) { return { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' }; }

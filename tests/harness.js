@@ -7,6 +7,7 @@ function fail(name, e) {
   console.log(`  FAIL ${name}\n       ${String(e && e.message || e).split('\n').join('\n       ')}`);
 }
 function check(name, fn) {
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return Promise.resolve();   // ONLY=text runs just the checks whose name has it
   let out;
   try { out = fn(); } catch (e) { fail(name, e); return Promise.resolve(); }
   if (out && typeof out.then === 'function') return out.then(() => pass(name), e => fail(name, e));
