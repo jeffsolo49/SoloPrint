@@ -1784,3 +1784,8 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .inbox-filters .btn-sm.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .before-send .gift-card, .before-send .preorder-summary { border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 10px; }
 .soon-count { color: var(--green); }
+
+/* Orders sub-menu: a More button with To make and Fix numbers */
+.sub-more { position: relative; display: inline-block; }
+.sub-more-btn::after { content: ' \25BE'; }
+.sub-more-list { position: absolute; z-index: 50; top: 100%; left: 0; margin-top: 4px; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); min-width: 160px; }

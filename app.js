@@ -1420,8 +1420,6 @@ function renderClientApp() {
       ${renderBubble('jobs', t('navJobs'), t('navJobs'), t('navJobsSub'),
         '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M4 5h.01M4 12h.01M4 19h.01"/>',
         hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
-      ${faqList().length && featureOn('faq') ? renderBubble('faq', t('navFaq'), t('navFaq'), t('navFaqSub'),
-        '<circle cx="12" cy="12" r="9.5"/><path d="M9.5 9.5a2.6 2.6 0 1 1 3.6 2.4c-.7.4-1.1.9-1.1 1.6"/><path d="M12 17h.01"/>') : ''}
     </nav>
     <main class="main" id="main" tabindex="-1">
       <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? t('navRequest') : state.clientTab === 'gallery' ? galleryName() : state.clientTab === 'faq' ? t('navFaq') : t('navJobs'))}</h1>
@@ -1441,14 +1439,17 @@ function ownerSection() {
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
-  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['inbox', 'Inbox'], ['etsytodo', 'To make'], ['numbers', 'Fix numbers']]
+  const moreTabs = sec === 'dashboard' ? [['etsytodo', 'To make'], ['numbers', 'Fix numbers']] : [];
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['inbox', 'Inbox']]
     : sec === 'gallery' ? [['gallery', 'Designs'], ['newdesign', 'Add a design (wizard)'], ['calculator', 'Calculator & Models']]
-    : sec === 'help' ? [['help', 'Help'], ['practice', 'Practice order'], ['preview', 'Preview']] : null;
+    : sec === 'help' ? [['help', 'Help'], ['practice', 'Practice & preview']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
-  const cur = tabs.some(x => x[0] === t) ? t : tabs[0][0];
+  const cur = tabs.some(x => x[0] === (t === 'preview' ? 'practice' : t)) ? (t === 'preview' ? 'practice' : t) : (moreTabs.some(x => x[0] === t) ? 'more' : tabs[0][0]);
+  const more = moreTabs.length ? `<span class="sub-more"><button type="button" class="sub-tab sub-more-btn ${cur === 'more' ? 'active' : ''}" id="sub-more" aria-haspopup="true" aria-expanded="${!!state.subMore}" onclick="state.subMore = !state.subMore; render(); document.getElementById('sub-more')?.focus();">${cur === 'more' ? esc((moreTabs.find(x => x[0] === t) || [0, 'More'])[1]) : 'More'}</button>
+    ${state.subMore ? `<div class="sub-more-list" role="group" aria-label="More Orders pages">${moreTabs.map(([id, label]) => `<button type="button" class="btn-sm" id="more-${id}" onclick="state.subMore = false; ${id === 'numbers' ? "state.numbersOnly = ''; " : ''}setOwnerTab('${id}')">${esc(label)}</button>`).join('')}</div>` : ''}</span>` : '';
   return `<nav class="sub-nav" aria-label="${sec === 'dashboard' ? 'Orders' : sec === 'help' ? 'Help' : 'Designs'} sections">
-    ${tabs.map(([id, label]) => `<button type="button" class="sub-tab ${cur === id ? 'active' : ''}" aria-current="${cur === id ? 'page' : 'false'}" onclick="${id === 'numbers' ? 'state.numbersOnly = \'\'; ' : ''}setOwnerTab('${id}')">${esc(label)}${id === 'calculator' && libCount ? `<span class="nav-badge">${libCount}</span>` : ''}${id === 'inbox' && inboxOpenCount() ? `<span class="nav-badge" aria-label="${inboxOpenCount()} waiting">${inboxOpenCount()}</span>` : ''}</button>`).join('')}
+    ${tabs.map(([id, label]) => `<button type="button" class="sub-tab ${cur === id ? 'active' : ''}" aria-current="${cur === id ? 'page' : 'false'}" onclick="${id === 'numbers' ? 'state.numbersOnly = \'\'; ' : ''}setOwnerTab('${id}')">${esc(label)}${id === 'calculator' && libCount ? `<span class="nav-badge">${libCount}</span>` : ''}${id === 'inbox' && inboxOpenCount() ? `<span class="nav-badge" aria-label="${inboxOpenCount()} waiting">${inboxOpenCount()}</span>` : ''}</button>`).join('')}${more}
   </nav>`;
 }
 
@@ -2307,12 +2308,10 @@ function renderOwnerApp() {
       ${state.loadFailed ? `<div class="alert error" style="display:block;" role="alert" id="load-failed">Your orders and money info didn't load, so pages may look empty. Nothing is deleted. <button type="button" class="btn-sm" onclick="loadBatches().then(render)">Try again</button> If it keeps happening, tap Logout and log back in.</div>` : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
         ? renderOwnerSettingsPage()
-        : state.ownerTab === 'practice'
-        ? renderPracticePage()
+        : state.ownerTab === 'practice' || state.ownerTab === 'preview'
+        ? renderPracticePage() + renderPreviewPage()
         : state.ownerTab === 'help'
         ? renderWikiPage()
-        : state.ownerTab === 'preview'
-        ? renderPreviewPage()
         : state.ownerTab === 'inbox'
         ? renderInboxPage()
         : state.ownerTab === 'etsytodo'
@@ -2956,6 +2955,7 @@ async function showClientView() {
 const MERGED_TABS = { library: 'calculator', analytics: 'money', emails: 'settings', filament: 'settings', clients: 'dashboard', orders: 'dashboard' };
 function fixNumbers(id) { state.numbersOnly = id; state.numbersQuery = ''; setOwnerTab('numbers'); }
 function setOwnerTab(tab) {
+  state.subMore = false;
   if (tab === 'emails' || tab === 'filament') state.settingsTab = tab === 'emails' ? 'emails' : 'colors';
   tab = MERGED_TABS[tab] || tab;
   if (tab === 'newdesign' && state.ownerTab !== 'newdesign') startDesignWizard();
