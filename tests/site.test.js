@@ -224,7 +224,7 @@ async function open(db, { width = 1100, height = 900, suffix = '', init, colorSc
 }
 
 // 'settings/colors' opens a Settings section.
-const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders and people interested': true, 'Set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
+const asOwner = tab => `(async () => { state.ownerUnlocked = true; ownerSession = { token: 'OWNER-TOKEN', expiresAt: Date.now() + 3e6 }; state.view = 'owner'; state.ownerTab = '${tab.split('/')[0]}'; state.moneyOpenAll = ${tab.split('/')[0] === 'money'}; state.galleryFolds = ${tab.split('/')[0] === 'gallery'} ? { 'Pre-orders': true, 'Set-ups': true } : {}; state.settingsTab = '${tab.split('/')[1] || ''}'; await loadBatches(); await loadGallery(); render(); })()`;
 const leadIn = "(() => { state.clientName = 'Test Person'; state.clientEmail = 't@example.com'; localStorage.setItem('soloprint_preorder_lead', JSON.stringify({ email: 't@example.com', designs: [] })); })()";
 const STATES = {
   'home': '0',
@@ -1556,8 +1556,8 @@ const STATES = {
     const owner = await open(fixtures());
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
-    assert(tabs.join('|') === 'Orders|Inbox|Designs|Money & Sales|Settings|Help', tabs.join('|'));
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).join('|') === 'Orders|To make|Fix numbers', 'Orders sub-menu');
+    assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Settings|Help', tabs.join('|'));
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim()).join('|') === 'Orders|Inbox|To make|Fix numbers', 'Orders sub-menu');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
     await owner.click('.order-menu-list button:has-text("Fix numbers")');
@@ -2911,7 +2911,7 @@ const STATES = {
     // owner
     await page.evaluate(asOwner('gallery'));
     await page.waitForTimeout(300);
-    await page.evaluate(() => { state.galleryFolds = { 'Pre-order dashboard': true }; render(); });
+    await page.evaluate(() => { state.galleryFolds = { 'Pre-orders': true }; render(); });
     await page.waitForSelector('#preorder-dashboard');
     const dash = await page.textContent('#preorder-dashboard');
     assert(/Dragon Organizer/.test(dash) && /deposits paid/.test(dash) && /waiting on a deposit/.test(dash) && /Late Payer/.test(dash) && /nothing here limits/i.test(dash), dash);
@@ -2953,8 +2953,8 @@ const STATES = {
     db.drafts['zed@example.com'] = { id: '11111111-2222-3333-4444-555555555555', email: 'zed@example.com', name: 'Zed', data: { items: [], lead: { designs: [{ id: 'n-g1-gold', title: 'Dragon Organizer', pick: 'Tell me when Gold is back' }], at: new Date().toISOString() } } };
     const page = await open(db);
     await page.evaluate(asOwner('dashboard'));
-    await page.waitForSelector('#nav-inbox .nav-badge');
-    await page.click('#nav-inbox');
+    await page.waitForSelector('.sub-tab:has-text("Inbox") .nav-badge');
+    await page.click('.sub-tab:has-text("Inbox")');
     await page.waitForSelector('#inbox-todo');
     await page.waitForFunction(() => /Zed/.test(document.getElementById('inbox-todo').textContent) && /Photo from Jane D\./.test(document.getElementById('inbox-todo').textContent));
     const text = await page.textContent('#inbox-todo');
@@ -2993,6 +2993,68 @@ const STATES = {
     await page.click('#soon-add');
     await page.waitForFunction(() => (state.settings.soonIdeas || []).length === 2);
     assert(db.settings.soonIdeas.length === 2 && db.settings.soonIdeas[1].title === 'Desk Tray', JSON.stringify(db.settings.soonIdeas));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('phone design page: price and order button stay at the bottom, description and parts fold, terms fold, no empty part pictures', async () => {
+    const db = fixtures();
+    Object.assign(db.gallery.g1.data, { preorder: true, description: 'The story.', minutes: 150, grams: 85 });
+    db.gallery.g1.data.parts = [{ id: 'x', name: 'Body', grams: 10 }, { id: 'y', name: 'Lid', grams: 5, photo: 'https://img.test/lid.png' }];
+    const page = await open(db, { width: 390, height: 800 });
+    await page.evaluate(leadIn);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await page.waitForSelector('#buy-bar');
+    assert(/Create Order and Send Deposit/.test(await page.textContent('#buy-bar-btn')) && /\$\d/.test(await page.textContent('#buy-bar')), 'bottom bar with price and the main button');
+    assert(await page.evaluate(() => !document.querySelector('.work-desc').open && !document.querySelector('.design-parts').open), 'description and parts start folded on a phone');
+    assert(await page.evaluate(() => !document.querySelector('.preorder-terms-fold').open && /first come, first served/i.test(document.querySelector('.preorder-note').textContent)), 'terms fold, the key line stays');
+    await page.evaluate(() => { document.querySelector('.design-parts').open = true; });
+    assert((await page.$$('.design-part-photo')).length === 1 && (await page.$$('.part-thumb-blank')).length === 0, 'only parts with a photo show a picture box');
+    const big = await page.evaluate(() => { const c = document.querySelector('.special-order-check input'); return c ? c.getBoundingClientRect().width : 99; });
+    assert(big >= 22, 'tick boxes are bigger on a phone: ' + big);
+    await page.close();
+    const wide = await open(db, { width: 1100, height: 800 });
+    await wide.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await wide.waitForSelector('.work-desc');
+    assert(await wide.evaluate(() => document.querySelector('.work-desc').open) && !(await wide.isVisible('#buy-bar')), 'on a wide screen they stay open and there is no bottom bar');
+    await wide.close();
+  });
+  await check('request form: one "Before you send" card; Start here replaces the big Request button; ideas show a count only when enough want them', async () => {
+    const db = fixtures();
+    Object.assign(db.gallery.g1.data, { preorder: true, minutes: 150, grams: 85, price: 40 });
+    db.settings.soonIdeas = [{ id: 's1', title: 'Cable Hook', text: '', photo: '', live: true, wanted: 6 }, { id: 's2', title: 'Tray', text: '', photo: '', live: true, wanted: 2 }];
+    db.settings.soonShowAt = 5;
+    const page = await open(db);
+    assert(await page.isVisible('#start-here') && !(await page.$('#start-request')), 'the big Request button is replaced by Start here');
+    const soon = await page.textContent('#soon-ideas');
+    assert(/6\s*people want this/.test(soon) && !/2\s*people want this/.test(soon), soon);
+    await page.evaluate(leadIn);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); requestGalleryItem('g1'); });
+    await page.waitForSelector('#before-send');
+    assert(await page.evaluate(() => !!document.querySelector('#before-send #preorder-summary') && !!document.querySelector('#before-send #gift-card') && document.querySelectorAll('#preorder-summary, #gift-card').length === 2), 'the summary and the gift option sit in one card');
+    await page.close();
+  });
+  await check('inbox: under Orders, filters, mark all done; Settings tabs merged (reviews with about, password with updates)', async () => {
+    const db = fixtures();
+    db.colorIdeas.push({ id: 'ci8', design_id: 'g1', name: 'Dawn', colors: {}, created_at: new Date().toISOString() });
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    assert((await page.$$eval('nav.nav .nav-tab', els => els.map(e => e.textContent.replace(/\d+$/, '').trim()))).join('|') === 'Orders|Designs|Money & Sales|Settings|Help', 'six tabs are back to five');
+    await page.click('.sub-tab:has-text("Inbox")');
+    await page.waitForSelector('#inbox-todo');
+    await page.click('#inbox-filter-ideas');
+    assert(/Dawn/.test(await page.textContent('#inbox-todo')) && !(await page.$('.inbox-item .inbox-kind:has-text("Filament")')), 'the filter shows only that group');
+    await page.click('#inbox-filter-all');
+    await page.click('#inbox-mark-all');
+    await page.waitForFunction(() => /0\)/.test(document.querySelector('#inbox-todo .card-title').textContent) || document.querySelectorAll('#inbox-todo .inbox-item').length === 0);
+    assert(db.private.inbox && db.private.inbox.done['idea-ci8'], 'mark all done is saved');
+    await page.evaluate(asOwner('settings/reviews'));
+    await page.waitForSelector('.sub-tab.active:has-text("About, links")');
+    const about = await page.textContent('#main');
+    assert(/About you/.test(about) && /Customer reviews/.test(about), 'about and reviews are one tab');
+    await page.evaluate(asOwner('settings/password'));
+    await page.waitForSelector('.sub-tab.active:has-text("Password & updates")');
+    const acct = await page.textContent('#main');
+    assert(/password/i.test(acct) && /Updates|updated/i.test(acct), 'password and updates are one tab');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
