@@ -1666,3 +1666,10 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .version-quick-row input { flex: 1 1 220px; min-width: 0; max-width: 420px; }
 .version-section { margin-top: 14px; border-left: 4px solid var(--accent); }
 .ver-acc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 12px; }
+
+/* Design form: sections sit side by side and wrap when the row gets tight; boxes no wider than their text needs */
+.form-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 0 28px; align-items: start; }
+.form-col { min-width: 0; }
+.form-col .field input[type=text], .form-col .field input[type=number], .form-col .field select { max-width: 560px; }
+.form-col .field textarea { max-width: 640px; }
+.part-form-grid, .cm-regions { max-width: 100%; }
