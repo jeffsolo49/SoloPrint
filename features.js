@@ -938,7 +938,11 @@ function lowStockColors() {
   return state.settings.colors.filter(c => { const s = stockFor(c.id); return s && s.grams <= (Number.isFinite(s.low) ? s.low : currentRules().lowStockGrams); });
 }
 // Colors customers can pick: stocked ones that haven't run out.
-function customerColors() { return state.settings.colors.filter(c => !c.outOfStock); }
+function customerColors() {
+  const isBW = c => !c.special && /^(black|white)$/i.test(String(c.name).trim());
+  const rank = c => (isBW(c) ? (/^black$/i.test(String(c.name).trim()) ? 0 : 1) : 2);
+  return state.settings.colors.filter(c => !c.outOfStock || isBW(c)).map((c, n) => [c, n]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0]);
+}
 
 // Grams each stocked color in an order uses (special order and leftover-roll colors are the customer's own roll).
 function orderColorGrams(b) {
@@ -2914,11 +2918,19 @@ function applyPartColors(item, choicesIn) {
   const choices = choicesIn || partColorChoices();
   // A part with no color (or one that's out of stock now) gets White, else the first regular color.
   const fallback = defaultColor(choices.map(c => ({ ...c, special: c.filType === 'special' })));
+  // A black and white scheme: the main body (the first required part and its group) White, every other part Black.
+  const bw = nm => choices.find(x => String(x.name).trim().toLowerCase() === nm && x.filType !== 'special');
+  const lead = parts.find(p => !p.optional) || parts[0];
+  const isMain = p => p === lead || (!!lead.group && !!p.group && partGroup(p, item.groupMerge) === partGroup(lead, item.groupMerge));
   const groups = [];
   parts.forEach(p => {
     const ok = partChoicesFor(item.designParts, p, item.groupMerge, choices);
     let c = ok.find(x => x.key === p.colorId);
-    if (!c) { c = ok.find(x => x.key === p.defaultColor) || (ok.find(x => x.key === fallback.key) || ok[0]); p.colorId = c.key; }
+    if (!c) {
+      const want = bw(isMain(p) ? 'white' : 'black');
+      c = ok.find(x => x.key === p.defaultColor) || (want && ok.find(x => x.key === want.key)) || ok.find(x => x.key === fallback.key) || ok[0];
+      p.colorId = c.key;
+    }
     let g = groups.find(x => x.c.key === c.key);
     if (!g) groups.push(g = { c, names: [], grams: 0 });
     g.names.push(p.optional ? `${p.name} (add-on)` : p.name);

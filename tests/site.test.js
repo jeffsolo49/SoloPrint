@@ -1049,7 +1049,7 @@ const STATES = {
     assert(/Save/.test(await owner.textContent('#jump-save')), 'a Save button sits in the side bar');
     await owner.close();
   });
-  await check('colors start as White; the owner picks a starting color for each part', async () => {
+  await check('colors start Black (main part White); the owner picks a starting color for each part', async () => {
     const db = fixtures();
     db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });
     db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Eyes', grams: 5 }];
@@ -1064,7 +1064,7 @@ const STATES = {
     await owner.close();
     const page = await open(db);
     await page.click('text=I have an idea');
-    assert(await page.evaluate(() => state.draftItems[0].colorId === 'white'), 'a new item should start White');
+    assert(await page.evaluate(() => state.draftItems[0].colorId === 'black'), 'a new item should start Black');
     await page.evaluate(async () => { await loadGallery(); requestGalleryItem('g1'); });
     await page.waitForSelector('#part-color-0-1');
     assert((await page.inputValue('#part-color-0-0')) === 'white' && (await page.inputValue('#part-color-0-1')) === 'red', 'parts should start White and in the owner\'s starting color');
@@ -1237,7 +1237,7 @@ const STATES = {
     const page = await open(db);
     await page.click('text=I have an idea');
     const pills = await page.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
-    assert(pills.join(',') === 'Black,red,White', `customer order ${pills}`);
+    assert(pills.join(',') === 'Black,White,red', `customer order ${pills}`);
     await page.evaluate(asOwner('settings/colors'));
     await page.click('text=Add a color');
     const last = page.locator('input[aria-label="Color name"]').nth(3);
@@ -1671,7 +1671,7 @@ const STATES = {
     const customer = await open(db);
     await customer.click('text=I have an idea');
     const pills = await customer.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
-    assert(!pills.some(p => /^Black/.test(p)) && pills.some(p => /^Red/.test(p)), `customer colors ${pills}`);
+    assert(pills[0] === 'Black' && pills.some(p => /^Red/.test(p)), `customer colors ${pills}`);
     await customer.close();
     const owner = await open(db);
     await owner.evaluate(asOwner('filament'));
@@ -3280,7 +3280,7 @@ const STATES = {
     const tiles = await page.$$eval('.gallery-pick-tile', ts => ts.map(t => t.textContent.trim()));
     assert(tiles.join() === 'Dragon Organizer,Name Sign', `tiles ${tiles}`);
     await page.click('.gallery-pick-tile:has-text("Dragon Organizer")');
-    assert(await page.inputValue('#name-0') === 'Dragon Organizer' && await page.evaluate(() => state.draftItems[0].galleryId) === 'g1', 'design not picked');
+    assert(/Dragon Organizer/.test(await page.textContent('#design-name-0')) && await page.evaluate(() => state.draftItems[0].galleryId) === 'g1', 'design not picked');
     await page.click('text=Pick a different design');
     assert(await page.$('.gallery-pick-tile'), 'no way back to the designs');
     await page.click('text=I have an idea');

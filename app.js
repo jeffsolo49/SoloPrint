@@ -77,7 +77,7 @@ let librarySaveState = 'saved';
 
 function blankItem() {
   return {
-    link: '', name: '', grams: null, filType: 'white', qty: 1, notes: '', fetching: false,
+    link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
@@ -1750,8 +1750,10 @@ function renderSpecialOrderBox(item, i) {
 }
 
 // With owner colors set up, every item has one picked: White by default (else the first regular color).
+// The starting color when nothing else says: Black, else White, else the first regular color.
 function defaultColor(colors) {
-  return colors.find(x => String(x.name).trim().toLowerCase() === 'white' && !x.special) || colors.find(x => !x.special) || colors[0];
+  const named = nm => colors.find(x => String(x.name).trim().toLowerCase() === nm && !x.special);
+  return named('black') || named('white') || colors.find(x => !x.special) || colors[0];
 }
 function ensureItemColor(item) {
   const colors = customerColors();
@@ -2144,16 +2146,16 @@ function renderItemBlock(item, i) {
       ${mode === 'gallery' && !item.name ? renderGalleryPicker(i) : ''}
       ${mode === 'gallery' && item.name ? `
         <div class="field" style="margin-bottom:8px;">
-          <label for="name-${i}">Design</label>
-          <input type="text" id="name-${i}" value="${esc(item.name)}" oninput="updateDraft(${i},'name',this.value)" />
+          <div class="picked-design" id="design-name-${i}"><span class="field-label">Design</span> <strong>${esc(item.name)}</strong></div>
           <div id="preview-${i}">${renderModelPreview(item)}</div>
           <button type="button" class="btn-sm" style="margin-top:8px;" onclick="changeGalleryPick(${i})">Pick a different design</button>
         </div>
-        <div class="field" style="margin-bottom:8px;">
-          <label>${esc(t('changesLabel'))}</label>
-          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;" spellcheck="true"
-            oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
-        </div>` : ''}
+        <details class="item-note-fold" ${item.notes ? 'open' : ''}><summary>Add a note about this item (optional)</summary>
+          <div class="field" style="margin:8px 0;">
+            <label for="notes-${i}">${esc(t('changesLabel'))}</label>
+            <textarea id="notes-${i}" placeholder="Size, a name added, anything else" style="min-height:52px;" spellcheck="true"
+              oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
+          </div></details>` : ''}
       ${mode && (mode !== 'gallery' || item.name) ? `
         <div class="field" style="margin-bottom:10px;">
           ${(item.designParts || []).length ? renderPartColors(item, i) : `<label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
