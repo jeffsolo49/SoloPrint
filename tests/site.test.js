@@ -1445,7 +1445,7 @@ const STATES = {
     const db = fixtures();
     const page = await open(db);
     await page.evaluate(STATES['my requests']);
-    await page.click('#order-1 >> text=Order again');
+    await page.click('#order-1 >> text=/Order again|Make this again/');
     await page.waitForTimeout(200);
     const draft = await page.evaluate(() => ({ tab: state.clientTab, items: state.draftItems.map(it => [it.name, it.qty, it.printHours, it.printMinutes]) }));
     assert(draft.tab === 'submit' && JSON.stringify(draft.items) === JSON.stringify([['Benchy', 2, '1', '30']]), JSON.stringify(draft));
@@ -2298,7 +2298,7 @@ const STATES = {
     await page.evaluate(() => setOwnerTab('settings'));
     await page.waitForFunction(() => [...document.querySelectorAll('#jump-nav .jump-btn')].some(b => b.textContent === 'Contact links'));
     await page.evaluate(() => { state.ownerTab = 'dashboard'; render(); });
-    await page.waitForFunction(() => !document.getElementById('jump-nav'));
+    await page.waitForFunction(() => !document.getElementById('jump-nav') || [...document.querySelectorAll('#jump-nav .jump-btn')].some(b => /Today|Overview/.test(b.textContent)));   // the Orders page now has its own sections
     await page.setViewportSize({ width: 390, height: 760 });
     await page.evaluate(() => setOwnerTab('help'));
     await page.waitForSelector('.jump-toggle');
@@ -2804,6 +2804,75 @@ const STATES = {
     assert(p2.context().pages().length === before, 'no new tab');
     assert(!p2.errors.length, p2.errors.join('; '));
     await p2.close();
+  });
+  await check('owner extras: today list, version price check, low-stock notes, undo for saves, email to everyone interested', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.minutes = 60; db.gallery.g1.data.grams = 20; db.gallery.g1.data.colorId = 'black';
+    db.gallery.g1.data.parts = [{ id: 'x', name: 'Body', grams: 10 }, { id: 'y', name: 'Lid', grams: 10 }];
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.waitForTimeout(300);
+    assert(await page.isVisible('#today-list'), 'today list');
+    await page.evaluate(asOwner('gallery'));
+    await page.waitForTimeout(300);
+    const low = await page.evaluate(() => {
+      state.settings.colors = [{ id: 'black', name: 'Black', hex: '#111111' }]; state.ownerPrivate = { ...(state.ownerPrivate || {}), inventory: { black: { grams: 20, low: 100 } } };
+      const g = state.gallery.find(x => x.id === 'g1');
+      return { n: lowStockNotifications().length, note: /Low on Black/.test(lowStockDesignNote(g)), inBell: buildNotifications().some(n => /^low-black/.test(n.id)) };
+    });
+    assert(low.n === 1 && low.note && low.inBell, JSON.stringify(low));
+    await page.evaluate(() => editGalleryItem('g1'));
+    await page.fill('#new-version-name', 'Pair');
+    await page.click('#add-version-quick');
+    await page.waitForSelector('#ver-price-check');
+    const pc = await page.textContent('#ver-price-check');
+    assert(/Price check for Pair/.test(pc) && /\$\d/.test(pc), pc);
+    await page.evaluate(() => saveGalleryItem());
+    await page.waitForFunction(() => (state.gallery.find(x => x.id === 'g1').versions || []).length === 2);
+    assert(await page.evaluate(() => (designHistory().g1 || []).length >= 1), 'the earlier save is kept');
+    await page.click('#design-history summary');
+    await page.click('#history-put-0');
+    await page.waitForFunction(() => (state.gallery.find(x => x.id === 'g1').versions || []).length === 0);
+    assert((db.gallery.g1.data.versions || []).length === 0, 'put back');
+    await page.evaluate(() => { state.leads = [{ email: 'a@example.com', name: 'Ann', data: { lead: { designs: [{ id: 'g1', title: 'Dragon Organizer' }], at: '2026-01-01' }, items: [] } }]; state.leadsLoaded = true; });
+    await page.evaluate(() => { openInterestEmail(); });
+    assert(await page.isVisible('#interest-email #ie-subject') && /Dragon Organizer/.test(await page.inputValue('#ie-subject')), 'email box');
+    await page.evaluate(() => closeInterestEmail());
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
+  await check('customer extras: share colors link, compare versions, remembered pre-order choices, tell me when a color is back', async () => {
+    const db = fixtures();
+    db.gallery.g1.data.preorder = true;
+    db.gallery.g1.data.parts = [{ id: 'x', name: 'Body', grams: 10 }, { id: 'y', name: 'Lid', grams: 5 }];
+    db.gallery.g1.data.colorMap = { photo: 'https://img.test/c.png', regions: [{ hexes: ['#ffffff'], part: 'x' }, { hexes: ['#111111'], part: 'y' }], combos: [] };
+    db.gallery.g1.data.versions = [{ id: 's', name: 'Single', count: 1 }, { id: 'd', name: 'Pair', count: 2 }];
+    db.settings.colors = [{ id: 'black', name: 'Black', hex: '#111111' }, { id: 'red', name: 'Red', hex: '#cc0000' }, { id: 'gold', name: 'Gold', hex: '#d4af37', outOfStock: true }];
+    const page = await open(db);
+    await page.evaluate(leadIn);
+    await page.evaluate(async () => { await loadGallery(); setTab('gallery'); openWork('g1'); });
+    await page.waitForSelector('#color-ideas');
+    assert(await page.isVisible('#version-compare summary'), 'compare versions');
+    await page.click('#version-compare summary');
+    assert((await page.$$('#version-compare tbody tr')).length === 2, 'a row per version');
+    assert(await page.isVisible('#notify-gold'), 'tell me when gold is back');
+    await page.evaluate(() => { setCmOwn('g1', 'x', 'red', 0); });
+    const link = await page.evaluate(() => shareColorsLink('g1'));
+    assert(/c=x%3Ared/.test(link), link);
+    // remembered on this device: forget the page's own state, then come back to the design
+    await page.evaluate(() => { state.designOpts = {}; state.cmView = {}; state.picksRestored = {}; render(); });
+    assert(await page.evaluate(() => cmViewColors('g1').x === 'red'), 'the choice is still there when they come back');
+    // a shared link
+    await page.evaluate(() => { history.replaceState(null, '', location.pathname + '?design=dragon-organizer&v=d&c=' + encodeURIComponent('x:black,y:red')); state.designOpts = {}; state.cmView = {}; state.picksRestored = {}; state.sharedApplied = {}; render(); });
+    const shared = await page.evaluate(() => ({ c: cmViewColors('g1'), v: designOpts('g1').version }));
+    assert(shared.c.x === 'black' && shared.c.y === 'red' && shared.v === 'd', JSON.stringify(shared));
+    await page.evaluate(() => { state.clientName = ''; state.clientEmail = ''; askNotifyColor('g1', 'gold'); });
+    await page.fill('#notify-name', 'Pat Lee'); await page.fill('#notify-email', 'pat@example.com');
+    await page.click('#notify-send');
+    for (let k = 0; k < 20 && !db.drafts['pat@example.com']; k++) await page.waitForTimeout(100);
+    assert(db.drafts['pat@example.com'] && /Gold is back/.test(JSON.stringify(db.drafts['pat@example.com'].data.lead.designs)), JSON.stringify(db.drafts));
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
   });
   await check('part photos: uploading in the edit form adds the photo and saving keeps it', async () => {
     const db = fixtures();

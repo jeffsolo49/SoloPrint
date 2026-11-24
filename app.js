@@ -409,7 +409,7 @@ function renderTrackerSteps(batch, withStatus = true) {
     return `<div class="tracker-step ${cls}">
       <div class="tracker-dot">${cls === 'done' ? '✓' : idx + 1}</div>
       <div class="tracker-label">${esc(t('step_' + p.id))}</div>
-      <div class="tracker-time">${cls && at ? shortTime(at) : ''}</div>
+      <div class="tracker-time">${cls && at ? shortTime(at) : idx === currentIdx + 1 && phase !== 'delivered' ? (p.id === 'delivered' && orderIsPreorder(batch) && preorderEtaText(batch) ? esc(preorderEtaText(batch)) : 'Next') : ''}</div>
     </div>`;
   }).join('');
   const deliveryInfo = [
@@ -2404,6 +2404,7 @@ function renderOwnerDashboard() {
       <div class="owner-page-meta">${state.batches.length} request${state.batches.length === 1 ? '' : 's'}${state.ownerHistoryAll ? '' : ` · open orders and the last ${RECENT_ORDER_DAYS} days · <button class="btn-link" type="button" onclick="loadAllOrders()">Load all orders</button>`}</div>
     </div>
     ${renderStockAlerts()}
+    ${renderTodayCard()}
     <details class="card overview" ${state.overviewOpen ? 'open' : ''} ontoggle="state.overviewOpen = this.open">
       <summary><strong>Overview</strong> · queue, counts and the email guide</summary>
       ${renderOwnerQueue()}
@@ -3802,6 +3803,8 @@ function renderWorkDescription(g) {
 }
 
 function renderWorkDetail(g) {
+  restorePreorderPicks(g);
+  applyShareParams(g);
   return `
     <div id="work-detail" class="work-detail-head">
       <h2 class="section-title">${esc(g.title || 'Untitled')}</h2>
@@ -3828,7 +3831,7 @@ function renderWorkDetail(g) {
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.
 function designPicker(g, opts) {
-  return (renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderAccessoryPicker(g, opts);
+  return (renderEditionPicker(g, opts.edition, eid => `setDesignEdition('${g.id}', '${eid}')`)) + renderVersionPicker(g, opts.version, vid => `setDesignVersion('${g.id}', '${vid}')`) + renderVersionCompare(g) + renderAccessoryPicker(g, opts) + renderSoldOutNotes(g);
 }
 function renderWorkPrice(g) {
   if (g.preorder && !preorderLeadOk()) return `${designPicker(g, designOpts(g.id))}<div class="job-divider" style="margin:6px 0 14px;"></div>${renderPreorderGate(g)}`;   // colors and options show first; name and email save them
@@ -4084,6 +4087,7 @@ function renderOwnerGalleryPage() {
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
       </label>
       <div class="price-preview-box" id="gallery-form-price">${renderGalleryFormPrice()}</div>
+      ${editing ? renderDesignHistory(f) : ''}
       <div class="alert error" id="gallery-err"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
         <button class="btn-sm" type="button" id="gallery-save" onclick="saveGalleryItem()">${editing ? 'Save Changes' : 'Add to Gallery'}</button>
@@ -4095,7 +4099,7 @@ function renderOwnerGalleryPage() {
       return `<div class="gallery-card ${g.published ? '' : 'hidden-item'}">
         ${renderGalleryPhoto(g)}
         <div class="gallery-body">
-          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}${(g.accessories || []).length ? ` <span class="gallery-meta">${g.accessories.length} accessor${g.accessories.length === 1 ? 'y' : 'ies'}</span>` : ''}${isAccessory(g) ? ` <span class="gallery-meta">Accessory of ${esc((state.gallery.find(m => (m.accessories || []).includes(g.id)) || {}).title || 'another design')}</span>` : ''}</div>
+          <div class="gallery-title">${esc(g.title || 'Untitled')}${lowStockDesignNote(g)}${g.published ? '' : ' <span class="gallery-meta">(hidden)</span>'}${g.preorder ? ' <span class="preorder-badge">Pre-order</span>' : ''}${(g.accessories || []).length ? ` <span class="gallery-meta">${g.accessories.length} accessor${g.accessories.length === 1 ? 'y' : 'ies'}</span>` : ''}${isAccessory(g) ? ` <span class="gallery-meta">Accessory of ${esc((state.gallery.find(m => (m.accessories || []).includes(g.id)) || {}).title || 'another design')}</span>` : ''}</div>
           ${price !== null ? `<div class="gallery-price">$${price.toFixed(2)}</div>` : '<div class="gallery-meta">No price yet: add time and grams</div>'}
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-sm" type="button" onclick="editGalleryItem('${esc(g.id)}')">Edit</button>
@@ -4116,6 +4120,7 @@ function editGalleryItem(id) {
   if (!g) return;
   state.cmJoin = [];
   state.galleryOpt = '';
+  phoneFoldStart(g.parts, g.colorMap);
   state.galleryForm = {
     id: g.id, title: g.title, description: g.description, photos: g.ownPhotos.join('\n'), filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
@@ -4171,6 +4176,7 @@ async function saveGalleryItem() {
   const btn = document.getElementById('gallery-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   try {
+    pushDesignHistory(existing);
     await writeGalleryItem(item);
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = existing ? 'Save Changes' : 'Add to Gallery'; }
@@ -4362,7 +4368,7 @@ function buildNotifications() {
         title: `${b.clientName || 'A customer'} approved their quote`,
         body: `Ready for you to confirm: ${orderTitle(b)}` });
     });
-    list.push(...colorIdeaNotifications());
+    list.push(...colorIdeaNotifications(), ...lowStockNotifications());
   } else {
     if (!state.tokens.length) return [];
     state.batches.forEach(b => {
@@ -4458,6 +4464,7 @@ function openNotif(id, batchId) {
   markNotifsRead([id]);
   state.notifOpen = false;
   if (notifScope() === 'owner' && /^idea-/.test(id)) { openColorIdeaInbox(); return; }
+  if (notifScope() === 'owner' && /^low-/.test(id)) { setOwnerTab('filament'); return; }
   if (notifScope() === 'owner') { focusOwnerOrder(batchId); return; }
   state.clientTab = 'jobs';
   render();
