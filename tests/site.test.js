@@ -1538,18 +1538,17 @@ const STATES = {
     assert(await shop.locator('.review-photos img').count() === 2, 'home page should show the review photos');
     await shop.close();
   });
-  await check('FAQ: a fourth menu button next to My Requests, and the FAQ sits at the bottom of every page', async () => {
+  await check('FAQ: no menu button, the FAQ sits at the bottom of every page', async () => {
     const db = fixtures();
     db.settings.faq = [{ id: 'q1', q: 'How long?', a: 'About a week.', live: true }];
     const page = await open(db);
-    assert(await page.locator('.bubble-nav .bubble').count() === 4, 'menu should have 4 buttons');
-    assert(/FAQ/.test(await page.textContent('.bubble-nav .bubble:nth-child(4)')), 'fourth button should be the FAQ');
+    assert(await page.locator('.bubble-nav .bubble').count() === 3, 'the menu has 3 buttons: the FAQ is at the bottom of every page');
     for (const tab of ['submit', 'gallery', 'jobs']) {
       await page.evaluate(t => setTab(t), tab);
       assert(await page.locator('#faq-list').count() === 1, `FAQ missing at the bottom of ${tab}`);
     }
-    await page.click('.bubble-nav .bubble:nth-child(4)');
-    assert(await page.locator('#faq-list').count() === 1 && await page.locator('.faq').count() === 1, 'FAQ page should show the FAQ once');
+    await page.evaluate(() => setTab('faq'));
+    assert(await page.locator('#faq-list').count() === 1 && await page.locator('.faq').count() === 1, 'an old FAQ link still shows the FAQ once');
     await page.close();
   });
   await check('owner menu: Customers and Fix numbers sit inside Orders, Calculator & Models inside Designs', async () => {
@@ -1557,7 +1556,10 @@ const STATES = {
     await owner.evaluate(asOwner('dashboard'));
     const tabs = (await owner.locator('nav.nav .nav-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim());
     assert(tabs.join('|') === 'Orders|Designs|Money & Sales|Settings|Help', tabs.join('|'));
-    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim()).join('|') === 'Orders|Inbox|To make|Fix numbers', 'Orders sub-menu');
+    assert((await owner.locator('nav.sub-nav .sub-tab').allTextContents()).map(x => x.replace(/\d+$/, '').trim()).join('|') === 'Orders|Inbox|More', 'Orders sub-menu');
+    await owner.click('#sub-more');
+    assert(await owner.isVisible('#more-etsytodo') && await owner.isVisible('#more-numbers'), 'More holds To make and Fix numbers');
+    await owner.click('#sub-more');
     await owner.waitForSelector('#client-notes', { state: 'attached' });
     await owner.click('.order-menu > summary');
     await owner.click('.order-menu-list button:has-text("Fix numbers")');
