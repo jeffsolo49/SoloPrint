@@ -1789,3 +1789,43 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .sub-more { position: relative; display: inline-block; }
 .sub-more-btn::after { content: ' \25BE'; }
 .sub-more-list { position: absolute; z-index: 50; top: 100%; left: 0; margin-top: 4px; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); min-width: 160px; }
+
+/* Footer, policy pages, size and material */
+.site-footer { margin-top: 24px; padding: 14px 4px; border-top: 2px solid var(--border); display: grid; gap: 8px; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.footer-links .btn-link, .footer-contact .btn-link { min-height: 32px; font-size: 14px; }
+.policy-page .work-writeup p { margin-bottom: 12px; }
+.size-layout { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.size-photo { position: relative; max-width: 420px; flex: 1 1 260px; }
+.size-photo img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.dim-label { position: absolute; background: #ffd23f; color: #2a2000; font-weight: 800; font-size: 13px; padding: 2px 8px; border-radius: 6px; border: 2px solid #b78600; white-space: nowrap; }
+.dim-h { left: 8px; top: 50%; transform: translateY(-50%); }
+.dim-w { bottom: 8px; left: 50%; transform: translateX(-50%); }
+.dim-d { right: 8px; top: 8px; }
+.dim-line { position: absolute; background: #ffd23f; box-shadow: 0 0 0 1px #b78600; }
+.dim-line-h { left: 44px; top: 12%; bottom: 12%; width: 3px; }
+.dim-line-w { bottom: 36px; left: 12%; right: 12%; height: 3px; }
+.dim-line-d { right: 36px; top: 12px; width: 44px; height: 3px; transform: rotate(35deg); transform-origin: right center; }
+.size-list { display: grid; gap: 4px; margin-bottom: 8px; }
+.size-list div { display: flex; gap: 10px; }
+.size-list dt { font-weight: 700; min-width: 64px; }
+.size-photo-pick { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.size-photo-choice { padding: 2px; border: 3px solid var(--border); border-radius: 8px; background: none; cursor: pointer; line-height: 0; }
+.size-photo-choice.on { border-color: var(--accent); }
+.size-photo-choice img { height: 56px; width: auto; border-radius: 5px; }
+.policy-edit textarea { width: 100%; }
+
+/* Customer fixes from the walk-through: gallery cards open on tap, no sideways scroll, room above the floating buttons, bigger rows */
+.gallery-photo-open { cursor: pointer; }
+.gallery-title-link { background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+.gallery-title-link:hover { text-decoration-color: var(--accent); }
+.cm-layout > *, .cm-controls, .cm-photo-col { min-width: 0; }
+.color-lines, .price-breakdown, .live-price { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  html:not(.owner-mode) .main { padding-bottom: 120px; }
+  .work-desc > summary, .design-parts > summary, .preorder-terms-fold > summary, .version-compare > summary, details.fold-card > summary { min-height: 44px; display: flex; align-items: center; }
+  .site-footer .btn-link, .footer-contact a { min-height: 44px; display: inline-flex; align-items: center; }
+  .footer-links { gap: 0 18px; }
+}
+/* The per-color price lines wrap on a phone instead of pushing the page sideways */
+@media (max-width: 700px) { .price-breakdown, .color-lines { white-space: normal; overflow-wrap: anywhere; } }

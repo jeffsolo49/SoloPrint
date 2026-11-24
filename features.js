@@ -2355,6 +2355,8 @@ const OWNER_WIKI = [
     steps: ['Orders opens with a "Today" card listing what to do, in order: answer, confirm, print, ship, new requests. Tap a name to open the order.', 'On a version tab, "Price check" shows what customers pay for that version in the starting colors and with a different color on every part.', 'A color running low shows on the bell, on Settings, and as a "Low on ..." tag on the designs that use it.', 'Editing a design: under the price, "Put back an earlier save" lists the last 5 saves on this device. Pick one and tap Put back (what you have now is kept too).', 'Designs > Pre-orders and people interested > "Email everyone interested" opens your email app with everyone in the hidden Bcc line, after you edit the text. Tap "Download pre-order interest (spreadsheet)" for the list as a file.', 'On a phone the parts list and color ideas start folded; tap "Show and edit" to open them.'], go: ['gallery', ''] },
   { id: 'inbox-etc', area: 'Getting started', title: 'Inbox, real photos, customer photos, start here and ideas coming soon', keys: 'inbox checklist done tick notification real photos customer photos approve start here ideas coming soon would buy nudge quote reminder',
     steps: ['Orders > Inbox: one checklist of what waits on you: new requests and steps, customer messages, color ideas, photos and reviews to approve, "tell me when it is back" and "I would buy this" notes, low filament. Filter by Orders, Messages, Photos and reviews, Ideas and notes or Filament; tick each when done (or "Mark all done"); ticked ones go under Done. Tapping a notification on the bell opens the Inbox (orders still open the order).', 'Real photos: when you edit a design, "Real photos" (the finished print in real life) sits above "Photos". Customers see real photos first; no real photos means the other photos are used.', 'Customer photos: on a shipped order the customer can tap "Share a photo of your print". It waits in your Inbox: Approve shows it on that design\'s page (under "Photos from customers"), Dismiss throws it away.', 'The design page now goes photos, then colors and price, then the description.', 'Start here: three buttons at the top of the home page (a design, an idea, a custom part). Change the words in Settings > Wording > "Start here and ideas coming soon", or switch it off in Settings > Show / hide.', 'Ideas coming soon: Designs > "Ideas coming soon". Add an idea (name, a line, a picture). It shows on the home page with an "I would buy this" button that saves the visitor\'s name and email. You see how many want each one, can copy their emails, and "Make it a design" starts a hidden design from it.', 'Quote reminder: the email 3 days after an unanswered quote now offers to change colors, answer questions or adjust the size. Edit it in Settings > Emails.', 'Pre-order nudge: a day after someone picks pre-order colors and leaves their email but does not send a request, they get one email with a link back to their choices (Settings > Emails > Pre-order nudge). It needs supabase/drafts.sql run once more.'], go: ['dashboard', ''] },
+  { id: 'footer-size', area: 'Settings', title: 'Footer, policy pages, contact email, size and material', keys: 'footer policy privacy returns refund shipping timing contact email size height width depth dimensions material PLA where is my order',
+    steps: ['Every customer page ends with a footer: "Where\'s my order?", Shipping and timing, If something goes wrong, Privacy, and your contact details.', 'Settings > About, links & reviews > "Footer: contact and policy pages": type a contact email (optional) and read each policy page. I wrote starting text from how your shop works: change anything that is not how you want it. Untick "Show this page in the footer" to hide one. "Use the starting text again" puts mine back. Tap Save settings.', 'Size: edit a design, find "Size and material". Type Height, Width and Depth of the fully built design and pick inches or centimeters. Pick one of the design\'s photos to show them on (the labels are drawn on it), or "No photo (text only)".', 'Material: leave blank for PLA, or type another material for that design. Customers see "Material: PLA" on every design page.'], go: ['settings', 'about'] },
   { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
     steps: ['Designs > Add a design (wizard). Short steps that adapt to your answers: name (and whether it is a pre-order), photos, price and time, parts, color ideas, accessories, versions, color editions, pre-order settings (only for pre-orders), finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
@@ -3301,6 +3303,7 @@ const FEATURE_SWITCHES = [
   ['autoDeposit', 'Send the deposit request as soon as a customer taps "Looks good" (off: you confirm each order yourself first)'],
   ['orderAgain', '"Order again" button'],
   ['startHere', '"Start here" buttons at the top of the home page'],
+  ['footer', 'Footer: contact, policy pages and "Where\'s my order?"'],
   ['soonIdeas', '"Ideas coming soon" area'],
   ['leftoverRolls', '"Your leftover rolls" card on My Requests'],
   ['videos', 'Videos on design pages'],
@@ -7810,4 +7813,156 @@ async function syncSoonCounts() {
   const next = ideas.map(x => ({ ...x, wanted: soonWanted(x.id).length }));
   if (!ideas.length || next.every((x, i) => x.wanted === (ideas[i].wanted || 0))) return;
   try { await saveSettings({ ...state.settings, soonIdeas: next }); state.settingsDraft = null; } catch (e) { /* tried again next time */ }
+}
+
+
+// ══ FOOTER, POLICY PAGES, SIZE AND MATERIAL ══
+const POLICY_KEYS = ['shipping', 'returns', 'privacy'];
+// Starting text, written from how the shop works. The owner reads and edits each one in Settings > About, links & reviews.
+const POLICY_DEFAULTS = {
+  shipping: { title: 'Shipping and timing', text: [
+    'How long it takes: every order is printed to order, so timing depends on the line. The request form and your quote show the current wait. Custom designs add design time first. Pre-orders have their own ready dates on the design page.',
+    'How ordering works: you send a request, I send a quote with the final price, you tap "Looks good", and I email you a Venmo link for the deposit (or you can pay it all at once). Your place in line starts when your payment arrives.',
+    'Shipping cost: shipping is separate. When your print is done I collect a shipping deposit that covers packaging and postage. After I mail it, I refund the part that was not spent, based on the actual cost. Put everything in one request and shipping can be combined.',
+    'Getting it: orders ship by tracked mail and the tracking details are emailed to you and shown on your order page. Local pickup or hand-off may be possible: just ask me.'
+  ].join('\n\n') },
+  returns: { title: 'If something goes wrong', text: [
+    'Everything is made to order for you, so I cannot resell a print if you change your mind. That is why the quote and your colors are shown to you before you pay.',
+    'Damaged or not what we agreed: message me within 7 days of it arriving, with a photo. I will repair it, reprint it or refund you, whichever works best.',
+    'Cancelling: tell me as soon as you can. Before I start printing you can cancel. Once printing has begun I cannot cancel it (pre-orders have their own terms on the design page, and custom designs follow the custom design terms you agree to).',
+    'Shipping problems: if a tracked package is lost or stuck, message me and I will help sort it out with the carrier.',
+    'Refunds go back by Venmo. The shipping deposit is only partly refunded, based on the real packaging and postage cost.',
+    'Safety: 3D prints are not tested or certified for safety, food contact, heavy loads, medical use or use by young children.'
+  ].join('\n\n') },
+  privacy: { title: 'Privacy', text: [
+    'What I collect: the name and email you type on a request, what you ask for (links, notes, colors and any photos you add), your order and payment status, and the messages you send me. If you leave your email on a pre-order, a "tell me when it is back" or an "I would buy this", I keep that note so I can follow up.',
+    'How I use it: to quote, make and ship your order, to email you about it, and to answer you. I do not sell your information or share it for advertising.',
+    'Where it is kept: orders and messages are stored with Supabase, emails are sent from my Gmail account, and the site is hosted on Vercel. Payments happen on Venmo, never on this site, so I do not see or store your card or bank details. Your address is only used to ship your order.',
+    'On your device: the site saves a few things in your browser so it works, like your order links, colors you save and a half-filled request. You can clear them by clearing this site\'s data.',
+    'Photos you send with a review or of your print are only shown after I approve them.',
+    'Questions, or want your information removed? Message me (see Contact below) and I will delete it, except records I need to keep for my taxes and accounts.'
+  ].join('\n\n') }
+};
+function cleanPolicies(raw) {
+  const out = {};
+  POLICY_KEYS.forEach(k => {
+    const p = (raw && raw[k]) || {}, txt = cleanText(p.text, 6000).trim();
+    out[k] = { text: txt === POLICY_DEFAULTS[k].text ? '' : txt, live: p.live !== false };
+  });
+  return out;
+}
+function policyText(k) { const p = (state.settings.policies || {})[k]; return (p && p.text) || POLICY_DEFAULTS[k].text; }
+function policyLive(k) { const p = (state.settings.policies || {})[k]; return !(p && p.live === false); }
+function policyTitle(k) { return POLICY_DEFAULTS[k] ? POLICY_DEFAULTS[k].title : 'Policy'; }
+function setPolicy(k) {
+  if (!POLICY_DEFAULTS[k]) return;
+  if (state.clientTab !== 'policy') state.prevTab = state.clientTab;
+  state.policyKey = k; state.clientTab = 'policy';
+  if (state.galleryOpen) { state.galleryOpen = ''; setDesignUrl(''); }
+  render();
+  window.scrollTo(0, 0);
+}
+function renderPolicyPage() {
+  const k = state.policyKey;
+  if (!POLICY_DEFAULTS[k] || !policyLive(k)) return `<div class="card"><div class="field-help">That page isn't available.</div><button type="button" class="btn-sm" onclick="setTab('submit')">Back to the shop</button></div>`;
+  return `<div class="card policy-page" id="policy-page"><h2 class="card-title">${esc(policyTitle(k))}</h2>
+    <div class="work-writeup">${renderWriteup(policyText(k))}</div>
+    <button type="button" class="btn-sm" id="policy-back" onclick="setTab(state.prevTab && state.prevTab !== 'policy' ? state.prevTab : 'submit')">Back</button></div>`;
+}
+// Bottom of every customer page: where's my order, the policy pages and how to reach me.
+function renderFooter() {
+  if (!featureOn('footer')) return '';
+  const l = state.settings.links || {}, about = state.settings.about || {};
+  const pages = POLICY_KEYS.filter(policyLive);
+  const contact = [
+    l.messenger ? `<a class="btn-link" href="${esc(l.messenger)}" target="_blank" rel="noopener noreferrer">Message me on Messenger</a>` : '',
+    l.email ? `<a class="btn-link" href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : '',
+    l.etsy ? `<a class="btn-link" href="${esc(l.etsy)}" target="_blank" rel="noopener noreferrer">My Etsy shop</a>` : ''
+  ].filter(Boolean);
+  return `<div class="site-footer" id="site-footer">
+    <nav aria-label="Orders and policies" class="footer-links"><button type="button" class="btn-link" id="footer-track" onclick="setTab('jobs')">Where's my order?</button>${pages.map(k => `<button type="button" class="btn-link" id="footer-${k}" onclick="setPolicy('${k}')">${esc(policyTitle(k))}</button>`).join('')}</nav>
+    ${contact.length || about.replyTime ? `<div class="footer-contact" id="footer-contact"><strong>Questions?</strong> ${contact.join(' · ')}${about.replyTime ? `<div class="field-help">${esc(about.replyTime)}</div>` : ''}</div>` : ''}
+  </div>`;
+}
+// Settings > About, links & reviews: the contact email and the wording of the policy pages.
+function renderPolicySettings(d) {
+  d.policies = d.policies || {};
+  return `<div class="card" id="policy-settings"><h3 class="card-title">Footer: contact and policy pages</h3>
+    <div class="field-help">These pages are linked at the bottom of every customer page. I wrote starting text from how your shop works: read each one and change anything that isn't how you want it. This isn't legal advice.</div>
+    <div class="field" style="max-width:420px;"><label for="set-email">Contact email shown in the footer (optional)</label><input type="email" id="set-email" value="${esc(d.links.email || '')}" placeholder="you@example.com" oninput="state.settingsDraft.links.email = this.value" /></div>
+    ${POLICY_KEYS.map(k => `<div class="policy-edit"><h4 class="sub-title">${esc(policyTitle(k))}</h4>
+      <label class="special-order-check"><input type="checkbox" id="policy-live-${k}" ${(d.policies[k] || {}).live === false ? '' : 'checked'} onchange="setPolicyDraft('${k}', 'live', this.checked)" /> Show this page in the footer</label>
+      <label class="sr-only" for="policy-text-${k}">Text of the ${esc(policyTitle(k))} page</label>
+      <textarea id="policy-text-${k}" class="autogrow" style="min-height:180px;" oninput="setPolicyDraft('${k}', 'text', this.value)">${esc((d.policies[k] || {}).text || POLICY_DEFAULTS[k].text)}</textarea>
+      <button type="button" class="btn-sm" onclick="setPolicyDraft('${k}', 'text', ''); render();">Use the starting text again</button></div>`).join('')}
+  </div>`;
+}
+function setPolicyDraft(k, key, v) {
+  const d = state.settingsDraft; if (!d) return;
+  d.policies = d.policies || {};
+  d.policies[k] = { text: '', live: true, ...(d.policies[k] || {}), [key]: v };
+}
+
+// Height, width and depth of the fully built design, and a photo to show them on.
+function cleanDims(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const n = v => { const x = Number(v); return x > 0 && x <= 1000 ? Math.round(x * 10) / 10 : 0; };
+  const d = { h: n(raw.h), w: n(raw.w), d: n(raw.d), unit: raw.unit === 'cm' ? 'cm' : 'in' };
+  return d.h || d.w || d.d ? d : null;
+}
+function dimText(n, unit) { return `${String(Math.round(n * 10) / 10).replace(/\.0$/, '')} ${unit}`; }
+function renderSizePreview(f) {
+  const dims = cleanDims({ h: f.dimH, w: f.dimW, d: f.dimD, unit: f.dimUnit });
+  const photos = parseImageLinks(f.realPhotos || '').concat(parseImageLinks(f.photos || ''));
+  if (!dims || !f.sizePhoto || !photos.includes(f.sizePhoto)) return '<div class="field-help">Pick a photo above and fill in a size to preview how customers see it.</div>';
+  return sizePhotoHtml(f.sizePhoto, dims, f.title || 'Design');
+}
+function renderSizeFields(f) {
+  const photos = [...new Set(parseImageLinks(f.realPhotos || '').concat(parseImageLinks(f.photos || '')))];
+  return `<h4 class="sub-title jump-title">Size and material</h4>
+    <div class="field-help">The size of the fully built design. Customers see it on the design page.</div>
+    <div class="row2 size-inputs">
+      <div class="field"><label for="gallery-dim-h">Height</label><input type="number" id="gallery-dim-h" min="0" step="0.1" value="${esc(f.dimH || '')}" oninput="updateGalleryForm('dimH', this.value)" onchange="refreshSizePreview()" /></div>
+      <div class="field"><label for="gallery-dim-w">Width</label><input type="number" id="gallery-dim-w" min="0" step="0.1" value="${esc(f.dimW || '')}" oninput="updateGalleryForm('dimW', this.value)" onchange="refreshSizePreview()" /></div>
+      <div class="field"><label for="gallery-dim-d">Depth</label><input type="number" id="gallery-dim-d" min="0" step="0.1" value="${esc(f.dimD || '')}" oninput="updateGalleryForm('dimD', this.value)" onchange="refreshSizePreview()" /></div>
+      <div class="field"><label for="gallery-dim-unit">Measured in</label><select id="gallery-dim-unit" onchange="updateGalleryForm('dimUnit', this.value); refreshSizePreview()"><option value="in" ${f.dimUnit === 'cm' ? '' : 'selected'}>inches</option><option value="cm" ${f.dimUnit === 'cm' ? 'selected' : ''}>centimeters</option></select></div>
+    </div>
+    <div class="field"><label for="gallery-material">Material (leave blank for PLA)</label><input type="text" id="gallery-material" maxlength="40" value="${esc(f.material || '')}" placeholder="PLA" oninput="updateGalleryForm('material', this.value)" /><div class="field-help">All prints are PLA unless you type something else here.</div></div>
+    <div class="field"><span class="field-label" id="size-photo-label">Photo to show the height, width and depth on</span>
+      <div class="size-photo-pick" role="group" aria-labelledby="size-photo-label">
+        <button type="button" class="btn-sm ${f.sizePhoto ? '' : 'on'}" id="size-photo-none" aria-pressed="${!f.sizePhoto}" onclick="setSizePhoto('')">No photo (text only)</button>
+        ${photos.map((u, n) => `<button type="button" class="size-photo-choice ${f.sizePhoto === u ? 'on' : ''}" id="size-photo-${n}" aria-pressed="${f.sizePhoto === u}" aria-label="Use photo ${n + 1}" onclick="setSizePhoto(${esc(JSON.stringify(u)).replace(/&quot;/g, '&#39;')})"><img src="${esc(u)}" alt="" referrerpolicy="no-referrer" /></button>`).join('')}
+      </div>
+      <div id="size-preview">${renderSizePreview(f)}</div></div>`;
+}
+function setSizePhoto(u) { if (state.galleryForm) { state.galleryForm.sizePhoto = u || ''; render(); } }
+function refreshSizePreview() { const el = document.getElementById('size-preview'); if (el && state.galleryForm) el.innerHTML = renderSizePreview(state.galleryForm); }
+// The photo with its measurements drawn on: height down the left side, width along the bottom, depth in the corner.
+function sizePhotoHtml(url, dims, title) {
+  const u = dims.unit;
+  return `<div class="size-photo"><img src="${esc(url)}" alt="${esc(title)}, with its height, width and depth marked" referrerpolicy="no-referrer" />
+    ${dims.h ? `<span class="dim-line dim-line-h" aria-hidden="true"></span><span class="dim-label dim-h">H ${esc(dimText(dims.h, u))}</span>` : ''}
+    ${dims.w ? `<span class="dim-line dim-line-w" aria-hidden="true"></span><span class="dim-label dim-w">W ${esc(dimText(dims.w, u))}</span>` : ''}
+    ${dims.d ? `<span class="dim-line dim-line-d" aria-hidden="true"></span><span class="dim-label dim-d">D ${esc(dimText(dims.d, u))}</span>` : ''}</div>`;
+}
+// Design page: size and material.
+function renderDesignSize(g) {
+  const mat = g.material || 'PLA';
+  if (!g.dims) return `<div class="field-help design-material" id="design-material">Material: <strong>${esc(mat)}</strong>${g.material ? '' : '. All my prints are PLA unless noted.'}</div>`;
+  const d = g.dims, u = d.unit, photo = g.sizePhoto && (g.photos || []).includes(g.sizePhoto) ? g.sizePhoto : '';
+  return `<div class="card design-size" id="design-size"><h3 class="card-title">Size and material</h3>
+    <div class="size-layout">${photo ? sizePhotoHtml(photo, d, g.title) : ''}
+      <div><dl class="size-list">${d.h ? `<div><dt>Height</dt><dd>${esc(dimText(d.h, u))}</dd></div>` : ''}${d.w ? `<div><dt>Width</dt><dd>${esc(dimText(d.w, u))}</dd></div>` : ''}${d.d ? `<div><dt>Depth</dt><dd>${esc(dimText(d.d, u))}</dd></div>` : ''}</dl>
+        <div>Material: <strong>${esc(mat)}</strong></div>
+        <div class="field-help">Measured on the fully built design.${g.material ? '' : ' All my prints are PLA unless noted.'}</div></div></div></div>`;
+}
+
+
+// After sending a request: it stays on screen on My Requests (the page used to flash a message and move on).
+function renderSentNote() {
+  const n = state.sentNote;
+  if (!n) return '';
+  return `<div class="alert success sent-note" id="sent-note" role="status" style="display:block;"><strong>Thank you! I've received your request for ${n.n} item${n.n === 1 ? '' : 's'}.</strong>
+    <div>I'll look it over and email a quote to ${esc(n.email)}${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, 'I '))})` : ''}. Nothing is charged until you tap "Looks good" on the quote. Your request is below, and you can track it here.</div>
+    <button type="button" class="btn-sm" onclick="state.sentNote = null; render();">Got it</button></div>`;
 }
