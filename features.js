@@ -2324,7 +2324,7 @@ const OWNER_WIKI = [
   { id: 'groups', area: 'Designs', title: 'Lock parts together so they share one color (color groups)', keys: 'group grouped parts together separate color picker same color lock',
     steps: ['Designs > Edit the design > Parts. Under "Grouped with other parts", type the same name on every part that must stay together (like "Body"), or pick a name you already used.', 'Parts with the same group name always get one color: customers choose a color for the group and can\'t separate the parts. A line under the parts lists the groups.', 'It also applies to your color ideas picture: setting one part\'s color there sets the whole group.'], go: ['gallery', ''] },
   { id: 'versions', area: 'Designs', title: 'Versions (single / double), the joining pack, color groups and photos by color', keys: 'version single double joining pack accessory group color scheme photo two tone multiple colors',
-    steps: ['At the top of the design form, type a name in "Add a version" (for example Joined pair) and tap Add version. The new version gets its own section below (and its own button in the side bar) with its own name, main items, price, color pictures, parts (copied from the original, change them freely) and accessories (same as the original until you tick or untick one; other versions never change). Customers pick the version on the design page and see that version\'s parts, accessories and pictures. Under "Versions" you can choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double. Each part also has a print time in minutes (shown only to you, added into the total).', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
+    steps: ['At the top of the design form, type a name in "Add a version" (for example Joined pair) and tap Add version. It opens in its own tab next to "Original": its own set-up page with name, main items, price, parts (copied from the original, change them freely), its own color picker (upload this version\'s picture, or "start from the original\'s picture and color ideas") and accessories (only the original\'s are offered; untick one to leave it out of this version). Tap a tab to switch; Save keeps you on the tab you are on. Customers pick the version on the design page and see that version\'s parts, accessories and pictures. Under "Versions" you can choose the joining pack design (add the pack as its own design first).', 'Print time, grams and price are for ONE main item. A version with 2 uses double. Each part also has a print time in minutes (shown only to you, added into the total).', 'Under Parts, give parts a "Color group" (like "Body"). Parts in a group always share one color, and customers pick a color per group, never per part.', 'In the color ideas, each idea can have its own photo ("Add a photo in these colors").', 'Accessories: while editing a design, tick the designs under "Accessories (optional)". They stop being listed on their own; customers add them with a quantity on this design\'s page, ordered together with it, or tick "I only want accessories" to leave this design out.', 'Customers pick a version on the design page and request form. The double adds the joining pack by itself. Anyone with two singles (in one request or across their history) is nudged to the double, and you see "Joining pack?" on their order.'], go: ['gallery', ''] },
   { id: 'limit-colors', area: 'Designs', title: 'Limit which colors customers can pick for a part or group', keys: 'limit restrict only allowed colors part group picker choose offer',
     steps: ['Designs > Edit the design > Parts. Under the part, tap "Limit colors".', 'Tick the only colors customers may pick for that part. Tick none to offer every color again ("Allow every color").', 'For parts locked in a group, the group offers only the colors every limited part allows. It applies on the request form and in the color ideas "Pick your own".'], go: ['gallery', ''] },
   { id: 'design-parts', area: 'Designs', title: 'Parts, add-ons and each part\'s color', keys: 'parts optional add-on stand price minutes default color',
@@ -3983,9 +3983,9 @@ async function sendCmColors(id, sid) {
 function cmCombosFor(g, choices) {
   const keys = choices.map(c => c.key);
   // Customers see ideas whose colors are all in stock; the owner sees every idea.
-  return g.colorMap.combos.filter(c => c.name && (state.ownerUnlocked || Object.values(c.colors).every(k => keys.includes(k))));
+  return curColorMap(g).combos.filter(c => c.name && (state.ownerUnlocked || Object.values(c.colors).every(k => keys.includes(k))));
 }
-function cmShown(g) { return featureOn('colorIdeas') && featureOn('designParts') && curParts(g).length > 0 && cmUsable(g.colorMap); }
+function cmShown(g) { return featureOn('colorIdeas') && featureOn('designParts') && curParts(g).length > 0 && cmUsable(curColorMap(g)); }
 function cmViewColors(id) {
   const g = state.gallery.find(x => x.id === id);
   if (!g || !cmShown(g)) return null;
@@ -4008,10 +4008,10 @@ function renderColorIdeas(g) {
       ${combos.map(c => `<button type="button" class="btn-sm" id="cm-pick-${esc(c.id)}" aria-pressed="${v.pick === c.id}" onclick="setCmPick('${esc(g.id)}', '${esc(c.id)}')">${esc(c.name)}</button>`).join('')}
       ${cmSavedFor(g.id).map(s => `<button type="button" class="btn-sm" id="cm-pick-s-${esc(s.id)}" aria-pressed="${v.pick === `s-${s.id}`}" onclick="setCmPick('${esc(g.id)}', 's-${esc(s.id)}')">${esc(s.name)} (mine)</button>`).join('')}
     </div>
-    ${g.colorMap.regions.some(r => r.part) ? `<div class="cm-own">${curParts(g).map((p, k) => p.group && curParts(g).findIndex(q => q.group === p.group) !== k ? '' : `<div class="field"><label for="cm-own-${k}">${esc(p.group || p.name)}${p.group ? ` (${esc(curParts(g).filter(q => q.group === p.group).map(q => q.name).join(', '))})` : ''}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
+    ${curColorMap(g).regions.some(r => r.part) ? `<div class="cm-own">${curParts(g).map((p, k) => p.group && curParts(g).findIndex(q => q.group === p.group) !== k ? '' : `<div class="field"><label for="cm-own-${k}">${esc(p.group || p.name)}${p.group ? ` (${esc(curParts(g).filter(q => q.group === p.group).map(q => q.name).join(', '))})` : ''}${cmMissing(g.colorMap, [p]).length ? ' (not shown in the picture)' : ''}</label>
       <div class="color-pick">${colorDot(colors[p.id])}<select id="cm-own-${k}" class="color-select" style="${colorTextStyle(colors[p.id])}" onchange="setCmOwn('${esc(g.id)}', '${esc(p.id)}', this.value, ${k})">
         ${partChoicesFor(curParts(g), p, null, choices).map(c => `<option value="${esc(c.key)}" style="${colorTextStyle(c.key)}" ${c.key === colors[p.id] ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-      </select></div></div>`).join('')}</div>` : cmLegend(curParts(g), colors, g.colorMap)}
+      </select></div></div>`).join('')}</div>` : cmLegend(curParts(g), colors, curColorMap(g))}
     </div></div>
     ${renderCmSaveTools(g, v, colors)}
     ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
@@ -4306,22 +4306,28 @@ async function sendManualEmail(id, key, edited) {
 }
 
 // The picture customers color: the design's color picture, or the selected version's own picture, front or back.
+// The color picture for the chosen version: its own set-up, else its old front/back pictures on the main areas, else the design's.
+function curColorMap(g, vid) {
+  const vs = g.versions || [];
+  const v = vs.length ? (vid === undefined ? versionOf(g, designOpts(g.id).version) : vs.find(x => x.id === vid) || versionOf(g, vid)) : null;
+  if (v && v.colorMap && v.colorMap.photo) return v.colorMap;
+  if (v && v.photo && g.colorMap) return { ...g.colorMap, photo: v.photo, photoAlt: v.photoAlt || '' };
+  return g.colorMap;
+}
 function cmMapFor(g, versionId, side) {
-  const v = (g.versions || []).find(x => x.id === versionId);
-  let m = g.colorMap;
-  if (v && v.photo) m = { ...m, photo: v.photo, photoAlt: v.photoAlt || '' };
-  return side === 'back' && m.photoAlt ? { ...m, photo: m.photoAlt } : m;
+  const m = curColorMap(g, versionId);
+  return m && side === 'back' && m.photoAlt ? { ...m, photo: m.photoAlt } : m;
 }
 function cmSides(g, versionId) {
-  const v = (g.versions || []).find(x => x.id === versionId);
-  return !!((v && v.photo ? v.photoAlt : g.colorMap && g.colorMap.photoAlt));
+  const m = curColorMap(g, versionId);
+  return !!(m && m.photoAlt);
 }
 function setCmSide(id, side) { designOpts(id).side = side; refreshColorIdeas(id, `cm-side-${side || 'front'}`); }
 // ── Request form: their chosen part colors on the photo ──
 function cmRequestPreview(item) {
   if (!featureOn('colorIdeas')) return '';
   const g = state.gallery.find(x => x.id === item.galleryId);
-  if (!g || !cmUsable(g.colorMap)) return '';
+  if (!g || !cmUsable(curColorMap(g, item.versionId))) return '';
   const parts = item.designParts || [];
   const colors = Object.fromEntries(parts.map(p => [p.id, p.colorId]));
   return `<div class="cm-request">${cmCanvas(cmMapFor(g, item.versionId, ''), parts, colors, `${g.title}: ${cmDescribe(parts, colors)}`, 'cm-small')}
@@ -5880,7 +5886,10 @@ function jumpTo(i) {
   if (!x || !x.h.isConnected) return;
   const details = x.h.tagName === 'SUMMARY' ? x.h.parentElement : x.h.closest('details.fold-card');
   if (details && !details.open) details.open = true;
-  const target = x.h.closest('.card') && !x.h.matches('.wiki-area, .email-group-title') ? x.h.closest('.card') : x.h;
+  // A card's own heading scrolls to the card; a section inside a card (a sub-heading or a box's title) scrolls to that section.
+  const card = x.h.closest('.card');
+  const own = card && x.h.closest('.card') === card && card.querySelector(':scope > .card-title, :scope > summary, :scope > h2, :scope > h3, :scope > .email-card-title') === x.h;
+  const target = x.h.tagName === 'LEGEND' ? x.h.parentElement : own ? card : x.h;
   target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   if (!x.h.hasAttribute('tabindex') && !/^(SUMMARY|BUTTON|A)$/.test(x.h.tagName)) x.h.setAttribute('tabindex', '-1');
   x.h.focus({ preventScroll: true });
@@ -6149,7 +6158,7 @@ async function uploadComboPhoto(n, file) {
 // grams and price are the single version's times `count`. A version that needs the pack adds the design
 // chosen as the joining pack (`packId`) to the request. Customers ordering two singles are nudged to the
 // double (their own history, and the owner sees the same flag on the order).
-function cleanVersions(list) {
+function cleanVersions(list, mainParts) {
   return (Array.isArray(list) ? list : []).slice(0, 8).map((v, n) => ({
     id: /^[A-Za-z0-9_-]{1,40}$/.test(String(v && v.id)) ? v.id : `v${n + 1}`,
     name: cleanText(v && v.name, 40).trim(),
@@ -6163,6 +6172,7 @@ function cleanVersions(list) {
     photo: safeImageUrl(v && v.photo),        // this version's own color picture (same solid color per part as the main picture)
     photoAlt: safeImageUrl(v && v.photoAlt),   // and its back view
     parts: Array.isArray(v && v.parts) && v.parts.length ? cleanDesignParts(v.parts) : null,   // this version's own parts (null = the original's)
+    colorMap: v && v.colorMap ? cleanColorMap(v.colorMap, Array.isArray(v.parts) && v.parts.length ? cleanDesignParts(v.parts) : (mainParts || [])) : null,   // its own color picker set-up
     accessories: Array.isArray(v && v.accessories) ? [...new Set(v.accessories.map(String).filter(x => /^[A-Za-z0-9_-]{1,64}$/.test(x)))].slice(0, 30) : null   // its own accessories (null = the original's)
   })).filter(v => v.name);
 }
@@ -6350,13 +6360,51 @@ function renderVersionsForm(f) {
 }
 // The box at the top of the design form: type a name, and a full set of options for that version appears below
 // (and as its own button in the side bar). Parts are filled in from the original; accessories follow the original until changed.
+// Version tabs at the top of the design form: "Original" (the main design) and one tab per version, each its own set-up page
+// (details, parts, its own color picker, accessories). While a version tab is open, the form's parts and color picture ARE that
+// version's (swapped in by openVersionTab), so the usual editors work on it; saving swaps them back first.
+function plainOriginal(v, i) { return i === 0 && v && !(v.parts && v.parts.length) && !v.colorMap && !Array.isArray(v.accessories) && !v.photo; }
 function renderVersionQuick(f) {
+  const vs = f.versions || [], tab = f.tab >= 0 ? f.tab : -1;
+  const tabs = vs.map((v, n) => plainOriginal(v, n) ? '' : `<button type="button" class="btn-sm ver-tab ${tab === n ? 'on' : ''}" id="ver-tab-${n}" aria-pressed="${tab === n}" onclick="openVersionTab(${n})">${esc(v.name || `Version ${n + 1}`)}</button>`).join('');
   return `<div class="version-quick" id="version-quick">
+    ${vs.length ? `<div class="ver-tabs" role="group" aria-label="Versions"><button type="button" class="btn-sm ver-tab ${tab < 0 ? 'on' : ''}" id="ver-tab-main" aria-pressed="${tab < 0}" onclick="openVersionTab(-1)">${esc(plainOriginal(vs[0], 0) ? vs[0].name || 'Original' : 'Main design')}</button>${tabs}</div>` : ''}
     <div class="field"><label for="new-version-name">Add a version</label>
       <div class="version-quick-row"><input type="text" id="new-version-name" maxlength="40" placeholder="e.g. Joined pair" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addVersionQuick(); }" />
       <button type="button" class="btn-sm" id="add-version-quick" onclick="addVersionQuick()">Add version</button></div>
-      <div class="field-help">Just type a name. The new version gets its own section below with all the same options, and your parts filled in.${(f.versions || []).length ? ` Now: ${f.versions.map(v => esc(v.name || 'unnamed')).join(', ')}.` : ''}</div></div>
+      <div class="field-help">Just type a name. The new version opens in its own tab with your parts filled in, and its own color picker set-up.</div></div>
   </div>`;
+}
+const cloneJson = x => (x == null ? x : JSON.parse(JSON.stringify(x)));
+// Puts the open tab's parts and color picture back where they belong (the version, or the main design).
+function storeVersionTab() {
+  const f = state.galleryForm; if (!f || !(f.tab >= 0) || !f._main) return;
+  const v = f.versions[f.tab];
+  if (v) { v.parts = (f.parts || []).length ? f.parts : null; v.colorMap = f.colorMap || null; if (v.colorMap) { v.photo = ''; v.photoAlt = ''; } }
+  f.parts = f._main.parts; f.colorMap = f._main.colorMap; f._main = null; f.tab = -1;
+}
+function openVersionTab(n, quiet) {
+  const f = state.galleryForm; if (!f) return;
+  storeVersionTab();
+  const v = n >= 0 ? (f.versions || [])[n] : null;
+  if (v) {
+    f._main = { parts: f.parts, colorMap: f.colorMap };
+    f.parts = v.parts && v.parts.length ? v.parts : (f.parts || []).map(p => ({ ...p, allowed: (p.allowed || []).slice() }));
+    // A version's own color picture; one set up the old way (front/back pictures only) starts from the main areas and ideas.
+    f.colorMap = v.colorMap || (v.photo && f._main.colorMap ? { ...cloneJson(f._main.colorMap), photo: v.photo, photoAlt: v.photoAlt || '' } : null);
+    f.tab = n;
+  }
+  state.galleryOpt = ''; state.cmJoin = [];
+  if (quiet) return;
+  render();
+  const el = document.getElementById(v ? `ver-tab-${n}` : 'ver-tab-main');
+  if (el) { el.focus(); document.getElementById('version-quick')?.scrollIntoView({ block: 'start' }); }
+}
+function copyMainColorMap() {
+  const f = state.galleryForm; if (!f || !(f.tab >= 0) || !f._main || !f._main.colorMap) return;
+  f.colorMap = cloneJson(f._main.colorMap);
+  render();
+  softNote("The original's color picture and ideas are copied. Change the picture for this version. Remember to save.");
 }
 function addVersionQuick(name) {
   const f = state.galleryForm; if (!f) return;
@@ -6365,26 +6413,25 @@ function addVersionQuick(name) {
   f.versions = f.versions || [];
   if (!nm) { softNote('Type a name for the version first.'); input?.focus(); return; }
   if (f.versions.length >= 8) { softNote('Up to 8 versions.'); return; }
+  storeVersionTab();
   const stamp = Date.now().toString(36);
-  if (!f.versions.length) f.versions.push({ id: 'v' + stamp + 'a', name: 'Original', count: 1, needsPack: false, parts: null, accessories: null });
+  if (!f.versions.length) f.versions.push({ id: 'v' + stamp + 'a', name: 'Original', count: 1, needsPack: false, parts: null, accessories: null, colorMap: null });
   const parts = (f.parts || []).map(p => ({ ...p, allowed: (p.allowed || []).slice() }));
-  f.versions.push({ id: 'v' + stamp, name: nm, count: 1, needsPack: false, parts: parts.length ? parts : null, accessories: null });
-  state.galleryOpt = '';
-  render();
-  const n = f.versions.length - 1;
-  softNote(`"${nm}" added below. Remember to save.`);
-  document.getElementById(`version-sec-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  f.versions.push({ id: 'v' + stamp, name: nm, count: 1, needsPack: false, parts: parts.length ? parts : null, accessories: null, colorMap: null });
+  openVersionTab(f.versions.length - 1);
+  softNote(`"${nm}" is open in its own tab. Remember to save.`);
 }
 function removeVersion(n) {
   const f = state.galleryForm; if (!f || !f.versions[n]) return;
+  if (f.tab === n && f._main) { f.parts = f._main.parts; f.colorMap = f._main.colorMap; f._main = null; f.tab = -1; }
+  else if (f.tab > n) f.tab--;
   f.versions.splice(n, 1);
-  if (f.versions.length === 1 && f.versions[0].name === 'Original') f.versions = [];
+  if (f.versions.length === 1 && plainOriginal(f.versions[0], 0)) { storeVersionTab(); f.versions = []; }
   render();
 }
-function useMainParts(n) {
-  const f = state.galleryForm; if (!f || !f.versions[n]) return;
-  f.versions[n].parts = (f.parts || []).map(p => ({ ...p, allowed: (p.allowed || []).slice() }));
-  if (!f.versions[n].parts.length) f.versions[n].parts = null;
+function useMainParts() {
+  const f = state.galleryForm; if (!f || !f._main) return;
+  f.parts = (f._main.parts || []).map(p => ({ ...p, allowed: (p.allowed || []).slice() }));
   render();
   softNote('Parts copied again from the original. Remember to save.');
 }
@@ -6394,44 +6441,49 @@ function toggleVersionAccessory(n, id, on) {
   v.accessories = v.accessories.filter(x => x !== id);
   if (on) v.accessories.push(id);
   render();
-  document.querySelector(`#version-sec-${n} .ver-acc-list input[data-id="${id}"]`)?.focus();
+  document.querySelector(`.ver-acc-list input[data-id="${id}"]`)?.focus();
 }
 function versionAccessoriesSame(n) {
   const f = state.galleryForm; if (!f || !f.versions[n]) return;
   f.versions[n].accessories = null;
   render();
 }
-function renderVersionSections(f) {
-  const others = state.gallery.filter(x => x.id !== f.id);
-  return (f.versions || []).map((v, n) => {
-    const nm = esc(v.name || `Version ${n + 1}`), own = Array.isArray(v.accessories), accs = own ? v.accessories : (f.accessories || []);
-    return `<fieldset class="owner-edit-item version-section" id="version-sec-${n}"><legend>Version: ${nm}</legend>
-      <div class="row2">
-        <div class="field"><label for="ver-name-${n}">Version ${n + 1} name</label><input type="text" id="ver-name-${n}" maxlength="40" value="${esc(v.name || '')}" placeholder="Single" oninput="state.galleryForm.versions[${n}].name = this.value" /></div>
-        <div class="field"><label for="ver-count-${n}">Main items in it</label><input type="number" id="ver-count-${n}" min="1" max="4" step="1" value="${esc(v.count || 1)}" oninput="state.galleryForm.versions[${n}].count = this.value" /></div>
-        <div class="field"><label for="ver-price-${n}">Set price for this version, $ (blank = design price x main items)</label><input type="number" id="ver-price-${n}" min="0" step="0.01" value="${esc(v.price || '')}" oninput="state.galleryForm.versions[${n}].price = this.value" /></div>
-        <div class="field"><label for="ver-note-${n}">Note shown under the version</label><input type="text" id="ver-note-${n}" maxlength="300" value="${esc(v.note || '')}" oninput="state.galleryForm.versions[${n}].note = this.value" /></div>
-      </div>
+// A version's details (name, how many main items, price, note and the joining options).
+function renderVersionDetails(f, n) {
+  const v = f.versions[n];
+  return `<fieldset class="owner-edit-item version-section" id="version-sec-${n}"><legend>${esc(v.name || `Version ${n + 1}`)}: details</legend>
+      <div class="field"><label for="ver-name-${n}">Version name</label><input type="text" id="ver-name-${n}" maxlength="40" value="${esc(v.name || '')}" placeholder="Single" oninput="state.galleryForm.versions[${n}].name = this.value" /></div>
+      <div class="field"><label for="ver-count-${n}">Main items in it</label><input type="number" id="ver-count-${n}" min="1" max="4" step="1" value="${esc(v.count || 1)}" oninput="state.galleryForm.versions[${n}].count = this.value" /></div>
+      <div class="field"><label for="ver-price-${n}">Set price, $ (blank = design price x main items)</label><input type="number" id="ver-price-${n}" min="0" step="0.01" value="${esc(v.price || '')}" oninput="state.galleryForm.versions[${n}].price = this.value" /></div>
+      <div class="field"><label for="ver-note-${n}">Note shown under the version</label><input type="text" id="ver-note-${n}" maxlength="300" value="${esc(v.note || '')}" oninput="state.galleryForm.versions[${n}].note = this.value" /></div>
+      <div class="ver-checks">
       <label class="special-order-check"><input type="checkbox" id="ver-pack-${n}" ${v.needsPack ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].needsPack = this.checked" /> Needs the joining pack</label>
       <label class="special-order-check"><input type="checkbox" ${v.packIncluded ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].packIncluded = this.checked" /> The joining parts are included in the price</label>
       <label class="special-order-check"><input type="checkbox" ${v.tbd ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].tbd = this.checked" /> Price confirmed in the quote</label>
-      <label class="special-order-check"><input type="checkbox" ${v.askOrder ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].askOrder = this.checked" /> Ask for the order number of the one they already own</label>
-      <h4 class="sub-title jump-title">${nm}: color pictures</h4>
-      <div class="ver-photos">${[['photo', 'front'], ['photoAlt', 'back']].map(([key, label]) => `<div class="ver-photo">${v[key] ? `<img src="${esc(v[key])}" alt="${nm} ${label} color picture" referrerpolicy="no-referrer" />` : '<span class="part-thumb part-thumb-blank" aria-hidden="true"></span>'}
-        <label class="btn-sm">${v[key] ? 'Change' : 'Add'} ${label} picture<input type="file" accept="image/*" id="ver-${key}-${n}" onchange="uploadVersionPhoto(${n}, '${key}', this.files[0])" style="display:none;" /></label>
-        ${v[key] ? `<button type="button" class="btn-sm danger" onclick="state.galleryForm.versions[${n}].${key} = ''; render();">Remove</button>` : ''}</div>`).join('')}
-        <span class="field-help" id="ver-photo-status-${n}" role="status">Optional. Customers choosing this version see these pictures to pick colors. Use the same solid color for each part as in the main color picture.</span></div>
-      <h4 class="sub-title jump-title">${nm}: parts</h4>
-      ${v.parts && v.parts.length ? '' : `<div class="field-help">This version uses the original's parts. Add a part below to give it its own.</div>`}
-      ${renderDesignPartsForm(f, n)}
-      <button type="button" class="btn-sm" id="ver-useparts-${n}" onclick="useMainParts(${n})">Copy the original's parts again</button>
-      <h4 class="sub-title jump-title">${nm}: accessories</h4>
-      <div class="field-help">${own ? 'This version has its own accessories. Changing them never changes the other versions.' : "Same accessories as the original. Tick or untick one to give this version its own list; the other versions stay as they are."}</div>
-      <div class="ver-acc-list">${others.length ? others.map((x, k) => `<label class="special-order-check"><input type="checkbox" data-id="${esc(x.id)}" id="ver-acc-${n}-${k}" ${accs.includes(x.id) ? 'checked' : ''} onchange="toggleVersionAccessory(${n}, '${esc(x.id)}', this.checked)" /> ${esc(x.title || 'Untitled')}${x.published ? '' : ' (hidden)'}</label>`).join('') : '<div class="field-help">Add the accessories as their own designs first.</div>'}</div>
-      ${own ? `<button type="button" class="btn-sm" onclick="versionAccessoriesSame(${n})">Use the original's accessories again</button>` : ''}
-      <div style="margin-top:10px;"><button type="button" class="btn-sm danger" id="ver-remove-${n}" onclick="removeVersion(${n})" aria-label="Remove version ${nm}">Remove this version</button></div>
+      <label class="special-order-check"><input type="checkbox" ${v.askOrder ? 'checked' : ''} onchange="state.galleryForm.versions[${n}].askOrder = this.checked" /> Ask for the order number of the one they already own</label></div>
     </fieldset>`;
-  }).join('');
+}
+// The set-up page for one version (its tab): details, its parts, its own color picker and its accessories.
+function renderVersionPage(f) {
+  const n = f.tab, v = f.versions[n], nm = esc(v.name || `Version ${n + 1}`);
+  const own = Array.isArray(v.accessories), accs = own ? v.accessories : (f.accessories || []);
+  const ids = [...new Set((f.accessories || []).concat(own ? v.accessories : []))];   // only the original's accessories are offered
+  const list = ids.map(id => state.gallery.find(x => x.id === id)).filter(Boolean);
+  return `${renderVersionDetails(f, n)}
+    ${renderDesignPartsForm(f)}
+    <button type="button" class="btn-sm" id="ver-useparts" onclick="useMainParts()">Copy the original's parts again</button>
+    ${!f.colorMap && f._main && f._main.colorMap ? `<div class="field-help" style="margin-top:12px;">This version has no color picture of its own yet, so customers see the original's. Upload this version's picture below, or <button type="button" class="btn-link" id="ver-copy-cm" onclick="copyMainColorMap()">start from the original's picture and color ideas</button>.</div>` : ''}
+    ${renderColorMapForm(f)}
+    <fieldset class="owner-edit-item ver-acc-box"><legend>${nm}: accessories</legend>
+      <div class="field-help">${own ? 'This version has its own accessories. Changing them never changes the other versions.' : 'Same accessories as the original. Untick one to leave it out of this version; the other versions stay as they are.'}</div>
+      <div class="ver-acc-list">${list.length ? list.map((x, k) => `<label class="special-order-check"><input type="checkbox" data-id="${esc(x.id)}" id="ver-acc-${n}-${k}" ${accs.includes(x.id) ? 'checked' : ''} onchange="toggleVersionAccessory(${n}, '${esc(x.id)}', this.checked)" /> ${esc(x.title || 'Untitled')}${x.published ? '' : ' (hidden)'}</label>`).join('') : '<div class="field-help">The original has no accessories yet. Add them on the original\'s tab with "Add accessories", then choose here which ones this version offers.</div>'}</div>
+      ${own ? `<button type="button" class="btn-sm" onclick="versionAccessoriesSame(${n})">Use the original's accessories again</button>` : ''}
+    </fieldset>
+    <div style="margin-top:10px;"><button type="button" class="btn-sm danger" id="ver-remove-${n}" onclick="removeVersion(${n})" aria-label="Remove version ${nm}">Remove this version</button></div>`;
+}
+// On the original's tab: the plain "Original" version's own details (how many items, price), when versions exist.
+function renderVersionSections(f) {
+  return (f.versions || []).length && plainOriginal(f.versions[0], 0) ? renderVersionDetails(f, 0) : '';
 }
 
 // ── EDITIONS (Two-Tone / Three-Tone / Four-Tone) ──

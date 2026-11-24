@@ -2755,31 +2755,47 @@ const STATES = {
     await page.evaluate(() => editGalleryItem('g1'));
     await page.fill('#new-version-name', 'Joined pair');
     await page.click('#add-version-quick');
-    await page.waitForSelector('#version-sec-1');
+    await page.waitForSelector('#ver-tab-1.on');
+    assert(!(await page.$('#ver-tab-0')) && await page.isVisible('#ver-tab-main') && !(await page.$('#gallery-title')), 'the new version opens in its own tab, without the main form');
     const r = await page.evaluate(() => {
       const f = state.galleryForm;
-      toggleVersionAccessory(1, 'a2', true); toggleVersionAccessory(1, 'a1', false);
-      return { names: f.versions.map(v => v.name), parts: f.versions[1].parts.length, v0acc: f.versions[0].accessories, v1acc: f.versions[1].accessories, mainAcc: f.accessories };
+      const offered = [...document.querySelectorAll('.ver-acc-list input')].map(i => i.dataset.id).join();
+      f._main.parts; f.accessories.push('a2');   // the original gets another accessory: the version (still following the original) offers it too
+      render();
+      const offered2 = [...document.querySelectorAll('.ver-acc-list input')].map(i => i.dataset.id).join();
+      toggleVersionAccessory(1, 'a1', false); f.accessories = ['a1'];
+      return { offered, offered2, names: f.versions.map(v => v.name), parts: f.parts.length, v0acc: f.versions[0].accessories, v1acc: f.versions[1].accessories, mainAcc: f.accessories };
     });
-    assert(JSON.stringify(r.names) === '["Original","Joined pair"]' && r.parts === 2 && r.v0acc === null && JSON.stringify(r.v1acc) === '["a2"]' && JSON.stringify(r.mainAcc) === '["a1"]', JSON.stringify(r));
+    assert(r.offered === 'a1' && r.offered2 === 'a1,a2' && JSON.stringify(r.names) === '["Original","Joined pair"]' && r.parts === 2 && r.v0acc === null && JSON.stringify(r.v1acc) === '["a2"]' && JSON.stringify(r.mainAcc) === '["a1"]', JSON.stringify(r));
+    assert(await page.isVisible('#part-minutes-0') && await page.isVisible('#color-map-form') && await page.isVisible('#ver-copy-cm') === false, 'the version page has parts with print time and its own color picker');
+    // its own color picture: start from the original's and change it
+    await page.evaluate(() => { state.galleryForm._main.colorMap = { photo: 'https://img.test/main.png', regions: [{ hexes: ['#ffffff'], part: 'x' }, { hexes: ['#111111'], part: 'y' }], combos: [{ id: 'k1', name: 'Night', colors: { x: 'black', y: 'white' } }] }; render(); });
+    await page.click('#ver-copy-cm');
+    await page.evaluate(() => { state.galleryForm.colorMap.photo = 'https://img.test/pair.png'; state.galleryForm.parts[0].name = 'Big body'; state.galleryForm.versions[1].count = 2; render(); });
     await page.waitForTimeout(400);
-    assert(await page.evaluate(() => [...document.querySelectorAll('#jump-nav button')].some(b => /Version: Joined pair/.test(b.textContent))), 'the version has its own side button');
-    assert(await page.isVisible('#v1-part-minutes-0') && await page.isVisible('#part-minutes-1'), 'every part has a print time box');
-    await page.evaluate(() => { state.galleryForm.versions[1].parts[0].name = 'Big body'; state.galleryForm.versions[1].count = 2; });
+    assert(await page.evaluate(() => [...document.querySelectorAll('#jump-nav button')].some(b => /Parts \(optional\)/.test(b.textContent))), 'the version page has side buttons');
+    await page.click('#jump-nav .jump-btn:has-text("Color ideas photo")');
+    await page.waitForTimeout(900);
+    const top = await page.evaluate(() => document.getElementById('color-map-form').getBoundingClientRect().top);
+    assert(top > 0 && top < 200, 'side button scrolls to that section, not the top of the form: ' + top);
+    await page.click('#ver-tab-main');
+    assert(await page.isVisible('#gallery-title') && await page.isVisible('#part-minutes-1') && await page.evaluate(() => state.galleryForm.parts[0].name === 'Body' && state.galleryForm.colorMap.photo === 'https://img.test/main.png'), 'the original tab keeps its own parts and picture');
+    await page.click('#ver-tab-1');
     await page.evaluate(() => saveGalleryItem());
     await page.waitForFunction(() => (state.gallery.find(x => x.id === 'g1').versions || []).length === 2);
     const saved = db.gallery.g1.data;
-    assert(saved.versions[1].parts[0].name === 'Big body' && saved.parts[0].name === 'Body' && JSON.stringify(saved.versions[1].accessories) === '["a2"]' && saved.versions[0].accessories === null && JSON.stringify(saved.accessories) === '["a1"]', JSON.stringify(saved));
+    assert(await page.isVisible('#ver-tab-1.on'), 'saving stays on the version tab');
+    assert(saved.versions[1].colorMap.photo === 'https://img.test/pair.png' && saved.colorMap.photo === 'https://img.test/main.png' && saved.versions[1].parts[0].name === 'Big body' && saved.parts[0].name === 'Body' && JSON.stringify(saved.versions[1].accessories) === '["a2"]' && saved.versions[0].accessories === null && JSON.stringify(saved.accessories) === '["a1"]', JSON.stringify(saved));
     await page.close();
     const p2 = await open(db, { suffix: '?design=dragon-organizer' });
     await p2.waitForSelector('#work-price');
     const c = await p2.evaluate(() => {
       const g = state.gallery.find(x => x.id === 'g1');
-      const first = { acc: accessoryIds(g), parts: curParts(g).map(p => p.name), mins: designEstimateItem(g, null, designOpts('g1')).knownMinutes };
+      const first = { acc: accessoryIds(g), parts: curParts(g).map(p => p.name), mins: designEstimateItem(g, null, designOpts('g1')).knownMinutes, pic: curColorMap(g).photo };
       setDesignVersion('g1', g.versions[1].id);
-      return { first, second: { acc: accessoryIds(g), parts: curParts(g).map(p => p.name) }, text: document.querySelector('.design-parts-grid') ? document.querySelector('.design-parts-grid').textContent : '' };
+      return { first, second: { acc: accessoryIds(g), parts: curParts(g).map(p => p.name), pic: curColorMap(g).photo }, text: document.querySelector('.design-parts-grid') ? document.querySelector('.design-parts-grid').textContent : '' };
     });
-    assert(JSON.stringify(c.first.acc) === '["a1"]' && c.first.parts.join() === 'Body,Lid' && c.first.mins === 105 && JSON.stringify(c.second.acc) === '["a2"]' && c.second.parts.join() === 'Big body,Lid' && !/min/i.test(c.text), JSON.stringify(c));
+    assert(JSON.stringify(c.first.acc) === '["a1"]' && c.first.parts.join() === 'Body,Lid' && c.first.mins === 105 && JSON.stringify(c.second.acc) === '["a2"]' && c.second.parts.join() === 'Big body,Lid' && c.first.pic === 'https://img.test/main.png' && c.second.pic === 'https://img.test/pair.png' && !/min/i.test(c.text), JSON.stringify(c));
     await p2.evaluate(() => setDesignVersion('g1', state.gallery[0].versions[0].id));
     await p2.waitForSelector('.design-part-photo');
     const before = p2.context().pages().length;
