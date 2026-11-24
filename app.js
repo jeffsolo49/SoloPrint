@@ -591,6 +591,7 @@ function normalizeBatch(batch) {
     createdAt: cleanIso(batch.createdAt) || new Date(0).toISOString(),
     customerApprovedAt: cleanIso(batch.customerApprovedAt),
     deliveryNotes: cleanText(batch.deliveryNotes),
+    gift: cleanGift(batch.gift),   // "this is a gift": who for and a message
     preorderEta: cleanText(batch.preorderEta, 80).trim(),   // owner's expected print and ship time for a pre-order
     deliveryTracking: cleanText(batch.deliveryTracking, 200),
     deliveryDate: cleanText(batch.deliveryDate, 100),
@@ -1640,6 +1641,8 @@ function renderSubmitTab() {
         : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
     </div>
 
+    ${renderPreorderSummary()}
+    ${renderGiftCard()}
     ${renderQueueNotice()}
     <button class="btn-primary" id="submit-btn" onclick="submitBatch()">${esc(t('submitButton'))}</button>
     ${state.settings.links.messenger ? `<div class="field-help" style="text-align:center;margin-top:8px;">Questions first? <a class="btn-link" href="${esc(state.settings.links.messenger)}" target="_blank" rel="noopener noreferrer">Message me</a></div>` : ''}
@@ -2816,7 +2819,8 @@ function renderOrderFolds(b, st) {
   return `<div class="desk-folds">
     ${renderSendEmailFold(b)}
     ${renderFulfilment(b)}
-    <details class="desk-fold"><summary>Their request (${b.items.length} item${b.items.length === 1 ? '' : 's'}, sent ${esc(createdLabel)})</summary>
+    <details class="desk-fold" ${b.gift ? 'open' : ''}><summary>Their request (${b.items.length} item${b.items.length === 1 ? '' : 's'}, sent ${esc(createdLabel)})${b.gift ? ' · GIFT' : ''}</summary>
+      ${b.gift ? `<div class="alert" style="display:block;"><strong>${esc(giftLine(b))}</strong><div class="field-help">Put their message in the box.</div></div>` : ''}
       <div class="owner-item-summary-list">
         ${b.items.map((it, i) => `<div class="owner-item-summary">
           <div class="owner-order-summary-label">Item ${i + 1}</div>
@@ -5065,6 +5069,7 @@ async function submitBatch() {
       modeDrafts: undefined,
       restoredDraft: undefined
     })),
+    gift: cleanGift(state.gift),
     status: 'pending',
     phase: 'estimate',
     paymentStatus: 'unpaid',
@@ -5088,6 +5093,7 @@ async function submitBatch() {
   showAlert('submit-ok', `Thanks! We've received your request for ${items.length} item${items.length>1?'s':''} and will respond promptly after reviewing it. Any prices shown are automated estimates, not final costs. We'll email ${clientEmail} with your confirmed quote.`, 'success');
   btn.disabled = false; btn.textContent = 'Submit Quote Request';
   state.draftItems = [blankItem()];
+  state.gift = { on: false, name: '', note: '' };
   clearDraft();
   clearServerDraft(clientEmail);
   state.resumedDraft = false;

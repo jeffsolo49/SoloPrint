@@ -2322,7 +2322,7 @@ const OWNER_WIKI = [
   { id: 'design-add', area: 'Designs', title: 'Add or change a design', keys: 'design gallery past work new design photos price set price publish',
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
-    steps: ['To keep a record of interest: Designs > open "Pre-orders and people interested" and tap "Download pre-order interest (spreadsheet)". It lists everyone who left their name and email and every pre-order request (design, their choices, status, deposit date, place in line).', 'Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+    steps: ['Designs > "Pre-order dashboard" shows, for each pre-order design: people interested, requests, deposits paid, who is still waiting on a deposit (tap "Remind about the deposit": you see the email first), how many to make, hours of printing, the filament needed against what you have, and the estimated ready date. Pre-orders are never capped: this is only for planning.', 'Customers see a "Check your pre-order" box before they send: each item with its colors, the total, the deposit and ready date, and the tip about combined shipping (Settings > Wording, site text "preorderShipTip"). The request form also has "This is a gift" (who for, a message): you see GIFT on the order and the message in Their request.', 'To keep a record of interest: Designs > open "Pre-orders and people interested" and tap "Download pre-order interest (spreadsheet)". It lists everyone who left their name and email and every pre-order request (design, their choices, status, deposit date, place in line).', 'Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'owner-extras', area: 'Designs', title: 'Today list, price check, low filament, undo and emailing people interested', keys: 'today list price check version low filament stock undo put back earlier save email everyone interested bcc',
     steps: ['Orders opens with a "Today" card listing what to do, in order: answer, confirm, print, ship, new requests. Tap a name to open the order.', 'On a version tab, "Price check" shows what customers pay for that version in the starting colors and with a different color on every part.', 'A color running low shows on the bell, on Settings, and as a "Low on ..." tag on the designs that use it.', 'Editing a design: under the price, "Put back an earlier save" lists the last 5 saves on this device. Pick one and tap Put back (what you have now is kept too).', 'Designs > Pre-orders and people interested > "Email everyone interested" opens your email app with everyone in the hidden Bcc line, after you edit the text. Tap "Download pre-order interest (spreadsheet)" for the list as a file.', 'On a phone the parts list and color ideas start folded; tap "Show and edit" to open them.'], go: ['gallery', ''] },
   { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
@@ -3156,6 +3156,7 @@ async function uploadPartPhoto(n, file, vi = -1) {
 // The owner can change the main headings, labels, form questions and the order step names customers see.
 // Each change is a draft until it's marked Live; the owner can preview drafts while logged in.
 // settings.siteText: { key: { text, live } }. Blank text or not live = the default below.
+const DEFAULT_PREORDER_SHIP_TIP = 'Want more than one? Add everything to a single request: shipping can be combined, so you pay less to ship.';
 const SITE_TEXT = [
   ['Home and menu', [
     ['navRequest', 'Menu: request button', 'Request a Quote'],
@@ -3206,6 +3207,7 @@ const SITE_TEXT = [
     ['preorderAssembly', 'Pre-orders: assembly', PREORDER_TEXT.assembly],
     ['contrastNote', 'Request form: when two parts that must differ have the same color', 'These two parts need different colors - please pick a different color.'],
     ['preorderBadge', 'Pre-order designs: the label on the design', 'Pre-order'],
+    ['preorderShipTip', 'Pre-orders: the tip about ordering together and combined shipping (design page and the check-your-pre-order box)', DEFAULT_PREORDER_SHIP_TIP],
     ['preorderNote', 'Pre-orders: the first come, first served note (design page, request form, their order and the quote, confirmed and deposit emails)', DEFAULT_PREORDER_NOTE],
     ['logoOffer', 'Design page: company logo add-on note ({price} = the logo price from Prices)', 'Want your company logo on it? I can add it for {price} more per item. Tick "Add my company logo" when you request it, and I\'ll ask you for the logo file.'],
     ['logoCheckbox', 'Request form: company logo tick box ({price} = the logo price)', 'Add my company logo (+{price} each)'],
@@ -5995,7 +5997,7 @@ function renderPreorderNote(g, b, units) {
   const u = b ? preorderUnits(b) : units || (g ? (versionOf(g, designOpts(g.id).version) || { count: 1 }).count : 1);
   const line = [b ? preorderLineText(b, state.settings) : '', b && b.preorderEta ? preorderEtaText(b) : preorderEstimateText(u, state.settings)].filter(Boolean);
   return `<div class="preorder-note"><span class="preorder-badge">${esc(t('preorderBadge'))}</span>${g && g.preorderReady ? ` <strong>Expected: ${esc(g.preorderReady)}</strong>` : ''}
-    <div>${esc(t('preorderNote'))}</div>${line.map((l, n) => `<div${n ? '' : ' class="preorder-line"'}><strong>${esc(l)}</strong></div>`).join('')}
+    <div>${esc(t('preorderNote'))}</div><div class="field-help preorder-ship-tip">${esc(t('preorderShipTip'))}</div>${line.map((l, n) => `<div${n ? '' : ' class="preorder-line"'}><strong>${esc(l)}</strong></div>`).join('')}
     <ul class="preorder-terms">${['Pay', 'Secure', 'Ship', 'Cancel', 'Policy', 'Assembly'].map(k => `<li>${esc(t('preorder' + k))}</li>`).join('')}</ul>
     ${msg ? `<a class="btn-sm btn-contact-sm" href="${esc(msg)}" target="_blank" rel="noopener noreferrer">Contact me (no Venmo? start here)</a>` : ''}</div>`;
 }
@@ -6042,7 +6044,7 @@ function renderDesignFolds() {
   const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderSetups();
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
   const sheet = lists ? '<div class="field"><button type="button" class="btn-sm" id="preorder-sheet" onclick="downloadPreorderInterest()">Download pre-order interest (spreadsheet)</button><div class="field-help">Everyone who left their name and email, and every pre-order request, in one spreadsheet.</div></div>' : '';
-  return fold('Pre-orders and people interested', sheet + lists) + fold('Set-ups', setups);
+  return fold('Pre-order dashboard', renderPreorderDashboard()) + fold('Pre-orders and people interested', sheet + lists) + fold('Set-ups', setups);
 }
 function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
 function setFormPreorder(on) {
@@ -7389,3 +7391,96 @@ async function sendNotifyColor() {
 }
 
 function blankGalleryItemFor(g) { return { ...blankItem(), ...galleryItemFields(g), mode: 'gallery' }; }
+
+
+// ══ PRE-ORDER EXTRAS: check your pre-order, gift option, owner dashboard and deposit reminders ══
+
+function cleanGift(g) {
+  if (!g || !g.on) return undefined;
+  return { on: true, name: cleanText(g.name, 120).trim(), note: cleanText(g.note, 500).trim() };
+}
+function giftState() { return state.gift || (state.gift = { on: false, name: '', note: '' }); }
+// Request form: is this a gift? (a name and a message for the card or note in the box)
+function renderGiftCard() {
+  const g = giftState();
+  return `<div class="card gift-card" id="gift-card">
+    <label class="special-order-check"><input type="checkbox" id="gift-on" ${g.on ? 'checked' : ''} onchange="setGift('on', this.checked); render(); document.getElementById('gift-name')?.focus();" /> <strong>This is a gift</strong></label>
+    ${g.on ? `<div class="row2"><div class="field"><label for="gift-name">Who is it for?</label><input type="text" id="gift-name" maxlength="120" value="${esc(g.name)}" oninput="setGift('name', this.value)" placeholder="Their name" /></div>
+      <div class="field"><label for="gift-note">Message for a card or note in the box (optional)</label><textarea id="gift-note" maxlength="500" oninput="setGift('note', this.value)" style="min-height:64px;">${esc(g.note)}</textarea></div></div>
+      <div class="field-help">Who it is for and your message are saved with your order. Need it shipped to someone else? Say where in an item's notes, or message me after you send this.</div>` : ''}
+  </div>`;
+}
+function setGift(key, value) { giftState()[key] = key === 'on' ? !!value : String(value); }
+function giftLine(b) {
+  const g = b && b.gift;
+  return g && g.on ? `Gift${g.name ? ` for ${g.name}` : ''}${g.note ? `: "${g.note}"` : ''}` : '';
+}
+
+// Request form, pre-orders only: everything in one place before they send it.
+function renderPreorderSummary() {
+  const items = (state.draftItems || []).filter(it => it.preorder === true || (it.accessoryFor || it.packFor));
+  if (!items.some(it => it.preorder === true)) return '';
+  const rows = items.filter(it => String(it.name || '').trim()).map(it => {
+    const qty = Math.max(1, Number(it.qty) || 1);
+    let each = null;
+    try {
+      if (fixedPrice(it) !== null) each = calcPerPrint(0, 0, it);
+      else { const mins = Number(it.knownMinutes) || totalPrintMinutes(it.printHours, it.printMinutes); if (mins && Number(it.grams) > 0) each = calcPerPrint(mins, it.grams, it); }
+    } catch (e) { each = null; }
+    const parts = (it.designParts || []).filter(p => !p.optional || p.include);
+    const colors = parts.length ? cmDescribe(parts, Object.fromEntries(parts.map(p => [p.id, p.colorId]))) : (it.color ? `Color: ${it.color}` : '');
+    return { it, qty, each, line: [it.versionName, it.editionName, colors, (it.designParts || []).filter(p => p.optional && p.include).map(p => `+ ${p.name}`).join(', ')].filter(Boolean).join(' · ') };
+  });
+  if (!rows.length) return '';
+  const known = rows.every(r => r.each !== null), total = rows.reduce((s, r) => s + (r.each || 0) * r.qty, 0);
+  const pct = Number(currentRules().depositPercent) || 0, deposit = Math.round(total * pct) / 100;
+  const units = preorderUnits({ items: rows.map(r => r.it) });
+  const g = giftState();
+  return `<div class="card preorder-summary" id="preorder-summary">
+    <h3 class="card-title">Check your pre-order</h3>
+    <ul class="summary-list">${rows.map(r => `<li><div class="summary-pic">${cmRequestPreview(r.it)}</div><div><strong>${esc(r.it.name)}</strong> × ${r.qty}${r.line ? `<div class="field-help">${esc(r.line)}</div>` : ''}<div>${r.each !== null ? `$${(r.each * r.qty).toFixed(2)}` : 'Price confirmed in your quote'}</div></div></li>`).join('')}</ul>
+    <div class="summary-total">${known ? `Estimated total: <strong>$${total.toFixed(2)}</strong>${pct > 0 ? ` · deposit about <strong>$${deposit.toFixed(2)}</strong> (${pct}%) after I confirm your quote` : ''}` : 'The total is confirmed in your quote.'}</div>
+    <div class="field-help">${esc(preorderEstimateText(units, state.settings))}</div>
+    ${g.on ? `<div class="field-help">${esc(giftLine({ gift: g }))}</div>` : ''}
+    <div class="field-help preorder-ship-tip">${esc(t('preorderShipTip'))}</div>
+  </div>`;
+}
+
+// Owner: Designs > "Pre-order dashboard": where each pre-order stands, what it needs, and who still owes a deposit.
+function preorderDashboardRows() {
+  const designs = state.gallery.filter(g => g.preorder), rows = [];
+  const all = state.batches.filter(b => (b.phase || 'estimate') !== 'delivered' && orderIsPreorder(b));
+  const forDesign = g => all.filter(b => (b.items || []).some(it => it.preorder === true && it.galleryId === g.id));
+  const mk = (title, id, orders) => {
+    const items = orders.flatMap(b => (b.items || []).filter(it => it.preorder === true && (!id || it.galleryId === id)).map(it => ({ it, b })));
+    const units = items.reduce((s, x) => s + Math.max(1, Number(x.it.qty) || 1) * Math.max(1, Number(x.it.versionCount) || 1), 0);
+    const paid = orders.filter(b => queueTime(b));
+    const mins = items.reduce((s, x) => s + (Number(x.it.knownMinutes || x.it.minutes) || 0) * Math.max(1, Number(x.it.qty) || 1), 0);
+    const grams = {};
+    orders.forEach(b => Object.entries(orderColorGrams(b)).forEach(([c, gm]) => { grams[c] = (grams[c] || 0) + gm; }));
+    const interested = id ? leadList().filter(l => ((l.data.lead && l.data.lead.designs) || []).some(d => d.id === id)).length : 0;
+    const waiting = orders.filter(b => b.phase === 'order_received' && !queueTime(b) && b.paymentStatus !== 'payment_recieved');
+    return { title, id, orders, paid, waiting, units, mins, grams, interested };
+  };
+  designs.forEach(g => rows.push(mk(g.title || 'Untitled', g.id, forDesign(g))));
+  const rest = all.filter(b => !designs.some(g => forDesign(g).includes(b)));
+  if (rest.length) rows.push(mk('Other pre-orders', '', rest));
+  return rows;
+}
+function renderPreorderDashboard() {
+  const rows = preorderDashboardRows();
+  if (!rows.length) return '';
+  return `<div class="card" id="preorder-dashboard">
+    <h3 class="card-title">Pre-order dashboard</h3>
+    <div class="field-help">Every pre-order is kept: nothing here limits how many you take. This shows what it adds up to, so you can see how long it will take and what to buy.</div>
+    ${rows.map(r => {
+      const need = Object.entries(r.grams).map(([c, gm]) => { const st = stockFor(c), short = st ? gm - st.grams : 0; return `<li>${esc(cmColor(c).name)}: ${gm.toFixed(0)} g${st ? ` (on hand ${Math.max(0, st.grams).toFixed(0)} g${short > 0 ? `, <strong>short ${short.toFixed(0)} g</strong>` : ''})` : ''}</li>`; }).join('');
+      return `<div class="dash-design"><h4 class="preorder-design">${esc(r.title)}</h4>
+        <div class="dash-stats"><span><strong>${r.interested}</strong> interested</span><span><strong>${r.orders.length}</strong> requests</span><span><strong>${r.paid.length}</strong> deposits paid</span><span><strong>${r.waiting.length}</strong> waiting on a deposit</span><span><strong>${r.units}</strong> to make</span>${r.mins ? `<span><strong>${esc(fmtTime(r.mins))}</strong> of printing</span>` : ''}</div>
+        ${r.units ? `<div class="field-help">${esc(preorderEstimateText(r.units, state.settings))}</div>` : ''}
+        ${need ? `<div class="field-help">Filament these need:</div><ul class="lead-list">${need}</ul>` : ''}
+        ${r.waiting.length ? `<div class="field-help">Waiting on a deposit:</div><ul class="lead-list">${r.waiting.map(b => `<li>${esc(b.clientName || 'A customer')} · ${esc(orderTitle(b))} ${hasEmailAddress(b) ? `<button type="button" class="btn-sm" id="remind-${esc(b.id)}" onclick="askSendEmail('${esc(b.id)}', 'confirmed')">Remind about the deposit</button>` : ''} <button type="button" class="btn-link" onclick="focusOwnerOrder('${esc(b.id)}')">Open</button></li>`).join('')}</ul>` : ''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
