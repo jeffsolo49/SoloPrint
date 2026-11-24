@@ -3643,7 +3643,7 @@ function cleanGalleryItem(row) {
     parts: cleanDesignParts(data.parts),
     colorMap: cleanColorMap(data.colorMap, cleanDesignParts(data.parts)),   // photo repainted in other colors, features.js
     preorder: data.preorder === true,   // a new design taking pre-orders (deposits, first come, first served)
-    versions: cleanVersions(data.versions),   // single / double ...
+    versions: cleanVersions(data.versions, cleanDesignParts(data.parts)),   // single / double ...
     editions: cleanEditions(data.editions),
     contrast: cleanContrast(data.contrast),
     colorFeeIncluded: data.colorFeeIncluded === true,
@@ -4040,6 +4040,7 @@ function renderOwnerGalleryPage() {
     <div class="card">
       <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
       ${renderVersionQuick(f)}
+      ${f.tab >= 0 && (f.versions || [])[f.tab] ? renderVersionPage(f) : `
       <div class="form-cols">
       <div class="form-col"><h4 class="sub-title jump-title">Name and write-up</h4>
       <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
@@ -4077,6 +4078,7 @@ function renderOwnerGalleryPage() {
       ${renderDesignOptions(f)}
       </div></div>
       ${renderVersionSections(f)}
+      `}
       <h4 class="sub-title jump-title">Show and save</h4>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
         <input type="checkbox" id="gallery-published" ${f.published ? 'checked' : ''} onchange="updateGalleryForm('published', this.checked)" style="width:auto;" /> Show on the ${esc(galleryName())} tab
@@ -4120,7 +4122,7 @@ function editGalleryItem(id) {
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
     parts: g.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '' })),
-    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v, parts: v.parts ? v.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '', allowed: (p.allowed || []).slice() })) : null, accessories: Array.isArray(v.accessories) ? v.accessories.slice() : null })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, colorFeeIncluded: g.colorFeeIncluded
+    colorMap: g.colorMap ? JSON.parse(JSON.stringify(g.colorMap)) : null, preorder: g.preorder, preorderReady: g.preorderReady, versions: g.versions.map(v => ({ ...v, parts: v.parts ? v.parts.map(p => ({ ...p, grams: p.grams ? String(p.grams) : '', allowed: (p.allowed || []).slice() })) : null, accessories: Array.isArray(v.accessories) ? v.accessories.slice() : null, colorMap: v.colorMap ? JSON.parse(JSON.stringify(v.colorMap)) : null })), packId: g.packId, accessories: (g.accessories || []).slice(), editions: g.editions.map(e => ({ ...e, merge: { ...e.merge } })), contrast: g.contrast, colorFeeIncluded: g.colorFeeIncluded
   };
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4149,12 +4151,14 @@ async function writeGalleryItem(g) {
 async function saveGalleryItem() {
   const f = state.galleryForm || blankGalleryForm();
   if (!f.title.trim()) { showAlert('gallery-err', 'Please add a title.', 'error'); return; }
+  const verTab = f.tab >= 0 ? f.tab : -1;
+  if (verTab >= 0) openVersionTab(-1, true);   // a version tab holds that version's parts and picture: put them back before saving
   const existing = state.gallery.find(x => x.id === f.id);
   // A YouTube link pasted with the photos is a video, not a photo.
   const photoLines = String(f.photos || '').split(/[\s,]+/);
   const videos = parseVideoLinks([f.videos || '', ...photoLines.filter(isYoutubeLink)].join('\n'));
   const badVideos = String(f.videos || '').split(/[\s,]+/).filter(t => t && !youtubeId(t));
-  if (badVideos.length) { showAlert('gallery-err', `This isn't a YouTube link: ${badVideos[0]}`, 'error'); return; }
+  if (badVideos.length) { if (verTab >= 0) openVersionTab(verTab, true); showAlert('gallery-err', `This isn't a YouTube link: ${badVideos[0]}`, 'error'); return; }
   const item = cleanGalleryItem({
     id: f.id,
     published: f.published,
@@ -4171,6 +4175,7 @@ async function saveGalleryItem() {
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = existing ? 'Save Changes' : 'Add to Gallery'; }
     showAlert('gallery-err', "Couldn't save. If you were logged out, log in again and retry.", 'error');
+    if (verTab >= 0) openVersionTab(verTab, true);
     return;
   }
   const y = window.scrollY, opt = state.galleryOpt;
@@ -4179,6 +4184,7 @@ async function saveGalleryItem() {
   // Saved: stay on the page with the form still open so work can continue (a new design becomes an edit of itself).
   editGalleryItem(item.id);
   if (state.galleryForm) state.galleryOpt = opt;
+  if (verTab >= 0 && state.galleryForm && (state.galleryForm.versions || [])[verTab]) openVersionTab(verTab, true);
   render();
   window.scrollTo(0, y);
   softNote(existing ? 'Saved. You can keep working.' : 'Added to the gallery. You can keep working on it.');
