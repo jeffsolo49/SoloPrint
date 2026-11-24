@@ -4040,21 +4040,24 @@ function renderOwnerGalleryPage() {
     <div class="card">
       <h3 class="card-title">${editing ? 'Edit Item' : 'Add Item'}</h3>
       ${renderVersionQuick(f)}
-      <h4 class="sub-title jump-title">Name and write-up</h4>
+      <div class="form-cols">
+      <div class="form-col"><h4 class="sub-title jump-title">Name and write-up</h4>
       <div class="field"><label>Title</label><input type="text" id="gallery-title" value="${esc(f.title)}" placeholder="Articulated dragon" oninput="updateGalleryForm('title', this.value)" /></div>
       <div class="field"><label>Write-up</label>
         <div class="field-help">Tell the story: what it was for, how you designed it, size, colors, anything interesting. Leave a blank line between paragraphs. The first sentence or two show on the card.</div>
         <textarea id="gallery-desc" style="min-height:96px;" placeholder="This started as a request for..." oninput="updateGalleryForm('description', this.value)">${esc(f.description)}</textarea>
       </div>
-      <h4 class="sub-title jump-title">Photos and videos</h4>
+      </div>
+      <div class="form-col"><h4 class="sub-title jump-title">Photos and videos</h4>
       ${renderGalleryPhotosField(f)}
       <div class="field"><label for="gallery-videos">YouTube videos (optional)</label>
         <div class="field-help">Paste YouTube links, one per line (up to 5; "Unlisted" videos work). They play on this design's page, under the photos. They're never used as the design's picture: tiles, cards and shared links always use your photos.</div>
         <textarea id="gallery-videos" placeholder="https://youtu.be/..." style="min-height:52px;" oninput="updateGalleryForm('videos', this.value)">${esc(f.videos || '')}</textarea>
       </div>
+      </div></div>
       ${renderDesignPartsForm(f)}
       ${renderColorMapForm(f)}
-      <h4 class="sub-title jump-title">Print time, weight and price</h4>
+      <div class="form-cols"><div class="form-col"><h4 class="sub-title jump-title">Print time, weight and price</h4>
       <div class="gallery-form-grid">
         <div class="field"><label>Color</label>
           <select id="gallery-fil" onchange="setGalleryFormColor(this.value)">${calcColorOptions(f.colorId || f.filType)}</select>
@@ -4068,8 +4071,11 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
+      </div>
+      <div class="form-col">
       <h4 class="sub-title jump-title">Pre-order, accessories, versions and editions</h4>
       ${renderDesignOptions(f)}
+      </div></div>
       ${renderVersionSections(f)}
       <h4 class="sub-title jump-title">Show and save</h4>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:12px 0;">
