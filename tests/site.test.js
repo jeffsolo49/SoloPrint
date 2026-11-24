@@ -2871,6 +2871,11 @@ const STATES = {
     await page.click('#notify-send');
     for (let k = 0; k < 20 && !db.drafts['pat@example.com']; k++) await page.waitForTimeout(100);
     assert(db.drafts['pat@example.com'] && /Gold is back/.test(JSON.stringify(db.drafts['pat@example.com'].data.lead.designs)), JSON.stringify(db.drafts));
+    // live price: beside the color picker on the design page, and at the top of the part colors on the request form
+    assert(await page.evaluate(() => !!document.querySelector('.cm-controls #cm-price .gallery-price')), 'the price sits with the color picker');
+    await page.evaluate(() => { state.clientName = 'Pat Lee'; state.clientEmail = 'pat@example.com'; requestGalleryItem('g1'); });
+    await page.waitForSelector('#part-live-price-0');
+    assert(/\$\d/.test(await page.textContent('#part-live-price-0')), 'the request form shows the price by the part colors');
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });

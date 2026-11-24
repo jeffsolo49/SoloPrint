@@ -1702,3 +1702,11 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .today-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 24px; }
 .low-badge { color: var(--red); border: 1px solid currentColor; border-radius: 999px; padding: 0 8px; font-size: 12px; background: var(--surface); }
 .design-history { margin-top: 10px; }
+
+/* The price stays beside the color pickers and shows each change */
+.live-price { position: sticky; top: 8px; z-index: 3; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px 12px; margin-bottom: 10px; }
+.live-price .price-preview-box { margin-top: 0 !important; border: 0; padding: 0; background: none; }
+.live-price-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+@keyframes price-flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.price-flash { animation: price-flash 0.9s ease-out; }
+@media (prefers-reduced-motion: reduce) { .price-flash { animation: none; } }

@@ -2968,6 +2968,7 @@ function renderPartColors(item, i) {
   const choices = partColorChoices();
   return `<fieldset class="part-colors">
     <legend>Choose a color for each part</legend>
+    <div class="live-price" id="part-live-price-${i}" aria-live="polite">${renderCustomerPricePreview(item)}</div>
     <div class="field-help">${esc(materialNote())}</div>
     <div class="field-help color-delay-note">${esc(colorDelayNote())}</div>
     ${cmRequestPreview(item)}
@@ -4021,6 +4022,8 @@ function renderColorIdeas(g) {
     <div class="field-help" style="margin-bottom:10px;">${esc(t('colorIdeasNote'))}</div>
     <div class="cm-layout"><div class="cm-photo-col">${cmSides(g, designOpts(g.id).version) ? `<div class="cm-sides" role="group" aria-label="Which side">${[['', 'Front'], ['back', 'Back']].map(([sd, lb]) => `<button type="button" class="btn-sm ${(designOpts(g.id).side || '') === sd ? 'on' : ''}" id="cm-side-${sd || 'front'}" aria-pressed="${(designOpts(g.id).side || '') === sd}" onclick="setCmSide('${esc(g.id)}', '${sd}')">${lb}</button>`).join('')}</div>` : ''}${(combos.find(c => c.id === v.pick) || {}).photo ? `<img class="cm-canvas cm-photo" src="${esc(combos.find(c => c.id === v.pick).photo)}" alt="${esc(`${g.title}: ${cmDescribe(g.parts, colors)}`)}" referrerpolicy="no-referrer" />` : cmCanvas(cmMapFor(g, designOpts(g.id).version, designOpts(g.id).side), g.parts, colors, `${g.title}: ${cmDescribe(g.parts, colors)}`)}</div>
     <div class="cm-controls">
+    ${price !== null ? `<div class="cm-price live-price" id="cm-price" aria-live="polite"><div class="live-price-row"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span></div>
+      ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
     <div class="cm-picks" role="group" aria-label="${esc(t('colorIdeasTitle'))}">
       ${v.pick === 'own' ? '<span class="cm-own-tag">Your own colors</span>' : ''}
       ${combos.map(c => `<button type="button" class="btn-sm" id="cm-pick-${esc(c.id)}" aria-pressed="${v.pick === c.id}" onclick="setCmPick('${esc(g.id)}', '${esc(c.id)}')">${esc(c.name)}</button>`).join('')}
@@ -4032,8 +4035,6 @@ function renderColorIdeas(g) {
       </select></div></div>`).join('')}</div>` : cmLegend(curParts(g), colors, curColorMap(g))}
     </div></div>
     ${renderCmSaveTools(g, v, colors)}
-    ${price !== null ? `<div class="cm-price" id="cm-price" aria-live="polite"><span class="gallery-price">$${price.toFixed(2)}</span> <span class="gallery-meta">${galleryPriceLabel(g)}, in these colors</span>
-      ${g.price > 0 ? '' : renderColorLines(item, item.grams, currentRules())}</div>` : ''}
     <button class="btn-sm" type="button" id="cm-request" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('colorIdeasRequest'))}</button>
   </div>`;
 }
@@ -4058,7 +4059,10 @@ function refreshColorIdeas(id, focusId) {
   savePreorderPicks(id);
   const el = document.getElementById('color-ideas');
   if (!g || !el) { render(); return; }
+  const before = (document.querySelector('#cm-price .gallery-price') || {}).textContent;
   el.outerHTML = renderColorIdeas(g);
+  const nowEl = document.querySelector('#cm-price .gallery-price');
+  if (nowEl && before && before !== nowEl.textContent) { const box = document.getElementById('cm-price'); box.classList.add('price-flash'); setTimeout(() => box.classList.remove('price-flash'), 900); }
   const price = document.getElementById('work-price');
   if (price) price.innerHTML = renderWorkPrice(g);
   paintColorPreviews();
