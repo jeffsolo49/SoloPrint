@@ -2312,7 +2312,7 @@ const OWNER_WIKI = [
   { id: 'design-add', area: 'Designs', title: 'Add or change a design', keys: 'design gallery past work new design photos price set price publish',
     steps: ['Designs > "New design" (or Edit on an existing one).', 'Add the title, write-up, photos, print time and grams. A set price replaces the calculated price.', 'Save. Published designs show in the customer gallery.'], go: ['gallery'] },
   { id: 'preorders', area: 'Designs', title: 'Take pre-orders for a new product', keys: 'pre-order preorder launch new product not ready deposit first come first served waiting list',
-    steps: ['Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
+    steps: ['To keep a record of interest: Designs > open "Pre-orders and people interested" and tap "Download pre-order interest (spreadsheet)". It lists everyone who left their name and email and every pre-order request (design, their choices, status, deposit date, place in line).', 'Designs > add the design as usual (or Edit it), tap "Make this a pre-order", then "Pre-order settings" to type when it should be ready, like "early January". Save.', 'Customers see a "Pre-order" label, a "Pre-order this" button and your note that pre-orders are made first come, first served, in the order deposits come in. The note is also on their order and in the quote, confirmed and deposit emails.', 'Each pre-order goes through the usual steps: send the quote, they confirm and pay the deposit.', 'The Pre-orders card at the top of Designs lists them in the order to make them: paid deposits first, by when they came in. Each order also says "Number N of M".', 'Type an expected print and ship time (like "Jan 12-15") next to an order in that card, or on the order itself, and tap Save. Do this when someone is first in line. Customers see their place in line and that time on their order and in the quote, confirmed and deposit emails.', 'When it launches, untick the Pre-order box. Orders already placed stay pre-orders until they ship.', 'To change the note: Settings > Wording, site text "preorderNote" (tick Live).'], go: ['gallery', ''] },
   { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
     steps: ['Designs > Add a design (wizard). Short steps that adapt to your answers: name (and whether it is a pre-order), photos, price and time, parts, color ideas, accessories, versions, color editions, pre-order settings (only for pre-orders), finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
@@ -6006,7 +6006,8 @@ function renderDesignOptions(f) {
 function renderDesignFolds() {
   const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderSetups();
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
-  return fold('Pre-orders and people interested', lists) + fold('Set-ups', setups);
+  const sheet = lists ? '<div class="field"><button type="button" class="btn-sm" id="preorder-sheet" onclick="downloadPreorderInterest()">Download pre-order interest (spreadsheet)</button><div class="field-help">Everyone who left their name and email, and every pre-order request, in one spreadsheet.</div></div>' : '';
+  return fold('Pre-orders and people interested', sheet + lists) + fold('Set-ups', setups);
 }
 function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
 function setFormPreorder(on) {
@@ -6718,6 +6719,29 @@ async function fetchLeads() {
 function leadList() {
   const ordered = new Set((state.batches || []).map(b => String(b.clientEmail || '').trim().toLowerCase()));
   return (state.leads || []).filter(l => l && l.data && (l.data.lead || (l.data.items || []).some(it => it && it.preorder)) && !ordered.has(String(l.email || '').trim().toLowerCase()));
+}
+// A spreadsheet of everyone interested in a pre-order: people who left their name and email, and every pre-order request.
+function preorderInterestRows() {
+  const rows = [['Date', 'Name', 'Email', 'Design', 'Their choices', 'Status', 'Deposit paid', 'Place in line']];
+  leadList().forEach(l => {
+    const d = (l.data.lead && l.data.lead.designs) || [];
+    rows.push([String((l.data.lead && l.data.lead.at) || l.updated_at || l.created_at || '').slice(0, 10), l.name || '', l.email || '', d.map(x => x.title).join(', ') || 'a pre-order', d.map(x => x.pick || '').filter(Boolean).join('; '), 'Interested, no request yet', '', '']);
+  });
+  state.batches.filter(b => (b.items || []).some(it => it.preorder === true)).forEach(b => {
+    const its = (b.items || []).filter(it => it.preorder === true);
+    const gid = (its[0] || {}).galleryId || '', place = queueTime(b) ? preorderQueue(gid).indexOf(b) + 1 : 0;
+    rows.push([String(b.createdAt || '').slice(0, 10), b.clientName || '', b.clientEmail || '', its.map(it => it.name || 'Item').join(', '),
+      its.map(it => [it.versionName, it.editionName, (it.designParts || []).filter(p => !p.optional || p.include).map(p => `${p.name}: ${cmColor(p.colorId).name}`).join(', ')].filter(Boolean).join(' · ')).filter(Boolean).join('; '),
+      phaseLabel(b.phase || 'estimate'), queueTime(b) ? String(queueTime(b)).slice(0, 10) : '', place || '']);
+  });
+  return rows;
+}
+function downloadPreorderInterest() {
+  const rows = preorderInterestRows();
+  if (typeof XLSX === 'undefined') { softNote("The spreadsheet tool didn't load. Check your connection and try again."); return; }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Pre-order interest');
+  XLSX.writeFile(wb, `soloprint-preorder-interest-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 function renderPreorderLeads() {
   if (!state.leadsLoaded) { if (!state.leadsLoading) { state.leadsLoading = true; fetchLeads().then(() => { state.leadsLoading = false; render(); }); } return ''; }

@@ -2595,6 +2595,9 @@ const STATES = {
     await page.waitForSelector('#preorder-leads');
     const t = await page.textContent('#preorder-leads');
     assert(/Pat Lee/.test(t) && /pat@example.com/.test(t) && /Dragon Organizer/.test(t), t);
+    assert(await page.isVisible('#preorder-sheet'), 'spreadsheet button');
+    const rows = await page.evaluate(() => preorderInterestRows());
+    assert(rows[0][0] === 'Date' && rows.some(r => r[1] === 'Pat Lee' && r[2] === 'pat@example.com' && /Dragon Organizer/.test(r[3]) && /Interested/.test(r[5])), JSON.stringify(rows));
     assert(!page.errors.length, page.errors.join('; '));
     await page.close();
   });
