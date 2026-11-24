@@ -1330,6 +1330,7 @@ async function init() {
   handleOwnerLink();
   const resumeId = handleResumeLink();
   handleDesignLink();
+  { const pol = new URLSearchParams(location.search).get('policy'); if (typeof POLICY_DEFAULTS !== 'undefined' && pol && POLICY_DEFAULTS[pol]) { state.policyKey = pol; state.prevTab = 'submit'; state.clientTab = 'policy'; } }
   state.ownerUnlocked = hasValidOwnerSession();
   if (!state.ownerUnlocked && readOwnerRemember() && await refreshOwnerSession()) state.ownerUnlocked = true;
   handleAuthRedirect();
@@ -1422,10 +1423,11 @@ function renderClientApp() {
         hasHistoryEmail && state.batches.length ? state.batches.length : 0)}
     </nav>
     <main class="main" id="main" tabindex="-1">
-      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? t('navRequest') : state.clientTab === 'gallery' ? galleryName() : state.clientTab === 'faq' ? t('navFaq') : t('navJobs'))}</h1>
+      <h1 class="sr-only">SoloPrint: ${esc(state.clientTab === 'submit' ? t('navRequest') : state.clientTab === 'gallery' ? galleryName() : state.clientTab === 'faq' ? t('navFaq') : state.clientTab === 'policy' ? policyTitle(state.policyKey) : t('navJobs'))}</h1>
       ${previewNote()}
-      ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : state.clientTab === 'faq' ? '' : renderMyJobsTab()}
+      ${state.clientTab === 'submit' ? renderSubmitTab() : state.clientTab === 'gallery' ? renderGalleryTab() : state.clientTab === 'faq' ? '' : state.clientTab === 'policy' ? renderPolicyPage() : renderMyJobsTab()}
       ${renderFaq()}
+      ${renderFooter()}
     </main>`;
 }
 
@@ -2208,6 +2210,7 @@ function renderMyJobsTab() {
     </div>`;
 
   return `${header}
+    ${renderSentNote()}
     <div class="card">
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button class="btn-sm" onclick="refreshMyRequests()">Refresh</button>
@@ -2928,6 +2931,7 @@ function renderOwnerItem(batchId, it, i) {
 // ── INTERACTIONS ──────────────────────────────────────────────────────────
 
 function setTab(tab) {
+  if (tab !== 'jobs') state.sentNote = null;
   state.clientTab = tab;
   if (tab === 'gallery' || state.galleryOpen) { state.galleryOpen = ''; setDesignUrl(''); }
   render();
@@ -3064,7 +3068,7 @@ async function sendMyLinks() {
 // from the Site Settings tab. Everything has a default so the site works before it's filled in.
 const DEFAULT_ABOUT = "I do 3D design and printing on the side. I'm happy to take on custom design projects and bring ideas to life: send me a model link or describe your idea, and I'll get back to you with a quote.";
 function blankSettings() {
-  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '' }, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [], designTerms: '', siteText: {}, faq: [], features: {} };
+  return { about: { text: DEFAULT_ABOUT, photo: '', replyTime: '' }, links: { messenger: '', etsy: '', email: '' }, policies: {}, colors: [], reviews: [], emails: {}, vacation: { on: false, until: '', message: '' }, rules: {}, materialNote: '', howItWorks: [], designTerms: '', siteText: {}, faq: [], features: {} };
 }
 
 // Only the parts the owner changed are kept, so improvements to the default text still reach them.
@@ -3096,7 +3100,8 @@ function cleanSettings(raw) {
   const links = d.links && typeof d.links === 'object' ? d.links : {};
   return {
     about: { text: cleanText(about.text, 1500) || def.about.text, photo: safeImageUrl(about.photo), replyTime: cleanText(about.replyTime, 80) },
-    links: { messenger: safeLink(links.messenger, ['m.me', 'messenger.com', 'facebook.com']), etsy: safeLink(links.etsy, ['etsy.com']) },
+    links: { messenger: safeLink(links.messenger, ['m.me', 'messenger.com', 'facebook.com']), etsy: safeLink(links.etsy, ['etsy.com']), email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(links.email || '').trim()) ? String(links.email).trim().slice(0, 120) : '' },
+    policies: cleanPolicies(d.policies),
     colors: (Array.isArray(d.colors) ? d.colors : []).slice(0, 30).map(c => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(c && c.id)) ? c.id : '',
       name: cleanText(c && c.name, 40).trim(),
@@ -3494,6 +3499,7 @@ function renderOwnerSettingsPage() {
       </div>
       <div class="field-help">Each shows as a button for customers once filled in. Messenger links start with https://m.me/ (find yours in Messenger under your profile → Share).</div>
     </div>
+    ${renderPolicySettings(d)}
 `,
     colors: renderColorSettingsCard(d),
     prices: renderRulesSettings(d) + renderPreorderTimingSettings(d),
@@ -3660,6 +3666,9 @@ function cleanGalleryItem(row) {
     createdAt: cleanIso(row.created_at),
     title: cleanText(data.title, 120),
     description: cleanText(data.description, 8000),
+    dims: cleanDims(data.dims),   // height, width and depth of the fully built design
+    material: cleanText(data.material, 40).trim(),   // blank = PLA
+    sizePhoto: safeImageUrl(data.sizePhoto),   // which photo shows the size
     ownPhotos: cleanImageLinks(data.photos),   // the photos the owner uploaded
     realPhotos: cleanImageLinks(data.realPhotos).slice(0, 5),   // finished prints in real life: shown first when there are any
     photos: cleanImageLinks(data.realPhotos).slice(0, 5).concat(cleanImageLinks(data.photos)).length ? cleanImageLinks(data.realPhotos).slice(0, 5).concat(cleanImageLinks(data.photos)) : (cleanColorMap(data.colorMap, cleanDesignParts(data.parts)) ? [cleanColorMap(data.colorMap, cleanDesignParts(data.parts)).photo] : []),   // none uploaded: the color picker's photo stands in
@@ -3849,8 +3858,10 @@ function renderWorkDetail(g) {
       ${featureOn('logoAddOn') ? `<div class="logo-offer" id="logo-offer">${esc(logoText('logoOffer'))}
         <label class="special-order-check" style="margin-top:8px;"><input type="checkbox" id="design-logo" ${designOpts(g.id).logo ? 'checked' : ''} onchange="setDesignLogo('${esc(g.id)}', this.checked)" /> ${esc(logoText('logoCheckbox'))}</label></div>` : ''}
       <div id="work-price">${renderWorkPrice(g)}</div>
+      ${cmShown(g) ? '' : '<div class="field-help" id="color-next-step">You pick your color on the next step.</div>'}
 
     </div>
+    ${renderDesignSize(g)}
     ${renderWorkDescription(g)}
     ${renderVideos(g)}
     ${renderDesignParts(g)}
@@ -3931,7 +3942,7 @@ function photoFailed(img, mode) {
 
 function renderGalleryPhoto(g) {
   const photo = g.photos[0];
-  return `<div class="gallery-photo" id="gphoto-${esc(g.id)}">${photo
+  return `<div class="gallery-photo gallery-photo-open" id="gphoto-${esc(g.id)}" onclick="openWork('${esc(g.id)}')">${photo
     ? thumbImg(photo, g.title, 'text')
     : 'No photo yet'}</div>
     ${g.photos.length > 1 ? `<div class="gallery-thumbs">${g.photos.map((u, n) => `<button type="button" class="thumb-btn" onclick="showGalleryPhoto('${esc(g.id)}', ${n})" aria-label="Show photo ${n + 1} of ${esc(g.title)}">${thumbImg(u, '', 'thumb')}</button>`).join('')}</div>` : ''}`;
@@ -3974,7 +3985,7 @@ function renderGalleryTab() {
       return `<div class="gallery-card">
         ${renderGalleryPhoto(g)}
         <div class="gallery-body">
-          <div class="gallery-title">${esc(g.title || 'Untitled')}${g.preorder ? ` <span class="preorder-badge">${esc(t('preorderBadge'))}</span>` : ''}</div>
+          <div class="gallery-title"><button type="button" class="gallery-title-link" onclick="openWork('${esc(g.id)}')">${esc(g.title || 'Untitled')}</button>${g.preorder ? ` <span class="preorder-badge">${esc(t('preorderBadge'))}</span>` : ''}</div>
           ${g.preorder && g.preorderReady ? `<div class="gallery-meta">Expected: ${esc(g.preorderReady)}</div>` : ''}
           ${accessoryDesigns(g).length ? '<div class="gallery-meta">Accessories available</div>' : ''}
           <div class="gallery-desc">${esc(writeupExcerpt(g.description))}</div>
@@ -4109,6 +4120,7 @@ function renderOwnerGalleryPage() {
         <input type="number" id="gallery-price" min="0" step="0.01" value="${esc(f.price || '')}" placeholder="Use the estimate" oninput="updateGalleryForm('price', this.value)" />
         <div class="field-help">Replaces the automated estimate. Leave blank to use print time and grams.</div>
       </div>
+      ${renderSizeFields(f)}
       </div>
       <div class="form-col">
       <h4 class="sub-title jump-title">Pre-order, accessories, versions and editions</h4>
@@ -4156,7 +4168,7 @@ function editGalleryItem(id) {
   state.galleryOpt = '';
   phoneFoldStart(g.parts, g.colorMap);
   state.galleryForm = {
-    id: g.id, title: g.title, description: g.description, photos: g.ownPhotos.join('\n'), realPhotos: (g.realPhotos || []).join('\n'), filType: g.filType, colorId: g.colorId,
+    id: g.id, title: g.title, description: g.description, photos: g.ownPhotos.join('\n'), realPhotos: (g.realPhotos || []).join('\n'), dimH: g.dims && g.dims.h ? String(g.dims.h) : '', dimW: g.dims && g.dims.w ? String(g.dims.w) : '', dimD: g.dims && g.dims.d ? String(g.dims.d) : '', dimUnit: (g.dims && g.dims.unit) || 'in', material: g.material || '', sizePhoto: g.sizePhoto || '', filType: g.filType, colorId: g.colorId,
     hours: g.minutes ? String(Math.floor(g.minutes / 60)) : '', minutes: g.minutes ? String(Math.round(g.minutes % 60)) : '',
     grams: g.grams ? String(g.grams) : '', price: g.price ? String(g.price) : '', published: g.published,
     videos: g.videos.map(id => `https://youtu.be/${id}`).join('\n'),
@@ -4170,7 +4182,7 @@ function editGalleryItem(id) {
 // The saved shape of a design (a gallery_items row).
 function galleryRowOf(g) {
   return { id: g.id, published: g.published, sort_order: g.sortOrder || 0, created_at: g.createdAt || new Date().toISOString(),
-    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], realPhotos: g.realPhotos || [], filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], colorFeeIncluded: !!g.colorFeeIncluded } };
+    data: { title: g.title, description: g.description, photos: g.ownPhotos || g.photos || [], realPhotos: g.realPhotos || [], dims: g.dims || null, material: g.material || '', sizePhoto: g.sizePhoto || '', filType: g.filType, colorId: g.colorId || '', minutes: g.minutes, grams: g.grams, price: g.price || null, videos: g.videos || [], parts: g.parts || [], colorMap: g.colorMap || null, preorder: !!g.preorder, preorderReady: g.preorderReady || '', versions: g.versions || [], packId: g.packId || '', accessories: g.accessories || [], editions: g.editions || [], contrast: g.contrast || [], colorFeeIncluded: !!g.colorFeeIncluded } };
 }
 async function writeGalleryItem(g) {
   if (previewActive()) {
@@ -4202,7 +4214,7 @@ async function saveGalleryItem() {
     id: f.id,
     published: f.published,
     sort_order: existing ? existing.sortOrder : 0,
-    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), realPhotos: parseImageLinks(f.realPhotos || '').slice(0, 5), videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], colorFeeIncluded: !!f.colorFeeIncluded,
+    data: { title: f.title.trim(), description: f.description.trim(), photos: parseImageLinks(photoLines.filter(l => !isYoutubeLink(l)).join('\n')), realPhotos: parseImageLinks(f.realPhotos || '').slice(0, 5), dims: { h: f.dimH, w: f.dimW, d: f.dimD, unit: f.dimUnit }, material: f.material || '', sizePhoto: f.sizePhoto || '', videos, parts: f.parts || [], colorMap: f.colorMap || null, filType: f.filType, colorId: f.colorId || '', preorder: !!f.preorder, preorderReady: String(f.preorderReady || '').trim(), versions: f.versions || [], packId: f.packId || '', accessories: f.accessories || [], editions: (f.editions || []).map(e => ({ ...e, merge: e.mergeText !== undefined ? parseMerge(e.mergeText) : e.merge })), contrast: f.contrastText !== undefined ? f.contrastText.split(';').map(s => s.split('/').map(x => x.trim())) : f.contrast || [], colorFeeIncluded: !!f.colorFeeIncluded,
       minutes: totalPrintMinutes(f.hours, f.minutes), price: parseFloat(f.price) || null,
       // No total grams typed: the parts' grams add up to it.
       grams: parseFloat(f.grams) || (f.parts || []).filter(p => !p.optional).reduce((s, p) => s + (Number(p.grams) || 0), 0) || null }
@@ -5123,7 +5135,8 @@ async function submitBatch() {
   clearServerDraft(clientEmail);
   state.resumedDraft = false;
   state.clientTab = 'jobs';
-  setTimeout(() => render(), 1200);
+  state.sentNote = { n: items.length, email: clientEmail };
+  setTimeout(() => { render(); window.scrollTo(0, 0); }, 1200);
 }
 
 // ── OWNER ACTIONS ─────────────────────────────────────────────────────────
