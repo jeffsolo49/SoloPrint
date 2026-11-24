@@ -144,7 +144,7 @@ async function loadBatches(asCustomer = false) {
       ? (state.tokens.length ? await supaFetch('/rpc/customer_orders', { method: 'POST', body: JSON.stringify({ p_tokens: state.tokens }) }) || [] : []).map(data => ({ data }))
       : await supaFetch(ownerJobsQuery());
     state.batches = (rows || []).map(r => normalizeBatch(r && r.data)).filter(Boolean);
-    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas(), fetchLeads(), loadCustomerReviews()]); applyPreview(); seedWikiNotes(); syncTopWork(); }
+    if (!asCustomer) { await Promise.all([loadOwnerPrivate(), loadOwnerMessages(), fetchColorIdeas(), fetchLeads(), loadCustomerReviews()]); applyPreview(); seedWikiNotes(); syncTopWork(); syncSoonCounts(); }
     else {
       // Forget keys whose order no longer exists, and remember whose requests these are (for the page heading and rolls).
       const keep = state.tokens.filter(t => state.batches.some(b => b.accessToken === t));
@@ -1434,21 +1434,21 @@ function renderClientApp() {
 // Clients and Numbers live inside Orders; Calculator & Models inside Designs. Their tab ids still work.
 function ownerSection() {
   const t = state.ownerTab;
-  if (['clients', 'numbers', 'orders', 'etsytodo'].includes(t)) return 'dashboard';
+  if (['clients', 'numbers', 'orders', 'etsytodo', 'inbox'].includes(t)) return 'dashboard';
   if (['calculator', 'library', 'newdesign'].includes(t)) return 'gallery';
   if (['practice', 'preview'].includes(t)) return 'help';   // Practice order and Preview sit under Help
   return t;
 }
 function renderOwnerSubNav() {
   const sec = ownerSection(), t = state.ownerTab;
-  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['etsytodo', 'To make'], ['numbers', 'Fix numbers']]
+  const tabs = sec === 'dashboard' ? [['dashboard', 'Orders'], ['inbox', 'Inbox'], ['etsytodo', 'To make'], ['numbers', 'Fix numbers']]
     : sec === 'gallery' ? [['gallery', 'Designs'], ['newdesign', 'Add a design (wizard)'], ['calculator', 'Calculator & Models']]
     : sec === 'help' ? [['help', 'Help'], ['practice', 'Practice order'], ['preview', 'Preview']] : null;
   if (!tabs) return '';
   const libCount = sortedLibraryEntries().length;
   const cur = tabs.some(x => x[0] === t) ? t : tabs[0][0];
   return `<nav class="sub-nav" aria-label="${sec === 'dashboard' ? 'Orders' : sec === 'help' ? 'Help' : 'Designs'} sections">
-    ${tabs.map(([id, label]) => `<button type="button" class="sub-tab ${cur === id ? 'active' : ''}" aria-current="${cur === id ? 'page' : 'false'}" onclick="${id === 'numbers' ? 'state.numbersOnly = \'\'; ' : ''}setOwnerTab('${id}')">${esc(label)}${id === 'calculator' && libCount ? `<span class="nav-badge">${libCount}</span>` : ''}</button>`).join('')}
+    ${tabs.map(([id, label]) => `<button type="button" class="sub-tab ${cur === id ? 'active' : ''}" aria-current="${cur === id ? 'page' : 'false'}" onclick="${id === 'numbers' ? 'state.numbersOnly = \'\'; ' : ''}setOwnerTab('${id}')">${esc(label)}${id === 'calculator' && libCount ? `<span class="nav-badge">${libCount}</span>` : ''}${id === 'inbox' && inboxOpenCount() ? `<span class="nav-badge" aria-label="${inboxOpenCount()} waiting">${inboxOpenCount()}</span>` : ''}</button>`).join('')}
   </nav>`;
 }
 
@@ -1456,7 +1456,6 @@ function renderOwnerNav() {
   return `
     <nav class="nav" aria-label="Owner sections">
       <button class="nav-tab ${ownerSection() === 'dashboard' ? 'active' : ''}" onclick="setOwnerTab('dashboard')">Orders${ownerNeedCount() ? `<span class="nav-badge" aria-label="${ownerNeedCount()} need you">${ownerNeedCount()}</span>` : ''}</button>
-      <button class="nav-tab ${state.ownerTab === 'inbox' ? 'active' : ''}" id="nav-inbox" onclick="setOwnerTab('inbox')">Inbox${inboxOpenCount() ? `<span class="nav-badge" aria-label="${inboxOpenCount()} waiting">${inboxOpenCount()}</span>` : ''}</button>
       <button class="nav-tab ${ownerSection() === 'gallery' ? 'active' : ''}" onclick="setOwnerTab('gallery')">Designs</button>
       <button class="nav-tab ${state.ownerTab==='money'?'active':''}" onclick="setOwnerTab('money')">Money &amp; Sales</button>
       <button class="nav-tab ${state.ownerTab==='settings'?'active':''}" onclick="setOwnerTab('settings')">Settings${lowStockColors().length ? `<span class="nav-badge">${lowStockColors().length}</span>` : ''}</button>
@@ -1607,8 +1606,8 @@ function renderSubmitTab() {
   return `
     ${renderVacationBanner()}
     ${featureOn('about') ? renderAboutCard() : ''}
-    ${renderStartHere()}
-    <div class="start-request"><button type="button" class="btn-primary" id="start-request" onclick="document.getElementById('request-form')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })">Start your quote request &darr;</button></div>
+    ${(startHereHtml => startHereHtml || '')(renderStartHere())}
+    ${renderStartHere() ? '' : `<div class="start-request"><button type="button" class="btn-primary" id="start-request" onclick="document.getElementById('request-form')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })">Start your quote request &darr;</button></div>`}
     ${featureOn('recentWork') ? renderRecentWork() : ''}
     ${renderSoonIdeas()}
     ${featureOn('howItWorks') ? renderHowItWorks() : ''}
@@ -1647,9 +1646,7 @@ function renderSubmitTab() {
         : `<div style="text-align:center;font-size:12px;color:var(--muted);padding:8px 0;">Maximum 10 items reached</div>`}
     </div>
 
-    ${renderPreorderSummary()}
-    ${renderGiftCard()}
-    ${renderQueueNotice()}
+    ${renderBeforeSend()}
     <button class="btn-primary" id="submit-btn" onclick="submitBatch()">${esc(t('submitButton'))}</button>
     ${state.settings.links.messenger ? `<div class="field-help" style="text-align:center;margin-top:8px;">Questions first? <a class="btn-link" href="${esc(state.settings.links.messenger)}" target="_blank" rel="noopener noreferrer">Message me</a></div>` : ''}
     <div class="field-help" style="text-align:center;margin-top:8px;">${esc(t('submitNote'))}${state.settings.about.replyTime ? ` (${esc(state.settings.about.replyTime.replace(/^I\s+/i, '').replace(/\.$/, ''))})` : ''}.</div>
@@ -2305,7 +2302,7 @@ function renderOwnerApp() {
     ${renderOwnerNav()}
     <main class="main owner-main" id="main" tabindex="-1">
       <h1 class="sr-only">SoloPrint owner: ${esc({ dashboard: 'Orders', practice: 'Practice order', calculator: 'Calculator and saved models', gallery: 'Designs', settings: 'Settings', money: 'Money and sales', numbers: 'Numbers' }[MERGED_TABS[state.ownerTab] || state.ownerTab] || 'Orders')}</h1>
-      ${state.showPasswordForm && !(state.ownerTab === 'settings' && state.settingsTab === 'password') ? renderSetPasswordCard() : ''}
+      ${state.showPasswordForm && !(state.ownerTab === 'settings' && (SETTINGS_TAB_ALIASES[state.settingsTab] || state.settingsTab) === 'account') ? renderSetPasswordCard() : ''}
       ${renderOwnerSubNav()}
       ${state.loadFailed ? `<div class="alert error" style="display:block;" role="alert" id="load-failed">Your orders and money info didn't load, so pages may look empty. Nothing is deleted. <button type="button" class="btn-sm" onclick="loadBatches().then(render)">Try again</button> If it keeps happening, tap Logout and log back in.</div>` : ''}
       ${['settings', 'emails', 'filament'].includes(state.ownerTab)
@@ -3129,11 +3126,13 @@ function cleanSettings(raw) {
       photos: (Array.isArray(p && p.photos) ? p.photos : []).map(safeImageUrl).filter(Boolean).slice(0, 2),
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(p && p.date)) ? p.date : ''
     })).filter(p => p.id && p.photos.length),
+    soonShowAt: Math.max(0, Math.min(1000, parseInt(d.soonShowAt, 10) >= 0 ? parseInt(d.soonShowAt, 10) : 5)),   // show "N people want this" once at least this many do (0 = never)
     soonIdeas: (Array.isArray(d.soonIdeas) ? d.soonIdeas : []).slice(0, 12).map(x => ({
       id: /^[a-z0-9-]{1,40}$/.test(String(x && x.id)) ? x.id : '',
       title: cleanText(x && x.title, 80).trim(),
       text: cleanText(x && x.text, 300).trim(),
       photo: safeImageUrl(x && x.photo),
+      wanted: Math.max(0, Math.min(100000, parseInt(x && x.wanted, 10) || 0)),   // how many said "I'd buy this" (kept in step by the owner's page)
       live: !(x && x.live === false)
     })).filter(x => x.id && x.title),
     emails: cleanEmails(d.emails),
@@ -3440,15 +3439,15 @@ async function saveEmailsDraft() {
 // Settings has its own tabs: one page per part, plus Emails. Unsaved changes carry between the tabs
 // until Save settings (Emails saves on its own).
 const SETTINGS_TABS = [
-  ['about', 'About & links'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
+  ['about', 'About, links & reviews'], ['colors', 'Filament & colors'], ['prices', 'Prices & rules'],
   ['wording', 'Wording & FAQ'], ['features', 'Show / hide & vacation'],
-  ['reviews', 'Reviews'], ['emails', 'Emails'], ['password', 'Password'], ['updates', 'Updates']
+  ['emails', 'Emails'], ['account', 'Password & updates']
 ];
 // Site text and FAQ now sit under Wording, Vacation under Show / hide (old links and Help entries still work).
-const SETTINGS_TAB_ALIASES = { text: 'wording', faq: 'wording', vacation: 'features' };
+const SETTINGS_TAB_ALIASES = { text: 'wording', faq: 'wording', vacation: 'features', reviews: 'about', password: 'account', updates: 'account' };   // old tab names open the merged tabs
 function setSettingsTab(tab) {
   state.settingsTab = tab;
-  if (tab === 'updates') loadSiteUpdates();
+  if (tab === 'updates' || tab === 'account') loadSiteUpdates();
   if (tab === 'emails') state.emailsDraft = null;
   render();
 }
@@ -3464,9 +3463,8 @@ function renderOwnerSettingsPage() {
     ${SETTINGS_TABS.map(([id, label]) => `<button type="button" class="sub-tab ${tab === id ? 'active' : ''}" aria-current="${tab === id ? 'page' : 'false'}" onclick="setSettingsTab('${id}')">${esc(label)}${id === 'colors' && low ? `<span class="nav-badge">${low}</span>` : ''}</button>`).join('')}
   </nav>`;
   if (tab === 'emails') return nav + renderOwnerEmailsPage();
-  if (tab === 'updates') return nav + renderUpdatesSettings();
-  if (tab === 'password') return nav + renderSetPasswordCard(true);
-  const body = {
+  if (tab === 'account') return nav + renderSetPasswordCard(true) + renderUpdatesSettings();
+  const bodies = {
     about: `
     <div class="card">
       <h3 class="card-title">About you</h3>
@@ -3530,7 +3528,8 @@ function renderOwnerSettingsPage() {
       <button class="btn-sm" type="button" onclick="state.settingsDraft.reviews.push({ id: settingsId(), name: '', text: '', designId: '' }); render();">Add a review</button>
     </div>
 `
-  }[tab];
+  };
+  const body = tab === 'about' ? bodies.about + bodies.reviews : bodies[tab];
   return `
     <div class="owner-page-header">
       <div class="section-header">
@@ -3828,7 +3827,7 @@ function renderWorkPhotos(g) {
 }
 function renderWorkDescription(g) {
   if (!g.description) return '';
-  return `<div class="card work-desc"><h3 class="card-title">Description: ${esc(g.title || 'Untitled')}</h3><div class="work-writeup">${renderWriteup(g.description)}</div></div>`;
+  return `<details class="card work-desc" ${matchMedia('(max-width: 700px)').matches ? '' : 'open'}><summary class="fold-summary"><h3 class="card-title">Description: ${esc(g.title || 'Untitled')}</h3></summary><div class="work-writeup">${renderWriteup(g.description)}</div></details>`;
 }
 
 function renderWorkDetail(g) {
@@ -3856,7 +3855,8 @@ function renderWorkDetail(g) {
     ${renderVideos(g)}
     ${renderDesignParts(g)}
     ${renderCustomerPhotos(g)}
-    ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}`;
+    ${renderReviews(state.settings.reviews.filter(r => r.designId === g.id), 'Reviews for this design')}
+    <div class="buy-bar-spacer" aria-hidden="true"></div>${renderBuyBar(g)}`;
 }
 
 // The design's price and "Request this": in the colors picked under Color ideas when that card shows.

@@ -1760,3 +1760,27 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .deposit-steps { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; background: var(--surface); }
 .deposit-steps-title { font-weight: 700; margin-bottom: 4px; }
 .deposit-steps ol { margin: 0 0 0 1.2em; display: grid; gap: 4px; font-size: 14px; }
+
+/* Easier to tap: whole tick rows, bigger boxes on phones */
+@media (max-width: 700px) {
+  .special-order-check { min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .special-order-check input[type=checkbox], .special-order-check input[type=radio] { width: 24px; height: 24px; flex: none; }
+}
+/* Design page on a phone: price and the order button stay at the bottom */
+.buy-bar, .buy-bar-spacer { display: none; }
+@media (max-width: 700px) {
+  .buy-bar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 2px solid var(--border); box-shadow: 0 -4px 14px rgba(0,0,0,0.25); }
+  .buy-bar .btn-buy { width: auto; flex: 1 1 auto; font-size: 15px; padding: 10px 14px; }
+  .buy-bar-price { white-space: nowrap; }
+  .buy-bar-spacer { display: block; height: 84px; }
+  html:not(.owner-mode) .jump-nav { bottom: 92px; }
+  .jump-toggle { min-height: 36px; padding: 6px 12px; font-size: 13px; opacity: 0.95; }
+}
+.preorder-terms-fold { margin: 8px 0; }
+.preorder-terms-fold > summary { cursor: pointer; font-weight: 700; }
+.work-desc > summary, .design-parts > summary { cursor: pointer; }
+.work-desc > summary h3, .design-parts > summary h3 { display: inline; }
+.inbox-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.inbox-filters .btn-sm.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.before-send .gift-card, .before-send .preorder-summary { border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 10px; }
+.soon-count { color: var(--green); }

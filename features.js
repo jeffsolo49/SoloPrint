@@ -2298,9 +2298,9 @@ const OWNER_WIKI = [
   { id: 'shipnote', area: 'Settings', title: 'The pop-up about combining shipping', keys: 'shipping combine pop-up popup more than one item reminder',
     steps: ['When a customer adds their first item from the store, a pop-up tells them you can combine shipping on more than one item. It shows once per visit, and they can tick "Don\'t show this again".', 'Change the words: Settings > Wording & FAQ, the "Pop-up when someone adds their first item" rows.', 'Turn it off: Settings > Show / hide & vacation, "Pop-up reminding customers you can combine shipping".'], go: ['settings', 'wording'] },
   { id: 'password', area: 'Getting started', title: 'Change your password', keys: 'security credentials strong password',
-    steps: ['Settings > Password.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
+    steps: ['Settings > Password & updates.', 'Type a new password of 12 or more characters that isn\'t made of common words, then save.', 'The card lists extra safety tips, like 2-step sign-in on the Gmail you log in with.'], go: ['password'] },
   { id: 'updated', area: 'Getting started', title: 'Is the site up to date? (Updated N min ago, Reload now)', keys: 'update new version reload refresh deploy live',
-    steps: ['The small "Updated N min ago" note shows when the site last changed.', 'If the site is updated while you have it open, a bar offers "Reload now". Tap it to get the newest version.', 'Settings > Updates lists every change made to the site.'], go: ['settings', 'updates'] },
+    steps: ['The small "Updated N min ago" note shows when the site last changed.', 'If the site is updated while you have it open, a bar offers "Reload now". Tap it to get the newest version.', 'Settings > Password & updates lists every change made to the site.'], go: ['settings', 'updates'] },
   { id: 'sections', area: 'Getting started', title: 'Jump between sections of a page', keys: 'side buttons sections scroll navigate long page jump menu',
     steps: ['On any owner page with more than one section, a button for each section sits on the right side and stays there while you scroll.', 'Tap a button to jump to that section. The section you are reading is highlighted.', 'On a phone, tap the round "Sections" button at the bottom right to open the list, then tap a section.'] },
   { id: 'app', area: 'Getting started', title: 'Put the site on your home screen like an app', keys: 'install app icon home screen iphone android',
@@ -2354,7 +2354,7 @@ const OWNER_WIKI = [
   { id: 'owner-extras', area: 'Designs', title: 'Today list, price check, low filament, undo and emailing people interested', keys: 'today list price check version low filament stock undo put back earlier save email everyone interested bcc',
     steps: ['Orders opens with a "Today" card listing what to do, in order: answer, confirm, print, ship, new requests. Tap a name to open the order.', 'On a version tab, "Price check" shows what customers pay for that version in the starting colors and with a different color on every part.', 'A color running low shows on the bell, on Settings, and as a "Low on ..." tag on the designs that use it.', 'Editing a design: under the price, "Put back an earlier save" lists the last 5 saves on this device. Pick one and tap Put back (what you have now is kept too).', 'Designs > Pre-orders and people interested > "Email everyone interested" opens your email app with everyone in the hidden Bcc line, after you edit the text. Tap "Download pre-order interest (spreadsheet)" for the list as a file.', 'On a phone the parts list and color ideas start folded; tap "Show and edit" to open them.'], go: ['gallery', ''] },
   { id: 'inbox-etc', area: 'Getting started', title: 'Inbox, real photos, customer photos, start here and ideas coming soon', keys: 'inbox checklist done tick notification real photos customer photos approve start here ideas coming soon would buy nudge quote reminder',
-    steps: ['Inbox (top menu): one checklist of what waits on you: new requests and steps, customer messages, color ideas, photos and reviews to approve, "tell me when it is back" and "I would buy this" notes, low filament. Tick each when done; ticked ones go under Done. Tapping a notification on the bell opens the Inbox (orders still open the order).', 'Real photos: when you edit a design, "Real photos" (the finished print in real life) sits above "Photos". Customers see real photos first; no real photos means the other photos are used.', 'Customer photos: on a shipped order the customer can tap "Share a photo of your print". It waits in your Inbox: Approve shows it on that design\'s page (under "Photos from customers"), Dismiss throws it away.', 'The design page now goes photos, then colors and price, then the description.', 'Start here: three buttons at the top of the home page (a design, an idea, a custom part). Change the words in Settings > Wording > "Start here and ideas coming soon", or switch it off in Settings > Show / hide.', 'Ideas coming soon: Designs > "Ideas coming soon". Add an idea (name, a line, a picture). It shows on the home page with an "I would buy this" button that saves the visitor\'s name and email. You see how many want each one, can copy their emails, and "Make it a design" starts a hidden design from it.', 'Quote reminder: the email 3 days after an unanswered quote now offers to change colors, answer questions or adjust the size. Edit it in Settings > Emails.', 'Pre-order nudge: a day after someone picks pre-order colors and leaves their email but does not send a request, they get one email with a link back to their choices (Settings > Emails > Pre-order nudge). It needs supabase/drafts.sql run once more.'], go: ['dashboard', ''] },
+    steps: ['Orders > Inbox: one checklist of what waits on you: new requests and steps, customer messages, color ideas, photos and reviews to approve, "tell me when it is back" and "I would buy this" notes, low filament. Filter by Orders, Messages, Photos and reviews, Ideas and notes or Filament; tick each when done (or "Mark all done"); ticked ones go under Done. Tapping a notification on the bell opens the Inbox (orders still open the order).', 'Real photos: when you edit a design, "Real photos" (the finished print in real life) sits above "Photos". Customers see real photos first; no real photos means the other photos are used.', 'Customer photos: on a shipped order the customer can tap "Share a photo of your print". It waits in your Inbox: Approve shows it on that design\'s page (under "Photos from customers"), Dismiss throws it away.', 'The design page now goes photos, then colors and price, then the description.', 'Start here: three buttons at the top of the home page (a design, an idea, a custom part). Change the words in Settings > Wording > "Start here and ideas coming soon", or switch it off in Settings > Show / hide.', 'Ideas coming soon: Designs > "Ideas coming soon". Add an idea (name, a line, a picture). It shows on the home page with an "I would buy this" button that saves the visitor\'s name and email. You see how many want each one, can copy their emails, and "Make it a design" starts a hidden design from it.', 'Quote reminder: the email 3 days after an unanswered quote now offers to change colors, answer questions or adjust the size. Edit it in Settings > Emails.', 'Pre-order nudge: a day after someone picks pre-order colors and leaves their email but does not send a request, they get one email with a link back to their choices (Settings > Emails > Pre-order nudge). It needs supabase/drafts.sql run once more.'], go: ['dashboard', ''] },
   { id: 'wizard', area: 'Designs', title: 'Add a design step by step (wizard)', keys: 'wizard new design add create step by step guide',
     steps: ['Designs > Add a design (wizard). Short steps that adapt to your answers: name (and whether it is a pre-order), photos, price and time, parts, color ideas, accessories, versions, color editions, pre-order settings (only for pre-orders), finish.', 'Skip anything: grams, print time and price can wait. Tap a step number to jump back.', 'On the last step, tick "Show it on the site now" or leave it hidden, then tap "Create the design".'], go: ['newdesign', ''] },
   { id: 'setups', area: 'Designs', title: 'Set-ups: reuse a design for future items', keys: 'set-up setup template reuse copy design accessories save new item',
@@ -2402,11 +2402,11 @@ const OWNER_WIKI = [
   { id: 'emails', area: 'Settings', title: 'Change the wording of any email', keys: 'emails wording templates text placeholders',
     steps: ['Settings > Emails.', 'Pick an email and change its subject or text. Words in {curly brackets} are filled in for each order.', 'Save. To change one email just once, edit it in the pop-up when you send it instead.'], go: ['settings', 'emails'] },
   { id: 'wording', area: 'Settings', title: 'Site wording, FAQ and what customers see', keys: 'wording site text faq show hide features about links how it works material note',
-    steps: ['Settings > About & links: your about text, photo, Messenger and Etsy links.', 'Settings > Wording & FAQ: the words on the site, the site text and the FAQ. Site text can be saved as a draft until you make it live.', 'Settings > FAQ: questions and answers. Settings > Show / hide: switch parts of the site on or off.'], go: ['settings', 'text'] },
+    steps: ['Settings > About, links & reviews: your about text, photo, Messenger and Etsy links.', 'Settings > Wording & FAQ: the words on the site, the site text and the FAQ. Site text can be saved as a draft until you make it live.', 'Settings > FAQ: questions and answers. Settings > Show / hide: switch parts of the site on or off.'], go: ['settings', 'text'] },
   { id: 'vacation', area: 'Settings', title: 'Vacation mode', keys: 'vacation away closed holiday pause',
     steps: ['Settings > Show / hide & vacation: turn vacation on, set the date you\'re back and an optional message.', 'Customers see a notice and the emails mention it.'], go: ['settings', 'vacation'] },
   { id: 'reviews', area: 'Settings', title: 'Approve customer reviews', keys: 'reviews approve stars half star photos testimonials',
-    steps: ['Customers get a review link about a week after shipping (or send it yourself with "Send an email now").', 'Settings > Reviews: "Approve and show" puts a review on the site.', 'On any review, tap "Add photos" to upload pictures (up to 4) that a customer sent you, or "Remove" under a photo to take it off. Tap Save to keep the changes.'], go: ['settings', 'reviews'] },
+    steps: ['Customers get a review link about a week after shipping (or send it yourself with "Send an email now").', 'Settings > About, links & reviews: "Approve and show" puts a review on the site.', 'On any review, tap "Add photos" to upload pictures (up to 4) that a customer sent you, or "Remove" under a photo to take it off. Tap Save to keep the changes.'], go: ['settings', 'reviews'] },
 
   // Behind the scenes
   { id: 'sql', area: 'Behind the scenes', title: 'When asked to "run the SQL" in Supabase', keys: 'sql supabase database setup run owner-tools',
@@ -3034,17 +3034,16 @@ function renderDesignParts(g) {
   if (!featureOn('designParts')) return '';
   const gparts = curParts(g);
   if (!gparts.length) return '';
-  return `<div class="card design-parts">
-    <h3 class="card-title">Parts</h3>
+  return `<details class="card design-parts" ${matchMedia('(max-width: 700px)').matches ? '' : 'open'}><summary class="fold-summary"><h3 class="card-title">Parts</h3></summary>
     <div class="field-help" style="margin-bottom:10px;">${gparts.some(p => p.optional) ? 'Tick any add-ons you want; the price updates. ' : ''}You can pick a color for each part when you request this.</div>
     <div class="design-parts-grid">${gparts.map((p, k) => `<div class="design-part">
-      ${p.photo ? `<a class="design-part-photo" href="${esc(p.photo)}" target="_blank" rel="noopener noreferrer" aria-label="Open the ${esc(p.name)} photo full size"><img src="${esc(p.photo)}" alt="${esc(p.name)}" referrerpolicy="no-referrer" loading="lazy" /></a>` : '<span class="part-thumb-blank" aria-hidden="true"></span>'}
+      ${p.photo ? `<a class="design-part-photo" href="${esc(p.photo)}" target="_blank" rel="noopener noreferrer" aria-label="Open the ${esc(p.name)} photo full size"><img src="${esc(p.photo)}" alt="${esc(p.name)}" referrerpolicy="no-referrer" loading="lazy" /></a>` : ''}
       <div class="design-part-name">${esc(p.name)}</div>
       ${p.optional ? `<div class="gallery-meta"><strong>Optional add-on</strong>${p.price && g.price > 0 ? ` · +$${p.price.toFixed(2)}` : ''}</div>` : ''}
       ${p.grams ? `<div class="gallery-meta">${p.grams} g</div>` : ''}
       ${p.optional ? `<label class="special-order-check part-add"><input type="checkbox" id="design-add-${k}" ${designOpts(g.id).include[p.id] ? 'checked' : ''} onchange="setDesignAddOn('${esc(g.id)}', '${esc(p.id)}', this.checked, ${k})" /> Add ${esc(p.name)}</label>` : ''}
     </div>`).join('')}</div>
-  </div>`;
+  </details>`;
 }
 
 // Owner gallery form: list the parts.
@@ -3570,6 +3569,7 @@ function refreshDesignPrice(id, focusId) {
   const g = state.gallery.find(x => x.id === id);
   if (!g) return;
   savePreorderPicks(id);
+  setTimeout(() => refreshBuyBar(id), 0);
   if (document.getElementById('color-ideas')) { refreshColorIdeas(id, focusId); return; }
   const el = document.getElementById('work-price');
   if (el) { el.innerHTML = renderWorkPrice(g); paintColorPreviews(); }
@@ -4110,6 +4110,7 @@ function renderCmSaveTools(g, v, colors) {
 function refreshColorIdeas(id, focusId) {
   const g = state.gallery.find(x => x.id === id);
   savePreorderPicks(id);
+  setTimeout(() => refreshBuyBar(id), 0);
   const el = document.getElementById('color-ideas');
   if (!g || !el) { render(); return; }
   const before = (document.querySelector('#cm-price .gallery-price') || {}).textContent;
@@ -5833,7 +5834,7 @@ async function todoImport(input) {
 }
 
 // ── REVIEWS FROM ETSY ─────────────────────────────────────────────────────
-// Settings > Reviews: Etsy's reviews.json ([{ reviewer, date_reviewed 'MM/DD/YYYY', star_rating, message, order_id }]) shown as a
+// Settings > About, links & reviews: Etsy's reviews.json ([{ reviewer, date_reviewed 'MM/DD/YYYY', star_rating, message, order_id }]) shown as a
 // list to tick, each linkable to a design (guessed from the Etsy sale's item names when they're uploaded). Ticked ones go into the
 // settings draft as site reviews ({ name, text, rating, source: 'etsy', date, designId }); Save publishes them. Ones already on the site are left out.
 const ETSY_REVIEW_MAX = 40;
@@ -6048,7 +6049,7 @@ function renderPreorderNote(g, b, units) {
   const line = [b ? preorderLineText(b, state.settings) : '', b && b.preorderEta ? preorderEtaText(b) : preorderEstimateText(u, state.settings)].filter(Boolean);
   return `<div class="preorder-note"><span class="preorder-badge">${esc(t('preorderBadge'))}</span>${g && g.preorderReady ? ` <strong>Expected: ${esc(g.preorderReady)}</strong>` : ''}
     <div>${esc(t('preorderNote'))}</div><div class="field-help preorder-ship-tip">${esc(t('preorderShipTip'))}</div>${line.map((l, n) => `<div${n ? '' : ' class="preorder-line"'}><strong>${esc(l)}</strong></div>`).join('')}
-    <ul class="preorder-terms">${['Pay', 'Secure', 'Ship', 'Cancel', 'Policy', 'Assembly'].map(k => `<li>${esc(t('preorder' + k))}</li>`).join('')}</ul>
+    <details class="preorder-terms-fold"><summary>Read the pre-order terms</summary><ul class="preorder-terms">${['Pay', 'Secure', 'Ship', 'Cancel', 'Policy', 'Assembly'].map(k => `<li>${esc(t('preorder' + k))}</li>`).join('')}</ul></details>
     ${msg ? `<a class="btn-sm btn-contact-sm" href="${esc(msg)}" target="_blank" rel="noopener noreferrer">Contact me (no Venmo? start here)</a>` : ''}</div>`;
 }
 // Deposit times of open pre-orders per design (what customers' place in line is counted from).
@@ -6094,7 +6095,7 @@ function renderDesignFolds() {
   const lists = renderPreorderLists() + renderPreorderLeads(), setups = renderSetups();
   const fold = (title, inner) => inner ? `<details class="card fold-card" id="fold-${title.toLowerCase().replace(/[^a-z]+/g, '-')}" ${state.galleryFolds && state.galleryFolds[title] ? 'open' : ''} ontoggle="(state.galleryFolds = state.galleryFolds || {})['${title}'] = this.open"><summary class="fold-summary"><h3 class="card-title">${esc(title)}</h3></summary>${inner}</details>` : '';
   const sheet = lists ? '<div class="field"><button type="button" class="btn-sm" id="preorder-sheet" onclick="downloadPreorderInterest()">Download pre-order interest (spreadsheet)</button><div class="field-help">Everyone who left their name and email, and every pre-order request, in one spreadsheet.</div></div>' : '';
-  return fold('Ideas coming soon', renderSoonOwner()) + fold('Pre-order dashboard', renderPreorderDashboard()) + fold('Pre-orders and people interested', sheet + lists) + fold('Set-ups', setups);
+  return fold('Ideas coming soon', renderSoonOwner()) + fold('Pre-orders', renderPreorderDashboard() + sheet + lists) + fold('Set-ups', setups);
 }
 function toggleDesignOpt(id) { state.galleryOpt = state.galleryOpt === id ? '' : id; render(); document.getElementById(`gallery-opt-${id}`)?.focus(); }
 function setFormPreorder(on) {
@@ -6166,7 +6167,7 @@ function renderPreorderLists() {
 }
 
 // ── REVIEW PHOTOS (owner) ──
-// Settings > Reviews: add or remove photos on any review (up to 4), e.g. pictures a customer sent you.
+// Settings > About, links & reviews: add or remove photos on any review (up to 4), e.g. pictures a customer sent you.
 function renderReviewPhotoEditor(r, n) {
   const photos = r.photos || [];
   return `<div class="field review-photo-edit">
@@ -7478,7 +7479,7 @@ function giftState() { return state.gift || (state.gift = { on: false, name: '',
 // Request form: is this a gift? (a name and a message for the card or note in the box)
 function renderGiftCard() {
   const g = giftState();
-  return `<div class="card gift-card" id="gift-card">
+  return `<div class="gift-card" id="gift-card">
     <label class="special-order-check"><input type="checkbox" id="gift-on" ${g.on ? 'checked' : ''} onchange="setGift('on', this.checked); render(); document.getElementById('gift-name')?.focus();" /> <strong>This is a gift</strong></label>
     ${g.on ? `<div class="row2"><div class="field"><label for="gift-name">Who is it for?</label><input type="text" id="gift-name" maxlength="120" value="${esc(g.name)}" oninput="setGift('name', this.value)" placeholder="Their name" /></div>
       <div class="field"><label for="gift-note">Message for a card or note in the box (optional)</label><textarea id="gift-note" maxlength="500" oninput="setGift('note', this.value)" style="min-height:64px;">${esc(g.note)}</textarea></div></div>
@@ -7511,8 +7512,8 @@ function renderPreorderSummary() {
   const pct = Number(currentRules().depositPercent) || 0, deposit = Math.round(total * pct) / 100;
   const units = preorderUnits({ items: rows.map(r => r.it) });
   const g = giftState();
-  return `<div class="card preorder-summary" id="preorder-summary">
-    <h3 class="card-title">Check your pre-order</h3>
+  return `<div class="preorder-summary" id="preorder-summary">
+    <h4 class="sub-title" style="margin-top:0;padding-top:0;border:0;">Check your pre-order</h4>
     <ul class="summary-list">${rows.map(r => `<li><div class="summary-pic">${cmRequestPreview(r.it)}</div><div><strong>${esc(r.it.name)}</strong> × ${r.qty}${r.line ? `<div class="field-help">${esc(r.line)}</div>` : ''}<div>${r.each !== null ? `$${(r.each * r.qty).toFixed(2)}` : 'Price confirmed in your quote'}</div></div></li>`).join('')}</ul>
     <div class="summary-total">${known ? `Estimated total: <strong>$${total.toFixed(2)}</strong>${pct > 0 ? ` · deposit about <strong>$${deposit.toFixed(2)}</strong> (${pct}%) after I confirm your quote` : ''}` : 'The total is confirmed in your quote.'}</div>
     <div class="field-help">${esc(preorderEstimateText(units, state.settings))}</div>
@@ -7613,7 +7614,7 @@ function renderSoonIdeas() {
     <div class="field-help">${esc(t('soonNote'))}</div>
     <div class="soon-grid">${list.map(x => `<div class="soon-card">
       ${x.photo ? `<img class="soon-photo" src="${esc(x.photo)}" alt="${esc(x.title)}" loading="lazy" referrerpolicy="no-referrer" />` : ''}
-      <div class="soon-title">${esc(x.title)}</div>${x.text ? `<div class="field-help">${esc(x.text)}</div>` : ''}
+      <div class="soon-title">${esc(x.title)}</div>${x.text ? `<div class="field-help">${esc(x.text)}</div>` : ''}${Number(state.settings.soonShowAt) > 0 && x.wanted >= Number(state.settings.soonShowAt) ? `<div class="field-help soon-count"><strong>${x.wanted}</strong> people want this</div>` : ''}
       ${votes[x.id] ? `<div class="field-help" role="status">Thanks! I'll let you know if I make it.</div>`
         : state.soonFor === x.id ? `<div class="field"><label for="soon-name">Your name</label><input type="text" id="soon-name" maxlength="120" value="${esc(state.clientName || (l && l.name) || '')}" autocomplete="name" /></div>
           <div class="field"><label for="soon-email">Your email</label><input type="email" id="soon-email" maxlength="200" value="${esc(state.clientEmail || (l && l.email) || '')}" autocomplete="email" /></div>
@@ -7646,9 +7647,11 @@ function renderSoonOwner() {
   const f = state.soonForm || (state.soonForm = { title: '', text: '', photo: '' }), list = state.settings.soonIdeas || [];
   return `<div class="card" id="soon-owner"><h3 class="card-title">Ideas coming soon</h3>
     <div class="field-help">Post ideas you might make. Customers see them on the home page and tap "${esc(t('soonButton'))}" (with their email). You see how many want each one, and can turn a popular one into a design.</div>
+    <div class="field" style="max-width:420px;"><label for="soon-show-at">Show "N people want this" on the site once at least this many do (0 = never show a number)</label><input type="number" id="soon-show-at" min="0" max="1000" step="1" value="${esc(state.settings.soonShowAt ?? 5)}" onchange="setSoonShowAt(this.value)" /></div>
     <div class="row2"><div class="field"><label for="soon-title">Idea name</label><input type="text" id="soon-title" maxlength="80" value="${esc(f.title)}" oninput="state.soonForm.title = this.value" /></div>
       <div class="field"><label for="soon-text">A line about it (optional)</label><input type="text" id="soon-text" maxlength="300" value="${esc(f.text)}" oninput="state.soonForm.text = this.value" /></div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <span class="field-help">Best: a clear photo or render, wider than tall, at least 800 pixels across (it shows about 200 pixels wide).</span>
       <label class="btn-sm">${f.photo ? 'Change picture' : 'Add a picture'}<input type="file" id="soon-photo-file" accept="image/*" onchange="uploadSoonPhoto(this.files[0])" style="display:none;" /></label>
       ${f.photo ? `<img src="${esc(f.photo)}" alt="Picture for the new idea" style="height:48px;border-radius:8px;" referrerpolicy="no-referrer" />` : ''}
       <button type="button" class="btn-sm" id="soon-add" onclick="addSoonIdea()">Add idea</button><span class="field-help" id="soon-status" role="status"></span></div>
@@ -7656,8 +7659,8 @@ function renderSoonOwner() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" class="btn-sm" onclick="makeSoonDesign('${esc(x.id)}')">Make it a design</button>${want.length ? `<button type="button" class="btn-sm" onclick="copySoonEmails('${esc(x.id)}', this)">Copy their emails</button>` : ''}<button type="button" class="btn-sm" onclick="toggleSoon('${esc(x.id)}')">${x.live ? 'Hide' : 'Show'}</button><button type="button" class="btn-sm danger" onclick="removeSoon('${esc(x.id)}')">Remove</button></div></li>`; }).join('')}</ul>` : ''}
   </div>`;
 }
-async function saveSoonIdeas(next) {
-  try { await saveSettings({ ...state.settings, soonIdeas: next }); state.settingsDraft = null; render(); return true; }
+async function saveSoonIdeas(next, extra) {
+  try { await saveSettings({ ...state.settings, ...(extra || {}), soonIdeas: next }); state.settingsDraft = null; render(); return true; }
   catch (e) { softNote("Couldn't save. Check you're logged in."); return false; }
 }
 async function uploadSoonPhoto(file) {
@@ -7724,15 +7727,33 @@ async function tickInbox(id, on) {
   render();
   try { await saveOwnerPrivate('inbox'); } catch (e) { softNote("Couldn't save that tick. Check you're logged in."); }
 }
+const INBOX_GROUPS = [['all', 'All'], ['orders', 'Orders'], ['messages', 'Messages'], ['photos', 'Photos and reviews'], ['ideas', 'Ideas and notes'], ['filament', 'Filament']];
+function inboxGroupOf(i) { return i.kind === 'Message' ? 'messages' : i.kind === 'Photo' || i.kind === 'Review' ? 'photos' : i.kind === 'Color idea' || i.kind === 'Interest' ? 'ideas' : i.kind === 'Filament' ? 'filament' : 'orders'; }
+function setInboxFilter(g) { state.inboxFilter = g; render(); document.getElementById(`inbox-filter-${g}`)?.focus(); }
+async function inboxMarkAllDone() {
+  const done = { ...inboxDone() }, f = state.inboxFilter || 'all';
+  const list = inboxItems().filter(i => !done[i.id] && !i.noTick && (f === 'all' || inboxGroupOf(i) === f));
+  if (!list.length) return;
+  if (!confirm(`Mark ${list.length} item${list.length === 1 ? '' : 's'} as done? (Photos and reviews waiting for your approval stay.)`)) return;
+  const now = new Date().toISOString();
+  list.forEach(i => { done[i.id] = now; });
+  const keep = Object.entries(done).sort((a, b) => String(b[1]).localeCompare(String(a[1]))).slice(0, 300);
+  state.ownerPrivate.inbox = { done: Object.fromEntries(keep) };
+  render();
+  try { await saveOwnerPrivate('inbox'); } catch (e) { softNote("Couldn't save that. Check you're logged in."); }
+}
 function renderInboxPage() {
   if (!state.inboxLoaded) {
     if (!state.inboxLoading) { state.inboxLoading = true; Promise.all([fetchLeads(), loadCustomerReviews(), fetchColorIdeas()]).catch(() => {}).then(() => { state.inboxLoaded = true; state.inboxLoading = false; render(); }); }
   }
-  const done = inboxDone(), all = inboxItems(), todo = all.filter(i => !done[i.id]), fin = all.filter(i => done[i.id]);
+  const done = inboxDone(), every = inboxItems(), f = state.inboxFilter || 'all';
+  const all = f === 'all' ? every : every.filter(i => inboxGroupOf(i) === f), todo = all.filter(i => !done[i.id]), fin = all.filter(i => done[i.id]);
+  const cnt = g => every.filter(i => !done[i.id] && (g === 'all' || inboxGroupOf(i) === g)).length;
   const row = (i, ticked) => `<li class="inbox-item ${ticked ? 'ticked' : ''}"><label class="special-order-check inbox-tick"><input type="checkbox" id="inbox-tick-${esc(i.id)}" ${ticked ? 'checked' : ''} onchange="tickInbox('${esc(i.id)}', this.checked)" /><span class="sr-only">Done: ${esc(i.title)}</span></label>
     <div class="inbox-main"><div><span class="status inbox-kind">${esc(i.kind)}</span> <strong>${esc(i.title)}</strong></div>${i.body ? `<div class="field-help">${esc(i.body)}</div>` : ''}${i.extra || ''}<div class="inbox-actions">${i.actions || ''}</div></div></li>`;
   return `<div class="owner-page-header"><div class="section-header"><div class="section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></svg></div>
     <div><h2 class="section-title">Inbox</h2><div class="section-sub">${todo.length ? `${todo.length} to do` : 'All caught up'}. Tick each one when you've dealt with it.</div></div></div></div>
+    <div class="inbox-filters" role="group" aria-label="Show">${INBOX_GROUPS.map(([g, label]) => `<button type="button" class="btn-sm ${f === g ? 'on' : ''}" id="inbox-filter-${g}" aria-pressed="${f === g}" onclick="setInboxFilter('${g}')">${esc(label)} (${cnt(g)})</button>`).join('')}${todo.some(i => !i.noTick) ? '<button type="button" class="btn-sm" id="inbox-mark-all" onclick="inboxMarkAllDone()">Mark all done</button>' : ''}</div>
     <div class="card" id="inbox-todo"><h3 class="card-title">To do (${todo.length})</h3>
       ${todo.length ? `<ul class="inbox-list">${todo.map(i => row(i, false)).join('')}</ul>` : '<div class="field-help">Nothing waiting. New requests, messages, photos, color ideas and notes from customers show up here.</div>'}</div>
     ${fin.length ? `<details class="card fold-card" id="inbox-done"><summary class="fold-summary"><h3 class="card-title">Done (${fin.length})</h3></summary><ul class="inbox-list">${fin.slice(0, 40).map(i => row(i, true)).join('')}</ul></details>` : ''}`;
@@ -7754,4 +7775,39 @@ function renderDepositSteps() {
   if (!steps.length) return '';
   return `<div class="deposit-steps" id="deposit-steps"><div class="deposit-steps-title">${esc(t('depositStepsTitle'))}</div>
     <ol>${steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+}
+
+
+// Phones: the price and the main order button stay at the bottom of a design page while they read and pick colors.
+function buyBarPrice(g) {
+  try { const colors = cmViewColors(g.id), price = designEstimate(g, colors || null, designOpts(g.id)); return price; } catch (e) { return null; }
+}
+function renderBuyBar(g) {
+  const price = buyBarPrice(g), opts = designOpts(g.id);
+  if (price === null && !g.preorder && !(g.versions || []).length && !accessoryDesigns(g).length) return '';
+  if (opts.skipMain && accessoryDesigns(g).length) return '';
+  return `<div class="buy-bar" id="buy-bar"><div class="buy-bar-price" aria-live="polite">${price !== null ? `<strong>$${price.toFixed(2)}</strong><span class="gallery-meta"> in these colors</span>` : '<span class="gallery-meta">Price in your quote</span>'}</div>
+    <button type="button" class="btn-sm btn-buy" id="buy-bar-btn" onclick="requestGalleryItem('${esc(g.id)}', cmViewColors('${esc(g.id)}'))">${esc(t('colorIdeasRequest'))}</button></div>`;
+}
+function refreshBuyBar(id) {
+  const g = state.gallery.find(x => x.id === id), el = document.getElementById('buy-bar');
+  if (g && el) el.outerHTML = renderBuyBar(g);
+}
+
+
+// The request form's last stop: the pre-order check, the gift option and the current wait, in one card.
+function renderBeforeSend() {
+  const sum = renderPreorderSummary(), gift = renderGiftCard(), q = renderQueueNotice();
+  if (!sum && !gift && !q) return '';
+  return `<div class="card before-send" id="before-send"><h3 class="card-title">Before you send</h3>${sum}${gift}${q}</div>`;
+}
+
+async function setSoonShowAt(v) { await saveSoonIdeas([...(state.settings.soonIdeas || [])], { soonShowAt: Math.max(0, parseInt(v, 10) || 0) }); }
+// The public can't read who said "I'd buy this", so the owner's page keeps a count on each idea.
+async function syncSoonCounts() {
+  if (previewActive() || !state.leadsLoaded) return;
+  const ideas = state.settings.soonIdeas || [];
+  const next = ideas.map(x => ({ ...x, wanted: soonWanted(x.id).length }));
+  if (!ideas.length || next.every((x, i) => x.wanted === (ideas[i].wanted || 0))) return;
+  try { await saveSettings({ ...state.settings, soonIdeas: next }); state.settingsDraft = null; } catch (e) { /* tried again next time */ }
 }
