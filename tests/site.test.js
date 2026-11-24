@@ -655,6 +655,7 @@ const STATES = {
     await page.waitForSelector('text=Venmo');
     assert(db.jobs['1'].customerApprovedAt && db.jobs['1'].phase === 'order_received', 'approving should confirm the order: ' + db.jobs['1'].phase);
     assert(/deposit/i.test(await page.textContent('#order-1')), 'the customer should be asked for the deposit right away');
+    assert(/deposit instructions have been emailed/i.test(await page.textContent('#approved-note-1')), 'on-screen confirmation that the deposit instructions were emailed');
     await page.close();
     const off = fixtures();
     off.settings.features = { autoDeposit: false };
@@ -662,6 +663,7 @@ const STATES = {
     assert(/We'll confirm we can make your order before asking for payment/.test(await page2.textContent('#order-1')), 'with the switch off the old wording stays');
     await page2.click('#customer-approve-1');
     await page2.waitForSelector('text=We got your go-ahead');
+    assert(/email your deposit instructions/i.test(await page2.textContent('#approved-note-1')), 'with the switch off they are told the instructions are coming');
     assert(off.jobs['1'].phase === 'quote_sent' && off.jobs['1'].customerApprovedAt, 'with the switch off the order waits for the owner');
     await page2.close();
   });
