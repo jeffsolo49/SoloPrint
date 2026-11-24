@@ -570,10 +570,11 @@ const STATES = {
     await page.fill('#client-name', 'Dana');
     await page.click('text=I have an idea');
     await page.fill('#notes-0', 'A name sign');
-    await page.waitForTimeout(600);
+    await page.waitForFunction(() => /A name sign/.test(localStorage.getItem('soloprint_request_draft_v1') || ''));
     await page.reload();
     await page.waitForFunction(() => !state.loading);
-    assert(await page.inputValue('#client-name') === 'Dana' && await page.inputValue('#notes-0') === 'A name sign', 'draft was not restored');
+    const got = await page.evaluate(() => [document.querySelector('#client-name')?.value, document.querySelector('#notes-0')?.value, localStorage.getItem('soloprint_request_draft_v1')]);
+    assert(got[0] === 'Dana' && got[1] === 'A name sign', 'draft was not restored ' + JSON.stringify(got));
     await page.fill('#client-email', 'dana@example.com');
     await page.click('#submit-btn');
     await requestSent(page);
@@ -1049,7 +1050,7 @@ const STATES = {
     assert(/Save/.test(await owner.textContent('#jump-save')), 'a Save button sits in the side bar');
     await owner.close();
   });
-  await check('colors start as White; the owner picks a starting color for each part', async () => {
+  await check('colors start Black (main part White); the owner picks a starting color for each part', async () => {
     const db = fixtures();
     db.settings.colors.push({ id: 'white', name: 'White', hex: '#f4f4f4' });
     db.gallery.g1.data.parts = [{ id: 'p1', name: 'Body', grams: 60 }, { id: 'p2', name: 'Eyes', grams: 5 }];
@@ -1064,7 +1065,7 @@ const STATES = {
     await owner.close();
     const page = await open(db);
     await page.click('text=I have an idea');
-    assert(await page.evaluate(() => state.draftItems[0].colorId === 'white'), 'a new item should start White');
+    assert(await page.evaluate(() => state.draftItems[0].colorId === 'black'), 'a new item should start Black');
     await page.evaluate(async () => { await loadGallery(); requestGalleryItem('g1'); });
     await page.waitForSelector('#part-color-0-1');
     assert((await page.inputValue('#part-color-0-0')) === 'white' && (await page.inputValue('#part-color-0-1')) === 'red', 'parts should start White and in the owner\'s starting color');
@@ -1237,7 +1238,7 @@ const STATES = {
     const page = await open(db);
     await page.click('text=I have an idea');
     const pills = await page.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
-    assert(pills.join(',') === 'Black,red,White', `customer order ${pills}`);
+    assert(pills.join(',') === 'Black,White,red', `customer order ${pills}`);
     await page.evaluate(asOwner('settings/colors'));
     await page.click('text=Add a color');
     const last = page.locator('input[aria-label="Color name"]').nth(3);
@@ -1671,7 +1672,7 @@ const STATES = {
     const customer = await open(db);
     await customer.click('text=I have an idea');
     const pills = await customer.$$eval('.swatch-pill', bs => bs.map(b => b.textContent.trim()));
-    assert(!pills.some(p => /^Black/.test(p)) && pills.some(p => /^Red/.test(p)), `customer colors ${pills}`);
+    assert(pills[0] === 'Black' && pills.some(p => /^Red/.test(p)), `customer colors ${pills}`);
     await customer.close();
     const owner = await open(db);
     await owner.evaluate(asOwner('filament'));
@@ -3035,6 +3036,27 @@ const STATES = {
     assert(await page.evaluate(() => !!document.querySelector('#before-send #preorder-summary') && !!document.querySelector('#before-send #gift-card') && document.querySelectorAll('#preorder-summary, #gift-card').length === 2), 'the summary and the gift option sit in one card');
     await page.close();
   });
+  await check('timed out: the owner archives a quiet order, it leaves the active tabs, and restoring brings it back', async () => {
+    const db = fixtures();
+    const page = await open(db);
+    await page.evaluate(asOwner('dashboard'));
+    await page.waitForSelector('.desk-row');
+    await page.evaluate(() => { state.deskTab = 'wait'; render(); openDeskOrder('1'); });
+    assert(await page.evaluate(() => canTimeOut(state.batches.find(b => b.id === '1'))), 'a sent quote can be timed out');
+    await page.evaluate(() => deskTimeOut('1'));
+    await page.waitForFunction(() => state.batches.find(b => b.id === '1').timedOut);
+    assert(db.jobs['1'].timedOut && db.jobs['1'].timedOut.at, 'saved on the order');
+    assert(await page.evaluate(() => deskTone(state.batches.find(b => b.id === '1'))) === 'timed', 'it moved to Timed out');
+    assert(/Timed out \(1\)/.test(await page.textContent('.desk-tabs')), await page.textContent('.desk-tabs'));
+    assert(!(await page.evaluate(() => buildNotifications().some(n => n.batchId === '1'))), 'no bell notes for it');
+    await page.evaluate(() => { openDeskOrder('1'); });
+    await page.waitForSelector('#restore-order');
+    await page.click('#restore-order');
+    await page.waitForFunction(() => !state.batches.find(b => b.id === '1').timedOut);
+    assert(!db.jobs['1'].timedOut && await page.evaluate(() => deskTone(state.batches.find(b => b.id === '1'))) !== 'timed', 'restored');
+    assert(!page.errors.length, page.errors.join('; '));
+    await page.close();
+  });
   await check('inbox: under Orders, filters, mark all done; Settings tabs merged (reviews with about, password with updates)', async () => {
     const db = fixtures();
     db.colorIdeas.push({ id: 'ci8', design_id: 'g1', name: 'Dawn', colors: {}, created_at: new Date().toISOString() });
@@ -3280,7 +3302,7 @@ const STATES = {
     const tiles = await page.$$eval('.gallery-pick-tile', ts => ts.map(t => t.textContent.trim()));
     assert(tiles.join() === 'Dragon Organizer,Name Sign', `tiles ${tiles}`);
     await page.click('.gallery-pick-tile:has-text("Dragon Organizer")');
-    assert(await page.inputValue('#name-0') === 'Dragon Organizer' && await page.evaluate(() => state.draftItems[0].galleryId) === 'g1', 'design not picked');
+    assert(/Dragon Organizer/.test(await page.textContent('#design-name-0')) && await page.evaluate(() => state.draftItems[0].galleryId) === 'g1', 'design not picked');
     await page.click('text=Pick a different design');
     assert(await page.$('.gallery-pick-tile'), 'no way back to the designs');
     await page.click('text=I have an idea');

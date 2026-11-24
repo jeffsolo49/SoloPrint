@@ -77,7 +77,7 @@ let librarySaveState = 'saved';
 
 function blankItem() {
   return {
-    link: '', name: '', grams: null, filType: 'white', qty: 1, notes: '', fetching: false,
+    link: '', name: '', grams: null, filType: 'black', qty: 1, notes: '', fetching: false,
     printHours: '', printMinutes: '',
     knownMinutes: null, knownFromLibrary: false, knownPrompted: false,
     previewImage: '', previewLoading: false, estimateSource: '', estimateNote: '',
@@ -1750,8 +1750,10 @@ function renderSpecialOrderBox(item, i) {
 }
 
 // With owner colors set up, every item has one picked: White by default (else the first regular color).
+// The starting color when nothing else says: Black, else White, else the first regular color.
 function defaultColor(colors) {
-  return colors.find(x => String(x.name).trim().toLowerCase() === 'white' && !x.special) || colors.find(x => !x.special) || colors[0];
+  const named = nm => colors.find(x => String(x.name).trim().toLowerCase() === nm && !x.special);
+  return named('black') || named('white') || colors.find(x => !x.special) || colors[0];
 }
 function ensureItemColor(item) {
   const colors = customerColors();
@@ -2144,16 +2146,16 @@ function renderItemBlock(item, i) {
       ${mode === 'gallery' && !item.name ? renderGalleryPicker(i) : ''}
       ${mode === 'gallery' && item.name ? `
         <div class="field" style="margin-bottom:8px;">
-          <label for="name-${i}">Design</label>
-          <input type="text" id="name-${i}" value="${esc(item.name)}" oninput="updateDraft(${i},'name',this.value)" />
+          <div class="picked-design" id="design-name-${i}"><span class="field-label">Design</span> <strong>${esc(item.name)}</strong></div>
           <div id="preview-${i}">${renderModelPreview(item)}</div>
           <button type="button" class="btn-sm" style="margin-top:8px;" onclick="changeGalleryPick(${i})">Pick a different design</button>
         </div>
-        <div class="field" style="margin-bottom:8px;">
-          <label>${esc(t('changesLabel'))}</label>
-          <textarea id="notes-${i}" placeholder="Size, color, a name added, anything else" style="min-height:52px;" spellcheck="true"
-            oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
-        </div>` : ''}
+        <details class="item-note-fold" ${item.notes ? 'open' : ''}><summary>Add a note about this item (optional)</summary>
+          <div class="field" style="margin:8px 0;">
+            <label for="notes-${i}">${esc(t('changesLabel'))}</label>
+            <textarea id="notes-${i}" placeholder="Size, a name added, anything else" style="min-height:52px;" spellcheck="true"
+              oninput="updateDraft(${i},'notes',this.value)">${esc(item.notes)}</textarea>
+          </div></details>` : ''}
       ${mode && (mode !== 'gallery' || item.name) ? `
         <div class="field" style="margin-bottom:10px;">
           ${(item.designParts || []).length ? renderPartColors(item, i) : `<label>${state.settings.colors.length ? 'Color' : 'Filament'}</label>
@@ -2341,6 +2343,7 @@ function ownerClientKey(b) { return String(b.clientEmail || '').trim().toLowerCa
 // [label, tone] for what an order is waiting on. 'red' needs you; 'slate' is waiting on the customer.
 function orderNeeds(b) {
   const phase = b.phase || 'estimate', paid = isPaidInFull(b), out = [];
+  if (isTimedOut(b)) return [['Timed out', 'slate']];
   if (phase === 'estimate') out.push(['New request', 'red']);
   else if (phase === 'details_check') out.push(['Waiting for answers', 'slate']);
   else if (phase === 'quote_sent') out.push(b.customerApprovedAt ? ['Confirm order', 'red'] : ['Quote sent', 'slate']);
@@ -2350,8 +2353,37 @@ function orderNeeds(b) {
   if (conversationStatus(b.id) === 'you') out.push(['Customer wrote', 'red']);
   return out;
 }
+// An order the owner archived because the customer went quiet. It comes back by itself if they approve the quote or write again.
+function isTimedOut(b) {
+  const at = b.timedOut && b.timedOut.at;
+  if (!at) return false;
+  if (b.customerApprovedAt && new Date(b.customerApprovedAt) > new Date(at)) return false;
+  return conversationStatus(b.id) !== 'you';
+}
+function canTimeOut(b) {
+  const p = b.phase || 'estimate';
+  return !isTimedOut(b) && (beforeQuote(p) || p === 'quote_sent' || (p === 'order_received' && b.paymentStatus !== 'deposit_received' && !isPaidInFull(b)));
+}
+async function deskTimeOut(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b || !canTimeOut(b)) return;
+  if (!confirm('Mark this order as timed out? It moves to the Timed out tab, no more reminder emails go out, and you can restore it any time. The customer is not emailed.')) return;
+  b.timedOut = { at: new Date().toISOString() };
+  await upsertBatch(b);
+  state.deskTab = 'timed'; state.deskOpen = false;
+  render();
+}
+async function deskRestore(id) {
+  const b = state.batches.find(x => x.id === id);
+  if (!b) return;
+  delete b.timedOut;
+  await upsertBatch(b);
+  state.deskTab = deskTone(b); state.deskOrder = id;
+  render();
+}
 // Which tab an order sits in.
 function deskTone(b) {
+  if (isTimedOut(b)) return 'timed';
   if ((b.phase || 'estimate') === 'delivered') return conversationStatus(b.id) === 'you' ? 'need' : 'done';
   return orderNeeds(b).some(n => n[1] === 'red') ? 'need' : 'wait';
 }
@@ -2361,7 +2393,7 @@ function customerOrders(b) {
   const key = ownerClientKey(b);
   return state.batches.filter(x => ownerClientKey(x) === key).sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
 }
-const DESK_TABS = [['need', 'Needs me'], ['wait', 'Waiting on them'], ['done', 'Done']];
+const DESK_TABS = [['need', 'Needs me'], ['wait', 'Waiting on them'], ['done', 'Done'], ['timed', 'Timed out']];
 
 function openDeskOrder(id) { state.deskOrder = id; state.deskOpen = true; state.ownerEdit = null; render(); window.scrollTo(0, 0); }
 function setDeskTab(tab) { state.deskTab = tab; state.deskOpen = false; render(); }
@@ -2435,7 +2467,7 @@ function renderOwnerDashboard() {
           <div class="field"><label for="cust-q">Search name, email or item</label>
             <input type="search" id="cust-q" value="${esc(state.customerQuery || '')}" oninput="state.customerQuery = this.value; clearTimeout(window.custT); window.custT = setTimeout(() => { render(); const el = document.getElementById('cust-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250)" /></div>
           ${shown.length ? shown.map(b => renderDeskRow(b, !!sel && b.id === sel.id)).join('')
-            : `<p class="field-help">${q ? 'No orders match.' : tab === 'need' ? 'Nothing needs you right now.' : 'No orders here.'}</p>`}
+            : `<p class="field-help">${q ? 'No orders match.' : tab === 'need' ? 'Nothing needs you right now.' : tab === 'timed' ? 'Nothing timed out. Orders you archive when a customer goes quiet wait here.' : 'No orders here.'}</p>`}
         </div>
         <div class="desk-detail">${sel ? `<button type="button" class="btn-sm desk-back" onclick="state.deskOpen = false; render(); window.scrollTo(0, 0);">← All orders</button>${renderOwnerBatch(sel)}` : ''}</div>
       </div>`}
@@ -2710,6 +2742,8 @@ function renderOwnerBatch(b) {
       ${orderIsPreorder(b) ? `<div><span class="preorder-badge">Pre-order</span> <span class="field-help">${esc(preorderPlace(b))}</span></div>${renderPreorderEta(b, 'desk')}` : ''}
       <div class="desk-stepname">${st.n > 6 ? 'Finished' : `Step ${st.n} of 6 · ${esc(st.label)}`}${deskMoneyLine(b) ? ` · ${deskMoneyLine(b)}` : ''}</div>
     </div>
+    ${isTimedOut(b) ? `<div class="alert timed-out-note" id="timed-out-note" style="display:block;"><strong>Timed out${b.timedOut.at ? ` ${esc(fmtShort(b.timedOut.at))}` : ''}.</strong> No reminders go out. It comes back by itself if they approve the quote or write to you.
+      <button type="button" class="btn-sm" id="restore-order" onclick="deskRestore('${esc(b.id)}')">Restore to active orders</button></div>` : ''}
     ${editing ? `<div class="chat-edit">${renderOwnerConversation(b)}${renderOwnerEditForm(b)}</div>` : `${renderNextStep(b, st)}${renderOwnerConversation(b)}`}
     ${renderOrderFolds(b, st)}
   </div>`;
@@ -2719,6 +2753,8 @@ function renderOwnerBatch(b) {
 function renderOrderMenu(b, st) {
   const phase = b.phase || 'estimate', id = esc(b.id);
   const items = [
+    canTimeOut(b) ? `<button type="button" onclick="deskTimeOut('${id}')">Mark as timed out (archive)…</button>` : '',
+    isTimedOut(b) ? `<button type="button" onclick="deskRestore('${id}')">Restore to active orders</button>` : '',
     !beforeQuote(phase) && phase !== 'delivered' ? `<button type="button" onclick="deskChangeQuote('${id}')">Change the quote</button>` : '',
     phaseIndex(phase) > phaseIndex('quote_sent') ? `<button type="button" onclick="deskBack('${id}')">Go back a step</button>` : '',
     st.key === 'deposit' ? `<button type="button" onclick="deskPrintAnyway('${id}')">Print without a deposit…</button>` : '',
@@ -4406,6 +4442,7 @@ function buildNotifications() {
   const list = [];
   if (scope === 'owner') {
     state.batches.forEach(b => {
+      if (isTimedOut(b)) return;
       const n = b.items.length;
       list.push({ id: `new-${b.id}`, batchId: b.id, at: b.createdAt,
         title: `New request from ${b.clientName || 'a customer'}`,

@@ -938,7 +938,11 @@ function lowStockColors() {
   return state.settings.colors.filter(c => { const s = stockFor(c.id); return s && s.grams <= (Number.isFinite(s.low) ? s.low : currentRules().lowStockGrams); });
 }
 // Colors customers can pick: stocked ones that haven't run out.
-function customerColors() { return state.settings.colors.filter(c => !c.outOfStock); }
+function customerColors() {
+  const isBW = c => !c.special && /^(black|white)$/i.test(String(c.name).trim());
+  const rank = c => (isBW(c) ? (/^black$/i.test(String(c.name).trim()) ? 0 : 1) : 2);
+  return state.settings.colors.filter(c => !c.outOfStock || isBW(c)).map((c, n) => [c, n]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0]);
+}
 
 // Grams each stocked color in an order uses (special order and leftover-roll colors are the customer's own roll).
 function orderColorGrams(b) {
@@ -2310,7 +2314,7 @@ const OWNER_WIKI = [
 
   // Orders
   { id: 'desk', area: 'Orders', title: 'The order desk: Needs me, Waiting on them, Done', keys: 'orders list tabs search dashboard',
-    steps: ['Orders opens the order desk. "Needs me" holds orders waiting on you; "Waiting on them" holds orders waiting on the customer; "Done" holds finished ones.', 'The search box looks in every tab: name, email, item or order number.', 'Tap an order to open it. On a phone it opens on its own screen; use Back to return to the list.', 'Each order shows a 6-step bar and one card with the next thing to do and one main button.'], go: ['dashboard'] },
+    steps: ['Orders opens the order desk. "Needs me" holds orders waiting on you; "Waiting on them" holds orders waiting on the customer; "Done" holds finished ones.', 'The search box looks in every tab: name, email, item or order number.', 'Tap an order to open it. On a phone it opens on its own screen; use Back to return to the list.', 'Each order shows a 6-step bar and one card with the next thing to do and one main button.', 'A customer went quiet? Open the order > More actions > "Mark as timed out (archive)". It moves to the "Timed out" tab, reminder emails stop, and the customer is not emailed. To bring it back: open it from the Timed out tab and tap "Restore to active orders". It also comes back by itself if they approve the quote or write to you.'], go: ['dashboard'] },
   { id: 'emails-popup', area: 'Orders', title: 'Every email is shown first, and you can change it', keys: 'email preview edit send dont send skip pop-up popup',
     steps: ['Any button that emails a customer opens a pop-up with the exact email first.', 'Change the subject or any of the text if you like ("Undo my changes" puts it back). Your change is for that one email only.', 'Choose "Send email and continue", "Don\'t send email, continue" (the step happens, no email), or "Cancel, go back" (nothing happens).', 'To change an email for every order, edit it in Settings > Emails.'] },
   { id: 'quote', area: 'Orders', title: 'Price a request and send the quote', keys: 'quote price grams print time minutes send quote estimate',
@@ -2914,11 +2918,19 @@ function applyPartColors(item, choicesIn) {
   const choices = choicesIn || partColorChoices();
   // A part with no color (or one that's out of stock now) gets White, else the first regular color.
   const fallback = defaultColor(choices.map(c => ({ ...c, special: c.filType === 'special' })));
+  // A black and white scheme: the main body (the first required part and its group) White, every other part Black.
+  const bw = nm => choices.find(x => String(x.name).trim().toLowerCase() === nm && x.filType !== 'special');
+  const lead = parts.find(p => !p.optional) || parts[0];
+  const isMain = p => p === lead || (!!lead.group && !!p.group && partGroup(p, item.groupMerge) === partGroup(lead, item.groupMerge));
   const groups = [];
   parts.forEach(p => {
     const ok = partChoicesFor(item.designParts, p, item.groupMerge, choices);
     let c = ok.find(x => x.key === p.colorId);
-    if (!c) { c = ok.find(x => x.key === p.defaultColor) || (ok.find(x => x.key === fallback.key) || ok[0]); p.colorId = c.key; }
+    if (!c) {
+      const want = bw(isMain(p) ? 'white' : 'black');
+      c = ok.find(x => x.key === p.defaultColor) || (want && ok.find(x => x.key === want.key)) || ok.find(x => x.key === fallback.key) || ok[0];
+      p.colorId = c.key;
+    }
     let g = groups.find(x => x.c.key === c.key);
     if (!g) groups.push(g = { c, names: [], grams: 0 });
     g.names.push(p.optional ? `${p.name} (add-on)` : p.name);
