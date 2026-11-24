@@ -189,7 +189,7 @@ check('"Send an email now": the chosen email goes out once, to the customer, wit
   const edited = emailsFor('UPDATE', at({ phase: 'delivered', manualEmail: { key: 'review_request', at: 'm5', subject: 'A review for 10% off?', body: 'Hi Jane, my own words here.' } }), at({ phase: 'delivered' }));
   assert(edited.length === 1 && edited[0].subject === 'A review for 10% off?' && edited[0].body === 'Hi Jane, my own words here.' && edited[0].to === 'jane@example.com', 'an edited email is sent exactly as written: ' + JSON.stringify(edited));
   const reminder = emailsFor('UPDATE', at({ phase: 'quote_sent', manualEmail: { key: 'reminder', at: 'm3' } }), at({ phase: 'quote_sent' }));
-  assert(reminder.length === 1 && /Still interested/.test(reminder[0].subject), JSON.stringify(reminder));
+  assert(reminder.length === 1 && /Any questions about your SoloPrint quote/.test(reminder[0].subject), JSON.stringify(reminder));
 });
 check('shipped email: tracking, invoice and the shipping deposit refund', () => {
   const body = emailsFor('UPDATE', at({ phase: 'delivered', paymentStatus: 'payment_received', depositAt: '2026-10-03T00:00:00Z', depositAmount: 4.64, deliveryTracking: 'USPS 9400 1111', postageCost: 9.5 }),
@@ -220,7 +220,7 @@ check('order links hold a long private key, never the customer\'s email', () => 
 check('quote reminders: one per valid customer, with the order link', () => {
   const { reminderEmails } = load();
   const out = reminderEmails([at({ phase: 'quote_sent' }), at({ clientEmail: 'not-an-email' })]);
-  assert(out.length === 1 && out[0].subject.includes('quote is waiting') && out[0].body.includes('?o=') && out[0].body.includes('$9.28'), JSON.stringify(out));
+  assert(out.length === 1 && out[0].subject.includes('Any questions about your SoloPrint quote') && out[0].body.includes('?o=') && out[0].body.includes('$9.28'), JSON.stringify(out));
 });
 
 check('webhook accepts the saved secret and refuses anything else', () => {
@@ -458,7 +458,7 @@ check('daily run: one failing part does not stop the others', () => {
   });
   let error = '';
   try { ctx.sendQuoteReminders(); } catch (e) { error = e.message; }
-  assert(mails.includes('Still interested? Your SoloPrint quote is waiting'), 'quote reminder not sent');
+  assert(mails.includes('Any questions about your SoloPrint quote?'), 'quote reminder not sent');
   assert(/Review requests: due_review_requests isn't set up yet: run supabase\/owner-tools\.sql/.test(error), error);
 });
 
@@ -504,6 +504,13 @@ check('unfinished request reminder links back to the saved request', () => {
     data: { items: [{ mode: 'idea', notes: 'A phone stand for my desk at work please' }, { mode: 'link', modeDrafts: { idea: { name: 'Coaster' } } }] } }], {});
   assert(m.to === 'kim@example.com' && m.subject === 'Want to finish your SoloPrint request?', m.subject);
   assert(m.body.includes('Hi Kim,') && m.body.includes('a request for A phone stand for my desk, Coaster') && m.body.includes('https://soloprint.vercel.app/?resume=abc-123'), m.body);
+});
+
+check('pre-order nudge: a day later, one email with a link back to their colors; no link, no email', () => {
+  const lead = { id: 'x1', clientEmail: 'pat@example.com', clientName: 'Pat', data: { items: [], lead: { designs: [{ id: 'g1', title: 'Dragon Organizer', pick: 'Candy Cane', link: '?design=dragon-organizer&c=x%3Ared' }] } } };
+  const out = ctxD.leadNudgeEmails([lead, { ...lead, clientEmail: 'bad' }, { ...lead, data: { lead: { designs: [{ id: 'soon-1', title: 'Idea', pick: "I'd buy this" }] } } }], {});
+  assert(out.length === 1 && out[0].to === 'pat@example.com' && out[0].subject === 'Still thinking about the Dragon Organizer?', JSON.stringify(out));
+  assert(out[0].body.includes('Hi Pat,') && out[0].body.includes('(Candy Cane)') && out[0].body.includes('https://soloprint.vercel.app/?design=dragon-organizer&c=x%3Ared'), out[0].body);
 });
 
 console.log('\nLoader (email/Loader.gs):');

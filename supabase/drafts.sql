@@ -109,8 +109,45 @@ $$;
 revoke all on function public.save_request_draft(text, text, jsonb) from public;
 revoke all on function public.clear_request_draft(text) from public;
 revoke all on function public.get_request_draft(uuid) from public;
+-- For the Google script: a pre-order lead (name and email left on a pre-order, no request started) about a day old,
+-- nudged once with a link back to their choices.
+create or replace function public.due_lead_nudges(p_secret text, p_hours int default 20)
+returns setof jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  expected text;
+begin
+  select secret into expected from private.email_settings where id = 1;
+  if expected is null or length(expected) < 20 or p_secret is distinct from expected then
+    raise exception 'forbidden';
+  end if;
+  return query
+  with due as (
+    update public.request_drafts d
+    set reminded_at = now()
+    where d.reminded_at is null
+      and jsonb_typeof(d.data->'lead') = 'object'
+      and jsonb_array_length(coalesce(d.data->'items', '[]'::jsonb)) = 0
+      and jsonb_array_length(coalesce(d.data->'lead'->'designs', '[]'::jsonb)) > 0
+      and d.updated_at < now() - make_interval(hours => greatest(p_hours, 1))
+      and d.updated_at > now() - interval '10 days'
+      and not exists (
+        select 1 from public.jobs j
+        where lower(j.data->>'clientEmail') = lower(d.email) and j.created_at > d.updated_at - interval '1 day'
+      )
+    returning d.id, d.email, d.name, d.data
+  )
+  select jsonb_build_object('id', due.id, 'clientEmail', due.email, 'clientName', due.name, 'data', due.data) from due;
+end;
+$$;
+
 revoke all on function public.due_draft_reminders(text, int) from public;
+revoke all on function public.due_lead_nudges(text, int) from public;
 grant execute on function public.save_request_draft(text, text, jsonb) to anon, authenticated;
 grant execute on function public.clear_request_draft(text) to anon, authenticated;
 grant execute on function public.get_request_draft(uuid) to anon, authenticated;
 grant execute on function public.due_draft_reminders(text, int) to anon;
+grant execute on function public.due_lead_nudges(text, int) to anon;

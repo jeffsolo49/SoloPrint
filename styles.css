@@ -1713,11 +1713,11 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 
 /* Dark mode, customers: buttons are light so they stand out from the dark page. Inside them the colors are the light-theme ones. */
 @media (prefers-color-scheme: dark) {
-  html:not(.owner-mode) :is(.btn-sm, .btn-secondary, .bubble, .mode-option):not([aria-pressed="true"]):not(.on):not(.btn-gold):not(.btn-primary) {
+  html:not(.owner-mode) :is(.btn-sm, .btn-secondary, .bubble, .mode-option):not([aria-pressed="true"]):not(.on):not(.btn-gold):not(.btn-primary):not(.btn-buy) {
     --text: #1d2152; --muted: #343c80; --accent: #7c1d82; --red: #98203a; --btn-border: #f2f3ff;
     background: #e8e6fb; color: #1d2152; border-color: #f2f3ff;
   }
-  html:not(.owner-mode) :is(.btn-sm, .btn-secondary, .bubble, .mode-option):not([aria-pressed="true"]):not(.on):not(.btn-gold):not(.btn-primary):hover { background: #ffffff; border-color: #ffffff; }
+  html:not(.owner-mode) :is(.btn-sm, .btn-secondary, .bubble, .mode-option):not([aria-pressed="true"]):not(.on):not(.btn-gold):not(.btn-primary):not(.btn-buy):hover { background: #ffffff; border-color: #ffffff; }
 }
 
 /* Tabs at the top of the design form: the original and each version */
@@ -1735,3 +1735,28 @@ html.jump-on .main:not(.owner-main) { scroll-margin-top: 76px; }
 .summary-total { margin: 8px 0; }
 .dash-design { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 10px; }
 .dash-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+/* Start here, ideas coming soon, inbox */
+.start-here { margin-bottom: 1rem; }
+.soon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 8px; }
+.soon-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface); }
+.soon-photo { width: 100%; height: 140px; object-fit: cover; border-radius: 8px; margin-bottom: 6px; }
+.soon-title { font-weight: 700; }
+.soon-owner-list { list-style: none; display: grid; gap: 10px; margin-top: 10px; }
+.soon-owner-list li { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 8px; }
+.inbox-list { list-style: none; display: grid; gap: 10px; }
+.inbox-item { display: flex; gap: 12px; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+.inbox-item.ticked { opacity: 0.7; }
+.inbox-main { flex: 1; min-width: 0; }
+.inbox-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.photo-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.photo-strip img { height: 110px; width: auto; border-radius: 8px; display: block; }
+
+/* The main order button: bright, so it is the first thing seen */
+.btn-buy, .btn-buy:hover { background: #ffd23f !important; color: #2a2000 !important; border: 3px solid #b78600 !important; font-size: 16px; font-weight: 800; padding: 13px 22px; border-radius: 12px; box-shadow: 0 3px 0 #7a5800, 0 0 0 4px rgba(255, 210, 63, 0.35); white-space: normal; }
+.btn-buy:hover { background: #ffe066 !important; }
+.btn-buy:active { transform: translateY(2px); box-shadow: 0 1px 0 #7a5800; }
+@media (max-width: 640px) { .btn-buy { width: 100%; } }
+.deposit-steps { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; background: var(--surface); }
+.deposit-steps-title { font-weight: 700; margin-bottom: 4px; }
+.deposit-steps ol { margin: 0 0 0 1.2em; display: grid; gap: 4px; font-size: 14px; }

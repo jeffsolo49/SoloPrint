@@ -33,8 +33,8 @@ const EMAIL_TEMPLATES = {
   },
   reminder: {
     label: 'Quote reminder', to: 'Customer', when: "3 days after a quote they haven't approved (sent once).",
-    subject: 'Still interested? Your SoloPrint quote is waiting',
-    body: 'Hi {name},\n\nJust checking in: your quote for {title} is still ready (${total}).\n\nIf it looks good, tap "Looks good" here: {orderLink}\nWant something changed, or have a question? Just reply to this email.\n\nNo pressure: nothing is charged until you tap Looks good and pay. You can pay in full, or a deposit first and the rest later (two Venmo payments). Shipping is extra: a ${shippingDeposit} shipping deposit, partly refunded based on the real postage.\n\n{footer}'
+    subject: 'Any questions about your SoloPrint quote?',
+    body: 'Hi {name},\n\nI wanted to check in on your quote for {title} (${total}). It is ready whenever you are.\n\nIf anything is holding you back, I can:\n- change the colors, or swap a part\n- answer any question about the print, the price or shipping\n- adjust the size or the quantity\n\nJust reply to this email and I will sort it out. If it looks right as it is, tap "Looks good" here: {orderLink}\n\nNo pressure: nothing is charged until you tap Looks good and pay. You can pay in full, or a deposit first and the rest later (two Venmo payments). Shipping is extra: a ${shippingDeposit} shipping deposit, partly refunded based on the real postage.\n\n{footer}'
   },
   owner_approved: {
     label: 'Quote approved', to: 'You', when: 'The customer taps "Looks good" on their quote.',
@@ -80,6 +80,11 @@ const EMAIL_TEMPLATES = {
     label: 'Leftover roll reminder', to: 'Customer', when: 'About 2 weeks before a leftover special order roll expires (sent once per roll).',
     subject: 'Your {rollColor} roll is yours until {rollExpires}',
     body: "Hi {name},\n\nYou have about {rollGrams} g left on the {rollColor} roll I ordered for you. It's yours to use until {rollExpires}, and the material is free in another order. After that, I keep any leftover.\n\nWant to use it? Open your order and tap \"Use it in a new request\": {orderLink}\n\n{footer}"
+  },
+  preorder_nudge: {
+    label: 'Pre-order nudge', to: 'Customer', when: "A day after someone picks their pre-order colors and leaves their email but doesn't send a request (sent once).",
+    subject: 'Still thinking about the {designTitle}?',
+    body: "Hi {name},\n\nYou were looking at the {designTitle}{choices}. Your choices are saved, so you can pick up right where you left off: {designLink}\n\nPre-orders are first come, first served, and your place in line starts when you send your request. Questions, or want a color changed? Just reply to this email.\n\nIf you have changed your mind, no problem: just ignore this email.\n\nThanks,\nSoloPrint"
   },
   draft_reminder: {
     label: 'Unfinished request', to: 'Customer', when: "A week after someone starts a request but doesn't send it (sent once; the days are in Prices and rules).",
@@ -139,6 +144,9 @@ const EMAIL_PLACEHOLDERS = {
   rollGrams: 'Grams left on the roll',
   rollExpires: 'Date the roll is theirs until',
   siteLink: "Your site's address",
+  designTitle: 'Pre-order nudge: the design they looked at',
+  choices: 'Pre-order nudge: their picks in brackets, e.g. " (Candy Cane, Joined Pair)"',
+  designLink: 'Pre-order nudge: link back to the design with their colors picked',
   draftSummary: 'Unfinished request: what they started, e.g. "a phone stand"',
   resumeLink: 'Unfinished request: link that reopens their saved request',
   weekSales: 'Weekly summary: paid sales in the last 7 days',
