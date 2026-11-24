@@ -392,7 +392,10 @@ async function customerApproveQuote(batchId) {
     b.customerApprovedAt = new Date().toISOString();
     await loadBatches(true);   // the order may have moved on to the deposit request
   }
+  const nb = state.batches.find(x => x.id === batchId);
+  if (nb && nb.customerApprovedAt) state.approvedNotice = { id: batchId, sent: nb.phase !== 'quote_sent', email: nb.clientEmail || '' };   // what to tell them on screen
   render();
+  if (state.approvedNotice) document.getElementById(`approved-note-${batchId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // The step bar ("pizza tracker") and, for customers, what the current step means.

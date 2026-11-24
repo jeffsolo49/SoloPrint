@@ -169,9 +169,20 @@ function orderAgain(id) {
   showAlert('submit-ok', 'Your past order is filled in below. Check it over, change anything you like, then send it.', 'success');
 }
 
+// Right after "Looks good": say plainly what happens next (the deposit instructions are emailed).
+function renderApprovedNotice(b) {
+  const n = state.approvedNotice;
+  if (!n || n.id !== b.id) return '';
+  const who = n.email ? ` to ${esc(n.email)}` : '';
+  return `<div class="alert success approved-note" id="approved-note-${esc(b.id)}" role="status" tabindex="-1" style="display:block;">
+    <strong>Thank you! Your order is confirmed.</strong>
+    ${n.sent ? `<div>Your deposit instructions have been emailed${who}. Open that email and follow the Venmo link to pay the deposit. If you don't see it in a few minutes, check your spam folder.</div>`
+      : `<div>I'll make sure I can make it, then email your deposit instructions${who}. Watch your inbox (and spam folder).</div>`}
+  </div>`;
+}
 function renderCustomerOrderExtras(b) {
   const delivered = (b.phase || 'estimate') === 'delivered';
-  return `${orderIsPreorder(b) && !delivered ? renderPreorderNote(null, b) : ''}${delivered ? '' : `<div class="field-help color-delay-note">${esc(colorDelayNote())}</div>`}<div class="order-extras">
+  return `${renderApprovedNotice(b)}${orderIsPreorder(b) && !delivered ? renderPreorderNote(null, b) : ''}${delivered ? '' : `<div class="field-help color-delay-note">${esc(colorDelayNote())}</div>`}<div class="order-extras">
     ${featureOn('orderAgain') ? `<button type="button" class="btn-sm" onclick="orderAgain('${esc(b.id)}')">${delivered ? 'Make this again' : 'Order again'}</button>` : ''}
     ${delivered ? `<button type="button" class="btn-sm btn-gold" onclick="openReviewForm('${esc(b.id)}')">Leave a review</button><button type="button" class="btn-sm" id="share-photo-${esc(b.id)}" onclick="openPhotoShare('${esc(b.id)}')">Share a photo of your print</button>` : ''}
   </div>`;
